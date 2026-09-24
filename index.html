@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>2D 멀티플레이 액션 게임</title>
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #1e1e2e;
+    overflow: hidden;
+    font-family: 'Segoe UI', sans-serif;
+    color: #fff;
+  }
+  #gameCanvas {
+    display: block;
+    margin: 20px auto 0 auto;
+    background: #2c3e50;
+    border: 3px solid #34495e;
+    border-radius: 8px;
+    cursor: crosshair;
+  }
+  #scoreboard {
+    position: fixed;
+    top: 20px;
+    right: 30px;
+    background: rgba(0, 0, 0, 0.55);
+    border-radius: 8px;
+    padding: 12px 16px;
+    min-width: 160px;
+  }
+  #scoreboard h3 {
+    margin: 0 0 8px 0;
+    font-size: 15px;
+    border-bottom: 1px solid #555;
+    padding-bottom: 6px;
+  }
+  #scoreboard ol {
+    margin: 0;
+    padding-left: 18px;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  #joinOverlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.75);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    z-index: 10;
+  }
+  #joinOverlay input {
+    padding: 10px 14px;
+    font-size: 16px;
+    border-radius: 6px;
+    border: none;
+    margin: 12px 0;
+    width: 220px;
+    text-align: center;
+  }
+  #joinOverlay button {
+    padding: 10px 24px;
+    font-size: 16px;
+    border-radius: 6px;
+    border: none;
+    background: #3498db;
+    color: #fff;
+    cursor: pointer;
+  }
+  #joinOverlay button:hover { background: #2980b9; }
+  #hint {
+    position: fixed;
+    bottom: 12px;
+    left: 20px;
+    font-size: 12px;
+    color: #aaa;
+  }
+</style>
+</head>
+<body>
+
+<div id="joinOverlay">
+  <h2>닉네임을 입력하세요</h2>
+  <input id="nameInput" maxlength="12" placeholder="예: Hero" />
+  <button id="joinBtn">게임 시작</button>
+</div>
+
+<div id="scoreboard">
+  <h3>🏆 스코어보드</h3>
+  <ol id="scoreList"></ol>
+</div>
+
+<canvas id="gameCanvas"></canvas>
+<div id="hint">WASD / 방향키: 이동 &nbsp;|&nbsp; 마우스: 조준 &nbsp;|&nbsp; 좌클릭: 발사</div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket = io();
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+let myId = null;
+let ARENA_WIDTH = 1000;
+let ARENA_HEIGHT = 700;
+let PLAYER_RADIUS = 20;
+let BULLET_RADIUS = 6;
+let MAX_HP = 100;
+
+let latestState = { players: {}, bullets: {} };
+
+// ===== 로컬 입력 상태 =====
+const keys = { w: false, a: false, s: false, d: false, up: false, down: false, left: false, right: false };
+let mouseX = 0, mouseY = 0;
+let myAngle = 0;
+
+// 자신의 로컬 위치(부드러운 이동을 위해 클라이언트에서 계산 후 서버로 전송)
+let myX = 0, myY = 0;
+let joined = false;
+const MOVE_SPEED = 260; // px/초
+
+// ===== 조인 처리 =====
+document.getElementById('joinBtn').addEventListener('click', doJoin);
+document.getElementById('nameInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') doJoin();
+});
+
+function doJoin() {
+  const name = document.getElementById('nameInput').value.trim() || 'Player';
+  document.getElementById('joinOverlay').style.display = 'none';
+  socket.emit('join', { name });
+  joined = true;
+  canvas.focus();
+}
+
+socket.on('init', (data) => {
+  myId = data.id;
+  ARENA_WIDTH = data.arena.width;
+  ARENA_HEIGHT = data.arena.height;
+  PLAYER_RADIUS = data.playerRadius;
+  BULLET_RADIUS = data.bulletRadius;
+  MAX_HP = data.maxHp;
+  canvas.width = ARENA_WIDTH;
+  canvas.height = ARENA_HEIGHT;
+  myX = ARENA_WIDTH / 2;
+  myY = ARENA_HEIGHT / 2;
+});
+
+socket.on('state', (state) => {
+  latestState = state;
+  // 서버가 갖고 있는 내 실제 위치와 동기화 (죽었을 때 등)
+  const me = state.players[myId];
+  if (me && !me.alive) {
+    // 사망 중에는 서버 위치를 그대로 따라간다 (리스폰 위치 반영)
+    myX = me.x;
+    myY = me.y;
+  }
+});
+
+// ===== 키보드 입력 =====
+window.addEventListener('keydown', (e) => {
+  switch (e.key) {
+    case 'w': case 'W': case 'ArrowUp': keys.up = true; break;
+    case 's': case 'S': case 'ArrowDown': keys.down = true; break;
+    case 'a': case 'A': case 'ArrowLeft': keys.left = true; break;
+    case 'd': case 'D': case 'ArrowRight': keys.right = true; break;
+  }
+});
+window.addEventListener('keyup', (e) => {
+  switch (e.key) {
+    case 'w': case 'W': case 'ArrowUp': keys.up = false; break;
+    case 's': case 'S': case 'ArrowDown': keys.down = false; break;
+    case 'a': case 'A': case 'ArrowLeft': keys.left = false; break;
+    case 'd': case 'D': case 'ArrowRight': keys.right = false; break;
+  }
+});
+
+// ===== 마우스 입력 =====
+canvas.addEventListener('mousemove', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  mouseX = e.clientX - rect.left;
+  mouseY = e.clientY - rect.top;
+});
+canvas.addEventListener('mousedown', (e) => {
+  if (e.button === 0 && joined) {
+    socket.emit('shoot');
+  }
+});
+
+// ===== 게임 루프 (클라이언트) =====
+let lastTime = performance.now();
+
+function update(dt) {
+  if (!joined) return;
+  const me = latestState.players[myId];
+  if (me && !me.alive) return; // 사망 중에는 이동 불가
+
+  let dx = 0, dy = 0;
+  if (keys.up) dy -= 1;
+  if (keys.down) dy += 1;
+  if (keys.left) dx -= 1;
+  if (keys.right) dx += 1;
+
+  if (dx !== 0 || dy !== 0) {
+    const len = Math.sqrt(dx * dx + dy * dy);
+    dx /= len; dy /= len;
+    myX += dx * MOVE_SPEED * dt;
+    myY += dy * MOVE_SPEED * dt;
+  }
+
+  myX = Math.max(PLAYER_RADIUS, Math.min(ARENA_WIDTH - PLAYER_RADIUS, myX));
+  myY = Math.max(PLAYER_RADIUS, Math.min(ARENA_HEIGHT - PLAYER_RADIUS, myY));
+
+  myAngle = Math.atan2(mouseY - myY, mouseX - myX);
+
+  socket.emit('playerUpdate', { x: myX, y: myY, angle: myAngle });
+}
+
+function drawPlayer(p, isMe) {
+  // 몸통
+  ctx.save();
+  ctx.translate(p.x, p.y);
+
+  if (!p.alive) {
+    ctx.globalAlpha = 0.25; // 사망 상태는 반투명 처리
+  }
+
+  ctx.beginPath();
+  ctx.arc(0, 0, PLAYER_RADIUS, 0, Math.PI * 2);
+  ctx.fillStyle = p.color || '#3498db';
+  ctx.fill();
+  ctx.lineWidth = isMe ? 3 : 1.5;
+  ctx.strokeStyle = isMe ? '#fff' : '#222';
+  ctx.stroke();
+
+  // 바라보는 방향 표시
+  ctx.rotate(p.angle);
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(PLAYER_RADIUS + 10, 0);
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  ctx.restore();
+  ctx.globalAlpha = 1;
+
+  if (!p.alive) return; // 사망 중에는 이름/HP 표시 생략
+
+  // 닉네임
+  ctx.font = 'bold 13px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#fff';
+  ctx.fillText(p.name, p.x, p.y - PLAYER_RADIUS - 22);
+
+  // HP 바
+  const barW = 44, barH = 6;
+  const hpRatio = Math.max(0, p.hp / MAX_HP);
+  ctx.fillStyle = '#555';
+  ctx.fillRect(p.x - barW / 2, p.y - PLAYER_RADIUS - 16, barW, barH);
+  ctx.fillStyle = hpRatio > 0.5 ? '#2ecc71' : hpRatio > 0.2 ? '#f1c40f' : '#e74c3c';
+  ctx.fillRect(p.x - barW / 2, p.y - PLAYER_RADIUS - 16, barW * hpRatio, barH);
+}
+
+function drawBullet(b) {
+  ctx.beginPath();
+  ctx.arc(b.x, b.y, BULLET_RADIUS, 0, Math.PI * 2);
+  ctx.fillStyle = '#f39c12';
+  ctx.fill();
+}
+
+function render() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // 배경 격자 (단순 스타일)
+  ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+  for (let x = 0; x < ARENA_WIDTH; x += 50) {
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, ARENA_HEIGHT); ctx.stroke();
+  }
+  for (let y = 0; y < ARENA_HEIGHT; y += 50) {
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(ARENA_WIDTH, y); ctx.stroke();
+  }
+
+  const bullets = latestState.bullets || [];
+  for (const b of bullets) drawBullet(b);
+
+  const playersObj = latestState.players || {};
+  for (const pid in playersObj) {
+    drawPlayer(playersObj[pid], pid === myId);
+  }
+}
+
+function updateScoreboard() {
+  const list = document.getElementById('scoreList');
+  const playersArr = Object.values(latestState.players || {});
+  playersArr.sort((a, b) => b.score - a.score);
+  list.innerHTML = playersArr
+    .map((p) => `<li>${escapeHtml(p.name)}${p.id === myId ? ' (나)' : ''} — ${p.score}</li>`)
+    .join('');
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+
+let scoreboardTimer = 0;
+
+function loop(now) {
+  const dt = Math.min(0.05, (now - lastTime) / 1000);
+  lastTime = now;
+
+  update(dt);
+  render();
+
+  scoreboardTimer += dt;
+  if (scoreboardTimer > 0.3) {
+    updateScoreboard();
+    scoreboardTimer = 0;
+  }
+
+  requestAnimationFrame(loop);
+}
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
