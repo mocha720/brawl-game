@@ -110,7 +110,7 @@ let PLAYER_RADIUS = 20;
 let BULLET_RADIUS = 6;
 let MAX_HP = 100;
 
-let latestState = { players: {}, bullets: {} };
+let latestState = { players: {}, bullets: [] };
 
 // ===== 로컬 입력 상태 =====
 const keys = { w: false, a: false, s: false, d: false, up: false, down: false, left: false, right: false };
@@ -284,7 +284,7 @@ function render() {
     ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(ARENA_WIDTH, y); ctx.stroke();
   }
 
-  const bullets = latestState.bullets || [];
+  const bullets = Array.isArray(latestState.bullets) ? latestState.bullets : [];
   for (const b of bullets) drawBullet(b);
 
   const playersObj = latestState.players || {};
@@ -314,8 +314,13 @@ function loop(now) {
   const dt = Math.min(0.05, (now - lastTime) / 1000);
   lastTime = now;
 
-  update(dt);
-  render();
+  try {
+    update(dt);
+    render();
+  } catch (err) {
+    // 렌더링 중 예상치 못한 에러가 나도 게임 루프 자체는 멈추지 않도록 방지
+    console.error('게임 루프 에러:', err);
+  }
 
   scoreboardTimer += dt;
   if (scoreboardTimer > 0.3) {
