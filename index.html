@@ -178,9 +178,8 @@
   /* ===== 궁극기 버튼 ===== */
   #ultimateButton {
     position: fixed;
-    bottom: 45px;
-    left: 50%;
-    transform: translateX(-50%);
+    bottom: 155px;
+    right: 43px;
     width: 74px;
     height: 74px;
     border-radius: 50%;
@@ -192,6 +191,7 @@
     background: conic-gradient(#f1c40f 0%, rgba(255,255,255,0.15) 0%);
   }
   #ultimateButton.ready { animation: ultPulse 1s infinite; }
+  #ultimateButton.armed { box-shadow: 0 0 0 4px rgba(231, 76, 60, 0.9); animation: none; }
   #ultimateButton .ult-inner {
     width: 60px;
     height: 60px;
@@ -202,6 +202,7 @@
     justify-content: center;
     font-size: 26px;
   }
+  #ultimateButton.armed .ult-inner { background: #7a1f1f; }
   @keyframes ultPulse {
     0%, 100% { box-shadow: 0 0 0px rgba(241, 196, 15, 0.8); }
     50% { box-shadow: 0 0 18px rgba(241, 196, 15, 0.9); }
@@ -210,11 +211,13 @@
     #scoreboard { top: 10px; right: 10px; min-width: 120px; padding: 8px 10px; }
     #scoreboard h3 { font-size: 12px; }
     #scoreboard ol { font-size: 11px; }
+    #ultimateButton { right: 38px; bottom: 140px; width: 62px; height: 62px; }
+    #ultimateButton .ult-inner { width: 50px; height: 50px; font-size: 22px; }
   }
   /* ===== 탄창(탄약) 표시 ===== */
   #ammoDisplay {
     position: fixed;
-    bottom: 128px;
+    bottom: 45px;
     left: 50%;
     transform: translateX(-50%);
     display: flex;
@@ -254,7 +257,7 @@
 </div>
 
 <canvas id="gameCanvas"></canvas>
-<div id="hint">WASD / 방향키: 이동 &nbsp;|&nbsp; 마우스: 조준 &nbsp;|&nbsp; 좌클릭: 기본 공격(탄창 3발) &nbsp;|&nbsp; E 또는 궁극기 버튼: 궁극기</div>
+<div id="hint">WASD / 방향키: 이동 &nbsp;|&nbsp; 마우스: 조준 &nbsp;|&nbsp; 좌클릭: 기본 공격(탄창 3발) &nbsp;|&nbsp; E 또는 궁극기 버튼: 궁극기 장전 후 클릭으로 조준 발사</div>
 
 <!-- 모바일 전용 가상 조이스틱: 왼쪽=이동, 오른쪽=조준+발사 -->
 <div id="leftStick" class="stick-base"><div class="stick-nub" id="leftNub"></div></div>
@@ -330,6 +333,23 @@ let touchMoveActive = false;
 let touchAimActive = false;
 let touchAimAngle = 0;
 let rightStickDragged = false;
+
+// 궁극기 '장전' 상태: 조준이 필요한 궁극기를 공격 조준(마우스/오른쪽 조이스틱)으로 발사하기 위한 모드
+let ultimateArmed = false;
+
+// 기본 공격 발사 지점(마우스 클릭, 오른쪽 조이스틱 release)이 공통으로 거치는 함수.
+// 궁극기가 장전된 상태면 궁극기를, 아니면 기본 공격을 발사한다.
+function fireAttack() {
+  if (!joined) return;
+  const me = latestState.players[myId];
+  if (ultimateArmed && me && me.ultimateCharge >= 100) {
+    socket.emit('ultimate');
+    ultimateArmed = false;
+    updateUltimateButton();
+  } else {
+    socket.emit('shoot');
+  }
+}
 
 function setupStick(baseId, nubId, onMove, onEnd) {
   const base = document.getElementById(baseId);
@@ -410,8 +430,8 @@ setupStick('rightStick', 'rightNub',
     touchAimAngle = Math.atan2(dy, dx);
   },
   () => {
-    // 손가락을 떼는 순간 마지막으로 조준한 방향으로 한 발 발사
-    if (joined) socket.emit('shoot');
+    // 손가락을 떼는 순간 마지막으로 조준한 방향으로 발사 (궁극기가 장전되어 있으면 궁극기가 나감)
+    fireAttack();
     touchAimActive = false;
     rightStickDragged = false;
   }
@@ -526,34 +546,46 @@ canvas.addEventListener('mousemove', (e) => {
 });
 canvas.addEventListener('mousedown', (e) => {
   if (e.button === 0 && joined) {
-    socket.emit('shoot');
+    fireAttack();
   }
 });
 
 // ===== 궁극기 =====
-function tryFireUltimate() {
+// 조준이 필요 없는 궁극기(예: 벼락지기)는 누르는 즉시 발동.
+// 조준이 필요한 궁극기(예: 피에로 발사)는 '장전' 상태로 전환되고,
+// 이후 기본 공격 입력(마우스 클릭 / 오른쪽 조이스틱)으로 조준해서 발사한다.
+function activateUltimateControl() {
   if (!joined) return;
   const me = latestState.players[myId];
   if (!me || !me.alive) return;
   if (me.ultimateCharge < 100) return;
-  socket.emit('ultimate');
+
+  if (me.ultimate && me.ultimate.type === 'lightning') {
+    socket.emit('ultimate');
+    ultimateArmed = false;
+  } else {
+    ultimateArmed = !ultimateArmed; // 다시 누르면 장전 취소
+  }
+  updateUltimateButton();
 }
 
 document.getElementById('ultimateButton').addEventListener('pointerdown', (e) => {
   e.preventDefault();
-  tryFireUltimate();
+  activateUltimateControl();
 });
 
 window.addEventListener('keydown', (e) => {
-  if (e.key === 'e' || e.key === 'E') tryFireUltimate();
+  if (e.key === 'e' || e.key === 'E') activateUltimateControl();
 });
 
 function updateUltimateButton() {
   const btn = document.getElementById('ultimateButton');
   const me = latestState.players[myId];
   const charge = me ? me.ultimateCharge : 0;
+  if (charge < 100) ultimateArmed = false; // 게이지가 다 차지 않은 상태면 장전 불가(사망/리스폰 등)
   btn.style.background = `conic-gradient(#f1c40f ${charge}%, rgba(255,255,255,0.15) ${charge}%)`;
   btn.classList.toggle('ready', charge >= 100);
+  btn.classList.toggle('armed', ultimateArmed);
 }
 
 function updateAmmoDisplay() {
@@ -766,18 +798,29 @@ function render() {
 }
 
 function drawAimRangeIndicator() {
-  // 모바일 오른쪽 조이스틱을 당기는 동안, 내 캐릭터 기준 기본 공격 사거리를 점선으로 표시
+  // 조준 중일 때(모바일 오른쪽 조이스틱 드래그), 내 캐릭터 기준 사거리를 점선으로 표시
+  // 궁극기가 장전된 상태면 궁극기 사거리를, 아니면 기본 공격 사거리를 보여준다.
   if (!touchAimActive) return;
   const me = latestState.players[myId];
-  if (!me || !me.alive || !me.basic) return;
+  if (!me || !me.alive) return;
 
-  const range = me.basic.speed * me.basic.lifetime;
+  let range, color;
+  if (ultimateArmed && me.ultimate && me.ultimate.type !== 'lightning') {
+    range = me.ultimate.speed * me.ultimate.lifetime;
+    color = 'rgba(231, 76, 60, 0.85)'; // 궁극기는 빨간색으로 구분
+  } else if (me.basic) {
+    range = me.basic.speed * me.basic.lifetime;
+    color = 'rgba(255, 255, 255, 0.6)';
+  } else {
+    return;
+  }
+
   const endX = me.x + Math.cos(touchAimAngle) * range;
   const endY = me.y + Math.sin(touchAimAngle) * range;
 
   ctx.save();
   ctx.setLineDash([8, 8]);
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+  ctx.strokeStyle = color;
   ctx.lineWidth = 2;
   ctx.beginPath();
   ctx.moveTo(me.x, me.y);
@@ -788,7 +831,7 @@ function drawAimRangeIndicator() {
   ctx.setLineDash([]);
   ctx.beginPath();
   ctx.arc(endX, endY, 5, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+  ctx.fillStyle = color;
   ctx.fill();
   ctx.restore();
 }
