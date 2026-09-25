@@ -211,6 +211,28 @@
     #scoreboard h3 { font-size: 12px; }
     #scoreboard ol { font-size: 11px; }
   }
+  /* ===== 탄창(탄약) 표시 ===== */
+  #ammoDisplay {
+    position: fixed;
+    bottom: 128px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 8px;
+    z-index: 6;
+  }
+  #ammoDisplay .ammo-dot {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #f39c12;
+    border: 2px solid #7a4e0a;
+    transition: background 0.15s, opacity 0.15s;
+  }
+  #ammoDisplay .ammo-dot.empty {
+    background: rgba(255,255,255,0.12);
+    border-color: rgba(255,255,255,0.25);
+  }
 </style>
 </head>
 <body>
@@ -232,11 +254,18 @@
 </div>
 
 <canvas id="gameCanvas"></canvas>
-<div id="hint">WASD / 방향키: 이동 &nbsp;|&nbsp; 마우스: 조준 &nbsp;|&nbsp; 좌클릭: 기본 공격 &nbsp;|&nbsp; E 또는 궁극기 버튼: 궁극기</div>
+<div id="hint">WASD / 방향키: 이동 &nbsp;|&nbsp; 마우스: 조준 &nbsp;|&nbsp; 좌클릭: 기본 공격(탄창 3발) &nbsp;|&nbsp; E 또는 궁극기 버튼: 궁극기</div>
 
 <!-- 모바일 전용 가상 조이스틱: 왼쪽=이동, 오른쪽=조준+발사 -->
 <div id="leftStick" class="stick-base"><div class="stick-nub" id="leftNub"></div></div>
 <div id="rightStick" class="stick-base"><div class="stick-nub" id="rightNub"></div></div>
+
+<!-- 탄창 표시: 남은 총알 수만큼 채워진 점으로 표시 -->
+<div id="ammoDisplay">
+  <div class="ammo-dot" id="ammoDot0"></div>
+  <div class="ammo-dot" id="ammoDot1"></div>
+  <div class="ammo-dot" id="ammoDot2"></div>
+</div>
 
 <!-- 궁극기 버튼: 게이지가 차면 클릭/탭으로 발동 (PC/모바일 공용) -->
 <div id="ultimateButton"><div class="ult-inner">🤡</div></div>
@@ -465,6 +494,7 @@ socket.on('state', (state) => {
     wasAlive = me.alive;
   }
   updateUltimateButton();
+  updateAmmoDisplay();
 });
 
 // ===== 키보드 입력 =====
@@ -524,6 +554,16 @@ function updateUltimateButton() {
   const charge = me ? me.ultimateCharge : 0;
   btn.style.background = `conic-gradient(#f1c40f ${charge}%, rgba(255,255,255,0.15) ${charge}%)`;
   btn.classList.toggle('ready', charge >= 100);
+}
+
+function updateAmmoDisplay() {
+  const me = latestState.players[myId];
+  const ammo = me ? me.ammo : 3;
+  const maxAmmo = me ? me.maxAmmo : 3;
+  for (let i = 0; i < maxAmmo; i++) {
+    const dot = document.getElementById('ammoDot' + i);
+    if (dot) dot.classList.toggle('empty', i >= ammo);
+  }
 }
 
 // ===== 벽 충돌 (서버와 동일한 방식으로 클라이언트에서도 미리 계산해 부드럽게 이동) =====
