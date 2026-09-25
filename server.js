@@ -142,6 +142,31 @@ const CHARACTERS = {
       spreadDegrees: 30,
     },
   },
+  wonhyo: {
+    id: 'wonhyo',
+    name: '원효대사',
+    maxHp: 10000,
+    basic: {
+      name: '해골물 뿌리기',
+      type: 'skullwater',
+      damage: 0,          // 해골 자체는 직접 대미지를 주지 않음 (벽/적에게 닿으면 물웅덩이 생성)
+      speed: 480,
+      radius: 14,
+      lifetime: 1.8,       // 초 (사거리 ≈ 864px)
+      visual: 'skull',
+      poolOnImpact: true,  // 벽 또는 적과 충돌 시 물웅덩이를 생성
+      poolRadius: 90,       // 물웅덩이 반경
+      poolLifetime: 10,     // 물웅덩이가 유지되는 시간(초)
+      poolTickInterval: 0.2, // 대미지/회복이 적용되는 주기(초)
+      poolDamage: 500,      // 적이 물에 닿았을 때 주기당 대미지
+      poolHeal: 500,        // 자신/아군이 물에 닿았을 때 주기당 회복량
+    },
+    ultimate: {
+      name: '은신',
+      type: 'stealth',    // 조준 없이 즉시 발동, 일정 시간 동안 적에게 보이지 않음
+      duration: 5,          // 초
+    },
+  },
 };
 const DEFAULT_CHARACTER_ID = 'minam';
 
@@ -161,6 +186,7 @@ const socketToMatch = {};
 
 let bulletIdCounter = 0;
 let effectIdCounter = 0;
+let waterPoolIdCounter = 0;
 
 function randomSpawnPoint() {
   // 벽과 겹치지 않는 위치를 찾을 때까지 몇 번 시도
@@ -184,6 +210,8 @@ function buildPlayer(socketId, name, characterId, team, spawn) {
     hp: character.maxHp,
     maxHp: character.maxHp,
     alive: true,
+    invisible: false, // 은신 궁극기 사용 중이면 true (적에게는 보이지 않음)
+    stealthId: 0,      // 은신 발동 회차 (타이머가 중첩될 때 오래된 타이머가 새 은신을 끄지 않도록 함)
     score: 0,
     color: COLORS[Math.floor(Math.random() * COLORS.length)],
     characterId: character.id,
@@ -244,6 +272,8 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
       respawned.y = spawn.y;
       respawned.hp = respawned.maxHp;
       respawned.alive = true;
+      respawned.invisible = false;
+      respawned.stealthId = (respawned.stealthId || 0) + 1; // 진행 중이던 은신 타이머를 무효화
       respawned.ultimateCharge = 0;
       respawned.ammo = MAX_AMMO;
       respawned.ammoRegenElapsed = 0;
@@ -271,13 +301,39 @@ function spawnProjectiles(match, p, spec, isUltimate) {
       vx: Math.cos(angle) * spec.speed,
       vy: Math.sin(angle) * spec.speed,
       ownerId: p.id,
+      team: p.team,
       life: spec.lifetime,
       damage: spec.damage,
       radius: spec.radius,
       isUltimate,
       visual: spec.visual,
+      // 원효대사의 해골물 뿌리기처럼 벽/적에 닿으면 물웅덩이를 생성하는 발사체를 위한 부가 정보
+      poolOnImpact: !!spec.poolOnImpact,
+      poolRadius: spec.poolRadius,
+      poolLifetime: spec.poolLifetime,
+      poolTickInterval: spec.poolTickInterval,
+      poolDamage: spec.poolDamage,
+      poolHeal: spec.poolHeal,
     });
   }
+}
+
+// 벽 또는 적과 충돌한 poolOnImpact 발사체가 남기는 물웅덩이를 생성한다
+function spawnWaterPool(match, b) {
+  waterPoolIdCounter += 1;
+  match.waterPools.push({
+    id: waterPoolIdCounter,
+    x: b.x,
+    y: b.y,
+    radius: b.poolRadius,
+    ownerId: b.ownerId,
+    team: b.team,
+    life: b.poolLifetime,       // 남은 지속 시간(초)
+    tickTimer: 0,                 // 다음 대미지/회복 틱까지 누적된 시간
+    tickInterval: b.poolTickInterval,
+    damage: b.poolDamage,
+    heal: b.poolHeal,
+  });
 }
 
 // ===== 매칭 로직 =====
@@ -308,6 +364,7 @@ function startMatch(mode, entries) {
     players: {},
     bullets: [],
     effects: [],
+    waterPools: [],
     teamScore: { A: 0, B: 0 },
     winScore: cfg.winScore,
     over: false,
@@ -343,6 +400,23 @@ function startMatch(mode, entries) {
   });
 }
 
+// 특정 모드의 대기열에 있는 '모든' 사람에게 현재 대기 인원을 알림
+// (기존에는 새로 들어온 사람에게만 보내서, 먼저 기다리던 사람 화면에는 인원수가 갱신되지 않는 버그가 있었음)
+function broadcastQueueStatus(mode) {
+  const list = queues[mode];
+  const needed = MODES[mode].size;
+  list.forEach((q) => {
+    if (q.socket.connected) {
+      q.socket.emit('queueUpdate', { mode, waiting: list.length, needed });
+    }
+  });
+}
+
+// 현재 서버에 접속 중인 전체 인원 수를 모든 클라이언트에게 알림 (매칭 대기와 무관하게 항상 표시됨)
+function broadcastOnlineCount() {
+  io.emit('onlineCount', { count: io.engine.clientsCount });
+}
+
 // 모든 모드의 대기열에서 해당 소켓을 제거
 function leaveQueue(socketId) {
   for (const mode in queues) {
@@ -368,6 +442,7 @@ function endMatch(matchId) {
 
 io.on('connection', (socket) => {
   console.log(`플레이어 접속: ${socket.id}`);
+  broadcastOnlineCount();
 
   // 클라이언트가 닉네임 + 모드 + 캐릭터를 정한 뒤 'findMatch' 이벤트를 보내면 대기열에 등록하고 매칭을 시도
   socket.on('findMatch', (data) => {
@@ -381,14 +456,17 @@ io.on('connection', (socket) => {
     const characterId = CHARACTERS[requestedId] ? requestedId : DEFAULT_CHARACTER_ID;
 
     queues[mode].push({ socket, name, characterId });
-    socket.emit('queueUpdate', { mode, waiting: queues[mode].length, needed: MODES[mode].size });
+    // 이 모드에서 이미 기다리고 있던 사람들에게도 갱신된 인원수를 함께 알림
+    broadcastQueueStatus(mode);
 
     tryMatchmaking(mode);
   });
 
   // 매칭 대기를 취소
   socket.on('cancelFindMatch', () => {
+    const mode = Object.keys(queues).find((m) => queues[m].some((q) => q.socket.id === socket.id));
     leaveQueue(socket.id);
+    if (mode) broadcastQueueStatus(mode); // 남아있는 대기자들에게 줄어든 인원수를 알림
   });
 
   // 클라이언트가 매 프레임 자신의 위치/각도를 전송
@@ -466,6 +544,20 @@ io.on('connection', (socket) => {
         }
         if (match.over) break;
       }
+    } else if (ult.type === 'stealth') {
+      // 조준 불필요: 즉시 일정 시간 동안 적에게 보이지 않는 은신 상태가 됨
+      p.invisible = true;
+      p.stealthId = (p.stealthId || 0) + 1;
+      const myStealthId = p.stealthId;
+      const stealthTargetId = p.id;
+      setTimeout(() => {
+        const m = matches[match.id];
+        if (!m) return;
+        const player = m.players[stealthTargetId];
+        if (!player) return;
+        if (player.stealthId !== myStealthId) return; // 이미 새 은신/리스폰으로 대체된 타이머는 무시
+        player.invisible = false;
+      }, (ult.duration || 5) * 1000);
     } else {
       // 조준한 방향으로 날아가는 궁극기 (예: 피에로 발사, 메가 샷건)
       spawnProjectiles(match, p, ult, true);
@@ -502,7 +594,10 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     console.log(`플레이어 접속 해제: ${socket.id}`);
+    const queuedMode = Object.keys(queues).find((m) => queues[m].some((q) => q.socket.id === socket.id));
     leaveQueue(socket.id);
+    if (queuedMode) broadcastQueueStatus(queuedMode); // 남아있는 대기자들에게 줄어든 인원수를 알림
+    broadcastOnlineCount();
 
     const matchId = socketToMatch[socket.id];
     if (!matchId) return;
@@ -531,11 +626,14 @@ function updateMatch(match, dt, now) {
     b.life -= dt;
   }
 
-  // 화면 밖, 수명 종료, 벽 충돌한 총알 제거
+  // 화면 밖, 수명 종료, 벽 충돌한 총알 제거 (poolOnImpact 발사체는 벽에 닿으면 물웅덩이를 남김)
   match.bullets = match.bullets.filter((b) => {
     if (b.life <= 0) return false;
     if (b.x < 0 || b.x > ARENA_WIDTH || b.y < 0 || b.y > ARENA_HEIGHT) return false;
-    if (collidesWithWalls(b.x, b.y, b.radius)) return false; // 벽에 막힘
+    if (collidesWithWalls(b.x, b.y, b.radius)) {
+      if (b.poolOnImpact) spawnWaterPool(match, b);
+      return false; // 벽에 막힘
+    }
     return true;
   });
 
@@ -559,8 +657,17 @@ function updateMatch(match, dt, now) {
 
       if (dist < PLAYER_RADIUS + b.radius) {
         hitBulletIds.add(b.id);
-        // 기본 공격만 궁극기 게이지를 충전시킴
-        applyDamage(match, target, b.damage, b.ownerId, { chargeShooter: !b.isUltimate });
+        if (b.poolOnImpact) {
+          // 해골물 뿌리기: 적중 시 직접 대미지 대신 물웅덩이를 생성 (궁극기 게이지는 적중으로 충전됨)
+          spawnWaterPool(match, b);
+          if (!b.isUltimate) {
+            const shooter = match.players[b.ownerId];
+            if (shooter) shooter.ultimateCharge = Math.min(100, shooter.ultimateCharge + ULTIMATE_CHARGE_PER_HIT);
+          }
+        } else {
+          // 기본 공격만 궁극기 게이지를 충전시킴
+          applyDamage(match, target, b.damage, b.ownerId, { chargeShooter: !b.isUltimate });
+        }
         break; // 이 총알은 이미 소모됨
       }
     }
@@ -571,6 +678,38 @@ function updateMatch(match, dt, now) {
   // 시각 이펙트(번개 등) 수명 관리
   for (const e of match.effects) e.life -= dt;
   match.effects = match.effects.filter((e) => e.life > 0);
+
+  // 물웅덩이(원효대사): 일정 주기마다 적에게는 대미지, 자신/아군에게는 회복을 적용
+  for (const pool of match.waterPools) {
+    if (match.over) break;
+    pool.life -= dt;
+    if (pool.life <= 0) continue;
+    pool.tickTimer += dt;
+
+    while (pool.tickTimer >= pool.tickInterval) {
+      pool.tickTimer -= pool.tickInterval;
+
+      for (const pid in match.players) {
+        const target = match.players[pid];
+        if (!target.alive) continue;
+
+        const dx = target.x - pool.x;
+        const dy = target.y - pool.y;
+        if (Math.sqrt(dx * dx + dy * dy) >= PLAYER_RADIUS + pool.radius) continue;
+
+        if (target.team === pool.team) {
+          // 물을 만든 사람의 아군(자신 포함) -> 체력 회복
+          target.hp = Math.min(target.maxHp, target.hp + pool.heal);
+        } else {
+          // 적 -> 대미지 (궁극기 게이지는 충전하지 않음)
+          applyDamage(match, target, pool.damage, pool.ownerId, { chargeShooter: false });
+          if (match.over) break;
+        }
+      }
+      if (match.over) break;
+    }
+  }
+  match.waterPools = match.waterPools.filter((pool) => pool.life > 0);
 
   // 탄약 재충전 + 무피격 체력 회복
   for (const pid in match.players) {
@@ -607,7 +746,7 @@ function gameLoop() {
 
     updateMatch(match, dt, now);
 
-    io.to(matchId).emit('state', { players: match.players, bullets: match.bullets, effects: match.effects });
+    io.to(matchId).emit('state', { players: match.players, bullets: match.bullets, effects: match.effects, waterPools: match.waterPools });
   }
 }
 
