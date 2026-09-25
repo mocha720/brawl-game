@@ -65,7 +65,7 @@ const CHARACTERS = {
     maxHp: 7000,
     basic: {
       name: '총 쏘기',
-      damage: 2200,
+      damage: 1540,    // 기존 2200에서 공격력 30% 감소
       speed: 650,      // px/초
       radius: 6,
       lifetime: 1.5,   // 초
@@ -74,7 +74,7 @@ const CHARACTERS = {
     ultimate: {
       name: '피에로 발사',
       type: 'projectile', // 조준한 방향으로 날아가는 궁극기
-      damage: 5000,
+      damage: 3500,    // 기존 5000에서 공격력 30% 감소
       speed: 500,
       radius: 16,
       lifetime: 2.0,
@@ -87,7 +87,7 @@ const CHARACTERS = {
     maxHp: 6000,
     basic: {
       name: '던지기',
-      damage: 3000,
+      damage: 2100,    // 기존 3000에서 공격력 30% 감소
       speed: 350,      // 총알보다 느린 구체
       radius: 12,
       lifetime: 2.2,
@@ -96,10 +96,36 @@ const CHARACTERS = {
     ultimate: {
       name: '벼락지기',
       type: 'lightning',   // 조준 없이 자신 주변에 번개를 떨어뜨리는 궁극기
-      damage: 3000,         // 번개 한 대에 맞을 때마다 들어가는 대미지
+      damage: 2100,    // 기존 3000에서 공격력 30% 감소 (번개 한 대당 대미지)
       strikeCount: 5,        // 떨어지는 번개 개수
       strikeRadius: 60,      // 번개 한 발의 피격 반경
       areaRadius: 220,       // 번개가 떨어질 수 있는 시전자 주변 범위
+    },
+  },
+  syu: {
+    id: 'syu',
+    name: '슈',
+    maxHp: 6000, // 체력이 별도로 지정되지 않아 다른 캐릭터와 비슷한 수준으로 설정 (조정 가능)
+    basic: {
+      name: '샷건 발사',
+      damage: 300,        // 펠릿(총알) 1개당 대미지
+      speed: 700,
+      radius: 4,
+      lifetime: 0.4,       // 사거리 ≈ 280px (샷건이라 사거리가 짧음)
+      visual: 'bullet',
+      pelletCount: 10,     // 한 번에 나가는 총알 개수
+      spreadDegrees: 30,   // 전체 탄퍼짐 각도
+    },
+    ultimate: {
+      name: '메가 샷건',
+      type: 'projectile',  // 조준한 방향으로 발사되는 궁극기
+      damage: 600,         // 큰 총알 1개당 대미지
+      speed: 550,
+      radius: 12,
+      lifetime: 0.35,       // 사거리 ≈ 193px (기본 공격보다도 더 짧음)
+      visual: 'slug',
+      pelletCount: 10,      // 큰 총알 10발
+      spreadDegrees: 30,
     },
   },
 };
@@ -160,6 +186,34 @@ function applyDamage(target, damage, shooterId, { chargeShooter } = {}) {
       respawned.ammoRegenElapsed = 0;
       respawned.lastDamageAt = Date.now();
     }, RESPAWN_DELAY);
+  }
+}
+
+// 총알(들)을 생성한다. spec.pelletCount가 있으면 spec.spreadDegrees 각도 안에 고르게 퍼뜨려서 여러 발을 동시에 발사한다.
+// (예: 슈의 샷건 - 탄창/쿨다운은 소비 1회로 취급되고, 여기서는 실제 총알 개체만 만든다)
+function spawnProjectiles(p, spec, isUltimate) {
+  const pelletCount = spec.pelletCount || 1;
+  const spreadRad = ((spec.spreadDegrees || 0) * Math.PI) / 180;
+  const halfSpread = spreadRad / 2;
+
+  for (let i = 0; i < pelletCount; i++) {
+    const angleOffset = pelletCount > 1 ? -halfSpread + (spreadRad * i) / (pelletCount - 1) : 0;
+    const angle = p.angle + angleOffset;
+
+    bulletIdCounter += 1;
+    bullets.push({
+      id: bulletIdCounter,
+      x: p.x + Math.cos(angle) * (PLAYER_RADIUS + 5),
+      y: p.y + Math.sin(angle) * (PLAYER_RADIUS + 5),
+      vx: Math.cos(angle) * spec.speed,
+      vy: Math.sin(angle) * spec.speed,
+      ownerId: p.id,
+      life: spec.lifetime,
+      damage: spec.damage,
+      radius: spec.radius,
+      isUltimate,
+      visual: spec.visual,
+    });
   }
 }
 
@@ -239,21 +293,7 @@ io.on('connection', (socket) => {
     p.ammo -= 1;
     p.lastShotAt = now;
 
-    const basic = p.basic;
-    bulletIdCounter += 1;
-    bullets.push({
-      id: bulletIdCounter,
-      x: p.x + Math.cos(p.angle) * (PLAYER_RADIUS + 5),
-      y: p.y + Math.sin(p.angle) * (PLAYER_RADIUS + 5),
-      vx: Math.cos(p.angle) * basic.speed,
-      vy: Math.sin(p.angle) * basic.speed,
-      ownerId: socket.id,
-      life: basic.lifetime,
-      damage: basic.damage,
-      radius: basic.radius,
-      isUltimate: false,
-      visual: basic.visual,
-    });
+    spawnProjectiles(p, p.basic, false);
   });
 
   // 궁극기 발사 요청 (게이지가 100%일 때만 발동)
@@ -288,21 +328,8 @@ io.on('connection', (socket) => {
         }
       }
     } else {
-      // 조준한 방향으로 날아가는 궁극기 (예: 피에로 발사)
-      bulletIdCounter += 1;
-      bullets.push({
-        id: bulletIdCounter,
-        x: p.x + Math.cos(p.angle) * (PLAYER_RADIUS + 5),
-        y: p.y + Math.sin(p.angle) * (PLAYER_RADIUS + 5),
-        vx: Math.cos(p.angle) * ult.speed,
-        vy: Math.sin(p.angle) * ult.speed,
-        ownerId: socket.id,
-        life: ult.lifetime,
-        damage: ult.damage,
-        radius: ult.radius,
-        isUltimate: true,
-        visual: ult.visual,
-      });
+      // 조준한 방향으로 날아가는 궁극기 (예: 피에로 발사, 메가 샷건)
+      spawnProjectiles(p, ult, true);
     }
 
     p.ultimateCharge = 0;
