@@ -263,11 +263,11 @@
     background: rgba(255,255,255,0.12);
     border-color: rgba(255,255,255,0.25);
   }
-  /* ===== 채팅 ===== */
+  /* ===== 채팅 (좌측 상단) ===== */
   #chatContainer {
     position: fixed;
-    left: 20px;
-    bottom: 78px;
+    left: calc(18px + env(safe-area-inset-left, 0px));
+    top: calc(64px + env(safe-area-inset-top, 0px));
     width: 300px;
     max-width: calc(100vw - 40px);
     z-index: 7;
@@ -312,8 +312,8 @@
   #chatInput::placeholder { color: rgba(255,255,255,0.5); }
   #chatToggleBtn {
     position: fixed;
-    left: 20px;
-    bottom: 232px;
+    left: calc(18px + env(safe-area-inset-left, 0px));
+    top: calc(16px + env(safe-area-inset-top, 0px));
     width: 40px;
     height: 40px;
     border-radius: 50%;
@@ -329,8 +329,8 @@
   }
   #chatToggleBtn:hover { background: rgba(0,0,0,0.7); }
   @media (max-width: 480px) {
-    #chatContainer { bottom: 66px; width: 220px; }
-    #chatToggleBtn { bottom: 195px; width: 34px; height: 34px; font-size: 15px; }
+    #chatContainer { top: calc(54px + env(safe-area-inset-top, 0px)); width: 220px; }
+    #chatToggleBtn { top: calc(12px + env(safe-area-inset-top, 0px)); width: 34px; height: 34px; font-size: 15px; }
   }
 </style>
 </head>
