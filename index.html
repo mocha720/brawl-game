@@ -35,31 +35,58 @@
   /* ===== 모바일 가상 조이스틱 ===== */
   .stick-base {
     position: fixed;
-    bottom: 30px;
-    width: 110px;
-    height: 110px;
+    bottom: calc(34px + env(safe-area-inset-bottom, 0px));
+    width: 132px;
+    height: 132px;
     border-radius: 50%;
     background: rgba(255, 255, 255, 0.12);
-    border: 2px solid rgba(255, 255, 255, 0.3);
+    border: 2px solid rgba(255, 255, 255, 0.35);
     touch-action: none;
     z-index: 5;
     display: none;
+    transition: background 0.1s, border-color 0.1s;
   }
-  #leftStick { left: 25px; }
-  #rightStick { right: 25px; }
+  .stick-base.dragging {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.6);
+  }
+  #leftStick { left: calc(18px + env(safe-area-inset-left, 0px)); }
+  #rightStick { right: calc(18px + env(safe-area-inset-right, 0px)); }
   .stick-nub {
     position: absolute;
     top: 50%;
     left: 50%;
-    width: 50px;
-    height: 50px;
-    margin: -25px 0 0 -25px;
+    width: 58px;
+    height: 58px;
+    margin: -29px 0 0 -29px;
     border-radius: 50%;
-    background: rgba(255, 255, 255, 0.45);
+    background: rgba(255, 255, 255, 0.5);
     pointer-events: none;
+    transition: background 0.1s;
   }
+  .stick-base.dragging .stick-nub { background: rgba(255, 255, 255, 0.85); }
   body.touch-device .stick-base { display: block; }
   body.touch-device #hint { display: none; }
+  #mobileHint {
+    position: fixed;
+    top: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0,0,0,0.55);
+    padding: 8px 14px;
+    border-radius: 8px;
+    font-size: 12px;
+    text-align: center;
+    z-index: 8;
+    display: none;
+    pointer-events: none;
+    transition: opacity 0.6s ease;
+  }
+  body.touch-device #mobileHint { display: block; }
+  @media (max-width: 480px) {
+    .stick-base { width: 112px; height: 112px; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); }
+    .stick-nub { width: 50px; height: 50px; margin: -25px 0 0 -25px; }
+  }
   #scoreboard {
     position: fixed;
     top: 20px;
@@ -178,8 +205,8 @@
   /* ===== 궁극기 버튼 ===== */
   #ultimateButton {
     position: fixed;
-    bottom: 155px;
-    right: 43px;
+    bottom: calc(185px + env(safe-area-inset-bottom, 0px));
+    right: calc(30px + env(safe-area-inset-right, 0px));
     width: 74px;
     height: 74px;
     border-radius: 50%;
@@ -211,13 +238,13 @@
     #scoreboard { top: 10px; right: 10px; min-width: 120px; padding: 8px 10px; }
     #scoreboard h3 { font-size: 12px; }
     #scoreboard ol { font-size: 11px; }
-    #ultimateButton { right: 38px; bottom: 140px; width: 62px; height: 62px; }
+    #ultimateButton { right: calc(26px + env(safe-area-inset-right, 0px)); bottom: calc(160px + env(safe-area-inset-bottom, 0px)); width: 62px; height: 62px; }
     #ultimateButton .ult-inner { width: 50px; height: 50px; font-size: 22px; }
   }
   /* ===== 탄창(탄약) 표시 ===== */
   #ammoDisplay {
     position: fixed;
-    bottom: 45px;
+    bottom: calc(45px + env(safe-area-inset-bottom, 0px));
     left: 50%;
     transform: translateX(-50%);
     display: flex;
@@ -327,6 +354,7 @@
 
 <canvas id="gameCanvas"></canvas>
 <div id="hint">WASD / 방향키: 이동 &nbsp;|&nbsp; 마우스: 조준 &nbsp;|&nbsp; 좌클릭: 기본 공격(탄창 3발) &nbsp;|&nbsp; E 또는 궁극기 버튼: 궁극기 장전 후 클릭으로 조준 발사</div>
+<div id="mobileHint">왼쪽 스틱: 이동 &nbsp;|&nbsp; 오른쪽 스틱: 당겨서 조준, 손을 떼면 발사 &nbsp;|&nbsp; 🤡 버튼: 궁극기</div>
 
 <!-- 모바일 전용 가상 조이스틱: 왼쪽=이동, 오른쪽=조준+발사 -->
 <div id="leftStick" class="stick-base"><div class="stick-nub" id="leftNub"></div></div>
@@ -406,7 +434,9 @@ let joined = false;
 const MOVE_SPEED = 190; // px/초 (기존 260에서 하향 조정)
 
 // ===== 모바일(터치) 지원 =====
-const isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+const isTouchDevice = ('ontouchstart' in window)
+  || navigator.maxTouchPoints > 0
+  || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
 if (isTouchDevice) {
   document.body.classList.add('touch-device');
 }
@@ -440,16 +470,20 @@ function fireAttack() {
 function setupStick(baseId, nubId, onMove, onEnd) {
   const base = document.getElementById(baseId);
   const nub = document.getElementById(nubId);
-  const maxDist = 40; // 조이스틱이 움직일 수 있는 최대 반경(px)
   let activeTouchId = null;
 
-  function getCenter() {
+  // CSS 미디어쿼리에 따라 조이스틱 크기가 달라지므로, 매번 실제 렌더링된 크기로 최대 반경을 계산
+  function getGeometry() {
     const rect = base.getBoundingClientRect();
-    return { cx: rect.left + rect.width / 2, cy: rect.top + rect.height / 2 };
+    return {
+      cx: rect.left + rect.width / 2,
+      cy: rect.top + rect.height / 2,
+      maxDist: rect.width / 2 - 6, // 베이스 가장자리에 살짝 여유를 둠
+    };
   }
 
   function handleMove(clientX, clientY) {
-    const { cx, cy } = getCenter();
+    const { cx, cy, maxDist } = getGeometry();
     let dx = clientX - cx;
     let dy = clientY - cy;
     const dist = Math.sqrt(dx * dx + dy * dy);
@@ -469,6 +503,7 @@ function setupStick(baseId, nubId, onMove, onEnd) {
     e.preventDefault();
     const t = e.changedTouches[0];
     activeTouchId = t.identifier;
+    base.classList.add('dragging');
     handleMove(t.clientX, t.clientY);
   }, { passive: false });
 
@@ -485,6 +520,7 @@ function setupStick(baseId, nubId, onMove, onEnd) {
     for (const t of e.changedTouches) {
       if (t.identifier === activeTouchId) {
         activeTouchId = null;
+        base.classList.remove('dragging');
         resetNub();
         onEnd();
       }
@@ -563,6 +599,10 @@ function doJoin() {
   socket.emit('join', { name, characterId: selectedCharacterId });
   joined = true;
   canvas.focus();
+
+  // 모바일 조작 안내는 몇 초 후 자동으로 사라지게 함
+  const mobileHintEl = document.getElementById('mobileHint');
+  setTimeout(() => { if (mobileHintEl) mobileHintEl.style.opacity = '0'; }, 5000);
 }
 
 socket.on('init', (data) => {
@@ -727,6 +767,7 @@ canvas.addEventListener('mousemove', (e) => {
   mouseY = (e.clientY - rect.top) * scaleY;
 });
 canvas.addEventListener('mousedown', (e) => {
+  if (isTouchDevice) return; // 모바일은 오른쪽 조이스틱으로만 발사 (캔버스 탭에 의한 오발사 방지)
   if (e.button === 0 && joined) {
     fireAttack();
   }
