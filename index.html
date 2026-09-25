@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 <title>2D 멀티플레이 액션 게임</title>
 <style>
   html, body {
@@ -12,6 +12,12 @@
     overflow: hidden;
     font-family: 'Segoe UI', sans-serif;
     color: #fff;
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+    overscroll-behavior: none;
+    -webkit-user-select: none;
+    user-select: none;
   }
   #gameCanvas {
     display: block;
@@ -20,7 +26,40 @@
     border: 3px solid #34495e;
     border-radius: 8px;
     cursor: crosshair;
+    max-width: calc(100vw - 20px);
+    max-height: calc(100vh - 30px);
+    width: auto;
+    height: auto;
+    touch-action: none;
   }
+  /* ===== 모바일 가상 조이스틱 ===== */
+  .stick-base {
+    position: fixed;
+    bottom: 30px;
+    width: 110px;
+    height: 110px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.12);
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    touch-action: none;
+    z-index: 5;
+    display: none;
+  }
+  #leftStick { left: 25px; }
+  #rightStick { right: 25px; }
+  .stick-nub {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 50px;
+    height: 50px;
+    margin: -25px 0 0 -25px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.45);
+    pointer-events: none;
+  }
+  body.touch-device .stick-base { display: block; }
+  body.touch-device #hint { display: none; }
   #scoreboard {
     position: fixed;
     top: 20px;
@@ -78,6 +117,11 @@
     font-size: 12px;
     color: #aaa;
   }
+  @media (max-width: 480px) {
+    #scoreboard { top: 10px; right: 10px; min-width: 120px; padding: 8px 10px; }
+    #scoreboard h3 { font-size: 12px; }
+    #scoreboard ol { font-size: 11px; }
+  }
 </style>
 </head>
 <body>
@@ -95,6 +139,10 @@
 
 <canvas id="gameCanvas"></canvas>
 <div id="hint">WASD / 방향키: 이동 &nbsp;|&nbsp; 마우스: 조준 &nbsp;|&nbsp; 좌클릭: 발사</div>
+
+<!-- 모바일 전용 가상 조이스틱: 왼쪽=이동, 오른쪽=조준+발사 -->
+<div id="leftStick" class="stick-base"><div class="stick-nub" id="leftNub"></div></div>
+<div id="rightStick" class="stick-base"><div class="stick-nub" id="rightNub"></div></div>
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
@@ -121,6 +169,113 @@ let myAngle = 0;
 let myX = 0, myY = 0;
 let joined = false;
 const MOVE_SPEED = 260; // px/초
+
+// ===== 모바일(터치) 지원 =====
+const isTouchDevice = ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+if (isTouchDevice) {
+  document.body.classList.add('touch-device');
+}
+
+// 왼쪽 조이스틱(이동) 입력값 (-1~1)
+let touchMoveX = 0, touchMoveY = 0;
+let touchMoveActive = false;
+
+// 오른쪽 조이스틱(조준+발사) 입력값
+let touchAimActive = false;
+let touchAimAngle = 0;
+let autoFireTimer = null;
+
+function setupStick(baseId, nubId, onMove, onEnd) {
+  const base = document.getElementById(baseId);
+  const nub = document.getElementById(nubId);
+  const maxDist = 40; // 조이스틱이 움직일 수 있는 최대 반경(px)
+  let activeTouchId = null;
+
+  function getCenter() {
+    const rect = base.getBoundingClientRect();
+    return { cx: rect.left + rect.width / 2, cy: rect.top + rect.height / 2 };
+  }
+
+  function handleMove(clientX, clientY) {
+    const { cx, cy } = getCenter();
+    let dx = clientX - cx;
+    let dy = clientY - cy;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist > maxDist) {
+      dx = (dx / dist) * maxDist;
+      dy = (dy / dist) * maxDist;
+    }
+    nub.style.transform = `translate(${dx}px, ${dy}px)`;
+    onMove(dx / maxDist, dy / maxDist, dx, dy);
+  }
+
+  function resetNub() {
+    nub.style.transform = 'translate(0px, 0px)';
+  }
+
+  base.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    const t = e.changedTouches[0];
+    activeTouchId = t.identifier;
+    handleMove(t.clientX, t.clientY);
+  }, { passive: false });
+
+  base.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      if (t.identifier === activeTouchId) {
+        handleMove(t.clientX, t.clientY);
+      }
+    }
+  }, { passive: false });
+
+  function onTouchEnd(e) {
+    for (const t of e.changedTouches) {
+      if (t.identifier === activeTouchId) {
+        activeTouchId = null;
+        resetNub();
+        onEnd();
+      }
+    }
+  }
+  base.addEventListener('touchend', onTouchEnd, { passive: false });
+  base.addEventListener('touchcancel', onTouchEnd, { passive: false });
+}
+
+setupStick('leftStick', 'leftNub',
+  (nx, ny) => {
+    touchMoveActive = true;
+    touchMoveX = nx;
+    touchMoveY = ny;
+  },
+  () => {
+    touchMoveActive = false;
+    touchMoveX = 0;
+    touchMoveY = 0;
+  }
+);
+
+setupStick('rightStick', 'rightNub',
+  (nx, ny, dx, dy) => {
+    // 아주 작은 움직임은 무시(오조준 방지)
+    if (Math.abs(dx) < 4 && Math.abs(dy) < 4) return;
+    touchAimActive = true;
+    touchAimAngle = Math.atan2(dy, dx);
+    if (!autoFireTimer) {
+      socket.emit('shoot'); // 처음 잡는 순간 한 발 즉시 발사
+      autoFireTimer = setInterval(() => {
+        if (joined) socket.emit('shoot');
+      }, 300); // 누르고 있는 동안 0.3초 간격 자동 발사
+    }
+  },
+  () => {
+    touchAimActive = false;
+    if (autoFireTimer) {
+      clearInterval(autoFireTimer);
+      autoFireTimer = null;
+    }
+  }
+);
 
 // ===== 조인 처리 =====
 document.getElementById('joinBtn').addEventListener('click', doJoin);
@@ -179,10 +334,13 @@ window.addEventListener('keyup', (e) => {
 });
 
 // ===== 마우스 입력 =====
+// 캔버스가 CSS로 축소/확대되어 표시될 수 있으므로 내부 해상도 기준으로 좌표 보정
 canvas.addEventListener('mousemove', (e) => {
   const rect = canvas.getBoundingClientRect();
-  mouseX = e.clientX - rect.left;
-  mouseY = e.clientY - rect.top;
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  mouseX = (e.clientX - rect.left) * scaleX;
+  mouseY = (e.clientY - rect.top) * scaleY;
 });
 canvas.addEventListener('mousedown', (e) => {
   if (e.button === 0 && joined) {
@@ -204,17 +362,25 @@ function update(dt) {
   if (keys.left) dx -= 1;
   if (keys.right) dx += 1;
 
-  if (dx !== 0 || dy !== 0) {
-    const len = Math.sqrt(dx * dx + dy * dy);
-    dx /= len; dy /= len;
-    myX += dx * MOVE_SPEED * dt;
-    myY += dy * MOVE_SPEED * dt;
+  // 왼쪽 가상 조이스틱 입력 반영 (키보드와 동시 사용 시 합쳐짐)
+  if (touchMoveActive) {
+    dx += touchMoveX;
+    dy += touchMoveY;
+  }
+
+  const len = Math.sqrt(dx * dx + dy * dy);
+  if (len > 0.01) {
+    // 조이스틱은 아날로그 값(0~1)이므로 그대로, 키보드(1 또는 √2)는 1로 눌러서 사용
+    const magnitude = Math.min(1, len);
+    myX += (dx / len) * magnitude * MOVE_SPEED * dt;
+    myY += (dy / len) * magnitude * MOVE_SPEED * dt;
   }
 
   myX = Math.max(PLAYER_RADIUS, Math.min(ARENA_WIDTH - PLAYER_RADIUS, myX));
   myY = Math.max(PLAYER_RADIUS, Math.min(ARENA_HEIGHT - PLAYER_RADIUS, myY));
 
-  myAngle = Math.atan2(mouseY - myY, mouseX - myX);
+  // 오른쪽 조이스틱으로 조준 중이면 그 방향을, 아니면 마우스 방향을 바라봄
+  myAngle = touchAimActive ? touchAimAngle : Math.atan2(mouseY - myY, mouseX - myX);
 
   socket.emit('playerUpdate', { x: myX, y: myY, angle: myAngle });
 }
