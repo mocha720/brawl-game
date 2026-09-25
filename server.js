@@ -20,22 +20,43 @@ app.use(express.static(path.join(__dirname)));
 const ARENA_WIDTH = 1000;
 const ARENA_HEIGHT = 700;
 const PLAYER_RADIUS = 20;
-const BULLET_RADIUS = 6;
-const PLAYER_MAX_HP = 100;
-const BULLET_DAMAGE = 20;
-const BULLET_SPEED = 650;       // px/초
-const BULLET_LIFETIME = 1.5;    // 초
 const RESPAWN_DELAY = 3000;     // ms
 const TICK_RATE = 20;           // 초당 서버 틱 수
 const TICK_MS = 1000 / TICK_RATE;
+const ULTIMATE_CHARGE_PER_HIT = 34; // 기본 공격이 적중할 때마다 충전되는 궁극기 게이지(%). 3회 적중 시 100% 도달
+
+// 기본 공격(총알) 스펙
+const BASIC_BULLET_RADIUS = 6;
+const BASIC_BULLET_SPEED = 650;   // px/초
+const BASIC_BULLET_LIFETIME = 1.5; // 초
+
+// 궁극기(피에로) 스펙 - 기본 공격보다 크고 느리지만 대미지가 훨씬 높음
+const ULTIMATE_BULLET_RADIUS = 16;
+const ULTIMATE_BULLET_SPEED = 500;
+const ULTIMATE_BULLET_LIFETIME = 2.0;
+
+// ===== 캐릭터 정의 (나중에 여기에 캐릭터를 추가하면 됩니다) =====
+const CHARACTERS = {
+  minam: {
+    id: 'minam',
+    name: '미남',
+    maxHp: 7000,
+    basicDamage: 2200,
+    ultimateDamage: 5000,
+    basicName: '총 쏘기',
+    ultimateName: '피에로 발사',
+  },
+};
+const DEFAULT_CHARACTER_ID = 'minam';
 
 // 플레이어 색상 팔레트 (랜덤 배정)
 const COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c', '#fd79a8'];
 
 // ===== 게임 상태 =====
-// players: { [socketId]: { id, name, x, y, angle, hp, alive, score, color } }
+// players: { [socketId]: { id, name, x, y, angle, hp, maxHp, alive, score, color,
+//                           characterId, characterName, basicDamage, ultimateDamage, ultimateCharge } }
 const players = {};
-// bullets: [{ id, x, y, vx, vy, ownerId, life }]
+// bullets: [{ id, x, y, vx, vy, ownerId, life, type, damage, radius }]
 let bullets = [];
 let bulletIdCounter = 0;
 
@@ -49,10 +70,14 @@ function randomSpawnPoint() {
 io.on('connection', (socket) => {
   console.log(`플레이어 접속: ${socket.id}`);
 
-  // 클라이언트가 닉네임을 정한 뒤 'join' 이벤트를 보내면 플레이어 생성
+  // 클라이언트가 닉네임 + 캐릭터를 정한 뒤 'join' 이벤트를 보내면 플레이어 생성
   socket.on('join', (data) => {
     const spawn = randomSpawnPoint();
     const name = (data && data.name ? String(data.name) : 'Player').slice(0, 12);
+
+    // 서버가 직접 캐릭터 스펙을 검증/적용 (클라이언트가 보낸 능력치는 절대 신뢰하지 않음)
+    const requestedId = data && data.characterId;
+    const character = CHARACTERS[requestedId] || CHARACTERS[DEFAULT_CHARACTER_ID];
 
     players[socket.id] = {
       id: socket.id,
@@ -60,20 +85,26 @@ io.on('connection', (socket) => {
       x: spawn.x,
       y: spawn.y,
       angle: 0,
-      hp: PLAYER_MAX_HP,
+      hp: character.maxHp,
+      maxHp: character.maxHp,
       alive: true,
       score: 0,
       color: COLORS[Math.floor(Math.random() * COLORS.length)],
+      characterId: character.id,
+      characterName: character.name,
+      basicDamage: character.basicDamage,
+      ultimateDamage: character.ultimateDamage,
+      ultimateCharge: 0, // 0~100
     };
 
     // 새로 들어온 플레이어에게 초기 설정값 전달
     socket.emit('init', {
       id: socket.id,
       arena: { width: ARENA_WIDTH, height: ARENA_HEIGHT },
-      maxHp: PLAYER_MAX_HP,
       playerRadius: PLAYER_RADIUS,
-      bulletRadius: BULLET_RADIUS,
-      bulletRange: BULLET_SPEED * BULLET_LIFETIME, // 클라이언트가 사거리 표시선을 그릴 때 사용
+      bulletRadius: BASIC_BULLET_RADIUS,
+      bulletRange: BASIC_BULLET_SPEED * BASIC_BULLET_LIFETIME, // 기본 공격 사거리 표시선용
+      ultimateBulletRadius: ULTIMATE_BULLET_RADIUS,
     });
   });
 
@@ -89,7 +120,7 @@ io.on('connection', (socket) => {
     if (typeof data.angle === 'number') p.angle = data.angle;
   });
 
-  // 발사 요청
+  // 기본 공격 발사 요청
   socket.on('shoot', () => {
     const p = players[socket.id];
     if (!p || !p.alive) return;
@@ -99,11 +130,37 @@ io.on('connection', (socket) => {
       id: bulletIdCounter,
       x: p.x + Math.cos(p.angle) * (PLAYER_RADIUS + 5),
       y: p.y + Math.sin(p.angle) * (PLAYER_RADIUS + 5),
-      vx: Math.cos(p.angle) * BULLET_SPEED,
-      vy: Math.sin(p.angle) * BULLET_SPEED,
+      vx: Math.cos(p.angle) * BASIC_BULLET_SPEED,
+      vy: Math.sin(p.angle) * BASIC_BULLET_SPEED,
       ownerId: socket.id,
-      life: BULLET_LIFETIME,
+      life: BASIC_BULLET_LIFETIME,
+      type: 'basic',
+      damage: p.basicDamage,
+      radius: BASIC_BULLET_RADIUS,
     });
+  });
+
+  // 궁극기 발사 요청 (게이지가 100%일 때만 발동)
+  socket.on('ultimate', () => {
+    const p = players[socket.id];
+    if (!p || !p.alive) return;
+    if (p.ultimateCharge < 100) return;
+
+    bulletIdCounter += 1;
+    bullets.push({
+      id: bulletIdCounter,
+      x: p.x + Math.cos(p.angle) * (PLAYER_RADIUS + 5),
+      y: p.y + Math.sin(p.angle) * (PLAYER_RADIUS + 5),
+      vx: Math.cos(p.angle) * ULTIMATE_BULLET_SPEED,
+      vy: Math.sin(p.angle) * ULTIMATE_BULLET_SPEED,
+      ownerId: socket.id,
+      life: ULTIMATE_BULLET_LIFETIME,
+      type: 'ultimate',
+      damage: p.ultimateDamage,
+      radius: ULTIMATE_BULLET_RADIUS,
+    });
+
+    p.ultimateCharge = 0;
   });
 
   socket.on('disconnect', () => {
@@ -143,16 +200,21 @@ function gameLoop() {
       const dy = p.y - b.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
 
-      if (dist < PLAYER_RADIUS + BULLET_RADIUS) {
+      if (dist < PLAYER_RADIUS + b.radius) {
         hitBulletIds.add(b.id);
-        p.hp -= BULLET_DAMAGE;
+        p.hp -= b.damage;
+
+        // 기본 공격이 적중하면 쏜 사람의 궁극기 게이지가 충전됨 (궁극기 자체는 충전 안 됨)
+        const shooter = players[b.ownerId];
+        if (shooter && b.type === 'basic') {
+          shooter.ultimateCharge = Math.min(100, shooter.ultimateCharge + ULTIMATE_CHARGE_PER_HIT);
+        }
 
         if (p.hp <= 0) {
           p.hp = 0;
           p.alive = false;
 
           // 처치한 플레이어 점수 증가
-          const shooter = players[b.ownerId];
           if (shooter) shooter.score += 1;
 
           // 3초 뒤 무작위 위치에서 리스폰
@@ -163,8 +225,9 @@ function gameLoop() {
             const spawn = randomSpawnPoint();
             respawned.x = spawn.x;
             respawned.y = spawn.y;
-            respawned.hp = PLAYER_MAX_HP;
+            respawned.hp = respawned.maxHp;
             respawned.alive = true;
+            respawned.ultimateCharge = 0;
           }, RESPAWN_DELAY);
         }
         break; // 이 총알은 이미 소모됨
