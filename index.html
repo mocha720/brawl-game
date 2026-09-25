@@ -424,6 +424,7 @@ function renderCharacterList() {
 function doJoin() {
   const name = document.getElementById('nameInput').value.trim() || 'Player';
   document.getElementById('characterOverlay').style.display = 'none';
+  wasAlive = false; // 새로 참가하는 것이므로, 첫 상태 수신 시 서버 스폰 위치로 무조건 동기화되게 함
   socket.emit('join', { name, characterId: selectedCharacterId });
   joined = true;
   canvas.focus();
@@ -437,18 +438,31 @@ socket.on('init', (data) => {
   WALLS = data.walls || [];
   canvas.width = ARENA_WIDTH;
   canvas.height = ARENA_HEIGHT;
+  // 서버로부터 실제 스폰 좌표를 받기 전까지 잠시 쓰이는 임시값 (아래 state 핸들러가 곧바로 덮어씀)
   myX = ARENA_WIDTH / 2;
   myY = ARENA_HEIGHT / 2;
 });
 
+// 마지막으로 확인된 '생존' 여부. 참가 직후(false)나 리스폰 직후(죽음->생존 전환)에
+// 로컬 이동 좌표(myX, myY)를 서버가 정해준 실제 위치로 강제 동기화하기 위해 사용.
+// 이 동기화가 없으면 로컬 좌표가 초기값(맵 정중앙)에 머물러 있다가, 그 위치가
+// 벽과 겹칠 경우 "시작하자마자 벽에 낀 것처럼" 전혀 움직이지 못하는 문제가 생김.
+let wasAlive = false;
+
 socket.on('state', (state) => {
   latestState = state;
-  // 서버가 갖고 있는 내 실제 위치와 동기화 (죽었을 때 등)
   const me = state.players[myId];
-  if (me && !me.alive) {
-    // 사망 중에는 서버 위치를 그대로 따라간다 (리스폰 위치 반영)
-    myX = me.x;
-    myY = me.y;
+  if (me) {
+    if (!me.alive) {
+      // 사망 중에는 서버 위치를 계속 따라간다
+      myX = me.x;
+      myY = me.y;
+    } else if (!wasAlive) {
+      // 방금 참가했거나 리스폰된 순간 -> 서버가 정한 스폰 위치로 강제 동기화
+      myX = me.x;
+      myY = me.y;
+    }
+    wasAlive = me.alive;
   }
   updateUltimateButton();
 });
