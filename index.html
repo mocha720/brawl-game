@@ -117,6 +117,95 @@
     font-size: 12px;
     color: #aaa;
   }
+  /* ===== 캐릭터 선택 화면 ===== */
+  #characterOverlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.85);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    z-index: 10;
+  }
+  #characterOverlay h2 { margin-bottom: 18px; }
+  #characterList {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    justify-content: center;
+    max-width: 90vw;
+  }
+  .char-card {
+    background: #2c3e50;
+    border: 2px solid #34495e;
+    border-radius: 10px;
+    padding: 16px;
+    width: 190px;
+    text-align: center;
+  }
+  .char-avatar {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    margin: 0 auto 10px auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    font-weight: bold;
+    color: #fff;
+  }
+  .char-card h3 { margin: 6px 0; }
+  .char-card .stat-line {
+    font-size: 12px;
+    color: #ccc;
+    text-align: left;
+    margin: 4px 0;
+  }
+  .char-card button {
+    margin-top: 12px;
+    padding: 8px 20px;
+    font-size: 14px;
+    border-radius: 6px;
+    border: none;
+    background: #2ecc71;
+    color: #fff;
+    cursor: pointer;
+    width: 100%;
+  }
+  .char-card button:hover { background: #27ae60; }
+  /* ===== 궁극기 버튼 ===== */
+  #ultimateButton {
+    position: fixed;
+    bottom: 45px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 74px;
+    height: 74px;
+    border-radius: 50%;
+    z-index: 6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    background: conic-gradient(#f1c40f 0%, rgba(255,255,255,0.15) 0%);
+  }
+  #ultimateButton.ready { animation: ultPulse 1s infinite; }
+  #ultimateButton .ult-inner {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: #1e1e2e;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 26px;
+  }
+  @keyframes ultPulse {
+    0%, 100% { box-shadow: 0 0 0px rgba(241, 196, 15, 0.8); }
+    50% { box-shadow: 0 0 18px rgba(241, 196, 15, 0.9); }
+  }
   @media (max-width: 480px) {
     #scoreboard { top: 10px; right: 10px; min-width: 120px; padding: 8px 10px; }
     #scoreboard h3 { font-size: 12px; }
@@ -129,7 +218,12 @@
 <div id="joinOverlay">
   <h2>닉네임을 입력하세요</h2>
   <input id="nameInput" maxlength="12" placeholder="예: Hero" />
-  <button id="joinBtn">게임 시작</button>
+  <button id="joinBtn">다음</button>
+</div>
+
+<div id="characterOverlay">
+  <h2>캐릭터를 선택하세요</h2>
+  <div id="characterList"></div>
 </div>
 
 <div id="scoreboard">
@@ -138,11 +232,14 @@
 </div>
 
 <canvas id="gameCanvas"></canvas>
-<div id="hint">WASD / 방향키: 이동 &nbsp;|&nbsp; 마우스: 조준 &nbsp;|&nbsp; 좌클릭: 발사</div>
+<div id="hint">WASD / 방향키: 이동 &nbsp;|&nbsp; 마우스: 조준 &nbsp;|&nbsp; 좌클릭: 기본 공격 &nbsp;|&nbsp; E 또는 궁극기 버튼: 궁극기</div>
 
 <!-- 모바일 전용 가상 조이스틱: 왼쪽=이동, 오른쪽=조준+발사 -->
 <div id="leftStick" class="stick-base"><div class="stick-nub" id="leftNub"></div></div>
 <div id="rightStick" class="stick-base"><div class="stick-nub" id="rightNub"></div></div>
+
+<!-- 궁극기 버튼: 게이지가 차면 클릭/탭으로 발동 (PC/모바일 공용) -->
+<div id="ultimateButton"><div class="ult-inner">🤡</div></div>
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
@@ -156,9 +253,25 @@ let ARENA_WIDTH = 1000;
 let ARENA_HEIGHT = 700;
 let PLAYER_RADIUS = 20;
 let BULLET_RADIUS = 6;
-let MAX_HP = 100;
+let ULTIMATE_BULLET_RADIUS = 16;
+let BULLET_RANGE = 500;
 
 let latestState = { players: {}, bullets: [] };
+
+// ===== 캐릭터 정의 (선택 화면 표시용 - 실제 능력치는 서버가 검증/적용) =====
+const CHARACTERS = [
+  {
+    id: 'minam',
+    name: '미남',
+    color: '#3498db',
+    maxHp: 7000,
+    basicDamage: 2200,
+    ultimateDamage: 5000,
+    basicName: '총 쏘기',
+    ultimateName: '피에로 발사',
+  },
+];
+let selectedCharacterId = CHARACTERS[0].id;
 
 // ===== 로컬 입력 상태 =====
 const keys = { w: false, a: false, s: false, d: false, up: false, down: false, left: false, right: false };
@@ -180,10 +293,10 @@ if (isTouchDevice) {
 let touchMoveX = 0, touchMoveY = 0;
 let touchMoveActive = false;
 
-// 오른쪽 조이스틱(조준+발사) 입력값
+// 오른쪽 조이스틱(조준+발사): 당기는 동안 사거리를 보여주고, 손을 떼는 순간 발사
 let touchAimActive = false;
 let touchAimAngle = 0;
-let autoFireTimer = null;
+let rightStickDragged = false;
 
 function setupStick(baseId, nubId, onMove, onEnd) {
   const base = document.getElementById(baseId);
@@ -260,33 +373,54 @@ setupStick('rightStick', 'rightNub',
     // 아주 작은 움직임은 무시(오조준 방지)
     if (Math.abs(dx) < 4 && Math.abs(dy) < 4) return;
     touchAimActive = true;
+    rightStickDragged = true;
     touchAimAngle = Math.atan2(dy, dx);
-    if (!autoFireTimer) {
-      socket.emit('shoot'); // 처음 잡는 순간 한 발 즉시 발사
-      autoFireTimer = setInterval(() => {
-        if (joined) socket.emit('shoot');
-      }, 300); // 누르고 있는 동안 0.3초 간격 자동 발사
-    }
   },
   () => {
+    // 손가락을 떼는 순간 마지막으로 조준한 방향으로 한 발 발사
+    if (joined) socket.emit('shoot');
     touchAimActive = false;
-    if (autoFireTimer) {
-      clearInterval(autoFireTimer);
-      autoFireTimer = null;
-    }
+    rightStickDragged = false;
   }
 );
 
-// ===== 조인 처리 =====
-document.getElementById('joinBtn').addEventListener('click', doJoin);
+// ===== 조인 처리: 닉네임 입력 -> 캐릭터 선택 -> 게임 참가 =====
+document.getElementById('joinBtn').addEventListener('click', goToCharacterSelect);
 document.getElementById('nameInput').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') doJoin();
+  if (e.key === 'Enter') goToCharacterSelect();
 });
+
+function goToCharacterSelect() {
+  document.getElementById('joinOverlay').style.display = 'none';
+  renderCharacterList();
+  document.getElementById('characterOverlay').style.display = 'flex';
+}
+
+function renderCharacterList() {
+  const list = document.getElementById('characterList');
+  list.innerHTML = CHARACTERS.map((c) => `
+    <div class="char-card">
+      <div class="char-avatar" style="background:${c.color}">${escapeHtml(c.name.slice(0, 1))}</div>
+      <h3>${escapeHtml(c.name)}</h3>
+      <div class="stat-line">❤️ 체력: ${c.maxHp.toLocaleString()}</div>
+      <div class="stat-line">🔫 ${escapeHtml(c.basicName)}: ${c.basicDamage.toLocaleString()}</div>
+      <div class="stat-line">🤡 ${escapeHtml(c.ultimateName)}: ${c.ultimateDamage.toLocaleString()}</div>
+      <button data-char-id="${c.id}">선택</button>
+    </div>
+  `).join('');
+
+  list.querySelectorAll('button[data-char-id]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      selectedCharacterId = btn.getAttribute('data-char-id');
+      doJoin();
+    });
+  });
+}
 
 function doJoin() {
   const name = document.getElementById('nameInput').value.trim() || 'Player';
-  document.getElementById('joinOverlay').style.display = 'none';
-  socket.emit('join', { name });
+  document.getElementById('characterOverlay').style.display = 'none';
+  socket.emit('join', { name, characterId: selectedCharacterId });
   joined = true;
   canvas.focus();
 }
@@ -297,7 +431,8 @@ socket.on('init', (data) => {
   ARENA_HEIGHT = data.arena.height;
   PLAYER_RADIUS = data.playerRadius;
   BULLET_RADIUS = data.bulletRadius;
-  MAX_HP = data.maxHp;
+  ULTIMATE_BULLET_RADIUS = data.ultimateBulletRadius || ULTIMATE_BULLET_RADIUS;
+  BULLET_RANGE = data.bulletRange || BULLET_RANGE;
   canvas.width = ARENA_WIDTH;
   canvas.height = ARENA_HEIGHT;
   myX = ARENA_WIDTH / 2;
@@ -313,6 +448,7 @@ socket.on('state', (state) => {
     myX = me.x;
     myY = me.y;
   }
+  updateUltimateButton();
 });
 
 // ===== 키보드 입력 =====
@@ -347,6 +483,32 @@ canvas.addEventListener('mousedown', (e) => {
     socket.emit('shoot');
   }
 });
+
+// ===== 궁극기 =====
+function tryFireUltimate() {
+  if (!joined) return;
+  const me = latestState.players[myId];
+  if (!me || !me.alive) return;
+  if (me.ultimateCharge < 100) return;
+  socket.emit('ultimate');
+}
+
+document.getElementById('ultimateButton').addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  tryFireUltimate();
+});
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'e' || e.key === 'E') tryFireUltimate();
+});
+
+function updateUltimateButton() {
+  const btn = document.getElementById('ultimateButton');
+  const me = latestState.players[myId];
+  const charge = me ? me.ultimateCharge : 0;
+  btn.style.background = `conic-gradient(#f1c40f ${charge}%, rgba(255,255,255,0.15) ${charge}%)`;
+  btn.classList.toggle('ready', charge >= 100);
+}
 
 // ===== 게임 루프 (클라이언트) =====
 let lastTime = performance.now();
@@ -424,7 +586,7 @@ function drawPlayer(p, isMe) {
 
   // HP 바
   const barW = 44, barH = 6;
-  const hpRatio = Math.max(0, p.hp / MAX_HP);
+  const hpRatio = Math.max(0, p.hp / (p.maxHp || 100));
   ctx.fillStyle = '#555';
   ctx.fillRect(p.x - barW / 2, p.y - PLAYER_RADIUS - 16, barW, barH);
   ctx.fillStyle = hpRatio > 0.5 ? '#2ecc71' : hpRatio > 0.2 ? '#f1c40f' : '#e74c3c';
@@ -432,8 +594,22 @@ function drawPlayer(p, isMe) {
 }
 
 function drawBullet(b) {
+  if (b.type === 'ultimate') {
+    // 궁극기: 피에로 - 크고 화려한 총알
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.radius || ULTIMATE_BULLET_RADIUS, 0, Math.PI * 2);
+    ctx.fillStyle = '#e74c3c';
+    ctx.fill();
+    ctx.font = `${(b.radius || ULTIMATE_BULLET_RADIUS) * 1.6}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('🤡', b.x, b.y + 1);
+    ctx.restore();
+    return;
+  }
   ctx.beginPath();
-  ctx.arc(b.x, b.y, BULLET_RADIUS, 0, Math.PI * 2);
+  ctx.arc(b.x, b.y, b.radius || BULLET_RADIUS, 0, Math.PI * 2);
   ctx.fillStyle = '#f39c12';
   ctx.fill();
 }
@@ -457,6 +633,35 @@ function render() {
   for (const pid in playersObj) {
     drawPlayer(playersObj[pid], pid === myId);
   }
+
+  drawAimRangeIndicator();
+}
+
+function drawAimRangeIndicator() {
+  // 모바일 오른쪽 조이스틱을 당기는 동안, 내 캐릭터 기준 공격 사거리를 점선으로 표시
+  if (!touchAimActive) return;
+  const me = latestState.players[myId];
+  if (!me || !me.alive) return;
+
+  const endX = me.x + Math.cos(touchAimAngle) * BULLET_RANGE;
+  const endY = me.y + Math.sin(touchAimAngle) * BULLET_RANGE;
+
+  ctx.save();
+  ctx.setLineDash([8, 8]);
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(me.x, me.y);
+  ctx.lineTo(endX, endY);
+  ctx.stroke();
+
+  // 사거리 끝 지점 표시
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.arc(endX, endY, 5, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+  ctx.fill();
+  ctx.restore();
 }
 
 function updateScoreboard() {
