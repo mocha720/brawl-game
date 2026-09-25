@@ -73,6 +73,7 @@ io.on('connection', (socket) => {
       maxHp: PLAYER_MAX_HP,
       playerRadius: PLAYER_RADIUS,
       bulletRadius: BULLET_RADIUS,
+      bulletRange: BULLET_SPEED * BULLET_LIFETIME, // 클라이언트가 사거리 표시선을 그릴 때 사용
     });
   });
 
