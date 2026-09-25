@@ -35,6 +35,10 @@ const AMMO_REGEN_SECONDS = 1.8;  // 탄약 1발이 다시 채워지는 데 걸�
 const HP_REGEN_DELAY_MS = 4000;      // 마지막으로 피격당한 후 이 시간이 지나야 회복 시작
 const HP_REGEN_PERCENT_PER_SEC = 0.04; // 초당 최대 체력의 4%씩 회복
 
+// ===== 채팅 =====
+const CHAT_MAX_LENGTH = 120;      // 메시지 최대 글자 수
+const CHAT_COOLDOWN_MS = 700;     // 도배 방지용 최소 발화 간격
+
 // ===== 맵 장애물(벽) =====
 // x, y는 좌상단 좌표. 이동/총알 모두 벽에 막힘
 const WALLS = [
@@ -333,6 +337,29 @@ io.on('connection', (socket) => {
     }
 
     p.ultimateCharge = 0;
+  });
+
+  // 채팅 메시지 수신 -> 검증 후 모든 클라이언트에 브로드캐스트
+  socket.on('chatMessage', (data) => {
+    const p = players[socket.id];
+    if (!p) return; // 아직 join 하지 않은 소켓은 무시
+
+    const now = Date.now();
+    if (p.lastChatAt && now - p.lastChatAt < CHAT_COOLDOWN_MS) return; // 도배 방지
+
+    let text = data && data.text ? String(data.text) : '';
+    text = text.replace(/[\r\n\t]+/g, ' ').trim().slice(0, CHAT_MAX_LENGTH);
+    if (!text) return;
+
+    p.lastChatAt = now;
+
+    io.emit('chatMessage', {
+      id: socket.id,
+      name: p.name,
+      color: p.color,
+      text,
+      ts: now,
+    });
   });
 
   socket.on('disconnect', () => {
