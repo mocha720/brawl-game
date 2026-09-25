@@ -151,11 +151,15 @@
     background: rgba(0,0,0,0.85);
     display: none;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start;
     flex-direction: column;
+    overflow-y: auto;            /* 화면이 작아 카드가 넘칠 때 스크롤로 접근 가능하게 함 */
+    -webkit-overflow-scrolling: touch;
+    box-sizing: border-box;
+    padding: 20px 12px calc(20px + env(safe-area-inset-bottom, 0px));
     z-index: 10;
   }
-  #characterOverlay h2 { margin-bottom: 18px; }
+  #characterOverlay h2 { margin: 8px 0 18px 0; flex-shrink: 0; }
   #characterList {
     display: flex;
     gap: 16px;
@@ -202,6 +206,16 @@
     width: 100%;
   }
   .char-card button:hover { background: #27ae60; }
+  /* 화면이 작은 모바일에서는 카드/버튼 크기를 줄여 3개 캐릭터(슈 포함)가 한 화면에 더 잘 들어오게 함 */
+  @media (max-width: 480px), (max-height: 700px) {
+    #characterOverlay h2 { font-size: 18px; margin: 4px 0 10px 0; }
+    #characterList { gap: 10px; }
+    .char-card { width: 130px; padding: 10px; }
+    .char-avatar { width: 46px; height: 46px; font-size: 18px; margin-bottom: 6px; }
+    .char-card h3 { font-size: 14px; margin: 4px 0; }
+    .char-card .stat-line { font-size: 10px; margin: 2px 0; }
+    .char-card button { padding: 6px 10px; font-size: 12px; margin-top: 8px; }
+  }
   /* ===== 궁극기 버튼 ===== */
   #ultimateButton {
     position: fixed;
@@ -274,12 +288,13 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
+    pointer-events: none; /* 빈 여백 부분은 터치를 그대로 통과시켜 조이스틱을 가리지 않게 함 */
   }
   #chatLog {
     display: flex;
     flex-direction: column;
     gap: 3px;
-    max-height: 150px;
+    max-height: min(150px, 22vh); /* 화면이 낮은(가로 모드) 기기에서 왼쪽 조이스틱까지 내려오지 않도록 제한 */
     overflow-y: auto;
     pointer-events: none;
   }
@@ -295,7 +310,7 @@
     word-break: break-word;
   }
   #chatLog .chat-line .chat-name { font-weight: bold; margin-right: 4px; }
-  #chatInputRow { display: flex; gap: 6px; }
+  #chatInputRow { display: flex; gap: 6px; pointer-events: auto; }
   #chatInput {
     display: none;
     flex: 1;
@@ -331,6 +346,13 @@
   @media (max-width: 480px) {
     #chatContainer { top: calc(54px + env(safe-area-inset-top, 0px)); width: 220px; }
     #chatToggleBtn { top: calc(12px + env(safe-area-inset-top, 0px)); width: 34px; height: 34px; font-size: 15px; }
+  }
+  /* 가로 모드처럼 화면 세로 길이가 짧을 때: 채팅 영역을 더 압축해 왼쪽 조이스틱과 절대 겹치지 않게 함 */
+  @media (max-height: 480px) {
+    #chatToggleBtn { top: calc(8px + env(safe-area-inset-top, 0px)); width: 32px; height: 32px; font-size: 14px; }
+    #chatContainer { top: calc(44px + env(safe-area-inset-top, 0px)); width: 200px; }
+    #chatLog { max-height: min(80px, 18vh); }
+    #chatLog .chat-line { font-size: 11px; padding: 3px 7px; }
   }
 </style>
 </head>
