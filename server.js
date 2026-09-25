@@ -26,6 +26,15 @@ const TICK_MS = 1000 / TICK_RATE;
 const ULTIMATE_CHARGE_PER_HIT = 34; // 기본 공격이 적중할 때마다 충전되는 궁극기 게이지(%). 3회 적중 시 100% 도달
 const EFFECT_LIFETIME = 0.4; // 번개 등 시각 이펙트가 화면에 남아있는 시간(초)
 
+// ===== 탄창 / 연사 방지 =====
+const MAX_AMMO = 3;              // 모든 캐릭터 공통 탄창 크기
+const FIRE_COOLDOWN_MS = 350;    // 한 발 쏜 뒤 다음 발사까지 최소 대기시간 (연사 방지)
+const AMMO_REGEN_SECONDS = 1.8;  // 탄약 1발이 다시 채워지는 데 걸리는 시간
+
+// ===== 무피격 체력 회복 =====
+const HP_REGEN_DELAY_MS = 4000;      // 마지막으로 피격당한 후 이 시간이 지나야 회복 시작
+const HP_REGEN_PERCENT_PER_SEC = 0.04; // 초당 최대 체력의 4%씩 회복
+
 // ===== 맵 장애물(벽) =====
 // x, y는 좌상단 좌표. 이동/총알 모두 벽에 막힘
 const WALLS = [
@@ -124,6 +133,7 @@ function randomSpawnPoint() {
 function applyDamage(target, damage, shooterId, { chargeShooter } = {}) {
   if (!target.alive) return;
   target.hp -= damage;
+  target.lastDamageAt = Date.now(); // 무피격 회복 타이머 초기화
 
   const shooter = players[shooterId];
   if (shooter && chargeShooter) {
@@ -146,6 +156,9 @@ function applyDamage(target, damage, shooterId, { chargeShooter } = {}) {
       respawned.hp = respawned.maxHp;
       respawned.alive = true;
       respawned.ultimateCharge = 0;
+      respawned.ammo = MAX_AMMO;
+      respawned.ammoRegenElapsed = 0;
+      respawned.lastDamageAt = Date.now();
     }, RESPAWN_DELAY);
   }
 }
@@ -178,6 +191,11 @@ io.on('connection', (socket) => {
       basic: character.basic,
       ultimate: character.ultimate,
       ultimateCharge: 0, // 0~100
+      ammo: MAX_AMMO,
+      maxAmmo: MAX_AMMO,
+      ammoRegenElapsed: 0,
+      lastShotAt: 0,
+      lastDamageAt: Date.now(),
     };
 
     // 새로 들어온 플레이어에게 초기 설정값 전달
@@ -213,8 +231,15 @@ io.on('connection', (socket) => {
   socket.on('shoot', () => {
     const p = players[socket.id];
     if (!p || !p.alive) return;
-    const basic = p.basic;
 
+    const now = Date.now();
+    if (now - p.lastShotAt < FIRE_COOLDOWN_MS) return; // 연사 방지 (최소 발사 간격)
+    if (p.ammo <= 0) return; // 탄창이 비어있으면 발사 불가
+
+    p.ammo -= 1;
+    p.lastShotAt = now;
+
+    const basic = p.basic;
     bulletIdCounter += 1;
     bullets.push({
       id: bulletIdCounter,
@@ -337,6 +362,29 @@ function gameLoop() {
   // 시각 이펙트(번개 등) 수명 관리
   for (const e of effects) e.life -= dt;
   effects = effects.filter((e) => e.life > 0);
+
+  // 탄약 재충전 + 무피격 체력 회복
+  const now = Date.now();
+  for (const pid in players) {
+    const p = players[pid];
+    if (!p.alive) continue;
+
+    // 탄창이 가득 차지 않았으면 시간이 지날 때마다 한 발씩 채워짐
+    if (p.ammo < p.maxAmmo) {
+      p.ammoRegenElapsed += dt;
+      if (p.ammoRegenElapsed >= AMMO_REGEN_SECONDS) {
+        p.ammo = Math.min(p.maxAmmo, p.ammo + 1);
+        p.ammoRegenElapsed = 0;
+      }
+    } else {
+      p.ammoRegenElapsed = 0;
+    }
+
+    // 일정 시간 피격당하지 않으면 체력이 서서히 회복
+    if (p.hp < p.maxHp && now - p.lastDamageAt >= HP_REGEN_DELAY_MS) {
+      p.hp = Math.min(p.maxHp, p.hp + p.maxHp * HP_REGEN_PERCENT_PER_SEC * dt);
+    }
+  }
 
   // 전체 상태를 모든 클라이언트에 브로드캐스트
   io.emit('state', { players, bullets, effects });
