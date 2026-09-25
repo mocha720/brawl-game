@@ -252,11 +252,9 @@ let myId = null;
 let ARENA_WIDTH = 1000;
 let ARENA_HEIGHT = 700;
 let PLAYER_RADIUS = 20;
-let BULLET_RADIUS = 6;
-let ULTIMATE_BULLET_RADIUS = 16;
-let BULLET_RANGE = 500;
+let WALLS = [];
 
-let latestState = { players: {}, bullets: [] };
+let latestState = { players: {}, bullets: [], effects: [] };
 
 // ===== 캐릭터 정의 (선택 화면 표시용 - 실제 능력치는 서버가 검증/적용) =====
 const CHARACTERS = [
@@ -265,10 +263,16 @@ const CHARACTERS = [
     name: '미남',
     color: '#3498db',
     maxHp: 7000,
-    basicDamage: 2200,
-    ultimateDamage: 5000,
-    basicName: '총 쏘기',
-    ultimateName: '피에로 발사',
+    basic: { name: '총 쏘기', damage: 2200 },
+    ultimate: { name: '피에로 발사', damage: 5000, desc: '조준한 방향으로 발사' },
+  },
+  {
+    id: 'jigi',
+    name: '지기',
+    color: '#2ecc71',
+    maxHp: 6000,
+    basic: { name: '던지기', damage: 3000 },
+    ultimate: { name: '벼락지기', damage: 3000, desc: '주변에 번개 5회 낙하 (조준 불필요)' },
   },
 ];
 let selectedCharacterId = CHARACTERS[0].id;
@@ -403,8 +407,8 @@ function renderCharacterList() {
       <div class="char-avatar" style="background:${c.color}">${escapeHtml(c.name.slice(0, 1))}</div>
       <h3>${escapeHtml(c.name)}</h3>
       <div class="stat-line">❤️ 체력: ${c.maxHp.toLocaleString()}</div>
-      <div class="stat-line">🔫 ${escapeHtml(c.basicName)}: ${c.basicDamage.toLocaleString()}</div>
-      <div class="stat-line">🤡 ${escapeHtml(c.ultimateName)}: ${c.ultimateDamage.toLocaleString()}</div>
+      <div class="stat-line">🎯 ${escapeHtml(c.basic.name)}: ${c.basic.damage.toLocaleString()}</div>
+      <div class="stat-line">✨ ${escapeHtml(c.ultimate.name)}: ${c.ultimate.damage.toLocaleString()} (${escapeHtml(c.ultimate.desc)})</div>
       <button data-char-id="${c.id}">선택</button>
     </div>
   `).join('');
@@ -430,9 +434,7 @@ socket.on('init', (data) => {
   ARENA_WIDTH = data.arena.width;
   ARENA_HEIGHT = data.arena.height;
   PLAYER_RADIUS = data.playerRadius;
-  BULLET_RADIUS = data.bulletRadius;
-  ULTIMATE_BULLET_RADIUS = data.ultimateBulletRadius || ULTIMATE_BULLET_RADIUS;
-  BULLET_RANGE = data.bulletRange || BULLET_RANGE;
+  WALLS = data.walls || [];
   canvas.width = ARENA_WIDTH;
   canvas.height = ARENA_HEIGHT;
   myX = ARENA_WIDTH / 2;
@@ -510,6 +512,19 @@ function updateUltimateButton() {
   btn.classList.toggle('ready', charge >= 100);
 }
 
+// ===== 벽 충돌 (서버와 동일한 방식으로 클라이언트에서도 미리 계산해 부드럽게 이동) =====
+function circleIntersectsRect(cx, cy, radius, rect) {
+  const closestX = Math.max(rect.x, Math.min(cx, rect.x + rect.width));
+  const closestY = Math.max(rect.y, Math.min(cy, rect.y + rect.height));
+  const dx = cx - closestX;
+  const dy = cy - closestY;
+  return (dx * dx + dy * dy) < (radius * radius);
+}
+
+function collidesWithWalls(x, y, radius) {
+  return WALLS.some((w) => circleIntersectsRect(x, y, radius, w));
+}
+
 // ===== 게임 루프 (클라이언트) =====
 let lastTime = performance.now();
 
@@ -534,8 +549,12 @@ function update(dt) {
   if (len > 0.01) {
     // 조이스틱은 아날로그 값(0~1)이므로 그대로, 키보드(1 또는 √2)는 1로 눌러서 사용
     const magnitude = Math.min(1, len);
-    myX += (dx / len) * magnitude * MOVE_SPEED * dt;
-    myY += (dy / len) * magnitude * MOVE_SPEED * dt;
+    const nextX = myX + (dx / len) * magnitude * MOVE_SPEED * dt;
+    const nextY = myY + (dy / len) * magnitude * MOVE_SPEED * dt;
+
+    // 벽에 닿아도 옆으로는 미끄러지듯 이동하도록 축별로 검사
+    if (!collidesWithWalls(nextX, myY, PLAYER_RADIUS)) myX = nextX;
+    if (!collidesWithWalls(myX, nextY, PLAYER_RADIUS)) myY = nextY;
   }
 
   myX = Math.max(PLAYER_RADIUS, Math.min(ARENA_WIDTH - PLAYER_RADIUS, myX));
@@ -594,24 +613,74 @@ function drawPlayer(p, isMe) {
 }
 
 function drawBullet(b) {
-  if (b.type === 'ultimate') {
-    // 궁극기: 피에로 - 크고 화려한 총알
+  if (b.visual === 'clown') {
+    // 피에로 발사 궁극기 - 크고 화려한 총알
     ctx.save();
     ctx.beginPath();
-    ctx.arc(b.x, b.y, b.radius || ULTIMATE_BULLET_RADIUS, 0, Math.PI * 2);
+    ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
     ctx.fillStyle = '#e74c3c';
     ctx.fill();
-    ctx.font = `${(b.radius || ULTIMATE_BULLET_RADIUS) * 1.6}px sans-serif`;
+    ctx.font = `${b.radius * 1.6}px sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('🤡', b.x, b.y + 1);
     ctx.restore();
     return;
   }
+
+  if (b.visual === 'orb') {
+    // 던지기 - 총알보다 크고 느린 구체
+    ctx.save();
+    const gradient = ctx.createRadialGradient(b.x - b.radius * 0.3, b.y - b.radius * 0.3, 1, b.x, b.y, b.radius);
+    gradient.addColorStop(0, '#a8f0d1');
+    gradient.addColorStop(1, '#16a085');
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
+    ctx.fillStyle = gradient;
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+
+  // 기본 총알
   ctx.beginPath();
-  ctx.arc(b.x, b.y, b.radius || BULLET_RADIUS, 0, Math.PI * 2);
+  ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
   ctx.fillStyle = '#f39c12';
   ctx.fill();
+}
+
+function drawEffect(e) {
+  if (e.type === 'lightning') {
+    const alpha = Math.max(0, Math.min(1, e.life / 0.4));
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, e.radius, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(241, 196, 15, 0.25)';
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(241, 196, 15, 0.9)';
+    ctx.stroke();
+    ctx.font = `${e.radius}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#fff';
+    ctx.fillText('⚡', e.x, e.y);
+    ctx.restore();
+  }
+}
+
+function drawWalls() {
+  ctx.fillStyle = '#3b4a5a';
+  ctx.strokeStyle = '#1a2531';
+  ctx.lineWidth = 2;
+  for (const w of WALLS) {
+    ctx.fillRect(w.x, w.y, w.width, w.height);
+    ctx.strokeRect(w.x, w.y, w.width, w.height);
+  }
 }
 
 function render() {
@@ -626,6 +695,11 @@ function render() {
     ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(ARENA_WIDTH, y); ctx.stroke();
   }
 
+  drawWalls();
+
+  const effectsArr = Array.isArray(latestState.effects) ? latestState.effects : [];
+  for (const e of effectsArr) drawEffect(e);
+
   const bullets = Array.isArray(latestState.bullets) ? latestState.bullets : [];
   for (const b of bullets) drawBullet(b);
 
@@ -638,13 +712,14 @@ function render() {
 }
 
 function drawAimRangeIndicator() {
-  // 모바일 오른쪽 조이스틱을 당기는 동안, 내 캐릭터 기준 공격 사거리를 점선으로 표시
+  // 모바일 오른쪽 조이스틱을 당기는 동안, 내 캐릭터 기준 기본 공격 사거리를 점선으로 표시
   if (!touchAimActive) return;
   const me = latestState.players[myId];
-  if (!me || !me.alive) return;
+  if (!me || !me.alive || !me.basic) return;
 
-  const endX = me.x + Math.cos(touchAimAngle) * BULLET_RANGE;
-  const endY = me.y + Math.sin(touchAimAngle) * BULLET_RANGE;
+  const range = me.basic.speed * me.basic.lifetime;
+  const endX = me.x + Math.cos(touchAimAngle) * range;
+  const endY = me.y + Math.sin(touchAimAngle) * range;
 
   ctx.save();
   ctx.setLineDash([8, 8]);
