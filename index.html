@@ -236,6 +236,75 @@
     background: rgba(255,255,255,0.12);
     border-color: rgba(255,255,255,0.25);
   }
+  /* ===== 채팅 ===== */
+  #chatContainer {
+    position: fixed;
+    left: 20px;
+    bottom: 78px;
+    width: 300px;
+    max-width: calc(100vw - 40px);
+    z-index: 7;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  #chatLog {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    max-height: 150px;
+    overflow-y: auto;
+    pointer-events: none;
+  }
+  #chatLog::-webkit-scrollbar { width: 0; }
+  #chatLog .chat-line {
+    background: rgba(0,0,0,0.5);
+    border-radius: 6px;
+    padding: 4px 9px;
+    font-size: 12px;
+    line-height: 1.4;
+    width: fit-content;
+    max-width: 100%;
+    word-break: break-word;
+  }
+  #chatLog .chat-line .chat-name { font-weight: bold; margin-right: 4px; }
+  #chatInputRow { display: flex; gap: 6px; }
+  #chatInput {
+    display: none;
+    flex: 1;
+    padding: 8px 10px;
+    font-size: 13px;
+    border-radius: 6px;
+    border: none;
+    outline: none;
+    background: rgba(0,0,0,0.65);
+    color: #fff;
+    box-sizing: border-box;
+  }
+  #chatInput.active { display: block; }
+  #chatInput::placeholder { color: rgba(255,255,255,0.5); }
+  #chatToggleBtn {
+    position: fixed;
+    left: 20px;
+    bottom: 232px;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(0,0,0,0.5);
+    color: #fff;
+    font-size: 18px;
+    cursor: pointer;
+    z-index: 7;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #chatToggleBtn:hover { background: rgba(0,0,0,0.7); }
+  @media (max-width: 480px) {
+    #chatContainer { bottom: 66px; width: 220px; }
+    #chatToggleBtn { bottom: 195px; width: 34px; height: 34px; font-size: 15px; }
+  }
 </style>
 </head>
 <body>
@@ -272,6 +341,15 @@
 
 <!-- 궁극기 버튼: 게이지가 차면 클릭/탭으로 발동 (PC/모바일 공용) -->
 <div id="ultimateButton"><div class="ult-inner">🤡</div></div>
+
+<!-- 채팅: Enter 또는 💬 버튼으로 입력창 열기, Enter로 전송, Esc로 취소 -->
+<button id="chatToggleBtn" title="채팅 (Enter)">💬</button>
+<div id="chatContainer">
+  <div id="chatLog"></div>
+  <div id="chatInputRow">
+    <input id="chatInput" type="text" maxlength="120" placeholder="메시지를 입력하고 Enter (Esc: 취소)" autocomplete="off" />
+  </div>
+</div>
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
@@ -525,8 +603,104 @@ socket.on('state', (state) => {
   updateAmmoDisplay();
 });
 
+// ===== 채팅 =====
+const chatLogEl = document.getElementById('chatLog');
+const chatInputEl = document.getElementById('chatInput');
+const chatToggleBtn = document.getElementById('chatToggleBtn');
+
+let chatMessages = [];
+const CHAT_MAX_MESSAGES = 50;     // 로그에 남기는 최대 메시지 수
+const CHAT_BUBBLE_DURATION = 4000; // 캐릭터 머리 위 말풍선 표시 시간(ms)
+let chatBubbles = {}; // { [playerId]: { text, expiresAt } }
+
+function isChatFocused() {
+  return document.activeElement === chatInputEl;
+}
+
+function openChatInput() {
+  if (!joined) return;
+  chatInputEl.classList.add('active');
+  chatInputEl.focus();
+}
+
+function closeChatInput() {
+  chatInputEl.classList.remove('active');
+  chatInputEl.value = '';
+  chatInputEl.blur();
+  canvas.focus();
+}
+
+chatToggleBtn.addEventListener('click', () => {
+  if (isChatFocused()) closeChatInput();
+  else openChatInput();
+});
+
+chatInputEl.addEventListener('keydown', (e) => {
+  e.stopPropagation(); // 게임 이동/궁극기 키 핸들러로 전파되지 않도록 차단
+  if (e.key === 'Enter') {
+    const text = chatInputEl.value.trim();
+    if (text) socket.emit('chatMessage', { text });
+    closeChatInput();
+  } else if (e.key === 'Escape') {
+    closeChatInput();
+  }
+});
+
+// Enter로 채팅창 열기 (다른 입력 중이 아닐 때만)
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && joined && !isChatFocused()) {
+    e.preventDefault();
+    openChatInput();
+  }
+});
+
+function addChatMessage(msg) {
+  chatMessages.push(msg);
+  if (chatMessages.length > CHAT_MAX_MESSAGES) chatMessages.shift();
+  renderChatLog();
+  chatBubbles[msg.id] = { text: msg.text, expiresAt: Date.now() + CHAT_BUBBLE_DURATION };
+}
+
+function renderChatLog() {
+  chatLogEl.innerHTML = chatMessages.map((m) => (
+    `<div class="chat-line"><span class="chat-name" style="color:${m.color || '#fff'}">${escapeHtml(m.name)}:</span>${escapeHtml(m.text)}</div>`
+  )).join('');
+  chatLogEl.scrollTop = chatLogEl.scrollHeight;
+}
+
+function drawChatBubble(p) {
+  const bubble = chatBubbles[p.id];
+  if (!bubble) return;
+  if (Date.now() > bubble.expiresAt) { delete chatBubbles[p.id]; return; }
+
+  ctx.save();
+  ctx.font = '12px sans-serif';
+  const paddingX = 9, bh = 22;
+  const textWidth = ctx.measureText(bubble.text).width;
+  const bw = textWidth + paddingX * 2;
+  const bx = p.x - bw / 2;
+  const by = p.y - PLAYER_RADIUS - 44 - bh;
+
+  ctx.fillStyle = 'rgba(0,0,0,0.7)';
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(bx, by, bw, bh, 8);
+  else ctx.rect(bx, by, bw, bh);
+  ctx.fill();
+
+  ctx.fillStyle = '#fff';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(bubble.text, p.x, by + bh / 2);
+  ctx.restore();
+}
+
+socket.on('chatMessage', (msg) => {
+  addChatMessage(msg);
+});
+
 // ===== 키보드 입력 =====
 window.addEventListener('keydown', (e) => {
+  if (isChatFocused()) return; // 채팅 입력 중에는 이동키 무시
   switch (e.key) {
     case 'w': case 'W': case 'ArrowUp': keys.up = true; break;
     case 's': case 'S': case 'ArrowDown': keys.down = true; break;
@@ -583,6 +757,7 @@ document.getElementById('ultimateButton').addEventListener('pointerdown', (e) =>
 });
 
 window.addEventListener('keydown', (e) => {
+  if (isChatFocused()) return; // 채팅 입력 중에는 궁극기 단축키 무시
   if (e.key === 'e' || e.key === 'E') activateUltimateControl();
 });
 
@@ -817,6 +992,7 @@ function render() {
   const playersObj = latestState.players || {};
   for (const pid in playersObj) {
     drawPlayer(playersObj[pid], pid === myId);
+    drawChatBubble(playersObj[pid]);
   }
 
   drawAimRangeIndicator();
