@@ -610,7 +610,7 @@ function updateCamera() {
   camera.y = (ARENA_HEIGHT - canvas.height) / 2;
 }
 
-let latestState = { players: {}, bullets: [], effects: [] };
+let latestState = { players: {}, bullets: [], effects: [], waterPools: [] };
 
 // ===== 캐릭터 정의 (선택 화면 표시용 - 실제 능력치는 서버가 검증/적용) =====
 const CHARACTERS = [
@@ -637,6 +637,14 @@ const CHARACTERS = [
     maxHp: 6000,
     basic: { name: '샷건 발사 (펠릿 10발, 사거리 짧음)', damage: 300 },
     ultimate: { name: '메가 샷건', damage: 600, desc: '큰 총알 10발 발사, 사거리 더 짧음' },
+  },
+  {
+    id: 'wonhyo',
+    name: '원효대사',
+    color: '#9b59b6',
+    maxHp: 10000,
+    basic: { name: '해골물 뿌리기', desc: '벽/적 적중 시 물웅덩이 생성 (적 0.5초마다 500 피해 / 아군 0.5초마다 500 회복, 2초 후 소멸)' },
+    ultimate: { name: '은신', desc: '5초 동안 적에게 보이지 않음' },
   },
 ];
 let selectedCharacterId = CHARACTERS[0].id;
@@ -811,8 +819,8 @@ function renderCharacterList() {
       <div class="char-avatar" style="background:${c.color}">${escapeHtml(c.name.slice(0, 1))}</div>
       <h3>${escapeHtml(c.name)}</h3>
       <div class="stat-line">❤️ 체력: ${c.maxHp.toLocaleString()}</div>
-      <div class="stat-line">🎯 ${escapeHtml(c.basic.name)}: ${c.basic.damage.toLocaleString()}</div>
-      <div class="stat-line">✨ ${escapeHtml(c.ultimate.name)}: ${c.ultimate.damage.toLocaleString()} (${escapeHtml(c.ultimate.desc)})</div>
+      <div class="stat-line">🎯 ${escapeHtml(c.basic.name)}${c.basic.damage ? `: ${c.basic.damage.toLocaleString()}` : ''}${c.basic.desc ? ` (${escapeHtml(c.basic.desc)})` : ''}</div>
+      <div class="stat-line">✨ ${escapeHtml(c.ultimate.name)}${c.ultimate.damage ? `: ${c.ultimate.damage.toLocaleString()}` : ''}${c.ultimate.desc ? ` (${escapeHtml(c.ultimate.desc)})` : ''}</div>
       <button data-char-id="${c.id}">선택</button>
     </div>
   `).join('');
@@ -887,7 +895,7 @@ socket.on('matchFound', (data) => {
   chatMessages = [];
   chatBubbles = {};
   renderChatLog();
-  latestState = { players: {}, bullets: [], effects: [] };
+  latestState = { players: {}, bullets: [], effects: [], waterPools: [] };
   wasAlive = false; // 새 매치이므로, 첫 상태 수신 시 서버 스폰 위치로 무조건 동기화되게 함
 
   document.getElementById('matchingOverlay').classList.remove('open');
@@ -1213,6 +1221,8 @@ function drawPlayer(p, isMe) {
 
   if (!p.alive) {
     ctx.globalAlpha = 0.25; // 사망 상태는 반투명 처리
+  } else if (p.invisible) {
+    ctx.globalAlpha = 0.45; // 은신 중임을 자신/아군에게 시각적으로 알려줌 (적에게는 애초에 좌표가 전달되지 않음)
   }
 
   // 팀 구분 링 (A팀=파랑, B팀=빨강) - 본체 바깥쪽에 얇게 표시해 누가 아군/적군인지 한눈에 보이게 함
@@ -1311,11 +1321,52 @@ function drawBullet(b) {
     return;
   }
 
+  if (b.visual === 'skull') {
+    // 해골물 뿌리기 - 벽/적에 닿으면 물웅덩이를 남기는 해골 투사체
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
+    ctx.fillStyle = '#ecf0f1';
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = 'rgba(80,80,80,0.8)';
+    ctx.stroke();
+    ctx.font = `${b.radius * 1.7}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('💀', b.x, b.y + 1);
+    ctx.restore();
+    return;
+  }
+
   // 기본 총알
   ctx.beginPath();
   ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
   ctx.fillStyle = '#f39c12';
   ctx.fill();
+}
+
+// 원효대사의 물웅덩이 - 적에게는 대미지, 아군/자신에게는 회복을 주는 지속 지형 효과
+function drawWaterPool(pool) {
+  ctx.save();
+  const alpha = Math.max(0.15, Math.min(0.55, pool.life));
+  ctx.globalAlpha = alpha;
+  const gradient = ctx.createRadialGradient(pool.x, pool.y, 1, pool.x, pool.y, pool.radius);
+  gradient.addColorStop(0, '#85c1e9');
+  gradient.addColorStop(1, '#2874a6');
+  ctx.beginPath();
+  ctx.arc(pool.x, pool.y, pool.radius, 0, Math.PI * 2);
+  ctx.fillStyle = gradient;
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(133, 193, 233, 0.9)';
+  ctx.stroke();
+  ctx.globalAlpha = Math.min(1, alpha + 0.3);
+  ctx.font = `${Math.min(28, pool.radius * 0.4)}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('💧', pool.x, pool.y);
+  ctx.restore();
 }
 
 function drawEffect(e) {
@@ -1392,6 +1443,9 @@ function render() {
 
   drawWalls();
   drawBushes();
+
+  const poolsArr = Array.isArray(latestState.waterPools) ? latestState.waterPools : [];
+  for (const wp of poolsArr) drawWaterPool(wp);
 
   const effectsArr = Array.isArray(latestState.effects) ? latestState.effects : [];
   for (const e of effectsArr) drawEffect(e);
