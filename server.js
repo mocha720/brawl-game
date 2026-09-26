@@ -90,12 +90,12 @@ const WALLS = [
 // (같은 덤불 안에 함께 있는 적끼리는 서로 보임 - 은신 궁극기와 달리 예외 있음)
 const BUSHES = [
   ...mirrorAcrossCenter([
-    { x: 26, y: 30, width: 92, height: 85 },    // 코너 덤불
-    { x: 209, y: 363, width: 70, height: 70 },  // 사분면 안쪽 덤불
+    { x: 19, y: 23, width: 106, height: 98 },   // 코너 덤불 (기존보다 약간 확대)
+    { x: 203, y: 357, width: 81, height: 81 },  // 사분면 안쪽 덤불 (기존보다 약간 확대)
   ]),
-  // 맵 중앙 좌우의 덤불 (근접 교전용)
-  { x: ARENA_WIDTH / 2 - 167, y: ARENA_HEIGHT / 2 - 40, width: 62, height: 80 },
-  { x: ARENA_WIDTH / 2 + 106, y: ARENA_HEIGHT / 2 - 40, width: 62, height: 80 },
+  // 맵 중앙 좌우의 덤불 (근접 교전용, 기존보다 약간 확대)
+  { x: ARENA_WIDTH / 2 - 172, y: ARENA_HEIGHT / 2 - 46, width: 71, height: 92 },
+  { x: ARENA_WIDTH / 2 + 101, y: ARENA_HEIGHT / 2 - 46, width: 71, height: 92 },
 ];
 
 function circleIntersectsRect(cx, cy, radius, rect) {
