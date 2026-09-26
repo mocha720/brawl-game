@@ -8,7 +8,14 @@ const { Server } = require('socket.io');
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+// pingInterval/pingTimeout을 기본값(각각 25초/20초)보다 짧게 줘서, 매칭 대기 중 누군가의
+// 연결이 끊겼을 때(와이파이 끊김, 앱 전환 등 '정상 종료'가 아닌 경우) 서버가 이를 훨씬 빨리
+// 감지하도록 함. 기본값 그대로면 최대 45초 가까이 disconnect 이벤트가 늦게 발생해서,
+// 대기 중이던 다른 사람 화면의 인원수가 한참 동안 줄어들지 않는 것처럼 보였음.
+const io = new Server(server, {
+  pingInterval: 8000,
+  pingTimeout: 5000,
+});
 
 // Render 배포 환경에서는 PORT 환경변수를 사용해야 함
 const PORT = process.env.PORT || 3000;
@@ -17,8 +24,8 @@ const PORT = process.env.PORT || 3000;
 app.use(express.static(path.join(__dirname)));
 
 // ===== 게임 설정값 =====
-const ARENA_WIDTH = 1000;
-const ARENA_HEIGHT = 700;
+const ARENA_WIDTH = 1600;   // 기존 1000에서 확장
+const ARENA_HEIGHT = 1100;  // 기존 700에서 확장
 const PLAYER_RADIUS = 20;
 const RESPAWN_DELAY = 3000;     // ms
 const TICK_RATE = 20;           // 초당 서버 틱 수
@@ -50,13 +57,27 @@ const CHAT_MAX_LENGTH = 120;      // 메시지 최대 글자 수
 const CHAT_COOLDOWN_MS = 700;     // 도배 방지용 최소 발화 간격
 
 // ===== 맵 장애물(벽) =====
-// x, y는 좌상단 좌표. 이동/총알 모두 벽에 막힘
+// x, y는 좌상단 좌표. 이동/총알 모두 벽에 막힘 (넓어진 맵에 맞춰 재배치)
 const WALLS = [
-  { x: 150, y: 120, width: 200, height: 30 },  // 좌상단 가로 벽
-  { x: 650, y: 120, width: 200, height: 30 },  // 우상단 가로 벽
-  { x: 150, y: 550, width: 200, height: 30 },  // 좌하단 가로 벽
-  { x: 650, y: 550, width: 200, height: 30 },  // 우하단 가로 벽
-  { x: 485, y: 300, width: 30, height: 100 },  // 중앙 세로 기둥
+  { x: 220, y: 180, width: 260, height: 40 },   // 좌상단 가로 벽
+  { x: 1120, y: 180, width: 260, height: 40 },  // 우상단 가로 벽
+  { x: 220, y: 880, width: 260, height: 40 },   // 좌하단 가로 벽
+  { x: 1120, y: 880, width: 260, height: 40 },  // 우하단 가로 벽
+  { x: 785, y: 470, width: 30, height: 160 },   // 중앙 세로 기둥
+  { x: 500, y: 500, width: 40, height: 40 },    // 중앙 좌측 작은 엄폐물
+  { x: 1060, y: 500, width: 40, height: 40 },   // 중앙 우측 작은 엄폐물
+];
+
+// ===== 맵 지형(덤불) =====
+// 벽과 달리 이동/총알을 막지 않으며, 그 안에 들어간 플레이어는 적 팀에게 보이지 않게 됨
+// (같은 덤불 안에 함께 있는 적끼리는 서로 보임 - 은신 궁극기와 달리 예외 있음)
+const BUSHES = [
+  { x: 60, y: 60, width: 220, height: 180 },              // 좌상단 덤불
+  { x: ARENA_WIDTH - 280, y: 60, width: 220, height: 180 },        // 우상단 덤불
+  { x: 60, y: ARENA_HEIGHT - 240, width: 220, height: 180 },       // 좌하단 덤불
+  { x: ARENA_WIDTH - 280, y: ARENA_HEIGHT - 240, width: 220, height: 180 }, // 우하단 덤불
+  { x: ARENA_WIDTH / 2 - 260, y: ARENA_HEIGHT / 2 - 90, width: 180, height: 180 },  // 중앙 좌측 덤불
+  { x: ARENA_WIDTH / 2 + 80, y: ARENA_HEIGHT / 2 - 90, width: 180, height: 180 },   // 중앙 우측 덤불
 ];
 
 function circleIntersectsRect(cx, cy, radius, rect) {
@@ -69,6 +90,29 @@ function circleIntersectsRect(cx, cy, radius, rect) {
 
 function collidesWithWalls(x, y, radius) {
   return WALLS.some((w) => circleIntersectsRect(x, y, radius, w));
+}
+
+function pointInRect(x, y, rect) {
+  return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
+}
+
+function isInBush(x, y) {
+  return BUSHES.some((b) => pointInRect(x, y, b));
+}
+
+// target과 viewer가 같은 덤불 하나에 동시에 들어가 있는지 (같은 덤불 안이면 서로 보임)
+function sharedBush(target, viewer) {
+  return BUSHES.some((b) => pointInRect(target.x, target.y, b) && pointInRect(viewer.x, viewer.y, b));
+}
+
+// 적(viewer 기준)에게 target이 보이지 않는 상태인지 판정
+// - 은신 궁극기(invisible)는 예외 없이 항상 안 보임
+// - 덤불(inBush)은 같은 덤불 안에 viewer도 함께 있으면 보임
+function isHiddenFromEnemy(target, viewer) {
+  if (!target.alive) return false;
+  if (target.invisible) return true;
+  if (target.inBush) return !sharedBush(target, viewer);
+  return false;
 }
 
 // ===== 캐릭터 정의 (나중에 여기에 캐릭터를 추가하면 됩니다) =====
@@ -211,6 +255,7 @@ function buildPlayer(socketId, name, characterId, team, spawn) {
     maxHp: character.maxHp,
     alive: true,
     invisible: false, // 은신 궁극기 사용 중이면 true (적에게는 보이지 않음)
+    inBush: false,     // 덤불 안에 있으면 true (같은 덤불에 있는 적을 제외하고는 보이지 않음)
     stealthId: 0,      // 은신 발동 회차 (타이머가 중첩될 때 오래된 타이머가 새 은신을 끄지 않도록 함)
     score: 0,
     color: COLORS[Math.floor(Math.random() * COLORS.length)],
@@ -340,11 +385,20 @@ function spawnWaterPool(match, b) {
 // 특정 모드의 대기열에 필요한 인원이 모이면 앞에서부터 묶어 매치를 시작한다
 function tryMatchmaking(mode) {
   const cfg = MODES[mode];
+  const beforeLength = queues[mode].length;
   queues[mode] = queues[mode].filter((q) => q.socket.connected);
 
+  let matched = false;
   while (queues[mode].length >= cfg.size) {
     const entries = queues[mode].splice(0, cfg.size);
     startMatch(mode, entries);
+    matched = true;
+  }
+
+  // 연결이 끊긴 사람이 필터링되었거나 매치가 성사되어 대기열 인원이 줄어든 경우,
+  // 남아서 계속 기다리고 있는 사람들에게도 줄어든 인원수를 알려준다.
+  if (matched || queues[mode].length !== beforeLength) {
+    broadcastQueueStatus(mode);
   }
 }
 
@@ -393,6 +447,7 @@ function startMatch(mode, entries) {
       arena: { width: ARENA_WIDTH, height: ARENA_HEIGHT },
       playerRadius: PLAYER_RADIUS,
       walls: WALLS,
+      bushes: BUSHES,
       winScore: cfg.winScore,
       teammateNames,
       opponentNames,
@@ -711,6 +766,12 @@ function updateMatch(match, dt, now) {
   }
   match.waterPools = match.waterPools.filter((pool) => pool.life > 0);
 
+  // 덤불 진입 여부 갱신 (죽은 플레이어는 어차피 화면에 그려지지 않으므로 false로 둠)
+  for (const pid in match.players) {
+    const p = match.players[pid];
+    p.inBush = p.alive && isInBush(p.x, p.y);
+  }
+
   // 탄약 재충전 + 무피격 체력 회복
   for (const pid in match.players) {
     const p = match.players[pid];
@@ -734,8 +795,32 @@ function updateMatch(match, dt, now) {
   }
 }
 
+// 특정 시청자(viewerId) 기준으로 실제로 보여줘도 되는 플레이어 정보만 추려서 반환한다.
+// 자신과 아군은 항상 그대로 보내고, 적이 덤불/은신으로 숨어있는 상태면 좌표(x, y)를 빼고 보내서
+// 클라이언트가 화면에는 그리지 못하지만 스코어보드(이름/점수)는 계속 정상적으로 보이게 한다.
+function buildVisiblePlayers(match, viewerId) {
+  const viewer = match.players[viewerId];
+  const result = {};
+  for (const pid in match.players) {
+    const p = match.players[pid];
+    if (!viewer || pid === viewerId || p.team === viewer.team) {
+      result[pid] = p;
+      continue;
+    }
+    if (isHiddenFromEnemy(p, viewer)) {
+      const { x, y, ...rest } = p; // 위치 정보만 제거
+      result[pid] = rest;
+    } else {
+      result[pid] = p;
+    }
+  }
+  return result;
+}
+
 // ===== 서버 게임 루프 =====
 // 진행 중인 모든 매치를 독립적으로 갱신하고, 각 매치의 상태는 그 매치에 속한 플레이어들에게만 전송한다
+// (덤불/은신 은닉을 위해 방 전체 브로드캐스트 대신 플레이어별로 필터링해서 개별 전송한다.
+// Socket.io는 각 소켓을 자신의 id와 같은 이름의 방에 기본으로 넣어주므로 io.to(pid)로 특정 플레이어에게만 보낼 수 있다.)
 function gameLoop() {
   const dt = TICK_MS / 1000;
   const now = Date.now();
@@ -746,7 +831,14 @@ function gameLoop() {
 
     updateMatch(match, dt, now);
 
-    io.to(matchId).emit('state', { players: match.players, bullets: match.bullets, effects: match.effects, waterPools: match.waterPools });
+    for (const pid in match.players) {
+      io.to(pid).emit('state', {
+        players: buildVisiblePlayers(match, pid),
+        bullets: match.bullets,
+        effects: match.effects,
+        waterPools: match.waterPools,
+      });
+    }
   }
 }
 
