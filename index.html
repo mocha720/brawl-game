@@ -1390,6 +1390,24 @@ function drawEffect(e) {
   }
 }
 
+// 맵을 둘러싸는 경계 벽 - 안(플레이 가능 구역)과 밖을 명확하게 구분해주는 두꺼운 벽 테두리
+function drawArenaBoundary() {
+  const t = 26; // 경계 벽 두께
+  ctx.fillStyle = '#3b4a5a';
+  ctx.strokeStyle = '#1a2531';
+  ctx.lineWidth = 3;
+  const frame = [
+    { x: -t, y: -t, width: ARENA_WIDTH + t * 2, height: t },                  // 위쪽
+    { x: -t, y: ARENA_HEIGHT, width: ARENA_WIDTH + t * 2, height: t },        // 아래쪽
+    { x: -t, y: 0, width: t, height: ARENA_HEIGHT },                          // 왼쪽
+    { x: ARENA_WIDTH, y: 0, width: t, height: ARENA_HEIGHT },                 // 오른쪽
+  ];
+  for (const r of frame) {
+    ctx.fillRect(r.x, r.y, r.width, r.height);
+    ctx.strokeRect(r.x, r.y, r.width, r.height);
+  }
+}
+
 function drawWalls() {
   ctx.fillStyle = '#3b4a5a';
   ctx.strokeStyle = '#1a2531';
@@ -1428,19 +1446,30 @@ function render() {
   ctx.save();
   ctx.translate(-camera.x, -camera.y); // 이 지점부터는 전부 '월드 좌표'로 그리면 카메라 위치에 맞게 화면에 표시됨
 
-  // 배경 격자 (단순 스타일) - 성능을 위해 화면에 실제로 보이는 범위만 그림
+  // 맵 밖(플레이 불가 구역)은 어둡게, 맵 안은 기존 배경색으로 채워서 안/밖을 명확히 구분
+  ctx.fillStyle = '#0d1117';
+  ctx.fillRect(camera.x, camera.y, canvas.width, canvas.height);
+  ctx.fillStyle = '#2c3e50';
+  ctx.fillRect(0, 0, ARENA_WIDTH, ARENA_HEIGHT);
+
+  // 배경 격자 (단순 스타일) - 맵 내부 범위로만 제한해서 그림 (성능 + 안/밖 구분)
   ctx.strokeStyle = 'rgba(255,255,255,0.05)';
-  const gridStartX = Math.floor(camera.x / 50) * 50;
+  const gridStartX = Math.max(0, Math.floor(camera.x / 50) * 50);
   const gridEndX = Math.min(ARENA_WIDTH, camera.x + canvas.width);
+  const gridTop = Math.max(0, camera.y);
+  const gridBottom = Math.min(ARENA_HEIGHT, camera.y + canvas.height);
   for (let x = gridStartX; x <= gridEndX; x += 50) {
-    ctx.beginPath(); ctx.moveTo(x, camera.y); ctx.lineTo(x, camera.y + canvas.height); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x, gridTop); ctx.lineTo(x, gridBottom); ctx.stroke();
   }
-  const gridStartY = Math.floor(camera.y / 50) * 50;
+  const gridStartY = Math.max(0, Math.floor(camera.y / 50) * 50);
   const gridEndY = Math.min(ARENA_HEIGHT, camera.y + canvas.height);
+  const gridLeft = Math.max(0, camera.x);
+  const gridRight = Math.min(ARENA_WIDTH, camera.x + canvas.width);
   for (let y = gridStartY; y <= gridEndY; y += 50) {
-    ctx.beginPath(); ctx.moveTo(camera.x, y); ctx.lineTo(camera.x + canvas.width, y); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(gridLeft, y); ctx.lineTo(gridRight, y); ctx.stroke();
   }
 
+  drawArenaBoundary();
   drawWalls();
   drawBushes();
 
