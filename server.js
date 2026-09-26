@@ -24,8 +24,8 @@ const PORT = process.env.PORT || 3000;
 app.use(express.static(path.join(__dirname)));
 
 // ===== 게임 설정값 =====
-const ARENA_WIDTH = 1600;   // 기존 1000에서 확장
-const ARENA_HEIGHT = 1100;  // 기존 700에서 확장
+const ARENA_WIDTH = 5000;   // 한 화면에 다 안 보이는 넓은 맵
+const ARENA_HEIGHT = 4000;
 const PLAYER_RADIUS = 20;
 const RESPAWN_DELAY = 3000;     // ms
 const TICK_RATE = 20;           // 초당 서버 틱 수
@@ -56,28 +56,45 @@ const HP_REGEN_PERCENT_PER_SEC = 0.04; // 초당 최대 체력의 4%씩 회복
 const CHAT_MAX_LENGTH = 120;      // 메시지 최대 글자 수
 const CHAT_COOLDOWN_MS = 700;     // 도배 방지용 최소 발화 간격
 
-// ===== 맵 장애물(벽) =====
-// x, y는 좌상단 좌표. 이동/총알 모두 벽에 막힘 (넓어진 맵에 맞춰 재배치)
+// ===== 맵 장애물(벽) / 지형(덤불) 배치 =====
+// 맵이 넓어졌으므로(5000x4000), 좌상단 사분면 기준으로만 배치를 정의한 뒤
+// 상하/좌우/180도로 대칭 복제해서 4개 사분면 모두에 공평하게 배치한다 (2:2 밸런스를 위함)
+function mirrorAcrossCenter(rects) {
+  const out = [];
+  for (const r of rects) {
+    out.push({ x: r.x, y: r.y, width: r.width, height: r.height });                                                   // 원본 (좌상단)
+    out.push({ x: ARENA_WIDTH - r.x - r.width, y: r.y, width: r.width, height: r.height });                           // 좌우 반전 (우상단)
+    out.push({ x: r.x, y: ARENA_HEIGHT - r.y - r.height, width: r.width, height: r.height });                         // 상하 반전 (좌하단)
+    out.push({ x: ARENA_WIDTH - r.x - r.width, y: ARENA_HEIGHT - r.y - r.height, width: r.width, height: r.height }); // 180도 반전 (우하단)
+  }
+  return out;
+}
+
+// x, y는 좌상단 좌표. 이동/총알 모두 벽에 막힘
 const WALLS = [
-  { x: 220, y: 180, width: 260, height: 40 },   // 좌상단 가로 벽
-  { x: 1120, y: 180, width: 260, height: 40 },  // 우상단 가로 벽
-  { x: 220, y: 880, width: 260, height: 40 },   // 좌하단 가로 벽
-  { x: 1120, y: 880, width: 260, height: 40 },  // 우하단 가로 벽
-  { x: 785, y: 470, width: 30, height: 160 },   // 중앙 세로 기둥
-  { x: 500, y: 500, width: 40, height: 40 },    // 중앙 좌측 작은 엄폐물
-  { x: 1060, y: 500, width: 40, height: 40 },   // 중앙 우측 작은 엄폐물
+  ...mirrorAcrossCenter([
+    { x: 600, y: 350, width: 420, height: 60 },   // 사분면 상단 가로 벽
+    { x: 1050, y: 650, width: 60, height: 340 },  // 사분면 세로 벽
+    { x: 320, y: 1250, width: 240, height: 60 },  // 사분면 안쪽 가로 벽
+    { x: 1500, y: 280, width: 90, height: 90 },   // 작은 엄폐 블록
+  ]),
+  // 맵 중앙 구조물 (좌우 대칭)
+  { x: ARENA_WIDTH / 2 - 30, y: ARENA_HEIGHT / 2 - 160, width: 60, height: 320 },  // 중앙 세로 기둥
+  { x: ARENA_WIDTH / 2 - 460, y: ARENA_HEIGHT / 2 - 40, width: 90, height: 90 },   // 중앙 좌측 엄폐물
+  { x: ARENA_WIDTH / 2 + 370, y: ARENA_HEIGHT / 2 - 40, width: 90, height: 90 },   // 중앙 우측 엄폐물
 ];
 
 // ===== 맵 지형(덤불) =====
 // 벽과 달리 이동/총알을 막지 않으며, 그 안에 들어간 플레이어는 적 팀에게 보이지 않게 됨
 // (같은 덤불 안에 함께 있는 적끼리는 서로 보임 - 은신 궁극기와 달리 예외 있음)
 const BUSHES = [
-  { x: 60, y: 60, width: 220, height: 180 },              // 좌상단 덤불
-  { x: ARENA_WIDTH - 280, y: 60, width: 220, height: 180 },        // 우상단 덤불
-  { x: 60, y: ARENA_HEIGHT - 240, width: 220, height: 180 },       // 좌하단 덤불
-  { x: ARENA_WIDTH - 280, y: ARENA_HEIGHT - 240, width: 220, height: 180 }, // 우하단 덤불
-  { x: ARENA_WIDTH / 2 - 260, y: ARENA_HEIGHT / 2 - 90, width: 180, height: 180 },  // 중앙 좌측 덤불
-  { x: ARENA_WIDTH / 2 + 80, y: ARENA_HEIGHT / 2 - 90, width: 180, height: 180 },   // 중앙 우측 덤불
+  ...mirrorAcrossCenter([
+    { x: 120, y: 120, width: 420, height: 340 },   // 코너 덤불
+    { x: 950, y: 1450, width: 320, height: 280 },  // 사분면 안쪽 덤불
+  ]),
+  // 맵 중앙 좌우의 덤불 (근접 교전용)
+  { x: ARENA_WIDTH / 2 - 760, y: ARENA_HEIGHT / 2 - 160, width: 280, height: 320 },
+  { x: ARENA_WIDTH / 2 + 480, y: ARENA_HEIGHT / 2 - 160, width: 280, height: 320 },
 ];
 
 function circleIntersectsRect(cx, cy, radius, rect) {
