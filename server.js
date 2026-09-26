@@ -71,18 +71,18 @@ function mirrorAcrossCenter(rects) {
 }
 
 // x, y는 좌상단 좌표. 이동/총알 모두 벽에 막힘
-// 맵 크기(1100x1000)에 맞춰 배치 좌표/크기를 비율대로 스케일링해서 기존과 동일한 상대적 레이아웃(균형)을 유지한다.
+// 축소된 맵 크기(1100x1000)에 맞춰 깔끔한 비율/간격으로 새로 배치함 (기존엔 여러 번의 축소로 벽이 얇고 위치가 어색했음)
 const WALLS = [
   ...mirrorAcrossCenter([
-    { x: 132, y: 88, width: 92, height: 15 },   // 사분면 상단 가로 벽
-    { x: 231, y: 163, width: 13, height: 85 },  // 사분면 세로 벽
-    { x: 70, y: 313, width: 53, height: 15 },   // 사분면 안쪽 가로 벽
-    { x: 330, y: 70, width: 20, height: 23 },   // 작은 엄폐 블록
+    { x: 160, y: 140, width: 160, height: 26 }, // 사분면 상단 가로 벽
+    { x: 340, y: 190, width: 26, height: 130 }, // 사분면 세로 벽
+    { x: 60, y: 330, width: 120, height: 26 },  // 사분면 안쪽 가로 벽
+    { x: 400, y: 60, width: 50, height: 50 },   // 작은 엄폐 블록
   ]),
   // 맵 중앙 구조물 (좌우 대칭)
-  { x: ARENA_WIDTH / 2 - 7, y: ARENA_HEIGHT / 2 - 40, width: 13, height: 80 },    // 중앙 세로 기둥
-  { x: ARENA_WIDTH / 2 - 101, y: ARENA_HEIGHT / 2 - 10, width: 20, height: 23 },  // 중앙 좌측 엄폐물
-  { x: ARENA_WIDTH / 2 + 81, y: ARENA_HEIGHT / 2 - 10, width: 20, height: 23 },   // 중앙 우측 엄폐물
+  { x: ARENA_WIDTH / 2 - 15, y: ARENA_HEIGHT / 2 - 70, width: 30, height: 140 },   // 중앙 세로 기둥
+  { x: ARENA_WIDTH / 2 - 250, y: ARENA_HEIGHT / 2 - 25, width: 50, height: 50 },   // 중앙 좌측 엄폐물
+  { x: ARENA_WIDTH / 2 + 200, y: ARENA_HEIGHT / 2 - 25, width: 50, height: 50 },   // 중앙 우측 엄폐물
 ];
 
 // ===== 맵 지형(덤불) =====
@@ -704,10 +704,18 @@ function updateMatch(match, dt, now) {
     b.life -= dt;
   }
 
-  // 화면 밖, 수명 종료, 벽 충돌한 총알 제거 (poolOnImpact 발사체는 벽에 닿으면 물웅덩이를 남김)
+  // 화면 밖, 수명 종료, 벽 충돌한 총알 제거 (poolOnImpact 발사체는 벽/맵 경계에 닿으면 물웅덩이를 남김)
   match.bullets = match.bullets.filter((b) => {
     if (b.life <= 0) return false;
-    if (b.x < 0 || b.x > ARENA_WIDTH || b.y < 0 || b.y > ARENA_HEIGHT) return false;
+    if (b.x < 0 || b.x > ARENA_WIDTH || b.y < 0 || b.y > ARENA_HEIGHT) {
+      if (b.poolOnImpact) {
+        // 맵 끝 벽에 닿은 지점(경계선 위)으로 좌표를 고정해서 물웅덩이를 생성
+        const clampedX = Math.max(0, Math.min(ARENA_WIDTH, b.x));
+        const clampedY = Math.max(0, Math.min(ARENA_HEIGHT, b.y));
+        spawnWaterPool(match, { ...b, x: clampedX, y: clampedY });
+      }
+      return false;
+    }
     if (collidesWithWalls(b.x, b.y, b.radius)) {
       if (b.poolOnImpact) spawnWaterPool(match, b);
       return false; // 벽에 막힘
