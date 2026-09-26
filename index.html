@@ -585,6 +585,7 @@ let ARENA_WIDTH = 1000;
 let ARENA_HEIGHT = 700;
 let PLAYER_RADIUS = 20;
 let WALLS = [];
+let BUSHES = [];
 
 let latestState = { players: {}, bullets: [], effects: [] };
 
@@ -853,6 +854,7 @@ socket.on('matchFound', (data) => {
   ARENA_HEIGHT = data.arena.height;
   PLAYER_RADIUS = data.playerRadius;
   WALLS = data.walls || [];
+  BUSHES = data.bushes || [];
   canvas.width = ARENA_WIDTH;
   canvas.height = ARENA_HEIGHT;
   // 서버로부터 실제 스폰 좌표를 받기 전까지 잠시 쓰이는 임시값 (아래 state 핸들러가 곧바로 덮어씀)
@@ -1324,6 +1326,27 @@ function drawWalls() {
   }
 }
 
+// 은신 가능한 덤불 - 벽과 달리 이동/총알은 막지 않고, 그 안에 들어가면 적에게 보이지 않게 됨
+function drawBushes() {
+  ctx.save();
+  ctx.fillStyle = 'rgba(39, 174, 96, 0.55)';
+  ctx.strokeStyle = 'rgba(20, 90, 50, 0.85)';
+  ctx.lineWidth = 2;
+  const r = 16; // 모서리를 둥글게
+  for (const b of BUSHES) {
+    ctx.beginPath();
+    ctx.moveTo(b.x + r, b.y);
+    ctx.arcTo(b.x + b.width, b.y, b.x + b.width, b.y + b.height, r);
+    ctx.arcTo(b.x + b.width, b.y + b.height, b.x, b.y + b.height, r);
+    ctx.arcTo(b.x, b.y + b.height, b.x, b.y, r);
+    ctx.arcTo(b.x, b.y, b.x + b.width, b.y, r);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function render() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -1337,6 +1360,7 @@ function render() {
   }
 
   drawWalls();
+  drawBushes();
 
   const effectsArr = Array.isArray(latestState.effects) ? latestState.effects : [];
   for (const e of effectsArr) drawEffect(e);
@@ -1346,8 +1370,11 @@ function render() {
 
   const playersObj = latestState.players || {};
   for (const pid in playersObj) {
-    drawPlayer(playersObj[pid], pid === myId);
-    drawChatBubble(playersObj[pid]);
+    const p = playersObj[pid];
+    // 덤불/은신으로 숨어있는 적은 서버가 좌표(x, y) 자체를 보내지 않으므로 그릴 수 없음(=화면에 안 보임)
+    if (typeof p.x !== 'number' || typeof p.y !== 'number') continue;
+    drawPlayer(p, pid === myId);
+    drawChatBubble(p);
   }
 
   drawAimRangeIndicator();
