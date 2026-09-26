@@ -581,14 +581,14 @@ const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
 let myId = null;
-let ARENA_WIDTH = 1000;
-let ARENA_HEIGHT = 700;
+let ARENA_WIDTH = 2500;
+let ARENA_HEIGHT = 2000;
 let PLAYER_RADIUS = 20;
 let WALLS = [];
 let BUSHES = [];
 
 // ===== 카메라 =====
-// 맵 전체가 아니라 내 캐릭터 주변 일부만 보여주기 위한 카메라(뷰포트) 상태.
+// 카메라는 더 이상 플레이어를 따라다니지 않고, 맵 중앙에 고정된다.
 // camera.x, camera.y는 현재 화면 좌상단에 해당하는 '월드 좌표'.
 const camera = { x: 0, y: 0 };
 
@@ -604,12 +604,10 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
-// 내 캐릭터를 화면 중앙에 두되, 맵 바깥이 보이지 않도록 카메라를 아레나 경계 안쪽으로 고정한다
+// 고정 카메라: 플레이어를 따라가지 않고, 맵 전체의 중앙이 항상 화면 중앙에 오도록 고정한다
 function updateCamera() {
-  const maxCamX = Math.max(0, ARENA_WIDTH - canvas.width);
-  const maxCamY = Math.max(0, ARENA_HEIGHT - canvas.height);
-  camera.x = clamp(myX - canvas.width / 2, 0, maxCamX);
-  camera.y = clamp(myY - canvas.height / 2, 0, maxCamY);
+  camera.x = (ARENA_WIDTH - canvas.width) / 2;
+  camera.y = (ARENA_HEIGHT - canvas.height) / 2;
 }
 
 let latestState = { players: {}, bullets: [], effects: [] };
