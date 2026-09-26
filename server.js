@@ -181,6 +181,10 @@ const CHARACTERS = {
     id: 'syu',
     name: '슈',
     maxHp: 6000, // 체력이 별도로 지정되지 않아 다른 캐릭터와 비슷한 수준으로 설정 (조정 가능)
+    // 샷건은 한 번에 펠릿이 10개나 나가기 때문에, 다른 캐릭터와 같은 충전량을 쓰면
+    // 근거리에서 한 번만 쏴도 펠릿 여러 개가 동시에 맞아 궁극기가 거의 바로 차버림.
+    // 그래서 슈는 펠릿 1개 적중당 충전량을 다른 캐릭터보다 훨씬 낮게 별도로 설정함.
+    ultimateChargePerHit: 8, // 기본값(34)의 약 1/4 수준
     basic: {
       name: '샷건 발사',
       damage: 300,        // 펠릿(총알) 1개당 대미지
@@ -280,6 +284,7 @@ function buildPlayer(socketId, name, characterId, team, spawn) {
     characterName: character.name,
     basic: character.basic,
     ultimate: character.ultimate,
+    ultimateChargePerHit: character.ultimateChargePerHit || ULTIMATE_CHARGE_PER_HIT, // 캐릭터별로 다르게 설정 가능 (예: 슈는 펠릿이 많아 더 낮게)
     ultimateCharge: 0, // 0~100
     ammo: MAX_AMMO,
     maxAmmo: MAX_AMMO,
@@ -299,7 +304,7 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
 
   const shooter = match.players[shooterId];
   if (shooter && chargeShooter) {
-    shooter.ultimateCharge = Math.min(100, shooter.ultimateCharge + ULTIMATE_CHARGE_PER_HIT);
+    shooter.ultimateCharge = Math.min(100, shooter.ultimateCharge + shooter.ultimateChargePerHit);
   }
 
   if (target.hp <= 0) {
@@ -734,7 +739,7 @@ function updateMatch(match, dt, now) {
           spawnWaterPool(match, b);
           if (!b.isUltimate) {
             const shooter = match.players[b.ownerId];
-            if (shooter) shooter.ultimateCharge = Math.min(100, shooter.ultimateCharge + ULTIMATE_CHARGE_PER_HIT);
+            if (shooter) shooter.ultimateCharge = Math.min(100, shooter.ultimateCharge + shooter.ultimateChargePerHit);
           }
         } else {
           // 기본 공격만 궁극기 게이지를 충전시킴
