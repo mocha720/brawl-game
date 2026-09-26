@@ -591,6 +591,9 @@ let BUSHES = [];
 // 카메라는 더 이상 플레이어를 따라다니지 않고, 맵 중앙에 고정된다.
 // camera.x, camera.y는 현재 화면 좌상단에 해당하는 '월드 좌표'.
 const camera = { x: 0, y: 0 };
+// 화면(캔버스) 크기가 얼마든 맵 전체가 항상 한 화면에 다 보이도록 하는 축소 배율.
+// (모바일 세로화면처럼 가로폭이 좁아도 맵이 잘리지 않고 전체가 축소되어 보임)
+let cameraScale = 1;
 
 // 캔버스 실제 해상도를 맵 크기가 아니라 '화면에 보이는 크기'로 맞춘다 (넓은 맵을 한눈에 다 보여주지 않기 위함)
 function resizeCanvas() {
@@ -605,9 +608,14 @@ function clamp(value, min, max) {
 }
 
 // 고정 카메라: 플레이어를 따라가지 않고, 맵 전체의 중앙이 항상 화면 중앙에 오도록 고정한다
+// 가로/세로 중 더 많이 축소해야 하는 쪽에 맞춰 배율을 정해서, 화면 비율(모바일/PC 어느 쪽이든)과
+// 상관없이 맵 전체(경계 포함)가 항상 한 화면 안에 들어오도록 한다.
 function updateCamera() {
-  camera.x = (ARENA_WIDTH - canvas.width) / 2;
-  camera.y = (ARENA_HEIGHT - canvas.height) / 2;
+  cameraScale = Math.min(canvas.width / ARENA_WIDTH, canvas.height / ARENA_HEIGHT);
+  const viewW = canvas.width / cameraScale;
+  const viewH = canvas.height / cameraScale;
+  camera.x = (ARENA_WIDTH - viewW) / 2;
+  camera.y = (ARENA_HEIGHT - viewH) / 2;
 }
 
 let latestState = { players: {}, bullets: [], effects: [], waterPools: [] };
@@ -1208,8 +1216,8 @@ function update(dt) {
   myY = Math.max(PLAYER_RADIUS, Math.min(ARENA_HEIGHT - PLAYER_RADIUS, myY));
 
   // 오른쪽 조이스틱으로 조준 중이면 그 방향을, 아니면 마우스 방향을 바라봄
-  // mouseX/mouseY는 화면(캔버스) 기준 좌표이므로, 카메라 오프셋을 더해 월드 좌표로 변환한 뒤 각도를 계산
-  myAngle = touchAimActive ? touchAimAngle : Math.atan2((mouseY + camera.y) - myY, (mouseX + camera.x) - myX);
+  // mouseX/mouseY는 화면(캔버스) 기준 좌표이므로, 축소 배율을 나누고 카메라 오프셋을 더해 월드 좌표로 변환한 뒤 각도를 계산
+  myAngle = touchAimActive ? touchAimAngle : Math.atan2((mouseY / cameraScale + camera.y) - myY, (mouseX / cameraScale + camera.x) - myX);
 
   socket.emit('playerUpdate', { x: myX, y: myY, angle: myAngle });
 }
@@ -1444,27 +1452,32 @@ function render() {
   updateCamera();
 
   ctx.save();
+  ctx.scale(cameraScale, cameraScale); // 화면 크기에 맞춰 맵 전체가 한 화면에 들어오도록 축소/확대
   ctx.translate(-camera.x, -camera.y); // 이 지점부터는 전부 '월드 좌표'로 그리면 카메라 위치에 맞게 화면에 표시됨
+
+  // 화면에 실제로 보이는 영역의 가로/세로 폭(월드 좌표 기준)
+  const viewW = canvas.width / cameraScale;
+  const viewH = canvas.height / cameraScale;
 
   // 맵 밖(플레이 불가 구역)은 어둡게, 맵 안은 기존 배경색으로 채워서 안/밖을 명확히 구분
   ctx.fillStyle = '#0d1117';
-  ctx.fillRect(camera.x, camera.y, canvas.width, canvas.height);
+  ctx.fillRect(camera.x, camera.y, viewW, viewH);
   ctx.fillStyle = '#2c3e50';
   ctx.fillRect(0, 0, ARENA_WIDTH, ARENA_HEIGHT);
 
   // 배경 격자 (단순 스타일) - 맵 내부 범위로만 제한해서 그림 (성능 + 안/밖 구분)
   ctx.strokeStyle = 'rgba(255,255,255,0.05)';
   const gridStartX = Math.max(0, Math.floor(camera.x / 50) * 50);
-  const gridEndX = Math.min(ARENA_WIDTH, camera.x + canvas.width);
+  const gridEndX = Math.min(ARENA_WIDTH, camera.x + viewW);
   const gridTop = Math.max(0, camera.y);
-  const gridBottom = Math.min(ARENA_HEIGHT, camera.y + canvas.height);
+  const gridBottom = Math.min(ARENA_HEIGHT, camera.y + viewH);
   for (let x = gridStartX; x <= gridEndX; x += 50) {
     ctx.beginPath(); ctx.moveTo(x, gridTop); ctx.lineTo(x, gridBottom); ctx.stroke();
   }
   const gridStartY = Math.max(0, Math.floor(camera.y / 50) * 50);
-  const gridEndY = Math.min(ARENA_HEIGHT, camera.y + canvas.height);
+  const gridEndY = Math.min(ARENA_HEIGHT, camera.y + viewH);
   const gridLeft = Math.max(0, camera.x);
-  const gridRight = Math.min(ARENA_WIDTH, camera.x + canvas.width);
+  const gridRight = Math.min(ARENA_WIDTH, camera.x + viewW);
   for (let y = gridStartY; y <= gridEndY; y += 50) {
     ctx.beginPath(); ctx.moveTo(gridLeft, y); ctx.lineTo(gridRight, y); ctx.stroke();
   }
