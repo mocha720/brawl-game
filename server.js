@@ -24,8 +24,8 @@ const PORT = process.env.PORT || 3000;
 app.use(express.static(path.join(__dirname)));
 
 // ===== 게임 설정값 =====
-const ARENA_WIDTH = 5000;   // 한 화면에 다 안 보이는 넓은 맵
-const ARENA_HEIGHT = 4000;
+const ARENA_WIDTH = 2500;   // 맵 크기 축소 (기존 5000 → 2500, 화면 고정 카메라에 맞춤)
+const ARENA_HEIGHT = 2000;  // 맵 크기 축소 (기존 4000 → 2000)
 const PLAYER_RADIUS = 20;
 const RESPAWN_DELAY = 3000;     // ms
 const TICK_RATE = 20;           // 초당 서버 틱 수
@@ -71,17 +71,19 @@ function mirrorAcrossCenter(rects) {
 }
 
 // x, y는 좌상단 좌표. 이동/총알 모두 벽에 막힘
+// 맵이 절반 크기로 축소되었으므로, 배치 좌표/크기도 모두 절반으로 스케일링해서
+// 기존과 동일한 상대적 레이아웃(균형)을 유지한다.
 const WALLS = [
   ...mirrorAcrossCenter([
-    { x: 600, y: 350, width: 420, height: 60 },   // 사분면 상단 가로 벽
-    { x: 1050, y: 650, width: 60, height: 340 },  // 사분면 세로 벽
-    { x: 320, y: 1250, width: 240, height: 60 },  // 사분면 안쪽 가로 벽
-    { x: 1500, y: 280, width: 90, height: 90 },   // 작은 엄폐 블록
+    { x: 300, y: 175, width: 210, height: 30 },   // 사분면 상단 가로 벽
+    { x: 525, y: 325, width: 30, height: 170 },   // 사분면 세로 벽
+    { x: 160, y: 625, width: 120, height: 30 },   // 사분면 안쪽 가로 벽
+    { x: 750, y: 140, width: 45, height: 45 },    // 작은 엄폐 블록
   ]),
   // 맵 중앙 구조물 (좌우 대칭)
-  { x: ARENA_WIDTH / 2 - 30, y: ARENA_HEIGHT / 2 - 160, width: 60, height: 320 },  // 중앙 세로 기둥
-  { x: ARENA_WIDTH / 2 - 460, y: ARENA_HEIGHT / 2 - 40, width: 90, height: 90 },   // 중앙 좌측 엄폐물
-  { x: ARENA_WIDTH / 2 + 370, y: ARENA_HEIGHT / 2 - 40, width: 90, height: 90 },   // 중앙 우측 엄폐물
+  { x: ARENA_WIDTH / 2 - 15, y: ARENA_HEIGHT / 2 - 80, width: 30, height: 160 },   // 중앙 세로 기둥
+  { x: ARENA_WIDTH / 2 - 230, y: ARENA_HEIGHT / 2 - 20, width: 45, height: 45 },   // 중앙 좌측 엄폐물
+  { x: ARENA_WIDTH / 2 + 185, y: ARENA_HEIGHT / 2 - 20, width: 45, height: 45 },   // 중앙 우측 엄폐물
 ];
 
 // ===== 맵 지형(덤불) =====
@@ -89,12 +91,12 @@ const WALLS = [
 // (같은 덤불 안에 함께 있는 적끼리는 서로 보임 - 은신 궁극기와 달리 예외 있음)
 const BUSHES = [
   ...mirrorAcrossCenter([
-    { x: 120, y: 120, width: 420, height: 340 },   // 코너 덤불
-    { x: 950, y: 1450, width: 320, height: 280 },  // 사분면 안쪽 덤불
+    { x: 60, y: 60, width: 210, height: 170 },    // 코너 덤불
+    { x: 475, y: 725, width: 160, height: 140 },  // 사분면 안쪽 덤불
   ]),
   // 맵 중앙 좌우의 덤불 (근접 교전용)
-  { x: ARENA_WIDTH / 2 - 760, y: ARENA_HEIGHT / 2 - 160, width: 280, height: 320 },
-  { x: ARENA_WIDTH / 2 + 480, y: ARENA_HEIGHT / 2 - 160, width: 280, height: 320 },
+  { x: ARENA_WIDTH / 2 - 380, y: ARENA_HEIGHT / 2 - 80, width: 140, height: 160 },
+  { x: ARENA_WIDTH / 2 + 240, y: ARENA_HEIGHT / 2 - 80, width: 140, height: 160 },
 ];
 
 function circleIntersectsRect(cx, cy, radius, rect) {
