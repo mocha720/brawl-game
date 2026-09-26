@@ -224,7 +224,7 @@ const CHARACTERS = {
       poolRadius: 90,       // 물웅덩이 반경
       poolLifetime: 2,      // 물웅덩이가 유지되는 시간(초)
       poolTickInterval: 0.5, // 대미지/회복이 적용되는 주기(초)
-      poolDamage: 500,      // 적이 물에 닿았을 때 주기당 대미지
+      poolDamage: 1500,     // 적이 물에 닿았을 때 주기당 대미지
       poolHeal: 500,        // 자신/아군이 물에 닿았을 때 주기당 회복량
     },
     ultimate: {
