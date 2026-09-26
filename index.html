@@ -587,6 +587,31 @@ let PLAYER_RADIUS = 20;
 let WALLS = [];
 let BUSHES = [];
 
+// ===== 카메라 =====
+// 맵 전체가 아니라 내 캐릭터 주변 일부만 보여주기 위한 카메라(뷰포트) 상태.
+// camera.x, camera.y는 현재 화면 좌상단에 해당하는 '월드 좌표'.
+const camera = { x: 0, y: 0 };
+
+// 캔버스 실제 해상도를 맵 크기가 아니라 '화면에 보이는 크기'로 맞춘다 (넓은 맵을 한눈에 다 보여주지 않기 위함)
+function resizeCanvas() {
+  canvas.width = Math.max(320, window.innerWidth - 20);
+  canvas.height = Math.max(240, window.innerHeight - 30);
+}
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+// 내 캐릭터를 화면 중앙에 두되, 맵 바깥이 보이지 않도록 카메라를 아레나 경계 안쪽으로 고정한다
+function updateCamera() {
+  const maxCamX = Math.max(0, ARENA_WIDTH - canvas.width);
+  const maxCamY = Math.max(0, ARENA_HEIGHT - canvas.height);
+  camera.x = clamp(myX - canvas.width / 2, 0, maxCamX);
+  camera.y = clamp(myY - canvas.height / 2, 0, maxCamY);
+}
+
 let latestState = { players: {}, bullets: [], effects: [] };
 
 // ===== 캐릭터 정의 (선택 화면 표시용 - 실제 능력치는 서버가 검증/적용) =====
@@ -855,8 +880,7 @@ socket.on('matchFound', (data) => {
   PLAYER_RADIUS = data.playerRadius;
   WALLS = data.walls || [];
   BUSHES = data.bushes || [];
-  canvas.width = ARENA_WIDTH;
-  canvas.height = ARENA_HEIGHT;
+  resizeCanvas(); // 캔버스는 맵 크기가 아니라 화면 크기에 맞춤 (카메라가 그 안에서 맵을 비춤)
   // 서버로부터 실제 스폰 좌표를 받기 전까지 잠시 쓰이는 임시값 (아래 state 핸들러가 곧바로 덮어씀)
   myX = ARENA_WIDTH / 2;
   myY = ARENA_HEIGHT / 2;
@@ -1178,7 +1202,8 @@ function update(dt) {
   myY = Math.max(PLAYER_RADIUS, Math.min(ARENA_HEIGHT - PLAYER_RADIUS, myY));
 
   // 오른쪽 조이스틱으로 조준 중이면 그 방향을, 아니면 마우스 방향을 바라봄
-  myAngle = touchAimActive ? touchAimAngle : Math.atan2(mouseY - myY, mouseX - myX);
+  // mouseX/mouseY는 화면(캔버스) 기준 좌표이므로, 카메라 오프셋을 더해 월드 좌표로 변환한 뒤 각도를 계산
+  myAngle = touchAimActive ? touchAimAngle : Math.atan2((mouseY + camera.y) - myY, (mouseX + camera.x) - myX);
 
   socket.emit('playerUpdate', { x: myX, y: myY, angle: myAngle });
 }
@@ -1349,14 +1374,22 @@ function drawBushes() {
 
 function render() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  updateCamera();
 
-  // 배경 격자 (단순 스타일)
+  ctx.save();
+  ctx.translate(-camera.x, -camera.y); // 이 지점부터는 전부 '월드 좌표'로 그리면 카메라 위치에 맞게 화면에 표시됨
+
+  // 배경 격자 (단순 스타일) - 성능을 위해 화면에 실제로 보이는 범위만 그림
   ctx.strokeStyle = 'rgba(255,255,255,0.05)';
-  for (let x = 0; x < ARENA_WIDTH; x += 50) {
-    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, ARENA_HEIGHT); ctx.stroke();
+  const gridStartX = Math.floor(camera.x / 50) * 50;
+  const gridEndX = Math.min(ARENA_WIDTH, camera.x + canvas.width);
+  for (let x = gridStartX; x <= gridEndX; x += 50) {
+    ctx.beginPath(); ctx.moveTo(x, camera.y); ctx.lineTo(x, camera.y + canvas.height); ctx.stroke();
   }
-  for (let y = 0; y < ARENA_HEIGHT; y += 50) {
-    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(ARENA_WIDTH, y); ctx.stroke();
+  const gridStartY = Math.floor(camera.y / 50) * 50;
+  const gridEndY = Math.min(ARENA_HEIGHT, camera.y + canvas.height);
+  for (let y = gridStartY; y <= gridEndY; y += 50) {
+    ctx.beginPath(); ctx.moveTo(camera.x, y); ctx.lineTo(camera.x + canvas.width, y); ctx.stroke();
   }
 
   drawWalls();
@@ -1378,6 +1411,8 @@ function render() {
   }
 
   drawAimRangeIndicator();
+
+  ctx.restore();
 }
 
 function drawAimRangeIndicator() {
