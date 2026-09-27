@@ -105,6 +105,24 @@
     justify-content: center;
   }
   #scoreboardToggleBtn:hover { background: rgba(0, 0, 0, 0.75); }
+  #sfxToggleBtn {
+    position: fixed;
+    top: calc(20px + env(safe-area-inset-top, 0px));
+    right: calc(74px + env(safe-area-inset-right, 0px));
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(0, 0, 0, 0.55);
+    color: #fff;
+    font-size: 20px;
+    cursor: pointer;
+    z-index: 9;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #sfxToggleBtn:hover { background: rgba(0, 0, 0, 0.75); }
   #scoreboard {
     position: fixed;
     top: calc(72px + env(safe-area-inset-top, 0px));
@@ -388,6 +406,7 @@
   }
   @media (max-width: 480px) {
     #scoreboardToggleBtn { top: calc(10px + env(safe-area-inset-top, 0px)); right: calc(10px + env(safe-area-inset-right, 0px)); width: 36px; height: 36px; font-size: 16px; }
+    #sfxToggleBtn { top: calc(10px + env(safe-area-inset-top, 0px)); right: calc(56px + env(safe-area-inset-right, 0px)); width: 36px; height: 36px; font-size: 16px; }
     #scoreboard { top: calc(54px + env(safe-area-inset-top, 0px)); right: calc(10px + env(safe-area-inset-right, 0px)); min-width: 120px; padding: 8px 10px; }
     #scoreboard h3 { font-size: 12px; }
     #scoreboard ol { font-size: 11px; }
@@ -540,6 +559,7 @@
   </div>
 </div>
 
+<button id="sfxToggleBtn" title="효과음 켜기/끄기">🔊</button>
 <button id="scoreboardToggleBtn" title="전적">🏆</button>
 <div id="scoreboard">
   <h3>🏆 1:1 전적</h3>
@@ -668,10 +688,84 @@ const CHARACTERS = [
     color: '#1abc9c',
     maxHp: 6000,
     basic: { name: '칼 던지기', damage: 1500, desc: '벽(장애물)을 그대로 통과해서 날아감' },
-    ultimate: { name: '저격 터렛 설치', desc: '조준 불필요, 체력 4,000의 자동 사격 터렛을 설치 (0.5초마다 1,000 피해 저격탄 발사)' },
+    ultimate: { name: '저격 터렛 설치', desc: '조준 불필요, 체력 4,000의 자동 사격 터렛을 설치 (사거리 294, 0.5초마다 500 피해 저격탄 발사)' },
   },
 ];
 let selectedCharacterId = CHARACTERS[0].id;
+
+// ===== 효과음 (Web Audio API로 직접 합성 - 별도 파일 필요 없음) =====
+const SFX = (() => {
+  let ctx = null;
+  function ensureCtx() {
+    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (ctx.state === 'suspended') ctx.resume();
+    return ctx;
+  }
+
+  let enabled = localStorage.getItem('sfxEnabled') !== 'off';
+  function setEnabled(v) { enabled = v; localStorage.setItem('sfxEnabled', v ? 'on' : 'off'); }
+  function isEnabled() { return enabled; }
+
+  // 단순 톤(삐- 소리) 하나를 재생. freqEnd를 주면 주파수가 시간에 따라 미끄러지듯 변함
+  function beep({ freq = 440, freqEnd = null, duration = 0.1, type = 'square', volume = 0.2, delay = 0 }) {
+    if (!enabled) return;
+    try {
+      const ac = ensureCtx();
+      const t0 = ac.currentTime + delay;
+      const osc = ac.createOscillator();
+      const gain = ac.createGain();
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, t0);
+      if (freqEnd !== null) osc.frequency.exponentialRampToValueAtTime(Math.max(1, freqEnd), t0 + duration);
+      gain.gain.setValueAtTime(volume, t0);
+      gain.gain.exponentialRampToValueAtTime(0.001, t0 + duration);
+      osc.connect(gain);
+      gain.connect(ac.destination);
+      osc.start(t0);
+      osc.stop(t0 + duration + 0.03);
+    } catch (e) { /* 오디오를 지원하지 않는 환경은 조용히 무시 */ }
+  }
+
+  // 짧은 백색소음(타격감/폭발감을 위한 노이즈)
+  function noiseBurst({ duration = 0.15, volume = 0.2, delay = 0 }) {
+    if (!enabled) return;
+    try {
+      const ac = ensureCtx();
+      const size = Math.max(1, Math.floor(ac.sampleRate * duration));
+      const buffer = ac.createBuffer(1, size, ac.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < size; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / size);
+      const src = ac.createBufferSource();
+      src.buffer = buffer;
+      const gain = ac.createGain();
+      const t0 = ac.currentTime + delay;
+      gain.gain.setValueAtTime(volume, t0);
+      gain.gain.exponentialRampToValueAtTime(0.001, t0 + duration);
+      src.connect(gain);
+      gain.connect(ac.destination);
+      src.start(t0);
+    } catch (e) {}
+  }
+
+  return {
+    setEnabled, isEnabled,
+    shoot() { beep({ freq: 750, freqEnd: 320, duration: 0.07, type: 'square', volume: 0.12 }); },
+    ultimate() { beep({ freq: 200, freqEnd: 850, duration: 0.35, type: 'sawtooth', volume: 0.18 }); noiseBurst({ duration: 0.3, volume: 0.08 }); },
+    hit() { noiseBurst({ duration: 0.1, volume: 0.22 }); beep({ freq: 160, freqEnd: 70, duration: 0.1, type: 'square', volume: 0.12 }); },
+    death() { beep({ freq: 420, freqEnd: 50, duration: 0.6, type: 'sawtooth', volume: 0.22 }); },
+    kill() { beep({ freq: 520, duration: 0.1, type: 'square', volume: 0.18 }); beep({ freq: 780, duration: 0.16, type: 'square', volume: 0.18, delay: 0.1 }); },
+    ultimateReady() { beep({ freq: 600, duration: 0.1, type: 'sine', volume: 0.12 }); beep({ freq: 900, duration: 0.15, type: 'sine', volume: 0.12, delay: 0.1 }); },
+    matchStart() { beep({ freq: 440, duration: 0.15, type: 'square', volume: 0.18 }); beep({ freq: 660, duration: 0.2, type: 'square', volume: 0.18, delay: 0.15 }); },
+    win() { [523, 659, 784, 1046].forEach((f, i) => beep({ freq: f, duration: 0.18, type: 'square', volume: 0.18, delay: i * 0.13 })); },
+    lose() { [400, 350, 300, 250].forEach((f, i) => beep({ freq: f, duration: 0.22, type: 'sawtooth', volume: 0.18, delay: i * 0.15 })); },
+    respawn() { beep({ freq: 300, freqEnd: 700, duration: 0.2, type: 'sine', volume: 0.12 }); },
+  };
+})();
+
+const sfxToggleBtn = document.getElementById('sfxToggleBtn');
+function updateSfxButton() { sfxToggleBtn.textContent = SFX.isEnabled() ? '🔊' : '🔇'; }
+sfxToggleBtn.addEventListener('click', () => { SFX.setEnabled(!SFX.isEnabled()); updateSfxButton(); });
+updateSfxButton();
 
 // ===== 로컬 입력 상태 =====
 const keys = { w: false, a: false, s: false, d: false, up: false, down: false, left: false, right: false };
@@ -712,8 +806,10 @@ function fireAttack() {
     socket.emit('ultimate');
     ultimateArmed = false;
     updateUltimateButton();
+    SFX.ultimate();
   } else {
     socket.emit('shoot');
+    SFX.shoot();
   }
 }
 
@@ -921,6 +1017,9 @@ socket.on('matchFound', (data) => {
   renderChatLog();
   latestState = { players: {}, bullets: [], effects: [], waterPools: [], turrets: [] };
   wasAlive = false; // 새 매치이므로, 첫 상태 수신 시 서버 스폰 위치로 무조건 동기화되게 함
+  prevMyHp = null; // 새 매치 시작 시 이전 매치의 체력/점수 기록으로 인한 오작동(사운드 오재생) 방지
+  prevMyScore = null;
+  prevUltimateReady = false;
 
   document.getElementById('matchingOverlay').classList.remove('open');
   document.getElementById('matchResultOverlay').classList.remove('open');
@@ -944,6 +1043,8 @@ socket.on('matchFound', (data) => {
     mobileHintEl.style.opacity = '1';
     setTimeout(() => { mobileHintEl.style.opacity = '0'; }, 5000);
   }
+
+  SFX.matchStart();
 });
 
 // 매치가 끝나면(승리/패배/상대 이탈) 결과 화면을 보여준다
@@ -970,6 +1071,8 @@ socket.on('matchOver', (data) => {
   }
 
   document.getElementById('matchResultOverlay').classList.add('open');
+
+  if (iWon) SFX.win(); else SFX.lose();
 });
 
 // 마지막으로 확인된 '생존' 여부. 참가 직후(false)나 리스폰 직후(죽음->생존 전환)에
@@ -977,6 +1080,11 @@ socket.on('matchOver', (data) => {
 // 이 동기화가 없으면 로컬 좌표가 초기값(맵 정중앙)에 머물러 있다가, 그 위치가
 // 벽과 겹칠 경우 "시작하자마자 벽에 낀 것처럼" 전혀 움직이지 못하는 문제가 생김.
 let wasAlive = false;
+
+// 효과음 트리거용 - 직전 상태에서의 내 체력/점수/궁극기 게이지를 기억해뒀다가 변화를 비교한다
+let prevMyHp = null;
+let prevMyScore = null;
+let prevUltimateReady = false;
 
 socket.on('state', (state) => {
   latestState = state;
@@ -990,7 +1098,24 @@ socket.on('state', (state) => {
       // 방금 참가했거나 리스폰된 순간 -> 서버가 정한 스폰 위치로 강제 동기화
       myX = me.x;
       myY = me.y;
+      if (prevMyHp !== null) SFX.respawn(); // 최초 참가 시점(prevMyHp === null)에는 재생하지 않음
     }
+
+    // 방금 죽었을 때(생존 -> 사망 전환)
+    if (wasAlive && !me.alive) SFX.death();
+    // 체력이 줄었을 때(공격당함). 사망으로 인한 감소는 위에서 이미 별도 처리하므로 살아있을 때만
+    else if (me.alive && prevMyHp !== null && me.hp < prevMyHp) SFX.hit();
+
+    // 처치 수(score)가 늘었을 때
+    if (prevMyScore !== null && me.score > prevMyScore) SFX.kill();
+
+    // 궁극기 게이지가 이번에 막 100%가 되었을 때
+    const ultimateReady = me.ultimateCharge >= 100;
+    if (ultimateReady && !prevUltimateReady) SFX.ultimateReady();
+    prevUltimateReady = ultimateReady;
+
+    prevMyHp = me.hp;
+    prevMyScore = me.score;
     wasAlive = me.alive;
   }
   updateUltimateButton();
@@ -1147,6 +1272,7 @@ function activateUltimateControl() {
   if (me.ultimate && me.ultimate.type === 'lightning') {
     socket.emit('ultimate');
     ultimateArmed = false;
+    SFX.ultimate();
   } else {
     ultimateArmed = !ultimateArmed; // 다시 누르면 장전 취소
   }
