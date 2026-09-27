@@ -296,7 +296,7 @@ const CHARACTERS = {
       spreadDegrees: 30,    // 3개가 퍼져나가는 전체 각도
       poolOnImpact: true,  // 벽 또는 적과 충돌 시 똥가루 구름을 생성
       poolRadius: 80,       // 똥가루 구름 반경
-      poolLifetime: 2.5,     // 똥가루 구름이 유지되는 시간(초) - 기존 2초에서 증가
+      poolLifetime: 1,       // 똥가루 구름이 유지되는 시간(초) - 1초로 변경
       poolTickInterval: 0.2, // 0.2초마다 대미지 적용
       poolDamage: 250,      // 똥가루 구름에 닿은 적이 주기(0.2초)마다 입는 대미지 (공격력 50% 감소 적용, 기존 500에서 감소)
       poolHeal: 0,          // 아군/자신에게는 아무 효과 없음 (독가스라 회복 없음)
