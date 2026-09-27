@@ -30,7 +30,7 @@ const PLAYER_RADIUS = 20;
 const RESPAWN_DELAY = 3000;     // ms
 const TICK_RATE = 20;           // 초당 서버 틱 수
 const TICK_MS = 1000 / TICK_RATE;
-const ULTIMATE_CHARGE_PER_HIT = 34; // 기본 공격이 적중할 때마다 충전되는 궁극기 게이지(%). 3회 적중 시 100% 도달
+const ULTIMATE_CHARGE_PER_HIT = 17; // 기본 공격이 적중할 때마다 충전되는 궁극기 게이지(%). 궁극기 충전 속도 50% 감소 적용 (기존 34에서 절반)
 const EFFECT_LIFETIME = 0.4; // 번개 등 시각 이펙트가 화면에 남아있는 시간(초)
 const KNOCKBACK_DURATION = 0.28; // 넉백(밀쳐냄)이 순간이동처럼 보이지 않도록, 이 시간(초) 동안 점점 감속하며 자연스럽게 날아가게 함
 
@@ -183,7 +183,7 @@ const CHARACTERS = {
     // 샷건은 한 번에 펠릿이 10개나 나가기 때문에, 다른 캐릭터와 같은 충전량을 쓰면
     // 근거리에서 한 번만 쏴도 펠릿 여러 개가 동시에 맞아 궁극기가 거의 바로 차버림.
     // 그래서 슈는 펠릿 1개 적중당 충전량을 다른 캐릭터보다 훨씬 낮게 별도로 설정함.
-    ultimateChargePerHit: 8, // 기본값(34)의 약 1/4 수준
+    ultimateChargePerHit: 4, // 기본값(17)의 약 1/4 수준 (궁극기 충전 속도 50% 감소 적용, 기존 8에서 절반)
     basic: {
       name: '샷건 발사',
       damage: 300,        // 펠릿(총알) 1개당 대미지
@@ -278,6 +278,30 @@ const CHARACTERS = {
       bulletRadius: 6,
       bulletLifetime: 1.2,
       visual: 'turret',
+    },
+  },
+  yeoddongi: {
+    id: 'yeoddongi',
+    name: '여똥이',
+    maxHp: 5000,
+    basic: {
+      name: '똥가루 뿌리기',
+      type: 'poopgas',   // 브롤스타즈 엠즈처럼 독가스(똥가루) 구름을 남기는 발사체
+      damage: 0,          // 직접 적중 대미지는 없음 (닿으면 물웅덩이처럼 똥가루 구름을 생성)
+      speed: 420,
+      radius: 14,
+      lifetime: 1.6,       // 초 (사거리 ≈ 672px)
+      visual: 'poop',
+      poolOnImpact: true,  // 벽 또는 적과 충돌 시 똥가루 구름을 생성
+      poolRadius: 80,       // 똥가루 구름 반경
+      poolLifetime: 2,      // 똥가루 구름이 유지되는 시간(초)
+      poolTickInterval: 0.2, // 0.2초마다 대미지 적용
+      poolDamage: 250,      // 똥가루 구름에 닿은 적이 주기(0.2초)마다 입는 대미지
+      poolHeal: 0,          // 아군/자신에게는 아무 효과 없음 (독가스라 회복 없음)
+    },
+    ultimate: {
+      name: '간식 처먹기',
+      type: 'heal',       // 조준 불필요, 즉시 체력을 가득 채우는 궁극기
     },
   },
 };
@@ -817,6 +841,9 @@ io.on('connection', (socket) => {
     } else if (ult.type === 'turret') {
       // 성스럽다의 저격 터렛: 조준 불필요, 즉시 자신의 위치에 자동 사격 터렛을 설치
       spawnTurret(match, p, ult);
+    } else if (ult.type === 'heal') {
+      // 여똥이의 간식 처먹기: 조준 불필요, 즉시 체력을 가득 채움
+      p.hp = p.maxHp;
     } else {
       // 조준한 방향으로 날아가는 궁극기 (예: 피에로 발사, 메가 샷건)
       spawnProjectiles(match, p, ult, true);
