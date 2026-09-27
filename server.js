@@ -1,1315 +1,101 @@
-<!DOCTYPE html>
-<html lang="ko">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-<title>2D 멀티플레이 액션 게임</title>
-<style>
-  html, body {
-    margin: 0;
-    padding: 0;
-    background: #1e1e2e;
-    overflow: hidden;
-    font-family: 'Segoe UI', sans-serif;
-    color: #fff;
-    width: 100%;
-    height: 100%;
-    touch-action: none;
-    overscroll-behavior: none;
-    -webkit-user-select: none;
-    user-select: none;
-  }
-  #gameCanvas {
-    display: block;
-    margin: 20px auto 0 auto;
-    background: #2c3e50;
-    border: 3px solid #34495e;
-    border-radius: 8px;
-    cursor: crosshair;
-    max-width: calc(100vw - 20px);
-    max-height: calc(100vh - 30px);
-    width: auto;
-    height: auto;
-    touch-action: none;
-  }
-  /* ===== 모바일 가상 조이스틱 ===== */
-  .stick-base {
-    position: fixed;
-    bottom: calc(34px + env(safe-area-inset-bottom, 0px));
-    width: 132px;
-    height: 132px;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.12);
-    border: 2px solid rgba(255, 255, 255, 0.35);
-    touch-action: none;
-    z-index: 5;
-    display: none;
-    transition: background 0.1s, border-color 0.1s;
-  }
-  .stick-base.dragging {
-    background: rgba(255, 255, 255, 0.2);
-    border-color: rgba(255, 255, 255, 0.6);
-  }
-  #leftStick { left: calc(18px + env(safe-area-inset-left, 0px)); }
-  #rightStick { right: calc(18px + env(safe-area-inset-right, 0px)); }
-  .stick-nub {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 58px;
-    height: 58px;
-    margin: -29px 0 0 -29px;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.5);
-    pointer-events: none;
-    transition: background 0.1s;
-  }
-  .stick-base.dragging .stick-nub { background: rgba(255, 255, 255, 0.85); }
-  body.touch-device .stick-base { display: block; }
-  body.touch-device #hint { display: none; }
-  #mobileHint {
-    position: fixed;
-    top: 14px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(0,0,0,0.55);
-    padding: 8px 14px;
-    border-radius: 8px;
-    font-size: 12px;
-    text-align: center;
-    z-index: 8;
-    display: none;
-    pointer-events: none;
-    transition: opacity 0.6s ease;
-  }
-  body.touch-device #mobileHint { display: block; }
-  @media (max-width: 480px) {
-    .stick-base { width: 112px; height: 112px; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); }
-    .stick-nub { width: 50px; height: 50px; margin: -25px 0 0 -25px; }
-  }
-  #scoreboardToggleBtn {
-    position: fixed;
-    top: calc(20px + env(safe-area-inset-top, 0px));
-    right: calc(20px + env(safe-area-inset-right, 0px));
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
-    border: none;
-    background: rgba(0, 0, 0, 0.55);
-    color: #fff;
-    font-size: 20px;
-    cursor: pointer;
-    z-index: 9;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  #scoreboardToggleBtn:hover { background: rgba(0, 0, 0, 0.75); }
-  #sfxToggleBtn {
-    position: fixed;
-    top: calc(20px + env(safe-area-inset-top, 0px));
-    right: calc(74px + env(safe-area-inset-right, 0px));
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
-    border: none;
-    background: rgba(0, 0, 0, 0.55);
-    color: #fff;
-    font-size: 20px;
-    cursor: pointer;
-    z-index: 9;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  #sfxToggleBtn:hover { background: rgba(0, 0, 0, 0.75); }
-  #scoreboard {
-    position: fixed;
-    top: calc(72px + env(safe-area-inset-top, 0px));
-    right: calc(20px + env(safe-area-inset-right, 0px));
-    background: rgba(0, 0, 0, 0.55);
-    border-radius: 8px;
-    padding: 12px 16px;
-    min-width: 160px;
-    z-index: 9;
-    display: none;
-  }
-  #scoreboard.open { display: block; }
-  #scoreboard h3 {
-    margin: 0 0 8px 0;
-    font-size: 15px;
-    border-bottom: 1px solid #555;
-    padding-bottom: 6px;
-  }
-  #scoreboard ol {
-    margin: 0;
-    padding-left: 18px;
-    font-size: 13px;
-    line-height: 1.6;
-  }
-  #scoreboard ol .team-header {
-    list-style: none;
-    margin: 6px 0 2px -18px;
-    font-size: 12px;
-    color: #f1c40f;
-  }
-  #scoreboard ol .team-header:first-child { margin-top: 0; }
-  /* ===== 접속자 수 배지 (항상 표시) ===== */
-  #onlineCountBadge {
-    position: fixed;
-    top: calc(14px + env(safe-area-inset-top, 0px));
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(0, 0, 0, 0.55);
-    border-radius: 999px;
-    padding: 6px 14px;
-    font-size: 12px;
-    z-index: 11;
-    pointer-events: none;
-    white-space: nowrap;
-  }
-  @media (max-width: 480px) {
-    #onlineCountBadge { top: calc(8px + env(safe-area-inset-top, 0px)); font-size: 11px; padding: 5px 10px; }
-  }
-  #joinOverlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.75);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-direction: column;
-    z-index: 10;
-  }
-  #joinOverlay input {
-    padding: 10px 14px;
-    font-size: 16px;
-    border-radius: 6px;
-    border: none;
-    margin: 12px 0;
-    width: 220px;
-    text-align: center;
-  }
-  #joinOverlay button {
-    padding: 10px 24px;
-    font-size: 16px;
-    border-radius: 6px;
-    border: none;
-    background: #3498db;
-    color: #fff;
-    cursor: pointer;
-  }
-  #joinOverlay button:hover { background: #2980b9; }
-  #hint {
-    position: fixed;
-    bottom: 12px;
-    left: 20px;
-    font-size: 12px;
-    color: #aaa;
-  }
-  /* ===== 모드 선택 화면 ===== */
-  #modeOverlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.85);
-    display: none;
-    align-items: center;
-    justify-content: center;
-    flex-direction: column;
-    z-index: 10;
-    text-align: center;
-  }
-  #modeOverlay h2 { margin: 0 0 20px 0; }
-  #modeList { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; }
-  .mode-card {
-    background: #2c3e50;
-    border: 2px solid #34495e;
-    border-radius: 10px;
-    padding: 20px 26px;
-    width: 170px;
-    cursor: pointer;
-  }
-  .mode-card:hover { border-color: #3498db; }
-  .mode-card .mode-title { font-size: 22px; font-weight: bold; margin-bottom: 6px; }
-  .mode-card .mode-desc { font-size: 12px; color: #ccc; }
-  /* ===== 1:1 매칭 대기 화면 ===== */
-  #matchingOverlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.8);
-    display: none;
-    align-items: center;
-    justify-content: center;
-    flex-direction: column;
-    z-index: 10;
-    text-align: center;
-    padding: 0 20px;
-    box-sizing: border-box;
-  }
-  #matchingOverlay.open { display: flex; }
-  .matching-spinner {
-    width: 46px;
-    height: 46px;
-    border-radius: 50%;
-    border: 4px solid rgba(255,255,255,0.2);
-    border-top-color: #3498db;
-    animation: matchSpin 0.9s linear infinite;
-    margin: 18px 0;
-  }
-  @keyframes matchSpin { to { transform: rotate(360deg); } }
-  #matchingStatus { color: #bbb; font-size: 13px; margin-bottom: 20px; }
-  #cancelMatchBtn {
-    padding: 9px 22px;
-    font-size: 14px;
-    border-radius: 6px;
-    border: none;
-    background: #7f8c8d;
-    color: #fff;
-    cursor: pointer;
-  }
-  #cancelMatchBtn:hover { background: #6b7677; }
-  /* ===== 매치 결과 화면 ===== */
-  #matchResultOverlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.85);
-    display: none;
-    align-items: center;
-    justify-content: center;
-    flex-direction: column;
-    z-index: 10;
-    text-align: center;
-    padding: 0 20px;
-    box-sizing: border-box;
-  }
-  #matchResultOverlay.open { display: flex; }
-  #matchResultTitle { font-size: 30px; margin: 0 0 8px 0; }
-  #matchResultTitle.win { color: #2ecc71; }
-  #matchResultTitle.lose { color: #e74c3c; }
-  #matchResultDesc { color: #ccc; font-size: 14px; margin-bottom: 22px; }
-  #matchResultOverlay button {
-    padding: 10px 26px;
-    font-size: 15px;
-    border-radius: 6px;
-    border: none;
-    background: #3498db;
-    color: #fff;
-    cursor: pointer;
-    margin: 0 6px;
-  }
-  #matchResultOverlay button:hover { background: #2980b9; }
-  #matchResultOverlay button#backToMenuBtn { background: #7f8c8d; }
-  #matchResultOverlay button#backToMenuBtn:hover { background: #6b7677; }
-  /* ===== 캐릭터 선택 화면 ===== */
-  #characterOverlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0,0,0,0.85);
-    display: none;
-    align-items: center;
-    justify-content: flex-start;
-    flex-direction: column;
-    overflow-y: auto;            /* 화면이 작아 카드가 넘칠 때 스크롤로 접근 가능하게 함 */
-    -webkit-overflow-scrolling: touch;
-    box-sizing: border-box;
-    padding: 20px 12px calc(20px + env(safe-area-inset-bottom, 0px));
-    z-index: 10;
-  }
-  #characterOverlay h2 { margin: 8px 0 18px 0; flex-shrink: 0; }
-  #characterList {
-    display: flex;
-    gap: 16px;
-    flex-wrap: wrap;
-    justify-content: center;
-    max-width: 90vw;
-  }
-  .char-card {
-    background: #2c3e50;
-    border: 2px solid #34495e;
-    border-radius: 10px;
-    padding: 16px;
-    width: 190px;
-    text-align: center;
-  }
-  .char-avatar {
-    width: 64px;
-    height: 64px;
-    border-radius: 50%;
-    margin: 0 auto 10px auto;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 28px;
-    font-weight: bold;
-    color: #fff;
-  }
-  .char-card h3 { margin: 6px 0; }
-  .char-card .stat-line {
-    font-size: 12px;
-    color: #ccc;
-    text-align: left;
-    margin: 4px 0;
-  }
-  .char-card button {
-    margin-top: 12px;
-    padding: 8px 20px;
-    font-size: 14px;
-    border-radius: 6px;
-    border: none;
-    background: #2ecc71;
-    color: #fff;
-    cursor: pointer;
-    width: 100%;
-  }
-  .char-card button:hover { background: #27ae60; }
-  /* 화면이 작은 모바일에서는 카드/버튼 크기를 줄여 3개 캐릭터(슈 포함)가 한 화면에 더 잘 들어오게 함 */
-  @media (max-width: 480px), (max-height: 700px) {
-    #characterOverlay h2 { font-size: 18px; margin: 4px 0 10px 0; }
-    #characterList { gap: 10px; }
-    .char-card { width: 130px; padding: 10px; }
-    .char-avatar { width: 46px; height: 46px; font-size: 18px; margin-bottom: 6px; }
-    .char-card h3 { font-size: 14px; margin: 4px 0; }
-    .char-card .stat-line { font-size: 10px; margin: 2px 0; }
-    .char-card button { padding: 6px 10px; font-size: 12px; margin-top: 8px; }
-  }
-  /* ===== 궁극기 버튼 ===== */
-  #ultimateButton {
-    position: fixed;
-    bottom: calc(185px + env(safe-area-inset-bottom, 0px));
-    right: calc(30px + env(safe-area-inset-right, 0px));
-    width: 74px;
-    height: 74px;
-    border-radius: 50%;
-    z-index: 6;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    background: conic-gradient(#f1c40f 0%, rgba(255,255,255,0.15) 0%);
-  }
-  #ultimateButton.ready { animation: ultPulse 1s infinite; }
-  #ultimateButton.armed { box-shadow: 0 0 0 4px rgba(231, 76, 60, 0.9); animation: none; }
-  #ultimateButton .ult-inner {
-    width: 60px;
-    height: 60px;
-    border-radius: 50%;
-    background: #1e1e2e;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 26px;
-  }
-  #ultimateButton.armed .ult-inner { background: #7a1f1f; }
-  @keyframes ultPulse {
-    0%, 100% { box-shadow: 0 0 0px rgba(241, 196, 15, 0.8); }
-    50% { box-shadow: 0 0 18px rgba(241, 196, 15, 0.9); }
-  }
-  @media (max-width: 480px) {
-    #scoreboardToggleBtn { top: calc(10px + env(safe-area-inset-top, 0px)); right: calc(10px + env(safe-area-inset-right, 0px)); width: 36px; height: 36px; font-size: 16px; }
-    #sfxToggleBtn { top: calc(10px + env(safe-area-inset-top, 0px)); right: calc(56px + env(safe-area-inset-right, 0px)); width: 36px; height: 36px; font-size: 16px; }
-    #scoreboard { top: calc(54px + env(safe-area-inset-top, 0px)); right: calc(10px + env(safe-area-inset-right, 0px)); min-width: 120px; padding: 8px 10px; }
-    #scoreboard h3 { font-size: 12px; }
-    #scoreboard ol { font-size: 11px; }
-    #ultimateButton { right: calc(26px + env(safe-area-inset-right, 0px)); bottom: calc(160px + env(safe-area-inset-bottom, 0px)); width: 62px; height: 62px; }
-    #ultimateButton .ult-inner { width: 50px; height: 50px; font-size: 22px; }
-  }
-  /* ===== 탄창(탄약) 표시 ===== */
-  #ammoDisplay {
-    position: fixed;
-    bottom: calc(45px + env(safe-area-inset-bottom, 0px));
-    left: 50%;
-    transform: translateX(-50%);
-    display: flex;
-    gap: 8px;
-    z-index: 6;
-  }
-  #ammoDisplay .ammo-dot {
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: #f39c12;
-    border: 2px solid #7a4e0a;
-    transition: background 0.15s, opacity 0.15s;
-  }
-  #ammoDisplay .ammo-dot.empty {
-    background: rgba(255,255,255,0.12);
-    border-color: rgba(255,255,255,0.25);
-  }
-  /* ===== 채팅 (좌측 상단) ===== */
-  #chatContainer {
-    position: fixed;
-    left: calc(18px + env(safe-area-inset-left, 0px));
-    top: calc(64px + env(safe-area-inset-top, 0px));
-    width: 300px;
-    max-width: calc(100vw - 40px);
-    z-index: 7;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    pointer-events: none; /* 빈 여백 부분은 터치를 그대로 통과시켜 조이스틱을 가리지 않게 함 */
-  }
-  #chatLog {
-    display: flex;
-    flex-direction: column;
-    gap: 3px;
-    max-height: min(150px, 22vh); /* 화면이 낮은(가로 모드) 기기에서 왼쪽 조이스틱까지 내려오지 않도록 제한 */
-    overflow-y: auto;
-    pointer-events: none;
-  }
-  #chatLog::-webkit-scrollbar { width: 0; }
-  #chatLog .chat-line {
-    background: rgba(0,0,0,0.5);
-    border-radius: 6px;
-    padding: 4px 9px;
-    font-size: 12px;
-    line-height: 1.4;
-    width: fit-content;
-    max-width: 100%;
-    word-break: break-word;
-  }
-  #chatLog .chat-line .chat-name { font-weight: bold; margin-right: 4px; }
-  #chatInputRow { display: flex; gap: 6px; pointer-events: auto; }
-  #chatInput {
-    display: none;
-    flex: 1;
-    padding: 8px 10px;
-    font-size: 13px;
-    border-radius: 6px;
-    border: none;
-    outline: none;
-    background: rgba(0,0,0,0.65);
-    color: #fff;
-    box-sizing: border-box;
-  }
-  #chatInput.active { display: block; }
-  #chatInput::placeholder { color: rgba(255,255,255,0.5); }
-  #chatToggleBtn {
-    position: fixed;
-    left: calc(18px + env(safe-area-inset-left, 0px));
-    top: calc(16px + env(safe-area-inset-top, 0px));
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    border: none;
-    background: rgba(0,0,0,0.5);
-    color: #fff;
-    font-size: 18px;
-    cursor: pointer;
-    z-index: 7;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  #chatToggleBtn:hover { background: rgba(0,0,0,0.7); }
-  @media (max-width: 480px) {
-    #chatContainer { top: calc(54px + env(safe-area-inset-top, 0px)); width: 220px; }
-    #chatToggleBtn { top: calc(12px + env(safe-area-inset-top, 0px)); width: 34px; height: 34px; font-size: 15px; }
-  }
-  /* 가로 모드처럼 화면 세로 길이가 짧을 때: 채팅 영역을 더 압축해 왼쪽 조이스틱과 절대 겹치지 않게 함 */
-  @media (max-height: 480px) {
-    #chatToggleBtn { top: calc(8px + env(safe-area-inset-top, 0px)); width: 32px; height: 32px; font-size: 14px; }
-    #chatContainer { top: calc(44px + env(safe-area-inset-top, 0px)); width: 200px; }
-    #chatLog { max-height: min(80px, 18vh); }
-    #chatLog .chat-line { font-size: 11px; padding: 3px 7px; }
-  }
-</style>
-</head>
-<body>
+// server.js
+// 브롤스타즈 스타일 2D 탑다운 매칭 슈팅 게임 - 서버 (1:1 / 2:2 지원)
 
-<div id="onlineCountBadge">🟢 접속자 수 확인 중...</div>
+const express = require('express');
+const http = require('http');
+const path = require('path');
+const { Server } = require('socket.io');
 
-<div id="joinOverlay">
-  <h2>닉네임을 입력하세요</h2>
-  <input id="nameInput" maxlength="12" placeholder="예: Hero" />
-  <button id="joinBtn">다음</button>
-</div>
-
-<div id="modeOverlay">
-  <h2>모드를 선택하세요</h2>
-  <div id="modeList">
-    <div class="mode-card" data-mode="1v1">
-      <div class="mode-title">1 : 1</div>
-      <div class="mode-desc">상대 한 명과 맞대결</div>
-    </div>
-    <div class="mode-card" data-mode="2v2">
-      <div class="mode-title">2 : 2</div>
-      <div class="mode-desc">팀원과 함께 2대2 협동전</div>
-    </div>
-  </div>
-</div>
-
-<div id="characterOverlay">
-  <h2>캐릭터를 선택하세요</h2>
-  <div id="characterList"></div>
-</div>
-
-<div id="matchingOverlay">
-  <h2>상대를 찾는 중...</h2>
-  <div class="matching-spinner"></div>
-  <div id="matchingStatus">대기열에 참가했습니다</div>
-  <button id="cancelMatchBtn">취소</button>
-</div>
-
-<div id="matchResultOverlay">
-  <h2 id="matchResultTitle"></h2>
-  <div id="matchResultDesc"></div>
-  <div>
-    <button id="rematchBtn">다시 매칭하기</button>
-    <button id="backToMenuBtn">모드 다시 선택</button>
-  </div>
-</div>
-
-<button id="sfxToggleBtn" title="효과음 켜기/끄기">🔊</button>
-<button id="scoreboardToggleBtn" title="전적">🏆</button>
-<div id="scoreboard">
-  <h3>🏆 1:1 전적</h3>
-  <ol id="scoreList"></ol>
-</div>
-
-<canvas id="gameCanvas"></canvas>
-<div id="hint">WASD / 방향키: 이동 &nbsp;|&nbsp; 마우스: 조준 &nbsp;|&nbsp; 좌클릭: 기본 공격(탄창 3발) &nbsp;|&nbsp; E 또는 궁극기 버튼: 궁극기 장전 후 클릭으로 조준 발사</div>
-<div id="mobileHint">왼쪽 스틱: 이동 &nbsp;|&nbsp; 오른쪽 스틱: 당겨서 조준, 손을 떼면 발사 &nbsp;|&nbsp; 🤡 버튼: 궁극기</div>
-
-<!-- 모바일 전용 가상 조이스틱: 왼쪽=이동, 오른쪽=조준+발사 -->
-<div id="leftStick" class="stick-base"><div class="stick-nub" id="leftNub"></div></div>
-<div id="rightStick" class="stick-base"><div class="stick-nub" id="rightNub"></div></div>
-
-<!-- 탄창 표시: 남은 총알 수만큼 채워진 점으로 표시 -->
-<div id="ammoDisplay">
-  <div class="ammo-dot" id="ammoDot0"></div>
-  <div class="ammo-dot" id="ammoDot1"></div>
-  <div class="ammo-dot" id="ammoDot2"></div>
-</div>
-
-<!-- 궁극기 버튼: 게이지가 차면 클릭/탭으로 발동 (PC/모바일 공용) -->
-<div id="ultimateButton"><div class="ult-inner">🤡</div></div>
-
-<!-- 채팅: Enter 또는 💬 버튼으로 입력창 열기, Enter로 전송, Esc로 취소 -->
-<button id="chatToggleBtn" title="채팅 (Enter)">💬</button>
-<div id="chatContainer">
-  <div id="chatLog"></div>
-  <div id="chatInputRow">
-    <input id="chatInput" type="text" maxlength="120" placeholder="메시지를 입력하고 Enter (Esc: 취소)" autocomplete="off" />
-  </div>
-</div>
-
-<script src="/socket.io/socket.io.js"></script>
-<script>
-const socket = io();
-
-const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d');
-
-let myId = null;
-let ARENA_WIDTH = 770;
-let ARENA_HEIGHT = 700;
-let PLAYER_RADIUS = 20;
-let WALLS = [];
-let BUSHES = [];
-
-// ===== 카메라 =====
-// 카메라는 더 이상 플레이어를 따라다니지 않고, 맵 중앙에 고정된다.
-// camera.x, camera.y는 현재 화면 좌상단에 해당하는 '월드 좌표'.
-const camera = { x: 0, y: 0 };
-// 화면(캔버스) 크기가 얼마든 맵 전체가 항상 한 화면에 다 보이도록 하는 축소 배율.
-// (모바일 세로화면처럼 가로폭이 좁아도 맵이 잘리지 않고 전체가 축소되어 보임)
-let cameraScale = 1;
-
-// 캔버스 실제 해상도를 맵 크기가 아니라 '화면에 보이는 크기'로 맞춘다 (넓은 맵을 한눈에 다 보여주지 않기 위함)
-function resizeCanvas() {
-  canvas.width = Math.max(320, window.innerWidth - 20);
-  canvas.height = Math.max(240, window.innerHeight - 30);
-}
-resizeCanvas();
-window.addEventListener('resize', resizeCanvas);
-
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
-}
-
-// 고정 카메라: 플레이어를 따라가지 않고, 맵 전체의 중앙이 항상 화면 중앙에 오도록 고정한다
-// 가로/세로 중 더 많이 축소해야 하는 쪽에 맞춰 배율을 정해서, 화면 비율(모바일/PC 어느 쪽이든)과
-// 상관없이 맵 전체(경계 포함)가 항상 한 화면 안에 들어오도록 한다.
-function updateCamera() {
-  cameraScale = Math.min(canvas.width / ARENA_WIDTH, canvas.height / ARENA_HEIGHT);
-  const viewW = canvas.width / cameraScale;
-  const viewH = canvas.height / cameraScale;
-  camera.x = (ARENA_WIDTH - viewW) / 2;
-  camera.y = (ARENA_HEIGHT - viewH) / 2;
-}
-
-let latestState = { players: {}, bullets: [], effects: [], waterPools: [], turrets: [] };
-
-// ===== 캐릭터 정의 (선택 화면 표시용 - 실제 능력치는 서버가 검증/적용) =====
-const CHARACTERS = [
-  {
-    id: 'minam',
-    name: '미남',
-    color: '#3498db',
-    maxHp: 7000,
-    basic: { name: '총 쏘기', damage: 1540 },
-    ultimate: { name: '피에로 발사', damage: 3500, desc: '조준한 방향으로 발사' },
-  },
-  {
-    id: 'jigi',
-    name: '지기',
-    color: '#2ecc71',
-    maxHp: 6000,
-    basic: { name: '던지기', damage: 2500 },
-    ultimate: { name: '벼락지기', damage: 3500, desc: '주변 고정된 위치에 번개 5회 낙하 (조준 불필요)' },
-  },
-  {
-    id: 'syu',
-    name: '슈',
-    color: '#e67e22',
-    maxHp: 6000,
-    basic: { name: '샷건 발사 (펠릿 10발, 사거리 짧음)', damage: 300 },
-    ultimate: { name: '메가 샷건', damage: 600, desc: '큰 총알 10발 발사, 사거리 더 짧음' },
-  },
-  {
-    id: 'wonhyo',
-    name: '원효대사',
-    color: '#9b59b6',
-    maxHp: 7500,
-    basic: { name: '해골물 뿌리기', desc: '벽/적 적중 시 물웅덩이 생성 (적 0.5초마다 500 피해 / 아군 0.5초마다 500 회복, 2초 후 소멸)' },
-    ultimate: { name: '은신', desc: '5초 동안 적에게 보이지 않음' },
-  },
-  {
-    id: 'byeongitong',
-    name: '변기통',
-    color: '#7f8c8d',
-    maxHp: 8000,
-    basic: { name: '뚫어뻥 휘두르기', damage: 2000, desc: '전방 120도 부채꼴 범위를 뚫어뻥으로 휘둘러 2000 피해를 주고 뒤로 밀쳐냄' },
-    ultimate: { name: '변기 돌진', desc: '바라보는 방향으로 매우 빠르게 돌진, 적과 충돌 시 2500 피해 + 1.5초 기절' },
-  },
-  {
-    id: 'seongseureopda',
-    name: '성스럽다',
-    color: '#1abc9c',
-    maxHp: 6000,
-    basic: { name: '칼 던지기', damage: 1500, desc: '벽(장애물)을 그대로 통과해서 날아감' },
-    ultimate: { name: '저격 터렛 설치', desc: '조준 불필요, 체력 4,000의 자동 사격 터렛을 설치 (사거리 294, 0.5초마다 500 피해 저격탄 발사)' },
-  },
-];
-let selectedCharacterId = CHARACTERS[0].id;
-
-// ===== 효과음 (Web Audio API로 직접 합성 - 별도 파일 필요 없음) =====
-const SFX = (() => {
-  let ctx = null;
-  function ensureCtx() {
-    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
-    if (ctx.state === 'suspended') ctx.resume();
-    return ctx;
-  }
-
-  let enabled = localStorage.getItem('sfxEnabled') !== 'off';
-  function setEnabled(v) { enabled = v; localStorage.setItem('sfxEnabled', v ? 'on' : 'off'); }
-  function isEnabled() { return enabled; }
-
-  // 단순 톤(삐- 소리) 하나를 재생. freqEnd를 주면 주파수가 시간에 따라 미끄러지듯 변함
-  function beep({ freq = 440, freqEnd = null, duration = 0.1, type = 'square', volume = 0.2, delay = 0 }) {
-    if (!enabled) return;
-    try {
-      const ac = ensureCtx();
-      const t0 = ac.currentTime + delay;
-      const osc = ac.createOscillator();
-      const gain = ac.createGain();
-      osc.type = type;
-      osc.frequency.setValueAtTime(freq, t0);
-      if (freqEnd !== null) osc.frequency.exponentialRampToValueAtTime(Math.max(1, freqEnd), t0 + duration);
-      gain.gain.setValueAtTime(volume, t0);
-      gain.gain.exponentialRampToValueAtTime(0.001, t0 + duration);
-      osc.connect(gain);
-      gain.connect(ac.destination);
-      osc.start(t0);
-      osc.stop(t0 + duration + 0.03);
-    } catch (e) { /* 오디오를 지원하지 않는 환경은 조용히 무시 */ }
-  }
-
-  // 짧은 백색소음(타격감/폭발감을 위한 노이즈)
-  function noiseBurst({ duration = 0.15, volume = 0.2, delay = 0 }) {
-    if (!enabled) return;
-    try {
-      const ac = ensureCtx();
-      const size = Math.max(1, Math.floor(ac.sampleRate * duration));
-      const buffer = ac.createBuffer(1, size, ac.sampleRate);
-      const data = buffer.getChannelData(0);
-      for (let i = 0; i < size; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / size);
-      const src = ac.createBufferSource();
-      src.buffer = buffer;
-      const gain = ac.createGain();
-      const t0 = ac.currentTime + delay;
-      gain.gain.setValueAtTime(volume, t0);
-      gain.gain.exponentialRampToValueAtTime(0.001, t0 + duration);
-      src.connect(gain);
-      gain.connect(ac.destination);
-      src.start(t0);
-    } catch (e) {}
-  }
-
-  return {
-    setEnabled, isEnabled,
-    shoot() { beep({ freq: 750, freqEnd: 320, duration: 0.07, type: 'square', volume: 0.12 }); },
-    ultimate() { beep({ freq: 200, freqEnd: 850, duration: 0.35, type: 'sawtooth', volume: 0.18 }); noiseBurst({ duration: 0.3, volume: 0.08 }); },
-    hit() { noiseBurst({ duration: 0.1, volume: 0.22 }); beep({ freq: 160, freqEnd: 70, duration: 0.1, type: 'square', volume: 0.12 }); },
-    death() { beep({ freq: 420, freqEnd: 50, duration: 0.6, type: 'sawtooth', volume: 0.22 }); },
-    kill() { beep({ freq: 520, duration: 0.1, type: 'square', volume: 0.18 }); beep({ freq: 780, duration: 0.16, type: 'square', volume: 0.18, delay: 0.1 }); },
-    ultimateReady() { beep({ freq: 600, duration: 0.1, type: 'sine', volume: 0.12 }); beep({ freq: 900, duration: 0.15, type: 'sine', volume: 0.12, delay: 0.1 }); },
-    matchStart() { beep({ freq: 440, duration: 0.15, type: 'square', volume: 0.18 }); beep({ freq: 660, duration: 0.2, type: 'square', volume: 0.18, delay: 0.15 }); },
-    win() { [523, 659, 784, 1046].forEach((f, i) => beep({ freq: f, duration: 0.18, type: 'square', volume: 0.18, delay: i * 0.13 })); },
-    lose() { [400, 350, 300, 250].forEach((f, i) => beep({ freq: f, duration: 0.22, type: 'sawtooth', volume: 0.18, delay: i * 0.15 })); },
-    respawn() { beep({ freq: 300, freqEnd: 700, duration: 0.2, type: 'sine', volume: 0.12 }); },
-  };
-})();
-
-const sfxToggleBtn = document.getElementById('sfxToggleBtn');
-function updateSfxButton() { sfxToggleBtn.textContent = SFX.isEnabled() ? '🔊' : '🔇'; }
-sfxToggleBtn.addEventListener('click', () => { SFX.setEnabled(!SFX.isEnabled()); updateSfxButton(); });
-updateSfxButton();
-
-// ===== 로컬 입력 상태 =====
-const keys = { w: false, a: false, s: false, d: false, up: false, down: false, left: false, right: false };
-let mouseX = 0, mouseY = 0;
-let myAngle = 0;
-
-// 자신의 로컬 위치(부드러운 이동을 위해 클라이언트에서 계산 후 서버로 전송)
-let myX = 0, myY = 0;
-let joined = false;
-const MOVE_SPEED = 190; // px/초 (기존 260에서 하향 조정)
-
-// ===== 모바일(터치) 지원 =====
-const isTouchDevice = ('ontouchstart' in window)
-  || navigator.maxTouchPoints > 0
-  || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
-if (isTouchDevice) {
-  document.body.classList.add('touch-device');
-}
-
-// 왼쪽 조이스틱(이동) 입력값 (-1~1)
-let touchMoveX = 0, touchMoveY = 0;
-let touchMoveActive = false;
-
-// 오른쪽 조이스틱(조준+발사): 당기는 동안 사거리를 보여주고, 손을 떼는 순간 발사
-let touchAimActive = false;
-let touchAimAngle = 0;
-let rightStickDragged = false;
-
-// 궁극기 '장전' 상태: 조준이 필요한 궁극기를 공격 조준(마우스/오른쪽 조이스틱)으로 발사하기 위한 모드
-let ultimateArmed = false;
-
-// 기본 공격 발사 지점(마우스 클릭, 오른쪽 조이스틱 release)이 공통으로 거치는 함수.
-// 궁극기가 장전된 상태면 궁극기를, 아니면 기본 공격을 발사한다.
-function fireAttack() {
-  if (!joined) return;
-  const me = latestState.players[myId];
-  if (ultimateArmed && me && me.ultimateCharge >= 100) {
-    socket.emit('ultimate');
-    ultimateArmed = false;
-    updateUltimateButton();
-    SFX.ultimate();
-  } else {
-    socket.emit('shoot');
-    SFX.shoot();
-  }
-}
-
-function setupStick(baseId, nubId, onMove, onEnd) {
-  const base = document.getElementById(baseId);
-  const nub = document.getElementById(nubId);
-  let activeTouchId = null;
-
-  // CSS 미디어쿼리에 따라 조이스틱 크기가 달라지므로, 매번 실제 렌더링된 크기로 최대 반경을 계산
-  function getGeometry() {
-    const rect = base.getBoundingClientRect();
-    return {
-      cx: rect.left + rect.width / 2,
-      cy: rect.top + rect.height / 2,
-      maxDist: rect.width / 2 - 6, // 베이스 가장자리에 살짝 여유를 둠
-    };
-  }
-
-  function handleMove(clientX, clientY) {
-    const { cx, cy, maxDist } = getGeometry();
-    let dx = clientX - cx;
-    let dy = clientY - cy;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist > maxDist) {
-      dx = (dx / dist) * maxDist;
-      dy = (dy / dist) * maxDist;
-    }
-    nub.style.transform = `translate(${dx}px, ${dy}px)`;
-    onMove(dx / maxDist, dy / maxDist, dx, dy);
-  }
-
-  function resetNub() {
-    nub.style.transform = 'translate(0px, 0px)';
-  }
-
-  base.addEventListener('touchstart', (e) => {
-    e.preventDefault();
-    const t = e.changedTouches[0];
-    activeTouchId = t.identifier;
-    base.classList.add('dragging');
-    handleMove(t.clientX, t.clientY);
-  }, { passive: false });
-
-  base.addEventListener('touchmove', (e) => {
-    e.preventDefault();
-    for (const t of e.changedTouches) {
-      if (t.identifier === activeTouchId) {
-        handleMove(t.clientX, t.clientY);
-      }
-    }
-  }, { passive: false });
-
-  function onTouchEnd(e) {
-    for (const t of e.changedTouches) {
-      if (t.identifier === activeTouchId) {
-        activeTouchId = null;
-        base.classList.remove('dragging');
-        resetNub();
-        onEnd();
-      }
-    }
-  }
-  base.addEventListener('touchend', onTouchEnd, { passive: false });
-  base.addEventListener('touchcancel', onTouchEnd, { passive: false });
-}
-
-setupStick('leftStick', 'leftNub',
-  (nx, ny) => {
-    touchMoveActive = true;
-    touchMoveX = nx;
-    touchMoveY = ny;
-  },
-  () => {
-    touchMoveActive = false;
-    touchMoveX = 0;
-    touchMoveY = 0;
-  }
-);
-
-setupStick('rightStick', 'rightNub',
-  (nx, ny, dx, dy) => {
-    // 아주 작은 움직임은 무시(오조준 방지)
-    if (Math.abs(dx) < 4 && Math.abs(dy) < 4) return;
-    touchAimActive = true;
-    rightStickDragged = true;
-    touchAimAngle = Math.atan2(dy, dx);
-  },
-  () => {
-    // 손가락을 떼는 순간 마지막으로 조준한 방향으로 발사 (궁극기가 장전되어 있으면 궁극기가 나감)
-    fireAttack();
-    touchAimActive = false;
-    rightStickDragged = false;
-  }
-);
-
-// ===== 조인 처리: 닉네임 입력 -> 모드 선택 -> 캐릭터 선택 -> 매칭 대기 =====
-document.getElementById('joinBtn').addEventListener('click', goToModeSelect);
-document.getElementById('nameInput').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') goToModeSelect();
+const app = express();
+const server = http.createServer(app);
+// pingInterval/pingTimeout을 기본값(각각 25초/20초)보다 짧게 줘서, 매칭 대기 중 누군가의
+// 연결이 끊겼을 때(와이파이 끊김, 앱 전환 등 '정상 종료'가 아닌 경우) 서버가 이를 훨씬 빨리
+// 감지하도록 함. 기본값 그대로면 최대 45초 가까이 disconnect 이벤트가 늦게 발생해서,
+// 대기 중이던 다른 사람 화면의 인원수가 한참 동안 줄어들지 않는 것처럼 보였음.
+const io = new Server(server, {
+  pingInterval: 8000,
+  pingTimeout: 5000,
 });
 
-let selectedMode = '1v1';
+// Render 배포 환경에서는 PORT 환경변수를 사용해야 함
+const PORT = process.env.PORT || 3000;
 
-function goToModeSelect() {
-  document.getElementById('joinOverlay').style.display = 'none';
-  document.getElementById('modeOverlay').style.display = 'flex';
-}
+// index.html 등 정적 파일을 같은 폴더에서 서빙
+app.use(express.static(path.join(__dirname)));
 
-document.querySelectorAll('.mode-card').forEach((card) => {
-  card.addEventListener('click', () => {
-    selectedMode = card.getAttribute('data-mode');
-    goToCharacterSelect();
-  });
-});
+// ===== 게임 설정값 =====
+const ARENA_WIDTH = 770;    // 맵 크기 30% 추가 축소 (1100 → 770)
+const ARENA_HEIGHT = 700;   // 맵 크기 30% 추가 축소 (1000 → 700)
+const PLAYER_RADIUS = 20;
+const RESPAWN_DELAY = 3000;     // ms
+const TICK_RATE = 20;           // 초당 서버 틱 수
+const TICK_MS = 1000 / TICK_RATE;
+const ULTIMATE_CHARGE_PER_HIT = 34; // 기본 공격이 적중할 때마다 충전되는 궁극기 게이지(%). 3회 적중 시 100% 도달
+const EFFECT_LIFETIME = 0.4; // 번개 등 시각 이펙트가 화면에 남아있는 시간(초)
+const KNOCKBACK_DURATION = 0.28; // 넉백(밀쳐냄)이 순간이동처럼 보이지 않도록, 이 시간(초) 동안 점점 감속하며 자연스럽게 날아가게 함
 
-function goToCharacterSelect() {
-  document.getElementById('modeOverlay').style.display = 'none';
-  document.getElementById('joinOverlay').style.display = 'none';
-  renderCharacterList();
-  document.getElementById('characterOverlay').style.display = 'flex';
-}
+// ===== 매칭 모드 설정 =====
+// size: 매치를 시작하는 데 필요한 총 인원, teamSize: 한 팀의 인원 수
+// winScore: 팀 누적 킬 수가 이 값에 도달하면 그 팀이 승리 (1:1은 사실상 개인 킬 수와 동일)
+const MODES = {
+  '1v1': { size: 2, teamSize: 1, winScore: 5 },
+  '2v2': { size: 4, teamSize: 2, winScore: 8 },
+};
+const MATCH_CLEANUP_DELAY_MS = 600; // 승리 판정 후 마지막 상태를 한 번 더 보낸 뒤 방을 정리하기까지의 지연
+const FRIENDLY_FIRE = false; // 같은 팀끼리는 서로 피해를 주지 않음 (총알은 아군을 그대로 통과)
 
-function renderCharacterList() {
-  const list = document.getElementById('characterList');
-  list.innerHTML = CHARACTERS.map((c) => `
-    <div class="char-card">
-      <div class="char-avatar" style="background:${c.color}">${escapeHtml(c.name.slice(0, 1))}</div>
-      <h3>${escapeHtml(c.name)}</h3>
-      <div class="stat-line">❤️ 체력: ${c.maxHp.toLocaleString()}</div>
-      <div class="stat-line">🎯 ${escapeHtml(c.basic.name)}${c.basic.damage ? `: ${c.basic.damage.toLocaleString()}` : ''}${c.basic.desc ? ` (${escapeHtml(c.basic.desc)})` : ''}</div>
-      <div class="stat-line">✨ ${escapeHtml(c.ultimate.name)}${c.ultimate.damage ? `: ${c.ultimate.damage.toLocaleString()}` : ''}${c.ultimate.desc ? ` (${escapeHtml(c.ultimate.desc)})` : ''}</div>
-      <button data-char-id="${c.id}">선택</button>
-    </div>
-  `).join('');
+// ===== 탄창 / 연사 방지 =====
+const MAX_AMMO = 3;              // 모든 캐릭터 공통 탄창 크기
+const FIRE_COOLDOWN_MS = 350;    // 한 발 쏜 뒤 다음 발사까지 최소 대기시간 (연사 방지)
+const AMMO_REGEN_SECONDS = 1.8;  // 탄약 1발이 다시 채워지는 데 걸리는 시간
 
-  list.querySelectorAll('button[data-char-id]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      selectedCharacterId = btn.getAttribute('data-char-id');
-      doJoin();
-    });
-  });
-}
-
-let myName = 'Player';
-let myTeam = null;      // 'A' 또는 'B' - matchFound에서 갱신됨
-let matchMode = '1v1';  // 'matchFound'에서 서버가 알려주는 실제 매치 모드로 갱신됨
-let matchWinScore = 5;  // 팀이 승리하는 데 필요한 누적 킬 수. matchFound에서 갱신됨
-
-function doJoin() {
-  myName = document.getElementById('nameInput').value.trim() || 'Player';
-  document.getElementById('characterOverlay').style.display = 'none';
-  requestMatch();
-}
-
-// 대기열에 등록 요청을 보내고 매칭 대기 화면을 띄운다
-function requestMatch() {
-  document.getElementById('matchResultOverlay').classList.remove('open');
-  document.getElementById('matchingStatus').textContent =
-    selectedMode === '2v2' ? '2:2 상대를 찾는 중입니다...' : '1:1 상대를 찾는 중입니다...';
-  document.getElementById('matchingOverlay').classList.add('open');
-  socket.emit('findMatch', { name: myName, characterId: selectedCharacterId, mode: selectedMode });
-}
-
-document.getElementById('cancelMatchBtn').addEventListener('click', () => {
-  socket.emit('cancelFindMatch');
-  document.getElementById('matchingOverlay').classList.remove('open');
-  document.getElementById('modeOverlay').style.display = 'flex';
-});
-
-document.getElementById('rematchBtn').addEventListener('click', () => {
-  requestMatch();
-});
-
-document.getElementById('backToMenuBtn').addEventListener('click', () => {
-  document.getElementById('matchResultOverlay').classList.remove('open');
-  document.getElementById('modeOverlay').style.display = 'flex';
-});
-
-socket.on('queueUpdate', (data) => {
-  const waiting = data && data.waiting ? data.waiting : 1;
-  const needed = data && data.needed ? data.needed : 2;
-  document.getElementById('matchingStatus').textContent =
-    `대기 인원 ${waiting} / ${needed}명...`;
-});
-
-// 상대(들)가 정해지면 매치가 시작된다: 대기 화면을 닫고 새 아레나 상태로 게임 화면을 초기화
-socket.on('matchFound', (data) => {
-  myId = data.id;
-  myTeam = data.team;
-  matchMode = data.mode || '1v1';
-  matchWinScore = data.winScore || 5;
-  ARENA_WIDTH = data.arena.width;
-  ARENA_HEIGHT = data.arena.height;
-  PLAYER_RADIUS = data.playerRadius;
-  WALLS = data.walls || [];
-  BUSHES = data.bushes || [];
-  resizeCanvas(); // 캔버스는 맵 크기가 아니라 화면 크기에 맞춤 (카메라가 그 안에서 맵을 비춤)
-  // 서버로부터 실제 스폰 좌표를 받기 전까지 잠시 쓰이는 임시값 (아래 state 핸들러가 곧바로 덮어씀)
-  myX = ARENA_WIDTH / 2;
-  myY = ARENA_HEIGHT / 2;
-
-  // 이전 매치의 흔적(채팅, 상태)을 정리하고 새 매치를 시작
-  chatMessages = [];
-  chatBubbles = {};
-  renderChatLog();
-  latestState = { players: {}, bullets: [], effects: [], waterPools: [], turrets: [] };
-  wasAlive = false; // 새 매치이므로, 첫 상태 수신 시 서버 스폰 위치로 무조건 동기화되게 함
-  prevMyHp = null; // 새 매치 시작 시 이전 매치의 체력/점수 기록으로 인한 오작동(사운드 오재생) 방지
-  prevMyScore = null;
-  prevUltimateReady = false;
-
-  document.getElementById('matchingOverlay').classList.remove('open');
-  document.getElementById('matchResultOverlay').classList.remove('open');
-  document.getElementById('scoreboard').classList.add('open'); // 바로 전적을 보여줌
-
-  // 매치 시작 안내를 시스템 메시지로 채팅창에 표시
-  if (matchMode === '2v2') {
-    const teammate = (data.teammateNames && data.teammateNames[0]) || '??';
-    const opponents = (data.opponentNames || []).join(', ') || '??';
-    addChatMessage({ id: 'system', name: '시스템', color: '#f1c40f', text: `팀원: ${teammate} / 상대: ${opponents}` });
-  } else {
-    const opponent = (data.opponentNames && data.opponentNames[0]) || '??';
-    addChatMessage({ id: 'system', name: '시스템', color: '#f1c40f', text: `상대: ${opponent}` });
-  }
-
-  joined = true;
-  canvas.focus();
-
-  const mobileHintEl = document.getElementById('mobileHint');
-  if (mobileHintEl) {
-    mobileHintEl.style.opacity = '1';
-    setTimeout(() => { mobileHintEl.style.opacity = '0'; }, 5000);
-  }
-
-  SFX.matchStart();
-});
-
-// 매치가 끝나면(승리/패배/상대 이탈) 결과 화면을 보여준다
-socket.on('matchOver', (data) => {
-  joined = false;
-  ultimateArmed = false;
-
-  const titleEl = document.getElementById('matchResultTitle');
-  const descEl = document.getElementById('matchResultDesc');
-  const iWon = data.winnerTeam === myTeam;
-  const ts = data.teamScore || { A: 0, B: 0 };
-  const myScore = myTeam === 'A' ? ts.A : ts.B;
-  const oppScore = myTeam === 'A' ? ts.B : ts.A;
-
-  titleEl.classList.remove('win', 'lose');
-  if (data.reason === 'opponentLeft') {
-    titleEl.textContent = iWon ? '상대가 나갔습니다' : '매치 종료';
-    titleEl.classList.add(iWon ? 'win' : 'lose');
-    descEl.textContent = '상대방의 연결이 끊어져 매치가 종료되었습니다.';
-  } else {
-    titleEl.textContent = iWon ? '승리!' : '패배';
-    titleEl.classList.add(iWon ? 'win' : 'lose');
-    descEl.textContent = `${myScore} : ${oppScore} (${matchWinScore}킬 선취)`;
-  }
-
-  document.getElementById('matchResultOverlay').classList.add('open');
-
-  if (iWon) SFX.win(); else SFX.lose();
-});
-
-// 마지막으로 확인된 '생존' 여부. 참가 직후(false)나 리스폰 직후(죽음->생존 전환)에
-// 로컬 이동 좌표(myX, myY)를 서버가 정해준 실제 위치로 강제 동기화하기 위해 사용.
-// 이 동기화가 없으면 로컬 좌표가 초기값(맵 정중앙)에 머물러 있다가, 그 위치가
-// 벽과 겹칠 경우 "시작하자마자 벽에 낀 것처럼" 전혀 움직이지 못하는 문제가 생김.
-let wasAlive = false;
-
-// 효과음 트리거용 - 직전 상태에서의 내 체력/점수/궁극기 게이지를 기억해뒀다가 변화를 비교한다
-let prevMyHp = null;
-let prevMyScore = null;
-let prevUltimateReady = false;
-
-socket.on('state', (state) => {
-  latestState = state;
-  const me = state.players[myId];
-  if (me) {
-    if (!me.alive) {
-      // 사망 중에는 서버 위치를 계속 따라간다
-      myX = me.x;
-      myY = me.y;
-    } else if (!wasAlive) {
-      // 방금 참가했거나 리스폰된 순간 -> 서버가 정한 스폰 위치로 강제 동기화
-      myX = me.x;
-      myY = me.y;
-      if (prevMyHp !== null) SFX.respawn(); // 최초 참가 시점(prevMyHp === null)에는 재생하지 않음
-    }
-
-    // 방금 죽었을 때(생존 -> 사망 전환)
-    if (wasAlive && !me.alive) SFX.death();
-    // 체력이 줄었을 때(공격당함). 사망으로 인한 감소는 위에서 이미 별도 처리하므로 살아있을 때만
-    else if (me.alive && prevMyHp !== null && me.hp < prevMyHp) SFX.hit();
-
-    // 처치 수(score)가 늘었을 때
-    if (prevMyScore !== null && me.score > prevMyScore) SFX.kill();
-
-    // 궁극기 게이지가 이번에 막 100%가 되었을 때
-    const ultimateReady = me.ultimateCharge >= 100;
-    if (ultimateReady && !prevUltimateReady) SFX.ultimateReady();
-    prevUltimateReady = ultimateReady;
-
-    prevMyHp = me.hp;
-    prevMyScore = me.score;
-    wasAlive = me.alive;
-  }
-  updateUltimateButton();
-  updateAmmoDisplay();
-});
-
-// ===== 스코어보드 (동그란 버튼을 눌러야 보이게 토글) =====
-const scoreboardToggleBtn = document.getElementById('scoreboardToggleBtn');
-const scoreboardEl = document.getElementById('scoreboard');
-scoreboardToggleBtn.addEventListener('click', () => {
-  scoreboardEl.classList.toggle('open');
-});
+// ===== 무피격 체력 회복 =====
+const HP_REGEN_DELAY_MS = 4000;      // 마지막으로 피격당한 후 이 시간이 지나야 회복 시작
+const HP_REGEN_PERCENT_PER_SEC = 0.04; // 초당 최대 체력의 4%씩 회복
 
 // ===== 채팅 =====
-const chatLogEl = document.getElementById('chatLog');
-const chatInputEl = document.getElementById('chatInput');
-const chatToggleBtn = document.getElementById('chatToggleBtn');
+const CHAT_MAX_LENGTH = 120;      // 메시지 최대 글자 수
+const CHAT_COOLDOWN_MS = 700;     // 도배 방지용 최소 발화 간격
 
-let chatMessages = [];
-const CHAT_MAX_MESSAGES = 50;     // 로그에 남기는 최대 메시지 수
-const CHAT_BUBBLE_DURATION = 4000; // 캐릭터 머리 위 말풍선 표시 시간(ms)
-let chatBubbles = {}; // { [playerId]: { text, expiresAt } }
-
-function isChatFocused() {
-  return document.activeElement === chatInputEl;
-}
-
-function openChatInput() {
-  if (!joined) return;
-  chatInputEl.classList.add('active');
-  chatInputEl.focus();
-}
-
-function closeChatInput() {
-  chatInputEl.classList.remove('active');
-  chatInputEl.value = '';
-  chatInputEl.blur();
-  canvas.focus();
-}
-
-chatToggleBtn.addEventListener('click', () => {
-  if (isChatFocused()) closeChatInput();
-  else openChatInput();
-});
-
-chatInputEl.addEventListener('keydown', (e) => {
-  e.stopPropagation(); // 게임 이동/궁극기 키 핸들러로 전파되지 않도록 차단
-  if (e.key === 'Enter') {
-    const text = chatInputEl.value.trim();
-    if (text) socket.emit('chatMessage', { text });
-    closeChatInput();
-  } else if (e.key === 'Escape') {
-    closeChatInput();
+// ===== 맵 장애물(벽) / 지형(덤불) 배치 =====
+// 맵이 넓어졌으므로(5000x4000), 좌상단 사분면 기준으로만 배치를 정의한 뒤
+// 상하/좌우/180도로 대칭 복제해서 4개 사분면 모두에 공평하게 배치한다 (2:2 밸런스를 위함)
+function mirrorAcrossCenter(rects) {
+  const out = [];
+  for (const r of rects) {
+    out.push({ x: r.x, y: r.y, width: r.width, height: r.height });                                                   // 원본 (좌상단)
+    out.push({ x: ARENA_WIDTH - r.x - r.width, y: r.y, width: r.width, height: r.height });                           // 좌우 반전 (우상단)
+    out.push({ x: r.x, y: ARENA_HEIGHT - r.y - r.height, width: r.width, height: r.height });                         // 상하 반전 (좌하단)
+    out.push({ x: ARENA_WIDTH - r.x - r.width, y: ARENA_HEIGHT - r.y - r.height, width: r.width, height: r.height }); // 180도 반전 (우하단)
   }
-});
-
-// Enter로 채팅창 열기 (다른 입력 중이 아닐 때만)
-window.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && joined && !isChatFocused()) {
-    e.preventDefault();
-    openChatInput();
-  }
-});
-
-function addChatMessage(msg) {
-  chatMessages.push(msg);
-  if (chatMessages.length > CHAT_MAX_MESSAGES) chatMessages.shift();
-  renderChatLog();
-  chatBubbles[msg.id] = { text: msg.text, expiresAt: Date.now() + CHAT_BUBBLE_DURATION };
+  return out;
 }
 
-function renderChatLog() {
-  chatLogEl.innerHTML = chatMessages.map((m) => (
-    `<div class="chat-line"><span class="chat-name" style="color:${m.color || '#fff'}">${escapeHtml(m.name)}:</span>${escapeHtml(m.text)}</div>`
-  )).join('');
-  chatLogEl.scrollTop = chatLogEl.scrollHeight;
-}
+// x, y는 좌상단 좌표. 이동/총알 모두 벽에 막힘
+// 맵 크기를 70% 배율(1100x1000 → 770x700)로 줄인 데 맞춰, 벽 좌표/크기도 동일 비율로 축소해
+// 기존 레이아웃 비율을 그대로 유지함
+const WALLS = [
+  ...mirrorAcrossCenter([
+    { x: 112, y: 98, width: 112, height: 18 }, // 사분면 상단 가로 벽
+    { x: 238, y: 133, width: 18, height: 91 }, // 사분면 세로 벽
+  ]),
+  // 맵 중앙 구조물
+  { x: ARENA_WIDTH / 2 - 11, y: ARENA_HEIGHT / 2 - 49, width: 21, height: 98 },  // 중앙 세로 기둥
+];
 
-function drawChatBubble(p) {
-  const bubble = chatBubbles[p.id];
-  if (!bubble) return;
-  if (Date.now() > bubble.expiresAt) { delete chatBubbles[p.id]; return; }
+// ===== 맵 지형(덤불) =====
+// 벽과 달리 이동/총알을 막지 않으며, 그 안에 들어간 플레이어는 적 팀에게 보이지 않게 됨
+// (같은 덤불 안에 함께 있는 적끼리는 서로 보임 - 은신 궁극기와 달리 예외 있음)
+const BUSHES = [
+  ...mirrorAcrossCenter([
+    { x: 13, y: 16, width: 74, height: 69 },  // 코너 덤불
+    { x: 142, y: 250, width: 57, height: 57 }, // 사분면 안쪽 덤불
+  ]),
+  // 맵 중앙 좌우의 덤불 (근접 교전용)
+  { x: ARENA_WIDTH / 2 - 120, y: ARENA_HEIGHT / 2 - 32, width: 50, height: 64 },
+  { x: ARENA_WIDTH / 2 + 71, y: ARENA_HEIGHT / 2 - 32, width: 50, height: 64 },
+];
 
-  ctx.save();
-  ctx.font = '12px sans-serif';
-  const paddingX = 9, bh = 22;
-  const textWidth = ctx.measureText(bubble.text).width;
-  const bw = textWidth + paddingX * 2;
-  const bx = p.x - bw / 2;
-  const by = p.y - PLAYER_RADIUS - 44 - bh;
-
-  ctx.fillStyle = 'rgba(0,0,0,0.7)';
-  ctx.beginPath();
-  if (ctx.roundRect) ctx.roundRect(bx, by, bw, bh, 8);
-  else ctx.rect(bx, by, bw, bh);
-  ctx.fill();
-
-  ctx.fillStyle = '#fff';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(bubble.text, p.x, by + bh / 2);
-  ctx.restore();
-}
-
-socket.on('chatMessage', (msg) => {
-  addChatMessage(msg);
-});
-
-// ===== 키보드 입력 =====
-window.addEventListener('keydown', (e) => {
-  if (isChatFocused()) return; // 채팅 입력 중에는 이동키 무시
-  switch (e.key) {
-    case 'w': case 'W': case 'ArrowUp': keys.up = true; break;
-    case 's': case 'S': case 'ArrowDown': keys.down = true; break;
-    case 'a': case 'A': case 'ArrowLeft': keys.left = true; break;
-    case 'd': case 'D': case 'ArrowRight': keys.right = true; break;
-  }
-});
-window.addEventListener('keyup', (e) => {
-  switch (e.key) {
-    case 'w': case 'W': case 'ArrowUp': keys.up = false; break;
-    case 's': case 'S': case 'ArrowDown': keys.down = false; break;
-    case 'a': case 'A': case 'ArrowLeft': keys.left = false; break;
-    case 'd': case 'D': case 'ArrowRight': keys.right = false; break;
-  }
-});
-
-// ===== 마우스 입력 =====
-// 캔버스가 CSS로 축소/확대되어 표시될 수 있으므로 내부 해상도 기준으로 좌표 보정
-canvas.addEventListener('mousemove', (e) => {
-  const rect = canvas.getBoundingClientRect();
-  const scaleX = canvas.width / rect.width;
-  const scaleY = canvas.height / rect.height;
-  mouseX = (e.clientX - rect.left) * scaleX;
-  mouseY = (e.clientY - rect.top) * scaleY;
-});
-canvas.addEventListener('mousedown', (e) => {
-  if (isTouchDevice) return; // 모바일은 오른쪽 조이스틱으로만 발사 (캔버스 탭에 의한 오발사 방지)
-  if (e.button === 0 && joined) {
-    fireAttack();
-  }
-});
-
-// ===== 궁극기 =====
-// 조준이 필요 없는 궁극기(예: 벼락지기)는 누르는 즉시 발동.
-// 조준이 필요한 궁극기(예: 피에로 발사)는 '장전' 상태로 전환되고,
-// 이후 기본 공격 입력(마우스 클릭 / 오른쪽 조이스틱)으로 조준해서 발사한다.
-function activateUltimateControl() {
-  if (!joined) return;
-  const me = latestState.players[myId];
-  if (!me || !me.alive) return;
-  if (me.ultimateCharge < 100) return;
-
-  if (me.ultimate && me.ultimate.type === 'lightning') {
-    socket.emit('ultimate');
-    ultimateArmed = false;
-    SFX.ultimate();
-  } else {
-    ultimateArmed = !ultimateArmed; // 다시 누르면 장전 취소
-  }
-  updateUltimateButton();
-}
-
-document.getElementById('ultimateButton').addEventListener('pointerdown', (e) => {
-  e.preventDefault();
-  activateUltimateControl();
-});
-
-window.addEventListener('keydown', (e) => {
-  if (isChatFocused()) return; // 채팅 입력 중에는 궁극기 단축키 무시
-  if (e.key === 'e' || e.key === 'E') activateUltimateControl();
-});
-
-function updateUltimateButton() {
-  const btn = document.getElementById('ultimateButton');
-  const me = latestState.players[myId];
-  const charge = me ? me.ultimateCharge : 0;
-  if (charge < 100) ultimateArmed = false; // 게이지가 다 차지 않은 상태면 장전 불가(사망/리스폰 등)
-  btn.style.background = `conic-gradient(#f1c40f ${charge}%, rgba(255,255,255,0.15) ${charge}%)`;
-  btn.classList.toggle('ready', charge >= 100);
-  btn.classList.toggle('armed', ultimateArmed);
-}
-
-function updateAmmoDisplay() {
-  const me = latestState.players[myId];
-  const ammo = me ? me.ammo : 3;
-  const maxAmmo = me ? me.maxAmmo : 3;
-  for (let i = 0; i < maxAmmo; i++) {
-    const dot = document.getElementById('ammoDot' + i);
-    if (dot) dot.classList.toggle('empty', i >= ammo);
-  }
-}
-
-// ===== 벽 충돌 (서버와 동일한 방식으로 클라이언트에서도 미리 계산해 부드럽게 이동) =====
 function circleIntersectsRect(cx, cy, radius, rect) {
   const closestX = Math.max(rect.x, Math.min(cx, rect.x + rect.width));
   const closestY = Math.max(rect.y, Math.min(cy, rect.y + rect.height));
@@ -1322,534 +108,1082 @@ function collidesWithWalls(x, y, radius) {
   return WALLS.some((w) => circleIntersectsRect(x, y, radius, w));
 }
 
-// ===== 게임 루프 (클라이언트) =====
-let lastTime = performance.now();
-
-function update(dt) {
-  if (!joined) return;
-  const me = latestState.players[myId];
-  if (me && !me.alive) return; // 사망 중에는 이동 불가
-  if (me && (me.dashing || (me.stunnedUntil && Date.now() < me.stunnedUntil) || (me.knockbackTimeLeft && me.knockbackTimeLeft > 0))) {
-    // 돌진 중이거나 기절/넉백 상태면 서버가 위치를 직접 제어하므로, 로컬 입력을 무시하고 서버 위치를 그대로 따라간다
-    myX = me.x;
-    myY = me.y;
-    return;
-  }
-
-  let dx = 0, dy = 0;
-  if (keys.up) dy -= 1;
-  if (keys.down) dy += 1;
-  if (keys.left) dx -= 1;
-  if (keys.right) dx += 1;
-
-  // 왼쪽 가상 조이스틱 입력 반영 (키보드와 동시 사용 시 합쳐짐)
-  if (touchMoveActive) {
-    dx += touchMoveX;
-    dy += touchMoveY;
-  }
-
-  const len = Math.sqrt(dx * dx + dy * dy);
-  if (len > 0.01) {
-    // 조이스틱은 아날로그 값(0~1)이므로 그대로, 키보드(1 또는 √2)는 1로 눌러서 사용
-    const magnitude = Math.min(1, len);
-    const nextX = myX + (dx / len) * magnitude * MOVE_SPEED * dt;
-    const nextY = myY + (dy / len) * magnitude * MOVE_SPEED * dt;
-
-    // 벽에 닿아도 옆으로는 미끄러지듯 이동하도록 축별로 검사
-    if (!collidesWithWalls(nextX, myY, PLAYER_RADIUS)) myX = nextX;
-    if (!collidesWithWalls(myX, nextY, PLAYER_RADIUS)) myY = nextY;
-  }
-
-  myX = Math.max(PLAYER_RADIUS, Math.min(ARENA_WIDTH - PLAYER_RADIUS, myX));
-  myY = Math.max(PLAYER_RADIUS, Math.min(ARENA_HEIGHT - PLAYER_RADIUS, myY));
-
-  // 오른쪽 조이스틱으로 조준 중이면 그 방향을, 아니면 마우스 방향을 바라봄
-  // mouseX/mouseY는 화면(캔버스) 기준 좌표이므로, 축소 배율을 나누고 카메라 오프셋을 더해 월드 좌표로 변환한 뒤 각도를 계산
-  myAngle = touchAimActive ? touchAimAngle : Math.atan2((mouseY / cameraScale + camera.y) - myY, (mouseX / cameraScale + camera.x) - myX);
-
-  socket.emit('playerUpdate', { x: myX, y: myY, angle: myAngle });
+function pointInRect(x, y, rect) {
+  return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
 }
 
-function drawPlayer(p, isMe) {
-  // 몸통
-  ctx.save();
-  ctx.translate(p.x, p.y);
-
-  if (!p.alive) {
-    ctx.globalAlpha = 0.25; // 사망 상태는 반투명 처리
-  } else if (p.invisible) {
-    ctx.globalAlpha = 0.45; // 은신 중임을 자신/아군에게 시각적으로 알려줌 (적에게는 애초에 좌표가 전달되지 않음)
-  }
-
-  // 팀 구분 링 (A팀=파랑, B팀=빨강) - 본체 바깥쪽에 얇게 표시해 누가 아군/적군인지 한눈에 보이게 함
-  if (p.team) {
-    ctx.beginPath();
-    ctx.arc(0, 0, PLAYER_RADIUS + 5, 0, Math.PI * 2);
-    ctx.strokeStyle = p.team === 'A' ? '#5dade2' : '#ec7063';
-    ctx.lineWidth = 3;
-    ctx.stroke();
-  }
-
-  ctx.beginPath();
-  ctx.arc(0, 0, PLAYER_RADIUS, 0, Math.PI * 2);
-  ctx.fillStyle = p.color || '#3498db';
-  ctx.fill();
-  ctx.lineWidth = isMe ? 3 : 1.5;
-  ctx.strokeStyle = isMe ? '#fff' : '#222';
-  ctx.stroke();
-
-  // 바라보는 방향 표시
-  ctx.rotate(p.angle);
-  ctx.beginPath();
-  ctx.moveTo(0, 0);
-  ctx.lineTo(PLAYER_RADIUS + 10, 0);
-  ctx.strokeStyle = '#fff';
-  ctx.lineWidth = 3;
-  ctx.stroke();
-
-  ctx.restore();
-  ctx.globalAlpha = 1;
-
-  if (!p.alive) return; // 사망 중에는 이름/HP 표시 생략
-
-  // 닉네임
-  ctx.font = 'bold 13px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.fillStyle = '#fff';
-  ctx.fillText(p.name, p.x, p.y - PLAYER_RADIUS - 22);
-
-  // 기절 상태 표시 (변기 돌진 등에 맞았을 때)
-  if (p.stunnedUntil && Date.now() < p.stunnedUntil) {
-    ctx.font = `${PLAYER_RADIUS}px sans-serif`;
-    ctx.fillText('💫', p.x, p.y - PLAYER_RADIUS - 34);
-  }
-
-  // HP 바
-  const barW = 44, barH = 6;
-  const hpRatio = Math.max(0, p.hp / (p.maxHp || 100));
-  ctx.fillStyle = '#555';
-  ctx.fillRect(p.x - barW / 2, p.y - PLAYER_RADIUS - 16, barW, barH);
-  ctx.fillStyle = hpRatio > 0.5 ? '#2ecc71' : hpRatio > 0.2 ? '#f1c40f' : '#e74c3c';
-  ctx.fillRect(p.x - barW / 2, p.y - PLAYER_RADIUS - 16, barW * hpRatio, barH);
+function isInBush(x, y) {
+  return BUSHES.some((b) => pointInRect(x, y, b));
 }
 
-function drawBullet(b) {
-  if (b.visual === 'clown') {
-    // 피에로 발사 궁극기 - 크고 화려한 총알
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
-    ctx.fillStyle = '#e74c3c';
-    ctx.fill();
-    ctx.font = `${b.radius * 1.6}px sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('🤡', b.x, b.y + 1);
-    ctx.restore();
-    return;
-  }
-
-  if (b.visual === 'orb') {
-    // 던지기 - 총알보다 크고 느린 구체
-    ctx.save();
-    const gradient = ctx.createRadialGradient(b.x - b.radius * 0.3, b.y - b.radius * 0.3, 1, b.x, b.y, b.radius);
-    gradient.addColorStop(0, '#a8f0d1');
-    gradient.addColorStop(1, '#16a085');
-    ctx.beginPath();
-    ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
-    ctx.fillStyle = gradient;
-    ctx.fill();
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
-    ctx.stroke();
-    ctx.restore();
-    return;
-  }
-
-  if (b.visual === 'slug') {
-    // 메가 샷건 - 크고 묵직한 산탄
-    ctx.save();
-    const gradient = ctx.createRadialGradient(b.x - b.radius * 0.3, b.y - b.radius * 0.3, 1, b.x, b.y, b.radius);
-    gradient.addColorStop(0, '#ffe08a');
-    gradient.addColorStop(1, '#d35400');
-    ctx.beginPath();
-    ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
-    ctx.fillStyle = gradient;
-    ctx.fill();
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = 'rgba(255,255,255,0.6)';
-    ctx.stroke();
-    ctx.restore();
-    return;
-  }
-
-  if (b.visual === 'skull') {
-    // 해골물 뿌리기 - 벽/적에 닿으면 물웅덩이를 남기는 해골 투사체
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
-    ctx.fillStyle = '#ecf0f1';
-    ctx.fill();
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = 'rgba(80,80,80,0.8)';
-    ctx.stroke();
-    ctx.font = `${b.radius * 1.7}px sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('💀', b.x, b.y + 1);
-    ctx.restore();
-    return;
-  }
-
-  if (b.visual === 'knife') {
-    // 성스럽다의 칼 던지기 - 날아가는 방향으로 회전한 칼 (벽을 통과해서 날아감)
-    ctx.save();
-    ctx.translate(b.x, b.y);
-    ctx.rotate(Math.atan2(b.vy || 0, b.vx || 1));
-    ctx.font = `${b.radius * 2.4}px sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('🔪', 0, 1);
-    ctx.restore();
-    return;
-  }
-
-  if (b.visual === 'sniperBullet') {
-    // 저격 터렛이 발사하는 총알 - 빠른 속도를 표현하기 위해 진행 방향 반대쪽으로 짧은 궤적을 남김
-    ctx.save();
-    const angle = Math.atan2(b.vy || 0, b.vx || 1);
-    const trailLen = 22;
-    const gradient = ctx.createLinearGradient(
-      b.x - Math.cos(angle) * trailLen, b.y - Math.sin(angle) * trailLen,
-      b.x, b.y
-    );
-    gradient.addColorStop(0, 'rgba(231, 76, 60, 0)');
-    gradient.addColorStop(1, 'rgba(231, 76, 60, 0.9)');
-    ctx.strokeStyle = gradient;
-    ctx.lineWidth = b.radius;
-    ctx.beginPath();
-    ctx.moveTo(b.x - Math.cos(angle) * trailLen, b.y - Math.sin(angle) * trailLen);
-    ctx.lineTo(b.x, b.y);
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
-    ctx.fillStyle = '#e74c3c';
-    ctx.fill();
-    ctx.restore();
-    return;
-  }
-
-  // 기본 총알
-  ctx.beginPath();
-  ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
-  ctx.fillStyle = '#f39c12';
-  ctx.fill();
+// target과 viewer가 같은 덤불 하나에 동시에 들어가 있는지 (같은 덤불 안이면 서로 보임)
+function sharedBush(target, viewer) {
+  return BUSHES.some((b) => pointInRect(target.x, target.y, b) && pointInRect(viewer.x, viewer.y, b));
 }
 
-// 성스럽다의 저격 터렛 - 팀 색 링 + 체력바가 있는 고정 설치물
-function drawTurret(t) {
-  ctx.save();
-  ctx.translate(t.x, t.y);
-
-  // 팀 구분 링 (플레이어와 동일한 색상 규칙)
-  ctx.beginPath();
-  ctx.arc(0, 0, t.radius + 5, 0, Math.PI * 2);
-  ctx.strokeStyle = t.team === 'A' ? '#5dade2' : '#ec7063';
-  ctx.lineWidth = 3;
-  ctx.stroke();
-
-  ctx.beginPath();
-  ctx.arc(0, 0, t.radius, 0, Math.PI * 2);
-  ctx.fillStyle = '#34495e';
-  ctx.fill();
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = '#1abc9c';
-  ctx.stroke();
-
-  ctx.font = `${t.radius * 1.5}px sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('🎯', 0, 1);
-  ctx.restore();
-
-  // HP 바
-  const barW = 48, barH = 6;
-  const hpRatio = Math.max(0, t.hp / (t.maxHp || 1));
-  ctx.fillStyle = '#555';
-  ctx.fillRect(t.x - barW / 2, t.y - t.radius - 14, barW, barH);
-  ctx.fillStyle = hpRatio > 0.5 ? '#2ecc71' : hpRatio > 0.2 ? '#f1c40f' : '#e74c3c';
-  ctx.fillRect(t.x - barW / 2, t.y - t.radius - 14, barW * hpRatio, barH);
+// 적(viewer 기준)에게 target이 보이지 않는 상태인지 판정
+// - 은신 궁극기(invisible)는 예외 없이 항상 안 보임
+// - 덤불(inBush)은 같은 덤불 안에 viewer도 함께 있으면 보임
+function isHiddenFromEnemy(target, viewer) {
+  if (!target.alive) return false;
+  if (target.invisible) return true;
+  if (target.inBush) return !sharedBush(target, viewer);
+  return false;
 }
 
-// 원효대사의 물웅덩이 - 적에게는 대미지, 아군/자신에게는 회복을 주는 지속 지형 효과
-function drawWaterPool(pool) {
-  ctx.save();
-  const alpha = Math.max(0.15, Math.min(0.55, pool.life));
-  ctx.globalAlpha = alpha;
-  const gradient = ctx.createRadialGradient(pool.x, pool.y, 1, pool.x, pool.y, pool.radius);
-  gradient.addColorStop(0, '#85c1e9');
-  gradient.addColorStop(1, '#2874a6');
-  ctx.beginPath();
-  ctx.arc(pool.x, pool.y, pool.radius, 0, Math.PI * 2);
-  ctx.fillStyle = gradient;
-  ctx.fill();
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = 'rgba(133, 193, 233, 0.9)';
-  ctx.stroke();
-  ctx.globalAlpha = Math.min(1, alpha + 0.3);
-  ctx.font = `${Math.min(28, pool.radius * 0.4)}px sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('💧', pool.x, pool.y);
-  ctx.restore();
+// ===== 캐릭터 정의 (나중에 여기에 캐릭터를 추가하면 됩니다) =====
+const CHARACTERS = {
+  minam: {
+    id: 'minam',
+    name: '미남',
+    maxHp: 7000,
+    basic: {
+      name: '총 쏘기',
+      damage: 1540,    // 기존 2200에서 공격력 30% 감소
+      speed: 845,      // px/초 (기존 650에서 30% 증가)
+      radius: 6,
+      lifetime: 1.5,   // 초
+      visual: 'bullet',
+    },
+    ultimate: {
+      name: '피에로 발사',
+      type: 'projectile', // 조준한 방향으로 날아가는 궁극기
+      damage: 3500,    // 기존 5000에서 공격력 30% 감소
+      speed: 500,
+      radius: 16,
+      lifetime: 2.0,
+      visual: 'clown',
+    },
+  },
+  jigi: {
+    id: 'jigi',
+    name: '지기',
+    maxHp: 6000,
+    basic: {
+      name: '던지기',
+      damage: 2500,
+      speed: 350,      // 총알보다 느린 구체
+      radius: 12,
+      lifetime: 2.2,
+      visual: 'orb',
+    },
+    ultimate: {
+      name: '벼락지기',
+      type: 'lightning',   // 조준 없이 자신 주변 고정된 위치에 번개를 떨어뜨리는 궁극기
+      damage: 3500,
+      strikeCount: 5,        // 떨어지는 번개 개수
+      strikeRadius: 60,      // 번개 한 발의 피격 반경
+      areaRadius: 220,       // 시전자로부터 번개가 떨어지는 고정 거리 (원형으로 균등 배치)
+    },
+  },
+  syu: {
+    id: 'syu',
+    name: '슈',
+    maxHp: 6000, // 체력이 별도로 지정되지 않아 다른 캐릭터와 비슷한 수준으로 설정 (조정 가능)
+    // 샷건은 한 번에 펠릿이 10개나 나가기 때문에, 다른 캐릭터와 같은 충전량을 쓰면
+    // 근거리에서 한 번만 쏴도 펠릿 여러 개가 동시에 맞아 궁극기가 거의 바로 차버림.
+    // 그래서 슈는 펠릿 1개 적중당 충전량을 다른 캐릭터보다 훨씬 낮게 별도로 설정함.
+    ultimateChargePerHit: 8, // 기본값(34)의 약 1/4 수준
+    basic: {
+      name: '샷건 발사',
+      damage: 300,        // 펠릿(총알) 1개당 대미지
+      speed: 700,
+      radius: 4,
+      lifetime: 0.4,       // 사거리 ≈ 280px (샷건이라 사거리가 짧음)
+      visual: 'bullet',
+      pelletCount: 10,     // 한 번에 나가는 총알 개수
+      spreadDegrees: 30,   // 전체 탄퍼짐 각도
+    },
+    ultimate: {
+      name: '메가 샷건',
+      type: 'projectile',  // 조준한 방향으로 발사되는 궁극기
+      damage: 600,         // 큰 총알 1개당 대미지
+      speed: 550,
+      radius: 12,
+      lifetime: 0.35,       // 사거리 ≈ 193px (기본 공격보다도 더 짧음)
+      visual: 'slug',
+      pelletCount: 10,      // 큰 총알 10발
+      spreadDegrees: 30,
+    },
+  },
+  wonhyo: {
+    id: 'wonhyo',
+    name: '원효대사',
+    maxHp: 7500,
+    basic: {
+      name: '해골물 뿌리기',
+      type: 'skullwater',
+      damage: 0,          // 해골 자체는 직접 대미지를 주지 않음 (벽/적에게 닿으면 물웅덩이 생성)
+      speed: 480,
+      radius: 14,
+      lifetime: 1.8,       // 초 (사거리 ≈ 864px)
+      visual: 'skull',
+      poolOnImpact: true,  // 벽 또는 적과 충돌 시 물웅덩이를 생성
+      poolRadius: 90,       // 물웅덩이 반경
+      poolLifetime: 2,      // 물웅덩이가 유지되는 시간(초)
+      poolTickInterval: 0.5, // 대미지/회복이 적용되는 주기(초)
+      poolDamage: 500,      // 적이 물에 닿았을 때 주기당 대미지
+      poolHeal: 500,        // 자신/아군이 물에 닿았을 때 주기당 회복량
+    },
+    ultimate: {
+      name: '은신',
+      type: 'stealth',    // 조준 없이 즉시 발동, 일정 시간 동안 적에게 보이지 않음
+      duration: 5,          // 초
+    },
+  },
+  byeongitong: {
+    id: 'byeongitong',
+    name: '변기통',
+    maxHp: 8000,
+    basic: {
+      name: '뚫어뻥 휘두르기',
+      type: 'melee',        // 발사체가 아니라 즉시 판정되는 근접 공격
+      damage: 2000,
+      angleDegrees: 120,    // 바라보는 방향을 중심으로 한 부채꼴의 전체 각도
+      range: 90,            // 부채꼴 반경(사거리) - 근접 공격답게 130에서 축소
+      knockback: 85,       // 맞은 대상이 밀려나는 거리(px) - 기존 170에서 50% 감소
+      visual: 'plunger',
+    },
+    ultimate: {
+      name: '변기 돌진',
+      type: 'dash',         // 조준 방향으로 매우 빠르게 돌진하다가 적과 충돌하면 대미지+기절
+      damage: 2500,
+      speed: 1400,          // px/초 (돌진 속도)
+      duration: 0.4,        // 최대 돌진 지속 시간(초). 이 시간 동안 적과 충돌하지 않으면 그냥 종료됨
+      stunDuration: 1.5,    // 충돌한 적을 기절시키는 시간(초)
+    },
+  },
+  seongseureopda: {
+    id: 'seongseureopda',
+    name: '성스럽다',
+    maxHp: 6000,
+    basic: {
+      name: '칼 던지기',
+      damage: 1500,
+      speed: 600,
+      radius: 8,
+      lifetime: 1.4,     // 초 (사거리 ≈ 840px)
+      visual: 'knife',
+      pierceWalls: true, // 벽(장애물)을 그대로 통과해서 날아감
+    },
+    ultimate: {
+      name: '저격 터렛 설치',
+      type: 'turret',       // 조준 없이 자신의 위치에 자동 사격 터렛을 설치하는 궁극기
+      hp: 4000,              // 터렛 자체 체력 (총알에 맞으면 줄어들고 0이 되면 파괴됨)
+      radius: 22,
+      range: 294,             // 이 범위 안의 적만 자동으로 조준/사격 (기존 420에서 30% 감소)
+      fireInterval: 0.5,      // 초마다 한 발씩 발사
+      damage: 500,           // 터렛 총알 1발당 대미지
+      bulletSpeed: 900,
+      bulletRadius: 6,
+      bulletLifetime: 1.2,
+      visual: 'turret',
+    },
+  },
+};
+const DEFAULT_CHARACTER_ID = 'minam';
+
+// 플레이어 색상 팔레트 (랜덤 배정)
+const COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c', '#fd79a8'];
+
+// ===== 매칭 대기열 / 매치 상태 =====
+// queues: { '1v1': [...], '2v2': [...] } - 모드별 대기열. 각 항목은 { socket, name, characterId }
+const queues = {};
+for (const mode in MODES) queues[mode] = [];
+
+// matches: { [matchId]: matchState } - 진행 중인 매치들. 매치끼리는 서로 상태를 절대 공유하지 않음
+const matches = {};
+let matchIdCounter = 0;
+// socketToMatch: { [socketId]: matchId } - 이 소켓이 현재 어느 매치에 속해 있는지
+const socketToMatch = {};
+
+let bulletIdCounter = 0;
+let effectIdCounter = 0;
+let waterPoolIdCounter = 0;
+let turretIdCounter = 0;
+
+function randomSpawnPoint() {
+  // 벽과 겹치지 않는 위치를 찾을 때까지 몇 번 시도
+  for (let i = 0; i < 20; i++) {
+    const x = PLAYER_RADIUS + Math.random() * (ARENA_WIDTH - PLAYER_RADIUS * 2);
+    const y = PLAYER_RADIUS + Math.random() * (ARENA_HEIGHT - PLAYER_RADIUS * 2);
+    if (!collidesWithWalls(x, y, PLAYER_RADIUS + 10)) return { x, y };
+  }
+  return { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT / 2 };
 }
 
-function drawEffect(e) {
-  if (e.type === 'lightning') {
-    const alpha = Math.max(0, Math.min(1, e.life / 0.4));
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.beginPath();
-    ctx.arc(e.x, e.y, e.radius, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(241, 196, 15, 0.25)';
-    ctx.fill();
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = 'rgba(241, 196, 15, 0.9)';
-    ctx.stroke();
-    ctx.font = `${e.radius}px sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#fff';
-    ctx.fillText('⚡', e.x, e.y);
-    ctx.restore();
-  } else if (e.type === 'melee') {
-    // 변기통의 뚫어뻥 휘두르기 - 바라보는 방향을 중심으로 한 부채꼴 스윙
-    const alpha = Math.max(0, Math.min(1, e.life / 0.4));
-    const halfAngle = ((e.arcDegrees || 90) * Math.PI) / 180 / 2;
-    ctx.save();
-    ctx.globalAlpha = alpha;
-    ctx.beginPath();
-    ctx.moveTo(e.x, e.y);
-    ctx.arc(e.x, e.y, e.radius, e.angle - halfAngle, e.angle + halfAngle);
-    ctx.closePath();
-    ctx.fillStyle = 'rgba(149, 165, 166, 0.35)';
-    ctx.fill();
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = 'rgba(236, 240, 241, 0.9)';
-    ctx.stroke();
-    ctx.font = `${Math.min(28, e.radius * 0.3)}px sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('🪠', e.x + Math.cos(e.angle) * e.radius * 0.6, e.y + Math.sin(e.angle) * e.radius * 0.6);
-    ctx.restore();
+function buildPlayer(socketId, name, characterId, team, spawn) {
+  const character = CHARACTERS[characterId] || CHARACTERS[DEFAULT_CHARACTER_ID];
+  return {
+    id: socketId,
+    name,
+    team, // 'A' 또는 'B'
+    x: spawn.x,
+    y: spawn.y,
+    angle: 0,
+    hp: character.maxHp,
+    maxHp: character.maxHp,
+    alive: true,
+    invisible: false, // 은신 궁극기 사용 중이면 true (적에게는 보이지 않음)
+    inBush: false,     // 덤불 안에 있으면 true (같은 덤불에 있는 적을 제외하고는 보이지 않음)
+    stealthId: 0,      // 은신 발동 회차 (타이머가 중첩될 때 오래된 타이머가 새 은신을 끄지 않도록 함)
+    dashing: false,     // 변기통의 돌진 궁극기를 사용 중이면 true (이동/공격 입력이 무시되고 서버가 위치를 직접 제어함)
+    dashDirX: 0,
+    dashDirY: 0,
+    dashTimeLeft: 0,
+    stunnedUntil: 0,    // 이 시각(ms, Date.now() 기준) 전까지는 기절 상태 (이동/공격 불가)
+    knockbackDirX: 0,   // 넉백(밀쳐냄) 진행 방향
+    knockbackDirY: 0,
+    knockbackDistance: 0, // 넉백으로 이동해야 할 총 거리(px)
+    knockbackTimeLeft: 0, // 넉백이 끝날 때까지 남은 시간(초). 0보다 크면 매 틱 점점 감속하며 이동
+    knockbackTotalTime: 0, // 이번 넉백의 전체 지속 시간(초) - 감속 계산의 기준값
+    score: 0,
+    color: COLORS[Math.floor(Math.random() * COLORS.length)],
+    characterId: character.id,
+    characterName: character.name,
+    basic: character.basic,
+    ultimate: character.ultimate,
+    ultimateChargePerHit: character.ultimateChargePerHit || ULTIMATE_CHARGE_PER_HIT, // 캐릭터별로 다르게 설정 가능 (예: 슈는 펠릿이 많아 더 낮게)
+    ultimateCharge: 0, // 0~100
+    ammo: MAX_AMMO,
+    maxAmmo: MAX_AMMO,
+    ammoRegenElapsed: 0,
+    lastShotAt: 0,
+    lastDamageAt: Date.now(),
+  };
+}
+
+// 대미지 적용 + 사망/리스폰/점수/승리 판정을 한 곳에서 관리 (총알 피격, 번개 피격이 공용으로 사용)
+// match: 이 대미지가 발생한 매치. 다른 매치의 상태에는 절대 영향을 주지 않는다.
+// 아군 피해 여부는 호출하는 쪽(총알 충돌 / 번개 판정)에서 이미 걸러서 넘겨준다.
+function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
+  if (!target.alive || match.over) return;
+  target.hp -= damage;
+  target.lastDamageAt = Date.now(); // 무피격 회복 타이머 초기화
+
+  const shooter = match.players[shooterId];
+  if (shooter && chargeShooter) {
+    shooter.ultimateCharge = Math.min(100, shooter.ultimateCharge + shooter.ultimateChargePerHit);
+  }
+
+  if (target.hp <= 0) {
+    target.hp = 0;
+    target.alive = false;
+
+    if (shooter) {
+      shooter.score += 1;
+      match.teamScore[shooter.team] += 1;
+    }
+
+    // 먼저 팀 누적 킬 수가 승리 점수에 도달하면 즉시 매치 종료 (1:1은 곧 개인 킬 수와 동일)
+    if (shooter && match.teamScore[shooter.team] >= match.winScore) {
+      match.over = true;
+      io.to(match.id).emit('matchOver', {
+        reason: 'scoreLimit',
+        winnerTeam: shooter.team,
+        teamScore: match.teamScore,
+      });
+      setTimeout(() => endMatch(match.id), MATCH_CLEANUP_DELAY_MS);
+      return;
+    }
+
+    const deadId = target.id;
+    setTimeout(() => {
+      const m = matches[match.id];
+      if (!m || m.over) return; // 이미 매치가 끝났거나 정리된 경우
+      const respawned = m.players[deadId];
+      if (!respawned) return; // 이미 접속 해제한 경우
+      const spawn = randomSpawnPoint();
+      respawned.x = spawn.x;
+      respawned.y = spawn.y;
+      respawned.hp = respawned.maxHp;
+      respawned.alive = true;
+      respawned.invisible = false;
+      respawned.stealthId = (respawned.stealthId || 0) + 1; // 진행 중이던 은신 타이머를 무효화
+      respawned.dashing = false;
+      respawned.dashTimeLeft = 0;
+      respawned.stunnedUntil = 0;
+      respawned.knockbackTimeLeft = 0;
+      // 궁극기 게이지는 사망/리스폰 시에도 초기화하지 않고 그대로 유지함
+      respawned.ammo = MAX_AMMO;
+      respawned.ammoRegenElapsed = 0;
+      respawned.lastDamageAt = Date.now();
+    }, RESPAWN_DELAY);
   }
 }
 
-// 맵을 둘러싸는 경계 벽 - 안(플레이 가능 구역)과 밖을 명확하게 구분해주는 두꺼운 벽 테두리
-function drawArenaBoundary() {
-  const t = 26; // 경계 벽 두께
-  ctx.fillStyle = '#3b4a5a';
-  ctx.strokeStyle = '#1a2531';
-  ctx.lineWidth = 3;
-  const frame = [
-    { x: -t, y: -t, width: ARENA_WIDTH + t * 2, height: t },                  // 위쪽
-    { x: -t, y: ARENA_HEIGHT, width: ARENA_WIDTH + t * 2, height: t },        // 아래쪽
-    { x: -t, y: 0, width: t, height: ARENA_HEIGHT },                          // 왼쪽
-    { x: ARENA_WIDTH, y: 0, width: t, height: ARENA_HEIGHT },                 // 오른쪽
-  ];
-  for (const r of frame) {
-    ctx.fillRect(r.x, r.y, r.width, r.height);
-    ctx.strokeRect(r.x, r.y, r.width, r.height);
+// 총알(들)을 생성한다. spec.pelletCount가 있으면 spec.spreadDegrees 각도 안에 고르게 퍼뜨려서 여러 발을 동시에 발사한다.
+// (예: 슈의 샷건 - 탄창/쿨다운은 소비 1회로 취급되고, 여기서는 실제 총알 개체만 만든다)
+function spawnProjectiles(match, p, spec, isUltimate) {
+  const pelletCount = spec.pelletCount || 1;
+  const spreadRad = ((spec.spreadDegrees || 0) * Math.PI) / 180;
+  const halfSpread = spreadRad / 2;
+
+  for (let i = 0; i < pelletCount; i++) {
+    const angleOffset = pelletCount > 1 ? -halfSpread + (spreadRad * i) / (pelletCount - 1) : 0;
+    const angle = p.angle + angleOffset;
+
+    bulletIdCounter += 1;
+    match.bullets.push({
+      id: bulletIdCounter,
+      x: p.x + Math.cos(angle) * (PLAYER_RADIUS + 5),
+      y: p.y + Math.sin(angle) * (PLAYER_RADIUS + 5),
+      vx: Math.cos(angle) * spec.speed,
+      vy: Math.sin(angle) * spec.speed,
+      ownerId: p.id,
+      team: p.team,
+      life: spec.lifetime,
+      damage: spec.damage,
+      radius: spec.radius,
+      isUltimate,
+      visual: spec.visual,
+      pierceWalls: !!spec.pierceWalls, // 성스럽다의 칼 던지기처럼 벽(장애물)을 무시하고 통과하는 발사체
+      // 원효대사의 해골물 뿌리기처럼 벽/적에 닿으면 물웅덩이를 생성하는 발사체를 위한 부가 정보
+      poolOnImpact: !!spec.poolOnImpact,
+      poolRadius: spec.poolRadius,
+      poolLifetime: spec.poolLifetime,
+      poolTickInterval: spec.poolTickInterval,
+      poolDamage: spec.poolDamage,
+      poolHeal: spec.poolHeal,
+    });
   }
 }
 
-function drawWalls() {
-  ctx.fillStyle = '#3b4a5a';
-  ctx.strokeStyle = '#1a2531';
-  ctx.lineWidth = 2;
-  for (const w of WALLS) {
-    ctx.fillRect(w.x, w.y, w.width, w.height);
-    ctx.strokeRect(w.x, w.y, w.width, w.height);
+// 근접 공격(변기통의 뚫어뻥 휘두르기 등): 발사체 없이 즉시 판정되는 부채꼴 범위 공격
+// spec.angleDegrees: 바라보는 방향을 중심으로 한 부채꼴의 전체 각도, spec.range: 부채꼴 반경
+// spec.knockback이 있으면 맞은 대상을 공격자 반대 방향(바깥쪽)으로 밀어낸다
+function performMeleeAttack(match, p, spec, isUltimate) {
+  const halfAngle = ((spec.angleDegrees || 90) * Math.PI) / 180 / 2;
+  const range = spec.range || 120;
+
+  // 클라이언트가 부채꼴 스윙을 그릴 수 있도록 시각 이펙트로 전달
+  effectIdCounter += 1;
+  match.effects.push({
+    id: effectIdCounter,
+    type: 'melee',
+    x: p.x,
+    y: p.y,
+    angle: p.angle,
+    arcDegrees: spec.angleDegrees || 90,
+    radius: range,
+    life: EFFECT_LIFETIME,
+  });
+
+  for (const pid in match.players) {
+    if (match.over) break;
+    if (pid === p.id) continue;
+    const target = match.players[pid];
+    if (!target.alive) continue;
+    if (!FRIENDLY_FIRE && target.team === p.team) continue;
+
+    const dx = target.x - p.x;
+    const dy = target.y - p.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist > range + PLAYER_RADIUS) continue;
+
+    // 목표가 공격자가 바라보는 방향 기준 부채꼴 각도 안에 있는지 확인
+    let diff = Math.atan2(dy, dx) - p.angle;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    if (Math.abs(diff) > halfAngle) continue;
+
+    applyDamage(match, target, spec.damage, p.id, { chargeShooter: !isUltimate });
+    if (match.over) break;
+
+    // 넉백: 즉시 순간이동시키지 않고, 방향/거리만 기록해서 이후 updateMatch 틱마다
+    // 점점 감속하며 자연스럽게 날아가도록 처리한다 (실제 이동은 아래 넉백 처리 루프에서 수행)
+    if (spec.knockback && dist > 0.001) {
+      target.knockbackDirX = dx / dist;
+      target.knockbackDirY = dy / dist;
+      target.knockbackDistance = spec.knockback;
+      target.knockbackTimeLeft = KNOCKBACK_DURATION;
+      target.knockbackTotalTime = KNOCKBACK_DURATION;
+    }
+  }
+
+  // 적 터렛(성스럽다의 저격 터렛)도 근접 공격 범위/각도 판정에 함께 포함시켜 파괴할 수 있게 함
+  for (const turret of match.turrets) {
+    if (match.over) break;
+    if (!FRIENDLY_FIRE && turret.team === p.team) continue;
+
+    const tdx = turret.x - p.x;
+    const tdy = turret.y - p.y;
+    const tdist = Math.sqrt(tdx * tdx + tdy * tdy);
+    if (tdist > range + turret.radius) continue;
+
+    let tdiff = Math.atan2(tdy, tdx) - p.angle;
+    while (tdiff > Math.PI) tdiff -= Math.PI * 2;
+    while (tdiff < -Math.PI) tdiff += Math.PI * 2;
+    if (Math.abs(tdiff) > halfAngle) continue;
+
+    turret.hp -= spec.damage;
+  }
+  match.turrets = match.turrets.filter((t) => t.hp > 0);
+}
+
+// 저격 터렛(성스럽다 궁극기): 자신의 위치에 설치되어, 사거리 안의 적 중 가장 가까운 대상을
+// 자동으로 조준해 일정 주기마다 총알을 발사한다 (실제 조준/발사는 updateMatch의 터렛 AI 루프에서 처리)
+function spawnTurret(match, p, spec) {
+  // 같은 사람이 이미 설치한 터렛이 남아있으면 먼저 제거하고 새로 설치 (터렛이 무한히 쌓이지 않도록)
+  match.turrets = match.turrets.filter((t) => t.ownerId !== p.id);
+
+  turretIdCounter += 1;
+  match.turrets.push({
+    id: turretIdCounter,
+    ownerId: p.id,
+    team: p.team,
+    x: p.x,
+    y: p.y,
+    hp: spec.hp,
+    maxHp: spec.hp,
+    radius: spec.radius || 22,
+    range: spec.range || 400,
+    fireInterval: spec.fireInterval || 2,
+    fireCooldown: 0,
+    damage: spec.damage,
+    bulletSpeed: spec.bulletSpeed || 800,
+    bulletRadius: spec.bulletRadius || 6,
+    bulletLifetime: spec.bulletLifetime || 1.2,
+    visual: spec.visual || 'turret',
+  });
+}
+
+// 물웅덩이(원효대사): 벽 또는 적과 충돌한 poolOnImpact 발사체가 남기는 물웅덩이를 생성한다
+function spawnWaterPool(match, b) {
+  waterPoolIdCounter += 1;
+  match.waterPools.push({
+    id: waterPoolIdCounter,
+    x: b.x,
+    y: b.y,
+    radius: b.poolRadius,
+    ownerId: b.ownerId,
+    team: b.team,
+    life: b.poolLifetime,       // 남은 지속 시간(초)
+    tickTimer: 0,                 // 다음 대미지/회복 틱까지 누적된 시간
+    tickInterval: b.poolTickInterval,
+    damage: b.poolDamage,
+    heal: b.poolHeal,
+  });
+}
+
+// ===== 매칭 로직 =====
+// 특정 모드의 대기열에 필요한 인원이 모이면 앞에서부터 묶어 매치를 시작한다
+function tryMatchmaking(mode) {
+  const cfg = MODES[mode];
+  const beforeLength = queues[mode].length;
+  queues[mode] = queues[mode].filter((q) => q.socket.connected);
+
+  let matched = false;
+  while (queues[mode].length >= cfg.size) {
+    const entries = queues[mode].splice(0, cfg.size);
+    startMatch(mode, entries);
+    matched = true;
+  }
+
+  // 연결이 끊긴 사람이 필터링되었거나 매치가 성사되어 대기열 인원이 줄어든 경우,
+  // 남아서 계속 기다리고 있는 사람들에게도 줄어든 인원수를 알려준다.
+  if (matched || queues[mode].length !== beforeLength) {
+    broadcastQueueStatus(mode);
   }
 }
 
-// 은신 가능한 덤불 - 벽과 달리 이동/총알은 막지 않고, 그 안에 들어가면 적에게 보이지 않게 됨
-function drawBushes() {
-  ctx.save();
-  ctx.fillStyle = 'rgba(39, 174, 96, 0.55)';
-  ctx.strokeStyle = 'rgba(20, 90, 50, 0.85)';
-  ctx.lineWidth = 2;
-  const r = 16; // 모서리를 둥글게
-  for (const b of BUSHES) {
-    ctx.beginPath();
-    ctx.moveTo(b.x + r, b.y);
-    ctx.arcTo(b.x + b.width, b.y, b.x + b.width, b.y + b.height, r);
-    ctx.arcTo(b.x + b.width, b.y + b.height, b.x, b.y + b.height, r);
-    ctx.arcTo(b.x, b.y + b.height, b.x, b.y, r);
-    ctx.arcTo(b.x, b.y, b.x + b.width, b.y, r);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-  }
-  ctx.restore();
+function startMatch(mode, entries) {
+  const cfg = MODES[mode];
+  matchIdCounter += 1;
+  const matchId = `match_${matchIdCounter}`;
+
+  entries.forEach((e) => {
+    e.socket.join(matchId);
+    socketToMatch[e.socket.id] = matchId;
+  });
+
+  const match = {
+    id: matchId,
+    mode,
+    players: {},
+    bullets: [],
+    effects: [],
+    waterPools: [],
+    turrets: [],
+    teamScore: { A: 0, B: 0 },
+    winScore: cfg.winScore,
+    over: false,
+  };
+  matches[matchId] = match;
+
+  // 대기열에 들어온 순서대로 앞쪽 teamSize명은 A팀, 나머지는 B팀으로 배정
+  entries.forEach((e, idx) => {
+    const team = idx < cfg.teamSize ? 'A' : 'B';
+    match.players[e.socket.id] = buildPlayer(e.socket.id, e.name, e.characterId, team, randomSpawnPoint());
+  });
+
+  entries.forEach((e) => {
+    const self = match.players[e.socket.id];
+    const teammateNames = Object.values(match.players)
+      .filter((p) => p.team === self.team && p.id !== self.id)
+      .map((p) => p.name);
+    const opponentNames = Object.values(match.players)
+      .filter((p) => p.team !== self.team)
+      .map((p) => p.name);
+
+    e.socket.emit('matchFound', {
+      id: e.socket.id,
+      mode,
+      team: self.team,
+      arena: { width: ARENA_WIDTH, height: ARENA_HEIGHT },
+      playerRadius: PLAYER_RADIUS,
+      walls: WALLS,
+      bushes: BUSHES,
+      winScore: cfg.winScore,
+      teammateNames,
+      opponentNames,
+    });
+  });
 }
 
-function render() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  updateCamera();
-
-  ctx.save();
-  ctx.scale(cameraScale, cameraScale); // 화면 크기에 맞춰 맵 전체가 한 화면에 들어오도록 축소/확대
-  ctx.translate(-camera.x, -camera.y); // 이 지점부터는 전부 '월드 좌표'로 그리면 카메라 위치에 맞게 화면에 표시됨
-
-  // 화면에 실제로 보이는 영역의 가로/세로 폭(월드 좌표 기준)
-  const viewW = canvas.width / cameraScale;
-  const viewH = canvas.height / cameraScale;
-
-  // 맵 밖(플레이 불가 구역)은 어둡게, 맵 안은 기존 배경색으로 채워서 안/밖을 명확히 구분
-  ctx.fillStyle = '#0d1117';
-  ctx.fillRect(camera.x, camera.y, viewW, viewH);
-  ctx.fillStyle = '#2c3e50';
-  ctx.fillRect(0, 0, ARENA_WIDTH, ARENA_HEIGHT);
-
-  // 배경 격자 (단순 스타일) - 맵 내부 범위로만 제한해서 그림 (성능 + 안/밖 구분)
-  ctx.strokeStyle = 'rgba(255,255,255,0.05)';
-  const gridStartX = Math.max(0, Math.floor(camera.x / 50) * 50);
-  const gridEndX = Math.min(ARENA_WIDTH, camera.x + viewW);
-  const gridTop = Math.max(0, camera.y);
-  const gridBottom = Math.min(ARENA_HEIGHT, camera.y + viewH);
-  for (let x = gridStartX; x <= gridEndX; x += 50) {
-    ctx.beginPath(); ctx.moveTo(x, gridTop); ctx.lineTo(x, gridBottom); ctx.stroke();
-  }
-  const gridStartY = Math.max(0, Math.floor(camera.y / 50) * 50);
-  const gridEndY = Math.min(ARENA_HEIGHT, camera.y + viewH);
-  const gridLeft = Math.max(0, camera.x);
-  const gridRight = Math.min(ARENA_WIDTH, camera.x + viewW);
-  for (let y = gridStartY; y <= gridEndY; y += 50) {
-    ctx.beginPath(); ctx.moveTo(gridLeft, y); ctx.lineTo(gridRight, y); ctx.stroke();
-  }
-
-  drawArenaBoundary();
-  drawWalls();
-  drawBushes();
-
-  const poolsArr = Array.isArray(latestState.waterPools) ? latestState.waterPools : [];
-  for (const wp of poolsArr) drawWaterPool(wp);
-
-  const effectsArr = Array.isArray(latestState.effects) ? latestState.effects : [];
-  for (const e of effectsArr) drawEffect(e);
-
-  const turretsArr = Array.isArray(latestState.turrets) ? latestState.turrets : [];
-  for (const t of turretsArr) drawTurret(t);
-
-  const bullets = Array.isArray(latestState.bullets) ? latestState.bullets : [];
-  for (const b of bullets) drawBullet(b);
-
-  const playersObj = latestState.players || {};
-  for (const pid in playersObj) {
-    const p = playersObj[pid];
-    // 덤불/은신으로 숨어있는 적은 서버가 좌표(x, y) 자체를 보내지 않으므로 그릴 수 없음(=화면에 안 보임)
-    if (typeof p.x !== 'number' || typeof p.y !== 'number') continue;
-    drawPlayer(p, pid === myId);
-    drawChatBubble(p);
-  }
-
-  drawAimRangeIndicator();
-
-  ctx.restore();
+// 특정 모드의 대기열에 있는 '모든' 사람에게 현재 대기 인원을 알림
+// (기존에는 새로 들어온 사람에게만 보내서, 먼저 기다리던 사람 화면에는 인원수가 갱신되지 않는 버그가 있었음)
+function broadcastQueueStatus(mode) {
+  const list = queues[mode];
+  const needed = MODES[mode].size;
+  list.forEach((q) => {
+    if (q.socket.connected) {
+      q.socket.emit('queueUpdate', { mode, waiting: list.length, needed });
+    }
+  });
 }
 
-function drawAimRangeIndicator() {
-  // 조준 중일 때(모바일 오른쪽 조이스틱 드래그), 내 캐릭터 기준 사거리를 점선으로 표시
-  // 궁극기가 장전된 상태면 궁극기 사거리를, 아니면 기본 공격 사거리를 보여준다.
-  if (!touchAimActive) return;
-  const me = latestState.players[myId];
-  if (!me || !me.alive) return;
-
-  let range, color;
-  if (ultimateArmed && me.ultimate && me.ultimate.type !== 'lightning') {
-    range = me.ultimate.speed * me.ultimate.lifetime;
-    color = 'rgba(231, 76, 60, 0.85)'; // 궁극기는 빨간색으로 구분
-  } else if (me.basic) {
-    range = me.basic.speed * me.basic.lifetime;
-    color = 'rgba(255, 255, 255, 0.6)';
-  } else {
-    return;
-  }
-
-  const endX = me.x + Math.cos(touchAimAngle) * range;
-  const endY = me.y + Math.sin(touchAimAngle) * range;
-
-  ctx.save();
-  ctx.setLineDash([8, 8]);
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(me.x, me.y);
-  ctx.lineTo(endX, endY);
-  ctx.stroke();
-
-  // 사거리 끝 지점 표시
-  ctx.setLineDash([]);
-  ctx.beginPath();
-  ctx.arc(endX, endY, 5, 0, Math.PI * 2);
-  ctx.fillStyle = color;
-  ctx.fill();
-  ctx.restore();
+// 현재 서버에 접속 중인 전체 인원 수를 모든 클라이언트에게 알림 (매칭 대기와 무관하게 항상 표시됨)
+function broadcastOnlineCount() {
+  io.emit('onlineCount', { count: io.engine.clientsCount });
 }
 
-function updateScoreboard() {
-  const list = document.getElementById('scoreList');
-  const playersArr = Object.values(latestState.players || {});
-
-  if (matchMode === '2v2') {
-    const sumScore = (arr) => arr.reduce((s, p) => s + p.score, 0);
-    const myTeamArr = playersArr.filter((p) => p.team === myTeam);
-    const oppTeamArr = playersArr.filter((p) => p.team !== myTeam);
-    const renderTeam = (label, arr) => (
-      `<li class="team-header"><b>${label} — ${sumScore(arr)}킬</b></li>` +
-      arr.map((p) => `<li>${escapeHtml(p.name)}${p.id === myId ? ' (나)' : ''} — ${p.score}</li>`).join('')
-    );
-    list.innerHTML = renderTeam('우리 팀', myTeamArr) + renderTeam('상대 팀', oppTeamArr);
-  } else {
-    playersArr.sort((a, b) => b.score - a.score);
-    list.innerHTML = playersArr
-      .map((p) => `<li>${escapeHtml(p.name)}${p.id === myId ? ' (나)' : ''} — ${p.score}</li>`)
-      .join('');
+// 모든 모드의 대기열에서 해당 소켓을 제거
+function leaveQueue(socketId) {
+  for (const mode in queues) {
+    queues[mode] = queues[mode].filter((q) => q.socket.id !== socketId);
   }
 }
 
-function escapeHtml(str) {
-  return String(str).replace(/[&<>"']/g, (c) => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-  }[c]));
+function isQueued(socketId) {
+  return Object.keys(queues).some((mode) => queues[mode].some((q) => q.socket.id === socketId));
 }
 
-let scoreboardTimer = 0;
-
-function loop(now) {
-  const dt = Math.min(0.05, (now - lastTime) / 1000);
-  lastTime = now;
-
-  try {
-    update(dt);
-    render();
-  } catch (err) {
-    // 렌더링 중 예상치 못한 에러가 나도 게임 루프 자체는 멈추지 않도록 방지
-    console.error('게임 루프 에러:', err);
+// 매치를 정리한다 (승리로 종료되었을 때 / 누군가 나갔을 때 공용으로 사용)
+function endMatch(matchId) {
+  const match = matches[matchId];
+  if (!match) return;
+  for (const pid in match.players) {
+    delete socketToMatch[pid];
+    const s = io.sockets.sockets.get(pid);
+    if (s) s.leave(matchId);
   }
-
-  scoreboardTimer += dt;
-  if (scoreboardTimer > 0.3) {
-    updateScoreboard();
-    scoreboardTimer = 0;
-  }
-
-  requestAnimationFrame(loop);
+  delete matches[matchId];
 }
 
-requestAnimationFrame(loop);
-</script>
-</body>
-</html>
+io.on('connection', (socket) => {
+  console.log(`플레이어 접속: ${socket.id}`);
+  broadcastOnlineCount();
+
+  // 클라이언트가 닉네임 + 모드 + 캐릭터를 정한 뒤 'findMatch' 이벤트를 보내면 대기열에 등록하고 매칭을 시도
+  socket.on('findMatch', (data) => {
+    if (socketToMatch[socket.id]) return; // 이미 매치 중이면 무시
+    if (isQueued(socket.id)) return; // 이미 어딘가 대기 중이면 무시
+
+    const mode = data && MODES[data.mode] ? data.mode : '1v1';
+    const name = (data && data.name ? String(data.name) : 'Player').slice(0, 12);
+    const requestedId = data && data.characterId;
+    // 서버가 직접 캐릭터 ID를 검증 (클라이언트가 보낸 능력치는 절대 신뢰하지 않음)
+    const characterId = CHARACTERS[requestedId] ? requestedId : DEFAULT_CHARACTER_ID;
+
+    queues[mode].push({ socket, name, characterId });
+    // 이 모드에서 이미 기다리고 있던 사람들에게도 갱신된 인원수를 함께 알림
+    broadcastQueueStatus(mode);
+
+    tryMatchmaking(mode);
+  });
+
+  // 매칭 대기를 취소
+  socket.on('cancelFindMatch', () => {
+    const mode = Object.keys(queues).find((m) => queues[m].some((q) => q.socket.id === socket.id));
+    leaveQueue(socket.id);
+    if (mode) broadcastQueueStatus(mode); // 남아있는 대기자들에게 줄어든 인원수를 알림
+  });
+
+  // 클라이언트가 매 프레임 자신의 위치/각도를 전송
+  socket.on('playerUpdate', (data) => {
+    const match = matches[socketToMatch[socket.id]];
+    if (!match || match.over) return;
+    const p = match.players[socket.id];
+    if (!p || !p.alive) return;
+    if (p.dashing || p.knockbackTimeLeft > 0 || (p.stunnedUntil && Date.now() < p.stunnedUntil)) return; // 돌진/기절 중에는 서버가 위치를 제어하므로 클라이언트 입력을 무시
+    if (typeof data.x !== 'number' || typeof data.y !== 'number') return;
+
+    const newX = Math.max(PLAYER_RADIUS, Math.min(ARENA_WIDTH - PLAYER_RADIUS, data.x));
+    const newY = Math.max(PLAYER_RADIUS, Math.min(ARENA_HEIGHT - PLAYER_RADIUS, data.y));
+
+    // 벽 충돌: 축별로 따로 검사해서 벽에 닿아도 옆으로는 미끄러지듯 이동 가능
+    if (!collidesWithWalls(newX, p.y, PLAYER_RADIUS)) {
+      p.x = newX;
+    }
+    if (!collidesWithWalls(p.x, newY, PLAYER_RADIUS)) {
+      p.y = newY;
+    }
+
+    if (typeof data.angle === 'number') p.angle = data.angle;
+  });
+
+  // 기본 공격 발사 요청
+  socket.on('shoot', () => {
+    const match = matches[socketToMatch[socket.id]];
+    if (!match || match.over) return;
+    const p = match.players[socket.id];
+    if (!p || !p.alive) return;
+    if (p.dashing || p.knockbackTimeLeft > 0 || (p.stunnedUntil && Date.now() < p.stunnedUntil)) return; // 돌진/기절 중에는 공격 불가
+
+    const now = Date.now();
+    if (now - p.lastShotAt < FIRE_COOLDOWN_MS) return; // 연사 방지 (최소 발사 간격)
+    if (p.ammo <= 0) return; // 탄창이 비어있으면 발사 불가
+
+    p.ammo -= 1;
+    p.lastShotAt = now;
+
+    if (p.basic.type === 'melee') {
+      performMeleeAttack(match, p, p.basic, false);
+    } else {
+      spawnProjectiles(match, p, p.basic, false);
+    }
+  });
+
+  // 궁극기 발사 요청 (게이지가 100%일 때만 발동)
+  socket.on('ultimate', () => {
+    const match = matches[socketToMatch[socket.id]];
+    if (!match || match.over) return;
+    const p = match.players[socket.id];
+    if (!p || !p.alive) return;
+    if (p.dashing || p.knockbackTimeLeft > 0 || (p.stunnedUntil && Date.now() < p.stunnedUntil)) return; // 이미 돌진 중이거나 기절 상태면 재발동 불가
+    if (p.ultimateCharge < 100) return;
+
+    const ult = p.ultimate;
+
+    if (ult.type === 'lightning') {
+      // 자신 주변에 고정된 간격으로 원형 배치된 위치에 번개를 여러 발 떨어뜨림 (조준 불필요)
+      const angleOffset = Math.random() * Math.PI * 2; // 매번 같은 모양이 반복되지 않도록 전체 패턴만 회전
+      for (let i = 0; i < ult.strikeCount; i++) {
+        const angle = angleOffset + (Math.PI * 2 * i) / ult.strikeCount;
+        const dist = ult.areaRadius;
+        const sx = Math.max(0, Math.min(ARENA_WIDTH, p.x + Math.cos(angle) * dist));
+        const sy = Math.max(0, Math.min(ARENA_HEIGHT, p.y + Math.sin(angle) * dist));
+
+        effectIdCounter += 1;
+        match.effects.push({ id: effectIdCounter, type: 'lightning', x: sx, y: sy, radius: ult.strikeRadius, life: EFFECT_LIFETIME });
+
+        for (const pid in match.players) {
+          if (pid === socket.id) continue; // 자기 자신은 맞지 않음
+          const target = match.players[pid];
+          if (!target.alive) continue;
+          if (!FRIENDLY_FIRE && target.team === p.team) continue; // 아군은 맞지 않음
+
+          const ddx = target.x - sx;
+          const ddy = target.y - sy;
+          if (Math.sqrt(ddx * ddx + ddy * ddy) < PLAYER_RADIUS + ult.strikeRadius) {
+            applyDamage(match, target, ult.damage, socket.id, { chargeShooter: false });
+            if (match.over) break;
+          }
+        }
+        if (match.over) break;
+      }
+    } else if (ult.type === 'stealth') {
+      // 조준 불필요: 즉시 일정 시간 동안 적에게 보이지 않는 은신 상태가 됨
+      p.invisible = true;
+      p.stealthId = (p.stealthId || 0) + 1;
+      const myStealthId = p.stealthId;
+      const stealthTargetId = p.id;
+      setTimeout(() => {
+        const m = matches[match.id];
+        if (!m) return;
+        const player = m.players[stealthTargetId];
+        if (!player) return;
+        if (player.stealthId !== myStealthId) return; // 이미 새 은신/리스폰으로 대체된 타이머는 무시
+        player.invisible = false;
+      }, (ult.duration || 5) * 1000);
+    } else if (ult.type === 'dash') {
+      // 변기통의 돌진: 바라보는 방향으로 매우 빠르게 이동하며, 이후 updateMatch 틱에서
+      // 실제 이동/벽 충돌/적 충돌(대미지+기절) 판정을 수행한다
+      p.dashing = true;
+      p.dashDirX = Math.cos(p.angle);
+      p.dashDirY = Math.sin(p.angle);
+      p.dashTimeLeft = ult.duration || 0.4;
+    } else if (ult.type === 'turret') {
+      // 성스럽다의 저격 터렛: 조준 불필요, 즉시 자신의 위치에 자동 사격 터렛을 설치
+      spawnTurret(match, p, ult);
+    } else {
+      // 조준한 방향으로 날아가는 궁극기 (예: 피에로 발사, 메가 샷건)
+      spawnProjectiles(match, p, ult, true);
+    }
+
+    if (!match.over) p.ultimateCharge = 0;
+  });
+
+  // 채팅 메시지 수신 -> 검증 후 같은 매치(같은 방)에만 브로드캐스트
+  socket.on('chatMessage', (data) => {
+    const matchId = socketToMatch[socket.id];
+    const match = matches[matchId];
+    if (!match) return; // 매치 중이 아니면 무시
+    const p = match.players[socket.id];
+    if (!p) return;
+
+    const now = Date.now();
+    if (p.lastChatAt && now - p.lastChatAt < CHAT_COOLDOWN_MS) return; // 도배 방지
+
+    let text = data && data.text ? String(data.text) : '';
+    text = text.replace(/[\r\n\t]+/g, ' ').trim().slice(0, CHAT_MAX_LENGTH);
+    if (!text) return;
+
+    p.lastChatAt = now;
+
+    io.to(matchId).emit('chatMessage', {
+      id: socket.id,
+      name: p.name,
+      color: p.color,
+      text,
+      ts: now,
+    });
+  });
+
+  socket.on('disconnect', () => {
+    console.log(`플레이어 접속 해제: ${socket.id}`);
+    const queuedMode = Object.keys(queues).find((m) => queues[m].some((q) => q.socket.id === socket.id));
+    leaveQueue(socket.id);
+    if (queuedMode) broadcastQueueStatus(queuedMode); // 남아있는 대기자들에게 줄어든 인원수를 알림
+    broadcastOnlineCount();
+
+    const matchId = socketToMatch[socket.id];
+    if (!matchId) return;
+    const match = matches[matchId];
+    if (!match) {
+      delete socketToMatch[socket.id];
+      return;
+    }
+
+    if (!match.over) {
+      const leaver = match.players[socket.id];
+      const winnerTeam = leaver && leaver.team === 'A' ? 'B' : 'A';
+      match.over = true;
+      io.to(matchId).emit('matchOver', { reason: 'opponentLeft', winnerTeam, teamScore: match.teamScore });
+    }
+    endMatch(matchId);
+  });
+});
+
+// ===== 매치별 물리 처리 (한 틱 분량) =====
+function updateMatch(match, dt, now) {
+  // 변기통의 돌진 궁극기 처리: 서버가 매 틱마다 위치를 직접 이동시키고, 벽/적과의 충돌을 판정한다
+  for (const pid in match.players) {
+    if (match.over) break;
+    const p = match.players[pid];
+    if (!p.dashing) continue;
+    if (!p.alive) { p.dashing = false; continue; }
+
+    const ult = p.ultimate;
+    const step = (ult.speed || 0) * dt;
+    const nx = Math.max(PLAYER_RADIUS, Math.min(ARENA_WIDTH - PLAYER_RADIUS, p.x + p.dashDirX * step));
+    const ny = Math.max(PLAYER_RADIUS, Math.min(ARENA_HEIGHT - PLAYER_RADIUS, p.y + p.dashDirY * step));
+
+    let blockedByWall = false;
+    if (!collidesWithWalls(nx, p.y, PLAYER_RADIUS)) p.x = nx; else blockedByWall = true;
+    if (!collidesWithWalls(p.x, ny, PLAYER_RADIUS)) p.y = ny; else blockedByWall = true;
+
+    p.dashTimeLeft -= dt;
+
+    // 돌진 중 적과 충돌하면 대미지 + 기절을 주고 돌진을 즉시 종료 (벽에 막혀도 종료)
+    let hitSomeone = false;
+    for (const tid in match.players) {
+      const target = match.players[tid];
+      if (tid === pid || !target.alive) continue;
+      if (!FRIENDLY_FIRE && target.team === p.team) continue;
+
+      const ddx = target.x - p.x;
+      const ddy = target.y - p.y;
+      if (Math.sqrt(ddx * ddx + ddy * ddy) < PLAYER_RADIUS * 2) {
+        applyDamage(match, target, ult.damage, pid, { chargeShooter: false });
+        hitSomeone = true;
+        if (!match.over) target.stunnedUntil = now + (ult.stunDuration || 0) * 1000;
+        break;
+      }
+    }
+
+    if (hitSomeone || blockedByWall || p.dashTimeLeft <= 0) p.dashing = false;
+  }
+
+  // 넉백(밀쳐냄) 처리: 등감속 운동으로 처음엔 빠르게 날아가다가 점점 느려지며 목표 거리만큼 이동 후 멈춘다
+  // (한 틱에 순간이동시키면 부자연스러워 보이므로, KNOCKBACK_DURATION 동안 여러 틱에 걸쳐 나눠서 이동시킴)
+  for (const pid in match.players) {
+    const p = match.players[pid];
+    if (!p.knockbackTimeLeft || p.knockbackTimeLeft <= 0) continue;
+    if (!p.alive) { p.knockbackTimeLeft = 0; continue; }
+
+    // 등감속 공식: 평균 속도 = 거리/시간 이므로, 초기 속도(v0)는 그 2배. 남은 시간 비율만큼 현재 속도를 계산
+    const v0 = (2 * p.knockbackDistance) / p.knockbackTotalTime;
+    const speed = v0 * (p.knockbackTimeLeft / p.knockbackTotalTime);
+    const step = speed * dt;
+
+    const nx = Math.max(PLAYER_RADIUS, Math.min(ARENA_WIDTH - PLAYER_RADIUS, p.x + p.knockbackDirX * step));
+    const ny = Math.max(PLAYER_RADIUS, Math.min(ARENA_HEIGHT - PLAYER_RADIUS, p.y + p.knockbackDirY * step));
+
+    let blockedByWall2 = false;
+    if (!collidesWithWalls(nx, p.y, PLAYER_RADIUS)) p.x = nx; else blockedByWall2 = true;
+    if (!collidesWithWalls(p.x, ny, PLAYER_RADIUS)) p.y = ny; else blockedByWall2 = true;
+
+    p.knockbackTimeLeft -= dt;
+    if (blockedByWall2) p.knockbackTimeLeft = 0; // 벽에 부딪히면 그 자리에서 멈춤
+  }
+
+  // 터렛(성스럽다 궁극기) AI: 사거리 안에서 가장 가까운 적을 자동으로 조준해 주기적으로 총알을 발사
+  for (const turret of match.turrets) {
+    if (match.over) break;
+    turret.fireCooldown -= dt;
+    if (turret.fireCooldown > 0) continue;
+
+    let nearest = null;
+    let nearestDist = Infinity;
+    for (const pid in match.players) {
+      const target = match.players[pid];
+      if (!target.alive) continue;
+      if (!FRIENDLY_FIRE && target.team === turret.team) continue;
+      if (isHiddenFromEnemy(target, turret)) continue; // 덤불/은신으로 숨은 적은 터렛도 조준하지 못함
+
+      const ddx = target.x - turret.x;
+      const ddy = target.y - turret.y;
+      const ddist = Math.sqrt(ddx * ddx + ddy * ddy);
+      if (ddist <= turret.range && ddist < nearestDist) {
+        nearestDist = ddist;
+        nearest = target;
+      }
+    }
+    if (!nearest) continue;
+
+    const ndx = nearest.x - turret.x;
+    const ndy = nearest.y - turret.y;
+    const ndist = Math.sqrt(ndx * ndx + ndy * ndy) || 1;
+
+    bulletIdCounter += 1;
+    match.bullets.push({
+      id: bulletIdCounter,
+      x: turret.x + (ndx / ndist) * (turret.radius + 5),
+      y: turret.y + (ndy / ndist) * (turret.radius + 5),
+      vx: (ndx / ndist) * turret.bulletSpeed,
+      vy: (ndy / ndist) * turret.bulletSpeed,
+      ownerId: turret.ownerId,
+      team: turret.team,
+      life: turret.bulletLifetime,
+      damage: turret.damage,
+      radius: turret.bulletRadius,
+      isUltimate: true,
+      visual: 'sniperBullet',
+      pierceWalls: false,
+    });
+    turret.fireCooldown = turret.fireInterval;
+  }
+
+  // 총알 이동
+  for (const b of match.bullets) {
+    b.x += b.vx * dt;
+    b.y += b.vy * dt;
+    b.life -= dt;
+  }
+
+  // 화면 밖, 수명 종료, 벽 충돌한 총알 제거 (poolOnImpact 발사체는 벽/맵 경계에 닿으면 물웅덩이를 남김)
+  match.bullets = match.bullets.filter((b) => {
+    if (b.life <= 0) return false;
+    if (b.x < 0 || b.x > ARENA_WIDTH || b.y < 0 || b.y > ARENA_HEIGHT) {
+      if (b.poolOnImpact) {
+        // 맵 끝 벽에 닿은 지점(경계선 위)으로 좌표를 고정해서 물웅덩이를 생성
+        const clampedX = Math.max(0, Math.min(ARENA_WIDTH, b.x));
+        const clampedY = Math.max(0, Math.min(ARENA_HEIGHT, b.y));
+        spawnWaterPool(match, { ...b, x: clampedX, y: clampedY });
+      }
+      return false;
+    }
+    if (!b.pierceWalls && collidesWithWalls(b.x, b.y, b.radius)) {
+      if (b.poolOnImpact) spawnWaterPool(match, b);
+      return false; // 벽에 막힘 (pierceWalls 발사체는 벽을 그대로 통과함)
+    }
+    return true;
+  });
+
+  // 총알-플레이어 충돌 판정
+  const hitBulletIds = new Set();
+  for (const b of match.bullets) {
+    if (match.over) break;
+    if (hitBulletIds.has(b.id)) continue;
+
+    const owner = match.players[b.ownerId];
+
+    for (const pid in match.players) {
+      const target = match.players[pid];
+      if (!target.alive) continue;
+      if (pid === b.ownerId) continue; // 자기 자신 총알은 무시
+      if (!FRIENDLY_FIRE && owner && target.team === owner.team) continue; // 아군 총알은 그대로 통과
+
+      const dx = target.x - b.x;
+      const dy = target.y - b.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist < PLAYER_RADIUS + b.radius) {
+        hitBulletIds.add(b.id);
+        if (b.poolOnImpact) {
+          // 해골물 뿌리기: 적중 시 직접 대미지 대신 물웅덩이를 생성 (궁극기 게이지는 적중으로 충전됨)
+          spawnWaterPool(match, b);
+          if (!b.isUltimate) {
+            const shooter = match.players[b.ownerId];
+            if (shooter) shooter.ultimateCharge = Math.min(100, shooter.ultimateCharge + shooter.ultimateChargePerHit);
+          }
+        } else {
+          // 기본 공격만 궁극기 게이지를 충전시킴
+          applyDamage(match, target, b.damage, b.ownerId, { chargeShooter: !b.isUltimate });
+        }
+        break; // 이 총알은 이미 소모됨
+      }
+    }
+  }
+
+  // 총알-터렛 충돌 판정: 적의 총알에 맞으면 터렛 체력이 줄고, 0이 되면 파괴됨
+  for (const b of match.bullets) {
+    if (match.over) break;
+    if (hitBulletIds.has(b.id)) continue;
+
+    for (const turret of match.turrets) {
+      if (!FRIENDLY_FIRE && turret.team === b.team) continue; // 아군 총알은 자신의 터렛을 통과함
+
+      const dx = turret.x - b.x;
+      const dy = turret.y - b.y;
+      if (Math.sqrt(dx * dx + dy * dy) < turret.radius + b.radius) {
+        hitBulletIds.add(b.id);
+        turret.hp -= b.damage;
+        break;
+      }
+    }
+  }
+  match.turrets = match.turrets.filter((t) => t.hp > 0);
+
+  match.bullets = match.bullets.filter((b) => !hitBulletIds.has(b.id));
+
+  // 시각 이펙트(번개 등) 수명 관리
+  for (const e of match.effects) e.life -= dt;
+  match.effects = match.effects.filter((e) => e.life > 0);
+
+  // 물웅덩이(원효대사): 일정 주기마다 적에게는 대미지, 자신/아군에게는 회복을 적용
+  for (const pool of match.waterPools) {
+    if (match.over) break;
+    pool.life -= dt;
+    if (pool.life <= 0) continue;
+    pool.tickTimer += dt;
+
+    while (pool.tickTimer >= pool.tickInterval) {
+      pool.tickTimer -= pool.tickInterval;
+
+      for (const pid in match.players) {
+        const target = match.players[pid];
+        if (!target.alive) continue;
+
+        const dx = target.x - pool.x;
+        const dy = target.y - pool.y;
+        if (Math.sqrt(dx * dx + dy * dy) >= PLAYER_RADIUS + pool.radius) continue;
+
+        if (target.team === pool.team) {
+          // 물을 만든 사람의 아군(자신 포함) -> 체력 회복
+          target.hp = Math.min(target.maxHp, target.hp + pool.heal);
+        } else {
+          // 적 -> 대미지 (궁극기 게이지는 충전하지 않음)
+          applyDamage(match, target, pool.damage, pool.ownerId, { chargeShooter: false });
+          if (match.over) break;
+        }
+      }
+      if (match.over) break;
+    }
+  }
+  match.waterPools = match.waterPools.filter((pool) => pool.life > 0);
+
+  // 덤불 진입 여부 갱신 (죽은 플레이어는 어차피 화면에 그려지지 않으므로 false로 둠)
+  for (const pid in match.players) {
+    const p = match.players[pid];
+    p.inBush = p.alive && isInBush(p.x, p.y);
+  }
+
+  // 탄약 재충전 + 무피격 체력 회복
+  for (const pid in match.players) {
+    const p = match.players[pid];
+    if (!p.alive) continue;
+
+    // 탄창이 가득 차지 않았으면 시간이 지날 때마다 한 발씩 채워짐
+    if (p.ammo < p.maxAmmo) {
+      p.ammoRegenElapsed += dt;
+      if (p.ammoRegenElapsed >= AMMO_REGEN_SECONDS) {
+        p.ammo = Math.min(p.maxAmmo, p.ammo + 1);
+        p.ammoRegenElapsed = 0;
+      }
+    } else {
+      p.ammoRegenElapsed = 0;
+    }
+
+    // 일정 시간 피격당하지 않으면 체력이 서서히 회복
+    if (p.hp < p.maxHp && now - p.lastDamageAt >= HP_REGEN_DELAY_MS) {
+      p.hp = Math.min(p.maxHp, p.hp + p.maxHp * HP_REGEN_PERCENT_PER_SEC * dt);
+    }
+  }
+}
+
+// 특정 시청자(viewerId) 기준으로 실제로 보여줘도 되는 플레이어 정보만 추려서 반환한다.
+// 자신과 아군은 항상 그대로 보내고, 적이 덤불/은신으로 숨어있는 상태면 좌표(x, y)를 빼고 보내서
+// 클라이언트가 화면에는 그리지 못하지만 스코어보드(이름/점수)는 계속 정상적으로 보이게 한다.
+function buildVisiblePlayers(match, viewerId) {
+  const viewer = match.players[viewerId];
+  const result = {};
+  for (const pid in match.players) {
+    const p = match.players[pid];
+    if (!viewer || pid === viewerId || p.team === viewer.team) {
+      result[pid] = p;
+      continue;
+    }
+    if (isHiddenFromEnemy(p, viewer)) {
+      const { x, y, ...rest } = p; // 위치 정보만 제거
+      result[pid] = rest;
+    } else {
+      result[pid] = p;
+    }
+  }
+  return result;
+}
+
+// ===== 서버 게임 루프 =====
+// 진행 중인 모든 매치를 독립적으로 갱신하고, 각 매치의 상태는 그 매치에 속한 플레이어들에게만 전송한다
+// (덤불/은신 은닉을 위해 방 전체 브로드캐스트 대신 플레이어별로 필터링해서 개별 전송한다.
+// Socket.io는 각 소켓을 자신의 id와 같은 이름의 방에 기본으로 넣어주므로 io.to(pid)로 특정 플레이어에게만 보낼 수 있다.)
+function gameLoop() {
+  const dt = TICK_MS / 1000;
+  const now = Date.now();
+
+  for (const matchId in matches) {
+    const match = matches[matchId];
+    if (match.over) continue;
+
+    updateMatch(match, dt, now);
+
+    for (const pid in match.players) {
+      io.to(pid).emit('state', {
+        players: buildVisiblePlayers(match, pid),
+        bullets: match.bullets,
+        effects: match.effects,
+        waterPools: match.waterPools,
+        turrets: match.turrets,
+      });
+    }
+  }
+}
+
+setInterval(gameLoop, TICK_MS);
+
+server.listen(PORT, () => {
+  console.log(`서버가 포트 ${PORT}에서 실행 중입니다.`);
+});
