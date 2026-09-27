@@ -306,6 +306,40 @@ const CHARACTERS = {
       type: 'heal',       // 조준 불필요, 즉시 체력을 가득 채우는 궁극기
     },
   },
+  bobae: {
+    id: 'bobae',
+    name: '보배',
+    maxHp: 7000,
+    basic: {
+      name: '보배 던지기',
+      damage: 2000,
+      speed: 380,     // 총알보다 느린 투척형
+      radius: 12,
+      lifetime: 2.0,   // 초
+      visual: 'bobae',
+    },
+    ultimate: {
+      name: '보배 폭발',
+      type: 'timedBomb', // 조준 불필요, 자신의 위치에 설치. 설치 즉시 '보배의 잔소리'로 지속 피해를 주다가 일정 시간 뒤 폭발
+      fuseTime: 2,          // 설치 후 폭발까지 걸리는 시간(초)
+      tickInterval: 1,       // 잔소리(지속 피해) 적용 주기(초)
+      tickDamage: 500,       // 잔소리 주기당 대미지
+      radius: 100,           // 잔소리/폭발 판정 반경
+      explodeDamage: 3500,   // 폭발 시 대미지
+      visual: 'bobaeBomb',
+    },
+    // 보배 전용 패시브 '보배의 복수': 체력이 30% 이하로 떨어지면 자동으로 발동하며(목숨당 1회),
+    // 이동속도/공격속도가 증가하고 지속시간 동안 받는 피해의 일부를 공격자에게 반사한다
+    passive: {
+      type: 'revenge',
+      name: '보배의 복수',
+      hpThreshold: 0.3,           // 체력이 최대 체력의 이 비율 이하가 되면 발동
+      duration: 5,                 // 지속 시간(초)
+      moveSpeedMultiplier: 1.5,
+      attackSpeedMultiplier: 1.5,
+      reflectPercent: 0.2,          // 지속시간 동안 받는 피해의 이 비율만큼 공격자에게 반사
+    },
+  },
 };
 const DEFAULT_CHARACTER_ID = 'minam';
 
@@ -327,6 +361,7 @@ let bulletIdCounter = 0;
 let effectIdCounter = 0;
 let waterPoolIdCounter = 0;
 let turretIdCounter = 0;
+let bombIdCounter = 0;
 
 function randomSpawnPoint() {
   // 벽과 겹치지 않는 위치를 찾을 때까지 몇 번 시도
@@ -376,20 +411,46 @@ function buildPlayer(socketId, name, characterId, team, spawn) {
     ammoRegenElapsed: 0,
     lastShotAt: 0,
     lastDamageAt: Date.now(),
+    passive: character.passive || null, // 캐릭터 전용 패시브 정의 (예: 보배의 복수)
+    attackSpeedMultiplier: 1, // 패시브로 공격속도가 증가하면 1보다 커짐 (발사 쿨다운 계산에 사용)
+    moveSpeedMultiplier: 1,   // 패시브로 이동속도가 증가하면 1보다 커짐 (클라이언트 이동 계산에 사용)
+    revengeActive: false,     // '보배의 복수' 발동 중이면 true (이동/공격속도 증가 + 피해 반사)
+    revengeUntil: 0,          // 이 시각(ms)까지 발동 상태 유지
+    revengeUsed: false,       // 이번 목숨에서 이미 발동했는지 (사망/리스폰 시 초기화됨)
   };
 }
 
 // 대미지 적용 + 사망/리스폰/점수/승리 판정을 한 곳에서 관리 (총알 피격, 번개 피격이 공용으로 사용)
 // match: 이 대미지가 발생한 매치. 다른 매치의 상태에는 절대 영향을 주지 않는다.
 // 아군 피해 여부는 호출하는 쪽(총알 충돌 / 번개 판정)에서 이미 걸러서 넘겨준다.
-function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
+function applyDamage(match, target, damage, shooterId, { chargeShooter, isReflected } = {}) {
   if (!target.alive || match.over) return;
+
+  const shooter = match.players[shooterId];
+
+  // 보배의 복수: 발동 중일 때 받는 피해의 일부를 공격자에게 그대로 반사한다
+  // (반사로 인해 발생한 피해는 다시 반사되지 않도록 isReflected로 막아 무한루프를 방지)
+  if (!isReflected && target.revengeActive && target.passive && target.passive.reflectPercent
+      && shooter && shooter.alive && shooter.id !== target.id) {
+    applyDamage(match, shooter, damage * target.passive.reflectPercent, target.id, { chargeShooter: false, isReflected: true });
+    if (match.over) return; // 반사 피해로 매치가 끝났으면 이후 처리는 하지 않음
+  }
+
   target.hp -= damage;
   target.lastDamageAt = Date.now(); // 무피격 회복 타이머 초기화
 
-  const shooter = match.players[shooterId];
   if (shooter && chargeShooter) {
     shooter.ultimateCharge = Math.min(100, shooter.ultimateCharge + shooter.ultimateChargePerHit);
+  }
+
+  // 보배의 복수 발동 체크: 체력이 임계치 이하로 떨어지고 이번 목숨에 아직 발동하지 않았다면 발동
+  if (target.hp > 0 && target.passive && target.passive.type === 'revenge' && !target.revengeUsed
+      && target.hp <= target.maxHp * target.passive.hpThreshold) {
+    target.revengeUsed = true;
+    target.revengeActive = true;
+    target.revengeUntil = Date.now() + target.passive.duration * 1000;
+    target.attackSpeedMultiplier = target.passive.attackSpeedMultiplier;
+    target.moveSpeedMultiplier = target.passive.moveSpeedMultiplier;
   }
 
   if (target.hp <= 0) {
@@ -430,6 +491,12 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
       respawned.dashTimeLeft = 0;
       respawned.stunnedUntil = 0;
       respawned.knockbackTimeLeft = 0;
+      // 보배의 복수: 리스폰(새로운 목숨)하면 발동 여부/상태를 모두 초기화해서 다시 발동할 수 있게 함
+      respawned.revengeActive = false;
+      respawned.revengeUntil = 0;
+      respawned.revengeUsed = false;
+      respawned.attackSpeedMultiplier = 1;
+      respawned.moveSpeedMultiplier = 1;
       // 궁극기 게이지는 사망/리스폰 시에도 초기화하지 않고 그대로 유지함
       respawned.ammo = MAX_AMMO;
       respawned.ammoRegenElapsed = 0;
@@ -592,6 +659,27 @@ function spawnWaterPool(match, b) {
   });
 }
 
+// 보배 폭발(보배 궁극기): 자신의 위치에 설치되어, 설치 즉시 '보배의 잔소리'로 주변 적에게
+// 주기적인 지속 피해를 주다가(updateMatch의 폭발물 루프에서 처리) 일정 시간 뒤 크게 폭발한다
+function spawnBomb(match, p, spec) {
+  bombIdCounter += 1;
+  match.bombs.push({
+    id: bombIdCounter,
+    ownerId: p.id,
+    team: p.team,
+    x: p.x,
+    y: p.y,
+    radius: spec.radius,
+    fuseLeft: spec.fuseTime,      // 폭발까지 남은 시간(초)
+    tickInterval: spec.tickInterval,
+    tickTimer: 0,
+    tickDamage: spec.tickDamage,
+    explodeDamage: spec.explodeDamage,
+    exploded: false,
+    visual: spec.visual || 'bobaeBomb',
+  });
+}
+
 // ===== 매칭 로직 =====
 // 특정 모드의 대기열에 필요한 인원이 모이면 앞에서부터 묶어 매치를 시작한다
 function tryMatchmaking(mode) {
@@ -631,6 +719,7 @@ function startMatch(mode, entries) {
     effects: [],
     waterPools: [],
     turrets: [],
+    bombs: [],
     teamScore: { A: 0, B: 0 },
     winScore: cfg.winScore,
     over: false,
@@ -768,7 +857,8 @@ io.on('connection', (socket) => {
     if (p.dashing || p.knockbackTimeLeft > 0 || (p.stunnedUntil && Date.now() < p.stunnedUntil)) return; // 돌진/기절 중에는 공격 불가
 
     const now = Date.now();
-    if (now - p.lastShotAt < FIRE_COOLDOWN_MS) return; // 연사 방지 (최소 발사 간격)
+    // 보배의 복수 등으로 공격속도가 증가했으면 그만큼 쿨다운을 짧게 계산 (연사 방지는 그대로 유지)
+    if (now - p.lastShotAt < FIRE_COOLDOWN_MS / (p.attackSpeedMultiplier || 1)) return;
     if (p.ammo <= 0) return; // 탄창이 비어있으면 발사 불가
 
     p.ammo -= 1;
@@ -846,6 +936,9 @@ io.on('connection', (socket) => {
     } else if (ult.type === 'heal') {
       // 여똥이의 간식 처먹기: 조준 불필요, 즉시 체력을 가득 채움
       p.hp = p.maxHp;
+    } else if (ult.type === 'timedBomb') {
+      // 보배 폭발: 조준 불필요, 자신의 위치에 설치
+      spawnBomb(match, p, ult);
     } else {
       // 조준한 방향으로 날아가는 궁극기 (예: 피에로 발사, 메가 샷건)
       spawnProjectiles(match, p, ult, true);
@@ -1150,6 +1243,60 @@ function updateMatch(match, dt, now) {
   }
   match.waterPools = match.waterPools.filter((pool) => pool.life > 0);
 
+  // 보배 폭발(보배 궁극기): 설치 직후에는 '보배의 잔소리'로 주기적인 지속 피해를 주다가,
+  // 퓨즈(fuseLeft)가 다 되면 한 번 크게 폭발하고 사라진다
+  for (const bomb of match.bombs) {
+    if (match.over) break;
+    if (bomb.exploded) continue;
+
+    bomb.fuseLeft -= dt;
+    bomb.tickTimer += dt;
+
+    while (bomb.tickTimer >= bomb.tickInterval && bomb.fuseLeft > 0) {
+      bomb.tickTimer -= bomb.tickInterval;
+      for (const pid in match.players) {
+        const target = match.players[pid];
+        if (!target.alive) continue;
+        if (!FRIENDLY_FIRE && target.team === bomb.team) continue;
+        const dx = target.x - bomb.x;
+        const dy = target.y - bomb.y;
+        if (Math.sqrt(dx * dx + dy * dy) >= PLAYER_RADIUS + bomb.radius) continue;
+        applyDamage(match, target, bomb.tickDamage, bomb.ownerId, { chargeShooter: false });
+        if (match.over) break;
+      }
+      if (match.over) break;
+    }
+    if (match.over) break;
+
+    if (bomb.fuseLeft <= 0) {
+      bomb.exploded = true;
+      effectIdCounter += 1;
+      match.effects.push({ id: effectIdCounter, type: 'explosion', x: bomb.x, y: bomb.y, radius: bomb.radius, life: EFFECT_LIFETIME });
+
+      for (const pid in match.players) {
+        const target = match.players[pid];
+        if (!target.alive) continue;
+        if (!FRIENDLY_FIRE && target.team === bomb.team) continue;
+        const dx = target.x - bomb.x;
+        const dy = target.y - bomb.y;
+        if (Math.sqrt(dx * dx + dy * dy) >= PLAYER_RADIUS + bomb.radius) continue;
+        applyDamage(match, target, bomb.explodeDamage, bomb.ownerId, { chargeShooter: false });
+        if (match.over) break;
+      }
+    }
+  }
+  match.bombs = match.bombs.filter((b) => !b.exploded);
+
+  // 보배의 복수: 지속 시간이 끝나면 이동/공격속도 증가와 피해 반사 효과를 해제
+  for (const pid in match.players) {
+    const p = match.players[pid];
+    if (p.revengeActive && now >= p.revengeUntil) {
+      p.revengeActive = false;
+      p.attackSpeedMultiplier = 1;
+      p.moveSpeedMultiplier = 1;
+    }
+  }
+
   // 덤불 진입 여부 갱신 (죽은 플레이어는 어차피 화면에 그려지지 않으므로 false로 둠)
   for (const pid in match.players) {
     const p = match.players[pid];
@@ -1222,6 +1369,7 @@ function gameLoop() {
         effects: match.effects,
         waterPools: match.waterPools,
         turrets: match.turrets,
+        bombs: match.bombs,
       });
     }
   }
