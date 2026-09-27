@@ -290,7 +290,7 @@ const CHARACTERS = {
       damage: 0,          // 직접 적중 대미지는 없음 (닿으면 물웅덩이처럼 똥가루 구름을 생성)
       speed: 420,
       radius: 14,
-      lifetime: 1.6,       // 초 (사거리 ≈ 672px)
+      lifetime: 1.12,      // 초 (사거리 ≈ 470px, 기존 672px에서 30% 감소)
       visual: 'poop',
       pelletCount: 3,       // 한 번에 똥 3개를 동시에 발사
       spreadDegrees: 30,    // 3개가 퍼져나가는 전체 각도
