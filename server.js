@@ -32,6 +32,7 @@ const TICK_RATE = 20;           // 초당 서버 틱 수
 const TICK_MS = 1000 / TICK_RATE;
 const ULTIMATE_CHARGE_PER_HIT = 34; // 기본 공격이 적중할 때마다 충전되는 궁극기 게이지(%). 3회 적중 시 100% 도달
 const EFFECT_LIFETIME = 0.4; // 번개 등 시각 이펙트가 화면에 남아있는 시간(초)
+const KNOCKBACK_DURATION = 0.28; // 넉백(밀쳐냄)이 순간이동처럼 보이지 않도록, 이 시간(초) 동안 점점 감속하며 자연스럽게 날아가게 함
 
 // ===== 매칭 모드 설정 =====
 // size: 매치를 시작하는 데 필요한 총 인원, teamSize: 한 팀의 인원 수
@@ -243,7 +244,7 @@ const CHARACTERS = {
       type: 'melee',        // 발사체가 아니라 즉시 판정되는 근접 공격
       damage: 2000,
       angleDegrees: 120,    // 바라보는 방향을 중심으로 한 부채꼴의 전체 각도
-      range: 130,           // 부채꼴 반경(사거리)
+      range: 90,            // 부채꼴 반경(사거리) - 근접 공격답게 130에서 축소
       knockback: 170,       // 맞은 대상이 밀려나는 거리(px)
       visual: 'plunger',
     },
@@ -307,6 +308,11 @@ function buildPlayer(socketId, name, characterId, team, spawn) {
     dashDirY: 0,
     dashTimeLeft: 0,
     stunnedUntil: 0,    // 이 시각(ms, Date.now() 기준) 전까지는 기절 상태 (이동/공격 불가)
+    knockbackDirX: 0,   // 넉백(밀쳐냄) 진행 방향
+    knockbackDirY: 0,
+    knockbackDistance: 0, // 넉백으로 이동해야 할 총 거리(px)
+    knockbackTimeLeft: 0, // 넉백이 끝날 때까지 남은 시간(초). 0보다 크면 매 틱 점점 감속하며 이동
+    knockbackTotalTime: 0, // 이번 넉백의 전체 지속 시간(초) - 감속 계산의 기준값
     score: 0,
     color: COLORS[Math.floor(Math.random() * COLORS.length)],
     characterId: character.id,
@@ -373,6 +379,7 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
       respawned.dashing = false;
       respawned.dashTimeLeft = 0;
       respawned.stunnedUntil = 0;
+      respawned.knockbackTimeLeft = 0;
       respawned.ultimateCharge = 0;
       respawned.ammo = MAX_AMMO;
       respawned.ammoRegenElapsed = 0;
@@ -458,14 +465,14 @@ function performMeleeAttack(match, p, spec, isUltimate) {
     applyDamage(match, target, spec.damage, p.id, { chargeShooter: !isUltimate });
     if (match.over) break;
 
-    // 넉백: 공격자로부터 바깥쪽(대상이 서 있던 방향)으로 밀어냄. 벽에 막히면 그 축으로는 밀리지 않음
+    // 넉백: 즉시 순간이동시키지 않고, 방향/거리만 기록해서 이후 updateMatch 틱마다
+    // 점점 감속하며 자연스럽게 날아가도록 처리한다 (실제 이동은 아래 넉백 처리 루프에서 수행)
     if (spec.knockback && dist > 0.001) {
-      const ux = dx / dist;
-      const uy = dy / dist;
-      const pushX = Math.max(PLAYER_RADIUS, Math.min(ARENA_WIDTH - PLAYER_RADIUS, target.x + ux * spec.knockback));
-      const pushY = Math.max(PLAYER_RADIUS, Math.min(ARENA_HEIGHT - PLAYER_RADIUS, target.y + uy * spec.knockback));
-      if (!collidesWithWalls(pushX, target.y, PLAYER_RADIUS)) target.x = pushX;
-      if (!collidesWithWalls(target.x, pushY, PLAYER_RADIUS)) target.y = pushY;
+      target.knockbackDirX = dx / dist;
+      target.knockbackDirY = dy / dist;
+      target.knockbackDistance = spec.knockback;
+      target.knockbackTimeLeft = KNOCKBACK_DURATION;
+      target.knockbackTotalTime = KNOCKBACK_DURATION;
     }
   }
 }
@@ -637,7 +644,7 @@ io.on('connection', (socket) => {
     if (!match || match.over) return;
     const p = match.players[socket.id];
     if (!p || !p.alive) return;
-    if (p.dashing || (p.stunnedUntil && Date.now() < p.stunnedUntil)) return; // 돌진/기절 중에는 서버가 위치를 제어하므로 클라이언트 입력을 무시
+    if (p.dashing || p.knockbackTimeLeft > 0 || (p.stunnedUntil && Date.now() < p.stunnedUntil)) return; // 돌진/기절 중에는 서버가 위치를 제어하므로 클라이언트 입력을 무시
     if (typeof data.x !== 'number' || typeof data.y !== 'number') return;
 
     const newX = Math.max(PLAYER_RADIUS, Math.min(ARENA_WIDTH - PLAYER_RADIUS, data.x));
@@ -660,7 +667,7 @@ io.on('connection', (socket) => {
     if (!match || match.over) return;
     const p = match.players[socket.id];
     if (!p || !p.alive) return;
-    if (p.dashing || (p.stunnedUntil && Date.now() < p.stunnedUntil)) return; // 돌진/기절 중에는 공격 불가
+    if (p.dashing || p.knockbackTimeLeft > 0 || (p.stunnedUntil && Date.now() < p.stunnedUntil)) return; // 돌진/기절 중에는 공격 불가
 
     const now = Date.now();
     if (now - p.lastShotAt < FIRE_COOLDOWN_MS) return; // 연사 방지 (최소 발사 간격)
@@ -682,7 +689,7 @@ io.on('connection', (socket) => {
     if (!match || match.over) return;
     const p = match.players[socket.id];
     if (!p || !p.alive) return;
-    if (p.dashing || (p.stunnedUntil && Date.now() < p.stunnedUntil)) return; // 이미 돌진 중이거나 기절 상태면 재발동 불가
+    if (p.dashing || p.knockbackTimeLeft > 0 || (p.stunnedUntil && Date.now() < p.stunnedUntil)) return; // 이미 돌진 중이거나 기절 상태면 재발동 불가
     if (p.ultimateCharge < 100) return;
 
     const ult = p.ultimate;
@@ -831,6 +838,29 @@ function updateMatch(match, dt, now) {
     }
 
     if (hitSomeone || blockedByWall || p.dashTimeLeft <= 0) p.dashing = false;
+  }
+
+  // 넉백(밀쳐냄) 처리: 등감속 운동으로 처음엔 빠르게 날아가다가 점점 느려지며 목표 거리만큼 이동 후 멈춘다
+  // (한 틱에 순간이동시키면 부자연스러워 보이므로, KNOCKBACK_DURATION 동안 여러 틱에 걸쳐 나눠서 이동시킴)
+  for (const pid in match.players) {
+    const p = match.players[pid];
+    if (!p.knockbackTimeLeft || p.knockbackTimeLeft <= 0) continue;
+    if (!p.alive) { p.knockbackTimeLeft = 0; continue; }
+
+    // 등감속 공식: 평균 속도 = 거리/시간 이므로, 초기 속도(v0)는 그 2배. 남은 시간 비율만큼 현재 속도를 계산
+    const v0 = (2 * p.knockbackDistance) / p.knockbackTotalTime;
+    const speed = v0 * (p.knockbackTimeLeft / p.knockbackTotalTime);
+    const step = speed * dt;
+
+    const nx = Math.max(PLAYER_RADIUS, Math.min(ARENA_WIDTH - PLAYER_RADIUS, p.x + p.knockbackDirX * step));
+    const ny = Math.max(PLAYER_RADIUS, Math.min(ARENA_HEIGHT - PLAYER_RADIUS, p.y + p.knockbackDirY * step));
+
+    let blockedByWall2 = false;
+    if (!collidesWithWalls(nx, p.y, PLAYER_RADIUS)) p.x = nx; else blockedByWall2 = true;
+    if (!collidesWithWalls(p.x, ny, PLAYER_RADIUS)) p.y = ny; else blockedByWall2 = true;
+
+    p.knockbackTimeLeft -= dt;
+    if (blockedByWall2) p.knockbackTimeLeft = 0; // 벽에 부딪히면 그 자리에서 멈춤
   }
 
   // 총알 이동
