@@ -220,9 +220,9 @@ const CHARACTERS = {
       visual: 'skull',
       poolOnImpact: true,  // 벽 또는 적과 충돌 시 물웅덩이를 생성
       poolRadius: 90,       // 물웅덩이 반경
-      poolLifetime: 2,      // 물웅덩이가 유지되는 시간(초)
+      poolLifetime: 2.5,    // 물웅덩이가 유지되는 시간(초) - 기존 2초에서 증가
       poolTickInterval: 0.5, // 대미지/회복이 적용되는 주기(초)
-      poolDamage: 500,      // 적이 물에 닿았을 때 주기당 대미지
+      poolDamage: 1000,     // 적이 물에 닿았을 때 주기당 대미지 (공격력 2배 적용, 기존 500에서 증가)
       poolHeal: 500,        // 자신/아군이 물에 닿았을 때 주기당 회복량
     },
     ultimate: {
@@ -259,7 +259,7 @@ const CHARACTERS = {
     maxHp: 6000,
     basic: {
       name: '칼 던지기',
-      damage: 1500,
+      damage: 2000,
       speed: 600,
       radius: 8,
       lifetime: 1.4,     // 초 (사거리 ≈ 840px)
@@ -292,11 +292,13 @@ const CHARACTERS = {
       radius: 14,
       lifetime: 1.6,       // 초 (사거리 ≈ 672px)
       visual: 'poop',
+      pelletCount: 3,       // 한 번에 똥 3개를 동시에 발사
+      spreadDegrees: 30,    // 3개가 퍼져나가는 전체 각도
       poolOnImpact: true,  // 벽 또는 적과 충돌 시 똥가루 구름을 생성
       poolRadius: 80,       // 똥가루 구름 반경
-      poolLifetime: 2,      // 똥가루 구름이 유지되는 시간(초)
+      poolLifetime: 2.5,     // 똥가루 구름이 유지되는 시간(초) - 기존 2초에서 증가
       poolTickInterval: 0.2, // 0.2초마다 대미지 적용
-      poolDamage: 250,      // 똥가루 구름에 닿은 적이 주기(0.2초)마다 입는 대미지
+      poolDamage: 500,      // 똥가루 구름에 닿은 적이 주기(0.2초)마다 입는 대미지 (공격력 2배 적용, 기존 250에서 증가)
       poolHeal: 0,          // 아군/자신에게는 아무 효과 없음 (독가스라 회복 없음)
     },
     ultimate: {
