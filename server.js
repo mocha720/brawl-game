@@ -140,7 +140,7 @@ const CHARACTERS = {
     basic: {
       name: '총 쏘기',
       damage: 1540,    // 기존 2200에서 공격력 30% 감소
-      speed: 650,      // px/초
+      speed: 845,      // px/초 (기존 650에서 30% 증가)
       radius: 6,
       lifetime: 1.5,   // 초
       visual: 'bullet',
@@ -259,7 +259,7 @@ const CHARACTERS = {
     maxHp: 6000,
     basic: {
       name: '칼 던지기',
-      damage: 1000,
+      damage: 1500,
       speed: 600,
       radius: 8,
       lifetime: 1.4,     // 초 (사거리 ≈ 840px)
@@ -272,7 +272,7 @@ const CHARACTERS = {
       hp: 4000,              // 터렛 자체 체력 (총알에 맞으면 줄어들고 0이 되면 파괴됨)
       radius: 22,
       range: 420,             // 이 범위 안의 적만 자동으로 조준/사격
-      fireInterval: 2,        // 초마다 한 발씩 발사
+      fireInterval: 0.5,      // 초마다 한 발씩 발사
       damage: 1000,           // 터렛 총알 1발당 대미지
       bulletSpeed: 900,
       bulletRadius: 6,
