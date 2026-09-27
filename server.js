@@ -78,13 +78,9 @@ const WALLS = [
   ...mirrorAcrossCenter([
     { x: 112, y: 98, width: 112, height: 18 }, // 사분면 상단 가로 벽
     { x: 238, y: 133, width: 18, height: 91 }, // 사분면 세로 벽
-    { x: 42, y: 231, width: 84, height: 18 },  // 사분면 안쪽 가로 벽
-    { x: 280, y: 42, width: 35, height: 35 },  // 작은 엄폐 블록
   ]),
-  // 맵 중앙 구조물 (좌우 대칭)
+  // 맵 중앙 구조물
   { x: ARENA_WIDTH / 2 - 11, y: ARENA_HEIGHT / 2 - 49, width: 21, height: 98 },  // 중앙 세로 기둥
-  { x: ARENA_WIDTH / 2 - 175, y: ARENA_HEIGHT / 2 - 18, width: 35, height: 35 }, // 중앙 좌측 엄폐물
-  { x: ARENA_WIDTH / 2 + 140, y: ARENA_HEIGHT / 2 - 18, width: 35, height: 35 }, // 중앙 우측 엄폐물
 ];
 
 // ===== 맵 지형(덤불) =====
@@ -257,6 +253,33 @@ const CHARACTERS = {
       stunDuration: 1.5,    // 충돌한 적을 기절시키는 시간(초)
     },
   },
+  seongseureopda: {
+    id: 'seongseureopda',
+    name: '성스럽다',
+    maxHp: 6000,
+    basic: {
+      name: '칼 던지기',
+      damage: 1000,
+      speed: 600,
+      radius: 8,
+      lifetime: 1.4,     // 초 (사거리 ≈ 840px)
+      visual: 'knife',
+      pierceWalls: true, // 벽(장애물)을 그대로 통과해서 날아감
+    },
+    ultimate: {
+      name: '저격 터렛 설치',
+      type: 'turret',       // 조준 없이 자신의 위치에 자동 사격 터렛을 설치하는 궁극기
+      hp: 4000,              // 터렛 자체 체력 (총알에 맞으면 줄어들고 0이 되면 파괴됨)
+      radius: 22,
+      range: 420,             // 이 범위 안의 적만 자동으로 조준/사격
+      fireInterval: 2,        // 초마다 한 발씩 발사
+      damage: 1000,           // 터렛 총알 1발당 대미지
+      bulletSpeed: 900,
+      bulletRadius: 6,
+      bulletLifetime: 1.2,
+      visual: 'turret',
+    },
+  },
 };
 const DEFAULT_CHARACTER_ID = 'minam';
 
@@ -277,6 +300,7 @@ const socketToMatch = {};
 let bulletIdCounter = 0;
 let effectIdCounter = 0;
 let waterPoolIdCounter = 0;
+let turretIdCounter = 0;
 
 function randomSpawnPoint() {
   // 벽과 겹치지 않는 위치를 찾을 때까지 몇 번 시도
@@ -413,6 +437,7 @@ function spawnProjectiles(match, p, spec, isUltimate) {
       radius: spec.radius,
       isUltimate,
       visual: spec.visual,
+      pierceWalls: !!spec.pierceWalls, // 성스럽다의 칼 던지기처럼 벽(장애물)을 무시하고 통과하는 발사체
       // 원효대사의 해골물 뿌리기처럼 벽/적에 닿으면 물웅덩이를 생성하는 발사체를 위한 부가 정보
       poolOnImpact: !!spec.poolOnImpact,
       poolRadius: spec.poolRadius,
@@ -475,6 +500,52 @@ function performMeleeAttack(match, p, spec, isUltimate) {
       target.knockbackTotalTime = KNOCKBACK_DURATION;
     }
   }
+
+  // 적 터렛(성스럽다의 저격 터렛)도 근접 공격 범위/각도 판정에 함께 포함시켜 파괴할 수 있게 함
+  for (const turret of match.turrets) {
+    if (match.over) break;
+    if (!FRIENDLY_FIRE && turret.team === p.team) continue;
+
+    const tdx = turret.x - p.x;
+    const tdy = turret.y - p.y;
+    const tdist = Math.sqrt(tdx * tdx + tdy * tdy);
+    if (tdist > range + turret.radius) continue;
+
+    let tdiff = Math.atan2(tdy, tdx) - p.angle;
+    while (tdiff > Math.PI) tdiff -= Math.PI * 2;
+    while (tdiff < -Math.PI) tdiff += Math.PI * 2;
+    if (Math.abs(tdiff) > halfAngle) continue;
+
+    turret.hp -= spec.damage;
+  }
+  match.turrets = match.turrets.filter((t) => t.hp > 0);
+}
+
+// 저격 터렛(성스럽다 궁극기): 자신의 위치에 설치되어, 사거리 안의 적 중 가장 가까운 대상을
+// 자동으로 조준해 일정 주기마다 총알을 발사한다 (실제 조준/발사는 updateMatch의 터렛 AI 루프에서 처리)
+function spawnTurret(match, p, spec) {
+  // 같은 사람이 이미 설치한 터렛이 남아있으면 먼저 제거하고 새로 설치 (터렛이 무한히 쌓이지 않도록)
+  match.turrets = match.turrets.filter((t) => t.ownerId !== p.id);
+
+  turretIdCounter += 1;
+  match.turrets.push({
+    id: turretIdCounter,
+    ownerId: p.id,
+    team: p.team,
+    x: p.x,
+    y: p.y,
+    hp: spec.hp,
+    maxHp: spec.hp,
+    radius: spec.radius || 22,
+    range: spec.range || 400,
+    fireInterval: spec.fireInterval || 2,
+    fireCooldown: 0,
+    damage: spec.damage,
+    bulletSpeed: spec.bulletSpeed || 800,
+    bulletRadius: spec.bulletRadius || 6,
+    bulletLifetime: spec.bulletLifetime || 1.2,
+    visual: spec.visual || 'turret',
+  });
 }
 
 // 물웅덩이(원효대사): 벽 또는 적과 충돌한 poolOnImpact 발사체가 남기는 물웅덩이를 생성한다
@@ -533,6 +604,7 @@ function startMatch(mode, entries) {
     bullets: [],
     effects: [],
     waterPools: [],
+    turrets: [],
     teamScore: { A: 0, B: 0 },
     winScore: cfg.winScore,
     over: false,
@@ -741,6 +813,9 @@ io.on('connection', (socket) => {
       p.dashDirX = Math.cos(p.angle);
       p.dashDirY = Math.sin(p.angle);
       p.dashTimeLeft = ult.duration || 0.4;
+    } else if (ult.type === 'turret') {
+      // 성스럽다의 저격 터렛: 조준 불필요, 즉시 자신의 위치에 자동 사격 터렛을 설치
+      spawnTurret(match, p, ult);
     } else {
       // 조준한 방향으로 날아가는 궁극기 (예: 피에로 발사, 메가 샷건)
       spawnProjectiles(match, p, ult, true);
@@ -863,6 +938,53 @@ function updateMatch(match, dt, now) {
     if (blockedByWall2) p.knockbackTimeLeft = 0; // 벽에 부딪히면 그 자리에서 멈춤
   }
 
+  // 터렛(성스럽다 궁극기) AI: 사거리 안에서 가장 가까운 적을 자동으로 조준해 주기적으로 총알을 발사
+  for (const turret of match.turrets) {
+    if (match.over) break;
+    turret.fireCooldown -= dt;
+    if (turret.fireCooldown > 0) continue;
+
+    let nearest = null;
+    let nearestDist = Infinity;
+    for (const pid in match.players) {
+      const target = match.players[pid];
+      if (!target.alive) continue;
+      if (!FRIENDLY_FIRE && target.team === turret.team) continue;
+      if (isHiddenFromEnemy(target, turret)) continue; // 덤불/은신으로 숨은 적은 터렛도 조준하지 못함
+
+      const ddx = target.x - turret.x;
+      const ddy = target.y - turret.y;
+      const ddist = Math.sqrt(ddx * ddx + ddy * ddy);
+      if (ddist <= turret.range && ddist < nearestDist) {
+        nearestDist = ddist;
+        nearest = target;
+      }
+    }
+    if (!nearest) continue;
+
+    const ndx = nearest.x - turret.x;
+    const ndy = nearest.y - turret.y;
+    const ndist = Math.sqrt(ndx * ndx + ndy * ndy) || 1;
+
+    bulletIdCounter += 1;
+    match.bullets.push({
+      id: bulletIdCounter,
+      x: turret.x + (ndx / ndist) * (turret.radius + 5),
+      y: turret.y + (ndy / ndist) * (turret.radius + 5),
+      vx: (ndx / ndist) * turret.bulletSpeed,
+      vy: (ndy / ndist) * turret.bulletSpeed,
+      ownerId: turret.ownerId,
+      team: turret.team,
+      life: turret.bulletLifetime,
+      damage: turret.damage,
+      radius: turret.bulletRadius,
+      isUltimate: true,
+      visual: 'sniperBullet',
+      pierceWalls: false,
+    });
+    turret.fireCooldown = turret.fireInterval;
+  }
+
   // 총알 이동
   for (const b of match.bullets) {
     b.x += b.vx * dt;
@@ -882,9 +1004,9 @@ function updateMatch(match, dt, now) {
       }
       return false;
     }
-    if (collidesWithWalls(b.x, b.y, b.radius)) {
+    if (!b.pierceWalls && collidesWithWalls(b.x, b.y, b.radius)) {
       if (b.poolOnImpact) spawnWaterPool(match, b);
-      return false; // 벽에 막힘
+      return false; // 벽에 막힘 (pierceWalls 발사체는 벽을 그대로 통과함)
     }
     return true;
   });
@@ -924,6 +1046,25 @@ function updateMatch(match, dt, now) {
       }
     }
   }
+
+  // 총알-터렛 충돌 판정: 적의 총알에 맞으면 터렛 체력이 줄고, 0이 되면 파괴됨
+  for (const b of match.bullets) {
+    if (match.over) break;
+    if (hitBulletIds.has(b.id)) continue;
+
+    for (const turret of match.turrets) {
+      if (!FRIENDLY_FIRE && turret.team === b.team) continue; // 아군 총알은 자신의 터렛을 통과함
+
+      const dx = turret.x - b.x;
+      const dy = turret.y - b.y;
+      if (Math.sqrt(dx * dx + dy * dy) < turret.radius + b.radius) {
+        hitBulletIds.add(b.id);
+        turret.hp -= b.damage;
+        break;
+      }
+    }
+  }
+  match.turrets = match.turrets.filter((t) => t.hp > 0);
 
   match.bullets = match.bullets.filter((b) => !hitBulletIds.has(b.id));
 
@@ -1034,6 +1175,7 @@ function gameLoop() {
         bullets: match.bullets,
         effects: match.effects,
         waterPools: match.waterPools,
+        turrets: match.turrets,
       });
     }
   }
