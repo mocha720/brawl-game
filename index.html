@@ -618,7 +618,7 @@ function updateCamera() {
   camera.y = (ARENA_HEIGHT - viewH) / 2;
 }
 
-let latestState = { players: {}, bullets: [], effects: [], waterPools: [] };
+let latestState = { players: {}, bullets: [], effects: [], waterPools: [], turrets: [] };
 
 // ===== 캐릭터 정의 (선택 화면 표시용 - 실제 능력치는 서버가 검증/적용) =====
 const CHARACTERS = [
@@ -661,6 +661,14 @@ const CHARACTERS = [
     maxHp: 8000,
     basic: { name: '뚫어뻥 휘두르기', damage: 2000, desc: '전방 120도 부채꼴 범위를 뚫어뻥으로 휘둘러 2000 피해를 주고 뒤로 밀쳐냄' },
     ultimate: { name: '변기 돌진', desc: '바라보는 방향으로 매우 빠르게 돌진, 적과 충돌 시 2500 피해 + 1.5초 기절' },
+  },
+  {
+    id: 'seongseureopda',
+    name: '성스럽다',
+    color: '#1abc9c',
+    maxHp: 6000,
+    basic: { name: '칼 던지기', damage: 1000, desc: '벽(장애물)을 그대로 통과해서 날아감' },
+    ultimate: { name: '저격 터렛 설치', desc: '조준 불필요, 체력 4,000의 자동 사격 터렛을 설치 (2초마다 1,000 피해 저격탄 발사)' },
   },
 ];
 let selectedCharacterId = CHARACTERS[0].id;
@@ -911,7 +919,7 @@ socket.on('matchFound', (data) => {
   chatMessages = [];
   chatBubbles = {};
   renderChatLog();
-  latestState = { players: {}, bullets: [], effects: [], waterPools: [] };
+  latestState = { players: {}, bullets: [], effects: [], waterPools: [], turrets: [] };
   wasAlive = false; // 새 매치이므로, 첫 상태 수신 시 서버 스폰 위치로 무조건 동기화되게 함
 
   document.getElementById('matchingOverlay').classList.remove('open');
@@ -1367,11 +1375,85 @@ function drawBullet(b) {
     return;
   }
 
+  if (b.visual === 'knife') {
+    // 성스럽다의 칼 던지기 - 날아가는 방향으로 회전한 칼 (벽을 통과해서 날아감)
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.rotate(Math.atan2(b.vy || 0, b.vx || 1));
+    ctx.font = `${b.radius * 2.4}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('🔪', 0, 1);
+    ctx.restore();
+    return;
+  }
+
+  if (b.visual === 'sniperBullet') {
+    // 저격 터렛이 발사하는 총알 - 빠른 속도를 표현하기 위해 진행 방향 반대쪽으로 짧은 궤적을 남김
+    ctx.save();
+    const angle = Math.atan2(b.vy || 0, b.vx || 1);
+    const trailLen = 22;
+    const gradient = ctx.createLinearGradient(
+      b.x - Math.cos(angle) * trailLen, b.y - Math.sin(angle) * trailLen,
+      b.x, b.y
+    );
+    gradient.addColorStop(0, 'rgba(231, 76, 60, 0)');
+    gradient.addColorStop(1, 'rgba(231, 76, 60, 0.9)');
+    ctx.strokeStyle = gradient;
+    ctx.lineWidth = b.radius;
+    ctx.beginPath();
+    ctx.moveTo(b.x - Math.cos(angle) * trailLen, b.y - Math.sin(angle) * trailLen);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
+    ctx.fillStyle = '#e74c3c';
+    ctx.fill();
+    ctx.restore();
+    return;
+  }
+
   // 기본 총알
   ctx.beginPath();
   ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
   ctx.fillStyle = '#f39c12';
   ctx.fill();
+}
+
+// 성스럽다의 저격 터렛 - 팀 색 링 + 체력바가 있는 고정 설치물
+function drawTurret(t) {
+  ctx.save();
+  ctx.translate(t.x, t.y);
+
+  // 팀 구분 링 (플레이어와 동일한 색상 규칙)
+  ctx.beginPath();
+  ctx.arc(0, 0, t.radius + 5, 0, Math.PI * 2);
+  ctx.strokeStyle = t.team === 'A' ? '#5dade2' : '#ec7063';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  ctx.beginPath();
+  ctx.arc(0, 0, t.radius, 0, Math.PI * 2);
+  ctx.fillStyle = '#34495e';
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#1abc9c';
+  ctx.stroke();
+
+  ctx.font = `${t.radius * 1.5}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('🎯', 0, 1);
+  ctx.restore();
+
+  // HP 바
+  const barW = 48, barH = 6;
+  const hpRatio = Math.max(0, t.hp / (t.maxHp || 1));
+  ctx.fillStyle = '#555';
+  ctx.fillRect(t.x - barW / 2, t.y - t.radius - 14, barW, barH);
+  ctx.fillStyle = hpRatio > 0.5 ? '#2ecc71' : hpRatio > 0.2 ? '#f1c40f' : '#e74c3c';
+  ctx.fillRect(t.x - barW / 2, t.y - t.radius - 14, barW * hpRatio, barH);
 }
 
 // 원효대사의 물웅덩이 - 적에게는 대미지, 아군/자신에게는 회복을 주는 지속 지형 효과
@@ -1531,6 +1613,9 @@ function render() {
 
   const effectsArr = Array.isArray(latestState.effects) ? latestState.effects : [];
   for (const e of effectsArr) drawEffect(e);
+
+  const turretsArr = Array.isArray(latestState.turrets) ? latestState.turrets : [];
+  for (const t of turretsArr) drawTurret(t);
 
   const bullets = Array.isArray(latestState.bullets) ? latestState.bullets : [];
   for (const b of bullets) drawBullet(b);
