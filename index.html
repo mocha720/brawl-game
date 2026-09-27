@@ -638,7 +638,7 @@ function updateCamera() {
   camera.y = (ARENA_HEIGHT - viewH) / 2;
 }
 
-let latestState = { players: {}, bullets: [], effects: [], waterPools: [], turrets: [] };
+let latestState = { players: {}, bullets: [], effects: [], waterPools: [], turrets: [], bombs: [] };
 
 // ===== 캐릭터 정의 (선택 화면 표시용 - 실제 능력치는 서버가 검증/적용) =====
 const CHARACTERS = [
@@ -697,6 +697,15 @@ const CHARACTERS = [
     maxHp: 5000,
     basic: { name: '똥가루 뿌리기', desc: '똥 3개 동시 발사, 벽/적 적중 시 똥가루 구름 생성 (닿은 적에게 0.2초마다 250 피해, 1초 후 소멸, 적 터렛도 파괴 가능)' },
     ultimate: { name: '간식 처먹기', desc: '조준 불필요, 즉시 체력을 가득 채움' },
+  },
+  {
+    id: 'bobae',
+    name: '보배',
+    color: '#d63384',
+    maxHp: 7000,
+    basic: { name: '보배 던지기', damage: 2000 },
+    ultimate: { name: '보배 폭발', desc: '조준 불필요, 자신의 위치에 설치. 즉시 보배의 잔소리로 1초 후 주변에 500 피해를 주고, 2초 뒤 3500 피해로 폭발' },
+    passive: { name: '보배의 복수', desc: '체력 30% 이하가 되면(목숨당 1회) 5초간 이동/공격속도 50% 증가 + 받는 피해의 20% 반사' },
   },
 ];
 let selectedCharacterId = CHARACTERS[0].id;
@@ -949,6 +958,7 @@ function renderCharacterList() {
       <div class="stat-line">❤️ 체력: ${c.maxHp.toLocaleString()}</div>
       <div class="stat-line">🎯 ${escapeHtml(c.basic.name)}${c.basic.damage ? `: ${c.basic.damage.toLocaleString()}` : ''}${c.basic.desc ? ` (${escapeHtml(c.basic.desc)})` : ''}</div>
       <div class="stat-line">✨ ${escapeHtml(c.ultimate.name)}${c.ultimate.damage ? `: ${c.ultimate.damage.toLocaleString()}` : ''}${c.ultimate.desc ? ` (${escapeHtml(c.ultimate.desc)})` : ''}</div>
+      ${c.passive ? `<div class="stat-line">🔥 ${escapeHtml(c.passive.name)}${c.passive.desc ? ` (${escapeHtml(c.passive.desc)})` : ''}</div>` : ''}
       <button data-char-id="${c.id}">선택</button>
     </div>
   `).join('');
@@ -1023,7 +1033,7 @@ socket.on('matchFound', (data) => {
   chatMessages = [];
   chatBubbles = {};
   renderChatLog();
-  latestState = { players: {}, bullets: [], effects: [], waterPools: [], turrets: [] };
+  latestState = { players: {}, bullets: [], effects: [], waterPools: [], turrets: [], bombs: [] };
   wasAlive = false; // 새 매치이므로, 첫 상태 수신 시 서버 스폰 위치로 무조건 동기화되게 함
   prevMyHp = null; // 새 매치 시작 시 이전 매치의 체력/점수 기록으로 인한 오작동(사운드 오재생) 방지
   prevMyScore = null;
@@ -1360,8 +1370,9 @@ function update(dt) {
   if (len > 0.01) {
     // 조이스틱은 아날로그 값(0~1)이므로 그대로, 키보드(1 또는 √2)는 1로 눌러서 사용
     const magnitude = Math.min(1, len);
-    const nextX = myX + (dx / len) * magnitude * MOVE_SPEED * dt;
-    const nextY = myY + (dy / len) * magnitude * MOVE_SPEED * dt;
+    const speedMultiplier = (me && me.moveSpeedMultiplier) || 1; // 보배의 복수 등으로 이동속도가 증가하면 반영
+    const nextX = myX + (dx / len) * magnitude * MOVE_SPEED * speedMultiplier * dt;
+    const nextY = myY + (dy / len) * magnitude * MOVE_SPEED * speedMultiplier * dt;
 
     // 벽에 닿아도 옆으로는 미끄러지듯 이동하도록 축별로 검사
     if (!collidesWithWalls(nextX, myY, PLAYER_RADIUS)) myX = nextX;
@@ -1405,6 +1416,15 @@ function drawPlayer(p, isMe) {
   ctx.lineWidth = isMe ? 3 : 1.5;
   ctx.strokeStyle = isMe ? '#fff' : '#222';
   ctx.stroke();
+
+  // 보배의 복수 발동 중이면 빨간 테두리로 강조
+  if (p.revengeActive) {
+    ctx.beginPath();
+    ctx.arc(0, 0, PLAYER_RADIUS + 8, 0, Math.PI * 2);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(255, 77, 109, 0.85)';
+    ctx.stroke();
+  }
 
   // 바라보는 방향 표시
   ctx.rotate(p.angle);
@@ -1563,6 +1583,23 @@ function drawBullet(b) {
     return;
   }
 
+  if (b.visual === 'bobae') {
+    // 보배 던지기 - 반짝이는 보배(구슬) 투척
+    ctx.save();
+    const gradient = ctx.createRadialGradient(b.x - b.radius * 0.3, b.y - b.radius * 0.3, 1, b.x, b.y, b.radius);
+    gradient.addColorStop(0, '#ffd1e8');
+    gradient.addColorStop(1, '#d63384');
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
+    ctx.fillStyle = gradient;
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+
   // 기본 총알
   ctx.beginPath();
   ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
@@ -1603,6 +1640,28 @@ function drawTurret(t) {
   ctx.fillRect(t.x - barW / 2, t.y - t.radius - 14, barW, barH);
   ctx.fillStyle = hpRatio > 0.5 ? '#2ecc71' : hpRatio > 0.2 ? '#f1c40f' : '#e74c3c';
   ctx.fillRect(t.x - barW / 2, t.y - t.radius - 14, barW * hpRatio, barH);
+}
+
+// 보배 폭발 설치물 - 터질 때까지 남은 시간에 맞춰 점점 빠르게 깜빡이는 위험 범위 표시
+function drawBomb(bomb) {
+  ctx.save();
+  const pulse = 0.5 + 0.5 * Math.sin(Date.now() / Math.max(60, bomb.fuseLeft * 120));
+  ctx.globalAlpha = 0.18 + pulse * 0.18;
+  ctx.beginPath();
+  ctx.arc(bomb.x, bomb.y, bomb.radius, 0, Math.PI * 2);
+  ctx.fillStyle = '#ff4d6d';
+  ctx.fill();
+  ctx.globalAlpha = 0.9;
+  ctx.lineWidth = 2;
+  ctx.setLineDash([6, 6]);
+  ctx.strokeStyle = '#ff4d6d';
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.font = '22px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('💣', bomb.x, bomb.y);
+  ctx.restore();
 }
 
 // 지속 지형 효과: 원효대사의 물웅덩이(적 대미지 + 아군 회복) / 여똥이의 똥가루 구름(적에게만 대미지)
@@ -1651,6 +1710,23 @@ function drawEffect(e) {
     ctx.textBaseline = 'middle';
     ctx.fillStyle = '#fff';
     ctx.fillText('⚡', e.x, e.y);
+    ctx.restore();
+  } else if (e.type === 'explosion') {
+    // 보배 폭발 - 크고 화려하게 터지는 폭발 이펙트
+    const alpha = Math.max(0, Math.min(1, e.life / 0.4));
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, e.radius, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 77, 109, 0.35)';
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(255, 77, 109, 0.95)';
+    ctx.stroke();
+    ctx.font = `${Math.min(40, e.radius * 0.5)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('💥', e.x, e.y);
     ctx.restore();
   } else if (e.type === 'melee') {
     // 변기통의 뚫어뻥 휘두르기 - 바라보는 방향을 중심으로 한 부채꼴 스윙
@@ -1771,6 +1847,9 @@ function render() {
 
   const turretsArr = Array.isArray(latestState.turrets) ? latestState.turrets : [];
   for (const t of turretsArr) drawTurret(t);
+
+  const bombsArr = Array.isArray(latestState.bombs) ? latestState.bombs : [];
+  for (const bomb of bombsArr) drawBomb(bomb);
 
   const bullets = Array.isArray(latestState.bullets) ? latestState.bullets : [];
   for (const b of bullets) drawBullet(b);
