@@ -161,7 +161,7 @@ const CHARACTERS = {
     maxHp: 6000,
     basic: {
       name: '던지기',
-      damage: 2100,    // 기존 3000에서 공격력 30% 감소
+      damage: 2500,
       speed: 350,      // 총알보다 느린 구체
       radius: 12,
       lifetime: 2.2,
@@ -169,11 +169,11 @@ const CHARACTERS = {
     },
     ultimate: {
       name: '벼락지기',
-      type: 'lightning',   // 조준 없이 자신 주변에 번개를 떨어뜨리는 궁극기
-      damage: 2100,    // 기존 3000에서 공격력 30% 감소 (번개 한 대당 대미지)
+      type: 'lightning',   // 조준 없이 자신 주변 고정된 위치에 번개를 떨어뜨리는 궁극기
+      damage: 3500,
       strikeCount: 5,        // 떨어지는 번개 개수
       strikeRadius: 60,      // 번개 한 발의 피격 반경
-      areaRadius: 220,       // 번개가 떨어질 수 있는 시전자 주변 범위
+      areaRadius: 220,       // 시전자로부터 번개가 떨어지는 고정 거리 (원형으로 균등 배치)
     },
   },
   syu: {
@@ -767,10 +767,11 @@ io.on('connection', (socket) => {
     const ult = p.ultimate;
 
     if (ult.type === 'lightning') {
-      // 자신 주변 랜덤한 위치에 번개를 여러 발 떨어뜨림 (조준 불필요)
+      // 자신 주변에 고정된 간격으로 원형 배치된 위치에 번개를 여러 발 떨어뜨림 (조준 불필요)
+      const angleOffset = Math.random() * Math.PI * 2; // 매번 같은 모양이 반복되지 않도록 전체 패턴만 회전
       for (let i = 0; i < ult.strikeCount; i++) {
-        const angle = Math.random() * Math.PI * 2;
-        const dist = Math.random() * ult.areaRadius;
+        const angle = angleOffset + (Math.PI * 2 * i) / ult.strikeCount;
+        const dist = ult.areaRadius;
         const sx = Math.max(0, Math.min(ARENA_WIDTH, p.x + Math.cos(angle) * dist));
         const sy = Math.max(0, Math.min(ARENA_HEIGHT, p.y + Math.sin(angle) * dist));
 
