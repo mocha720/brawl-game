@@ -690,6 +690,14 @@ const CHARACTERS = [
     basic: { name: '칼 던지기', damage: 1500, desc: '벽(장애물)을 그대로 통과해서 날아감' },
     ultimate: { name: '저격 터렛 설치', desc: '조준 불필요, 체력 4,000의 자동 사격 터렛을 설치 (사거리 294, 0.5초마다 500 피해 저격탄 발사)' },
   },
+  {
+    id: 'yeoddongi',
+    name: '여똥이',
+    color: '#8e5a2d',
+    maxHp: 5000,
+    basic: { name: '똥가루 뿌리기', desc: '벽/적 적중 시 똥가루 구름 생성 (닿은 적에게 0.2초마다 250 피해, 2초 후 소멸)' },
+    ultimate: { name: '간식 처먹기', desc: '조준 불필요, 즉시 체력을 가득 채움' },
+  },
 ];
 let selectedCharacterId = CHARACTERS[0].id;
 
@@ -1540,6 +1548,21 @@ function drawBullet(b) {
     return;
   }
 
+  if (b.visual === 'poop') {
+    // 여똥이의 똥가루 뿌리기 - 벽/적에 닿으면 독가스(똥가루) 구름을 남기는 발사체
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
+    ctx.fillStyle = '#8e5a2d';
+    ctx.fill();
+    ctx.font = `${b.radius * 1.7}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('💩', b.x, b.y + 1);
+    ctx.restore();
+    return;
+  }
+
   // 기본 총알
   ctx.beginPath();
   ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
@@ -1582,26 +1605,32 @@ function drawTurret(t) {
   ctx.fillRect(t.x - barW / 2, t.y - t.radius - 14, barW * hpRatio, barH);
 }
 
-// 원효대사의 물웅덩이 - 적에게는 대미지, 아군/자신에게는 회복을 주는 지속 지형 효과
+// 지속 지형 효과: 원효대사의 물웅덩이(적 대미지 + 아군 회복) / 여똥이의 똥가루 구름(적에게만 대미지)
 function drawWaterPool(pool) {
+  const isPoisonGas = !pool.heal; // heal이 0(또는 없음)이면 회복 효과가 없는 독가스 구름(똥가루)으로 간주
   ctx.save();
   const alpha = Math.max(0.15, Math.min(0.55, pool.life));
   ctx.globalAlpha = alpha;
   const gradient = ctx.createRadialGradient(pool.x, pool.y, 1, pool.x, pool.y, pool.radius);
-  gradient.addColorStop(0, '#85c1e9');
-  gradient.addColorStop(1, '#2874a6');
+  if (isPoisonGas) {
+    gradient.addColorStop(0, '#a3783a');
+    gradient.addColorStop(1, '#5c3a17');
+  } else {
+    gradient.addColorStop(0, '#85c1e9');
+    gradient.addColorStop(1, '#2874a6');
+  }
   ctx.beginPath();
   ctx.arc(pool.x, pool.y, pool.radius, 0, Math.PI * 2);
   ctx.fillStyle = gradient;
   ctx.fill();
   ctx.lineWidth = 2;
-  ctx.strokeStyle = 'rgba(133, 193, 233, 0.9)';
+  ctx.strokeStyle = isPoisonGas ? 'rgba(163, 120, 58, 0.9)' : 'rgba(133, 193, 233, 0.9)';
   ctx.stroke();
   ctx.globalAlpha = Math.min(1, alpha + 0.3);
   ctx.font = `${Math.min(28, pool.radius * 0.4)}px sans-serif`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText('💧', pool.x, pool.y);
+  ctx.fillText(isPoisonGas ? '💩' : '💧', pool.x, pool.y);
   ctx.restore();
 }
 
