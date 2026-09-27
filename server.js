@@ -298,7 +298,7 @@ const CHARACTERS = {
       poolRadius: 80,       // 똥가루 구름 반경
       poolLifetime: 2.5,     // 똥가루 구름이 유지되는 시간(초) - 기존 2초에서 증가
       poolTickInterval: 0.2, // 0.2초마다 대미지 적용
-      poolDamage: 500,      // 똥가루 구름에 닿은 적이 주기(0.2초)마다 입는 대미지 (공격력 2배 적용, 기존 250에서 증가)
+      poolDamage: 250,      // 똥가루 구름에 닿은 적이 주기(0.2초)마다 입는 대미지 (공격력 50% 감소 적용, 기존 500에서 감소)
       poolHeal: 0,          // 아군/자신에게는 아무 효과 없음 (독가스라 회복 없음)
     },
     ultimate: {
@@ -1089,7 +1089,13 @@ function updateMatch(match, dt, now) {
       const dy = turret.y - b.y;
       if (Math.sqrt(dx * dx + dy * dy) < turret.radius + b.radius) {
         hitBulletIds.add(b.id);
-        turret.hp -= b.damage;
+        if (b.poolOnImpact) {
+          // 해골물/똥가루 뿌리기: 터렛에 적중하면 직접 대미지 대신 물웅덩이/똥가루 구름을 남겨
+          // 이후 지속 대미지 판정(아래 물웅덩이 루프)으로 터렛에 피해를 준다
+          spawnWaterPool(match, b);
+        } else {
+          turret.hp -= b.damage;
+        }
         break;
       }
     }
@@ -1102,7 +1108,7 @@ function updateMatch(match, dt, now) {
   for (const e of match.effects) e.life -= dt;
   match.effects = match.effects.filter((e) => e.life > 0);
 
-  // 물웅덩이(원효대사): 일정 주기마다 적에게는 대미지, 자신/아군에게는 회복을 적용
+  // 물웅덩이(원효대사) / 똥가루 구름(여똥이): 일정 주기마다 적(플레이어+적 터렛)에게는 대미지, 자신/아군에게는 회복을 적용
   for (const pool of match.waterPools) {
     if (match.over) break;
     pool.life -= dt;
@@ -1130,6 +1136,16 @@ function updateMatch(match, dt, now) {
         }
       }
       if (match.over) break;
+
+      // 적 터렛(성스럽다의 저격 터렛)도 물웅덩이/똥가루 구름 범위 안에 있으면 함께 대미지를 입어 파괴될 수 있음
+      for (const turret of match.turrets) {
+        if (turret.team === pool.team) continue; // 아군 터렛은 영향 없음
+        const tdx = turret.x - pool.x;
+        const tdy = turret.y - pool.y;
+        if (Math.sqrt(tdx * tdx + tdy * tdy) >= turret.radius + pool.radius) continue;
+        turret.hp -= pool.damage;
+      }
+      match.turrets = match.turrets.filter((t) => t.hp > 0);
     }
   }
   match.waterPools = match.waterPools.filter((pool) => pool.life > 0);
