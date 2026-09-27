@@ -1195,8 +1195,8 @@ function update(dt) {
   if (!joined) return;
   const me = latestState.players[myId];
   if (me && !me.alive) return; // 사망 중에는 이동 불가
-  if (me && (me.dashing || (me.stunnedUntil && Date.now() < me.stunnedUntil))) {
-    // 돌진 중이거나 기절 상태면 서버가 위치를 직접 제어하므로, 로컬 입력을 무시하고 서버 위치를 그대로 따라간다
+  if (me && (me.dashing || (me.stunnedUntil && Date.now() < me.stunnedUntil) || (me.knockbackTimeLeft && me.knockbackTimeLeft > 0))) {
+    // 돌진 중이거나 기절/넉백 상태면 서버가 위치를 직접 제어하므로, 로컬 입력을 무시하고 서버 위치를 그대로 따라간다
     myX = me.x;
     myY = me.y;
     return;
