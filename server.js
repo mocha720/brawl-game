@@ -212,7 +212,7 @@ const CHARACTERS = {
   wonhyo: {
     id: 'wonhyo',
     name: '원효대사',
-    maxHp: 10000,
+    maxHp: 7500,
     basic: {
       name: '해골물 뿌리기',
       type: 'skullwater',
@@ -225,13 +225,35 @@ const CHARACTERS = {
       poolRadius: 90,       // 물웅덩이 반경
       poolLifetime: 2,      // 물웅덩이가 유지되는 시간(초)
       poolTickInterval: 0.5, // 대미지/회복이 적용되는 주기(초)
-      poolDamage: 1500,     // 적이 물에 닿았을 때 주기당 대미지
+      poolDamage: 500,      // 적이 물에 닿았을 때 주기당 대미지
       poolHeal: 500,        // 자신/아군이 물에 닿았을 때 주기당 회복량
     },
     ultimate: {
       name: '은신',
       type: 'stealth',    // 조준 없이 즉시 발동, 일정 시간 동안 적에게 보이지 않음
       duration: 5,          // 초
+    },
+  },
+  byeongitong: {
+    id: 'byeongitong',
+    name: '변기통',
+    maxHp: 8000,
+    basic: {
+      name: '뚫어뻥 휘두르기',
+      type: 'melee',        // 발사체가 아니라 즉시 판정되는 근접 공격
+      damage: 2000,
+      angleDegrees: 120,    // 바라보는 방향을 중심으로 한 부채꼴의 전체 각도
+      range: 130,           // 부채꼴 반경(사거리)
+      knockback: 170,       // 맞은 대상이 밀려나는 거리(px)
+      visual: 'plunger',
+    },
+    ultimate: {
+      name: '변기 돌진',
+      type: 'dash',         // 조준 방향으로 매우 빠르게 돌진하다가 적과 충돌하면 대미지+기절
+      damage: 2500,
+      speed: 1400,          // px/초 (돌진 속도)
+      duration: 0.4,        // 최대 돌진 지속 시간(초). 이 시간 동안 적과 충돌하지 않으면 그냥 종료됨
+      stunDuration: 1.5,    // 충돌한 적을 기절시키는 시간(초)
     },
   },
 };
@@ -280,6 +302,11 @@ function buildPlayer(socketId, name, characterId, team, spawn) {
     invisible: false, // 은신 궁극기 사용 중이면 true (적에게는 보이지 않음)
     inBush: false,     // 덤불 안에 있으면 true (같은 덤불에 있는 적을 제외하고는 보이지 않음)
     stealthId: 0,      // 은신 발동 회차 (타이머가 중첩될 때 오래된 타이머가 새 은신을 끄지 않도록 함)
+    dashing: false,     // 변기통의 돌진 궁극기를 사용 중이면 true (이동/공격 입력이 무시되고 서버가 위치를 직접 제어함)
+    dashDirX: 0,
+    dashDirY: 0,
+    dashTimeLeft: 0,
+    stunnedUntil: 0,    // 이 시각(ms, Date.now() 기준) 전까지는 기절 상태 (이동/공격 불가)
     score: 0,
     color: COLORS[Math.floor(Math.random() * COLORS.length)],
     characterId: character.id,
@@ -343,6 +370,9 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
       respawned.alive = true;
       respawned.invisible = false;
       respawned.stealthId = (respawned.stealthId || 0) + 1; // 진행 중이던 은신 타이머를 무효화
+      respawned.dashing = false;
+      respawned.dashTimeLeft = 0;
+      respawned.stunnedUntil = 0;
       respawned.ultimateCharge = 0;
       respawned.ammo = MAX_AMMO;
       respawned.ammoRegenElapsed = 0;
@@ -387,7 +417,60 @@ function spawnProjectiles(match, p, spec, isUltimate) {
   }
 }
 
-// 벽 또는 적과 충돌한 poolOnImpact 발사체가 남기는 물웅덩이를 생성한다
+// 근접 공격(변기통의 뚫어뻥 휘두르기 등): 발사체 없이 즉시 판정되는 부채꼴 범위 공격
+// spec.angleDegrees: 바라보는 방향을 중심으로 한 부채꼴의 전체 각도, spec.range: 부채꼴 반경
+// spec.knockback이 있으면 맞은 대상을 공격자 반대 방향(바깥쪽)으로 밀어낸다
+function performMeleeAttack(match, p, spec, isUltimate) {
+  const halfAngle = ((spec.angleDegrees || 90) * Math.PI) / 180 / 2;
+  const range = spec.range || 120;
+
+  // 클라이언트가 부채꼴 스윙을 그릴 수 있도록 시각 이펙트로 전달
+  effectIdCounter += 1;
+  match.effects.push({
+    id: effectIdCounter,
+    type: 'melee',
+    x: p.x,
+    y: p.y,
+    angle: p.angle,
+    arcDegrees: spec.angleDegrees || 90,
+    radius: range,
+    life: EFFECT_LIFETIME,
+  });
+
+  for (const pid in match.players) {
+    if (match.over) break;
+    if (pid === p.id) continue;
+    const target = match.players[pid];
+    if (!target.alive) continue;
+    if (!FRIENDLY_FIRE && target.team === p.team) continue;
+
+    const dx = target.x - p.x;
+    const dy = target.y - p.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist > range + PLAYER_RADIUS) continue;
+
+    // 목표가 공격자가 바라보는 방향 기준 부채꼴 각도 안에 있는지 확인
+    let diff = Math.atan2(dy, dx) - p.angle;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    if (Math.abs(diff) > halfAngle) continue;
+
+    applyDamage(match, target, spec.damage, p.id, { chargeShooter: !isUltimate });
+    if (match.over) break;
+
+    // 넉백: 공격자로부터 바깥쪽(대상이 서 있던 방향)으로 밀어냄. 벽에 막히면 그 축으로는 밀리지 않음
+    if (spec.knockback && dist > 0.001) {
+      const ux = dx / dist;
+      const uy = dy / dist;
+      const pushX = Math.max(PLAYER_RADIUS, Math.min(ARENA_WIDTH - PLAYER_RADIUS, target.x + ux * spec.knockback));
+      const pushY = Math.max(PLAYER_RADIUS, Math.min(ARENA_HEIGHT - PLAYER_RADIUS, target.y + uy * spec.knockback));
+      if (!collidesWithWalls(pushX, target.y, PLAYER_RADIUS)) target.x = pushX;
+      if (!collidesWithWalls(target.x, pushY, PLAYER_RADIUS)) target.y = pushY;
+    }
+  }
+}
+
+// 물웅덩이(원효대사): 벽 또는 적과 충돌한 poolOnImpact 발사체가 남기는 물웅덩이를 생성한다
 function spawnWaterPool(match, b) {
   waterPoolIdCounter += 1;
   match.waterPools.push({
@@ -554,6 +637,7 @@ io.on('connection', (socket) => {
     if (!match || match.over) return;
     const p = match.players[socket.id];
     if (!p || !p.alive) return;
+    if (p.dashing || (p.stunnedUntil && Date.now() < p.stunnedUntil)) return; // 돌진/기절 중에는 서버가 위치를 제어하므로 클라이언트 입력을 무시
     if (typeof data.x !== 'number' || typeof data.y !== 'number') return;
 
     const newX = Math.max(PLAYER_RADIUS, Math.min(ARENA_WIDTH - PLAYER_RADIUS, data.x));
@@ -576,6 +660,7 @@ io.on('connection', (socket) => {
     if (!match || match.over) return;
     const p = match.players[socket.id];
     if (!p || !p.alive) return;
+    if (p.dashing || (p.stunnedUntil && Date.now() < p.stunnedUntil)) return; // 돌진/기절 중에는 공격 불가
 
     const now = Date.now();
     if (now - p.lastShotAt < FIRE_COOLDOWN_MS) return; // 연사 방지 (최소 발사 간격)
@@ -584,7 +669,11 @@ io.on('connection', (socket) => {
     p.ammo -= 1;
     p.lastShotAt = now;
 
-    spawnProjectiles(match, p, p.basic, false);
+    if (p.basic.type === 'melee') {
+      performMeleeAttack(match, p, p.basic, false);
+    } else {
+      spawnProjectiles(match, p, p.basic, false);
+    }
   });
 
   // 궁극기 발사 요청 (게이지가 100%일 때만 발동)
@@ -593,6 +682,7 @@ io.on('connection', (socket) => {
     if (!match || match.over) return;
     const p = match.players[socket.id];
     if (!p || !p.alive) return;
+    if (p.dashing || (p.stunnedUntil && Date.now() < p.stunnedUntil)) return; // 이미 돌진 중이거나 기절 상태면 재발동 불가
     if (p.ultimateCharge < 100) return;
 
     const ult = p.ultimate;
@@ -637,6 +727,13 @@ io.on('connection', (socket) => {
         if (player.stealthId !== myStealthId) return; // 이미 새 은신/리스폰으로 대체된 타이머는 무시
         player.invisible = false;
       }, (ult.duration || 5) * 1000);
+    } else if (ult.type === 'dash') {
+      // 변기통의 돌진: 바라보는 방향으로 매우 빠르게 이동하며, 이후 updateMatch 틱에서
+      // 실제 이동/벽 충돌/적 충돌(대미지+기절) 판정을 수행한다
+      p.dashing = true;
+      p.dashDirX = Math.cos(p.angle);
+      p.dashDirY = Math.sin(p.angle);
+      p.dashTimeLeft = ult.duration || 0.4;
     } else {
       // 조준한 방향으로 날아가는 궁극기 (예: 피에로 발사, 메가 샷건)
       spawnProjectiles(match, p, ult, true);
@@ -698,6 +795,44 @@ io.on('connection', (socket) => {
 
 // ===== 매치별 물리 처리 (한 틱 분량) =====
 function updateMatch(match, dt, now) {
+  // 변기통의 돌진 궁극기 처리: 서버가 매 틱마다 위치를 직접 이동시키고, 벽/적과의 충돌을 판정한다
+  for (const pid in match.players) {
+    if (match.over) break;
+    const p = match.players[pid];
+    if (!p.dashing) continue;
+    if (!p.alive) { p.dashing = false; continue; }
+
+    const ult = p.ultimate;
+    const step = (ult.speed || 0) * dt;
+    const nx = Math.max(PLAYER_RADIUS, Math.min(ARENA_WIDTH - PLAYER_RADIUS, p.x + p.dashDirX * step));
+    const ny = Math.max(PLAYER_RADIUS, Math.min(ARENA_HEIGHT - PLAYER_RADIUS, p.y + p.dashDirY * step));
+
+    let blockedByWall = false;
+    if (!collidesWithWalls(nx, p.y, PLAYER_RADIUS)) p.x = nx; else blockedByWall = true;
+    if (!collidesWithWalls(p.x, ny, PLAYER_RADIUS)) p.y = ny; else blockedByWall = true;
+
+    p.dashTimeLeft -= dt;
+
+    // 돌진 중 적과 충돌하면 대미지 + 기절을 주고 돌진을 즉시 종료 (벽에 막혀도 종료)
+    let hitSomeone = false;
+    for (const tid in match.players) {
+      const target = match.players[tid];
+      if (tid === pid || !target.alive) continue;
+      if (!FRIENDLY_FIRE && target.team === p.team) continue;
+
+      const ddx = target.x - p.x;
+      const ddy = target.y - p.y;
+      if (Math.sqrt(ddx * ddx + ddy * ddy) < PLAYER_RADIUS * 2) {
+        applyDamage(match, target, ult.damage, pid, { chargeShooter: false });
+        hitSomeone = true;
+        if (!match.over) target.stunnedUntil = now + (ult.stunDuration || 0) * 1000;
+        break;
+      }
+    }
+
+    if (hitSomeone || blockedByWall || p.dashTimeLeft <= 0) p.dashing = false;
+  }
+
   // 총알 이동
   for (const b of match.bullets) {
     b.x += b.vx * dt;
