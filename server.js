@@ -404,7 +404,7 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
       respawned.dashTimeLeft = 0;
       respawned.stunnedUntil = 0;
       respawned.knockbackTimeLeft = 0;
-      respawned.ultimateCharge = 0;
+      // 궁극기 게이지는 사망/리스폰 시에도 초기화하지 않고 그대로 유지함
       respawned.ammo = MAX_AMMO;
       respawned.ammoRegenElapsed = 0;
       respawned.lastDamageAt = Date.now();
