@@ -245,7 +245,7 @@ const CHARACTERS = {
       damage: 2000,
       angleDegrees: 120,    // 바라보는 방향을 중심으로 한 부채꼴의 전체 각도
       range: 90,            // 부채꼴 반경(사거리) - 근접 공격답게 130에서 축소
-      knockback: 170,       // 맞은 대상이 밀려나는 거리(px)
+      knockback: 85,       // 맞은 대상이 밀려나는 거리(px) - 기존 170에서 50% 감소
       visual: 'plunger',
     },
     ultimate: {
