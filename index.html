@@ -723,6 +723,7 @@ const CHARACTERS = [
     maxHp: 6000,
     basic: { name: '샷건 발사 (펠릿 10발, 사거리 짧음)', damage: 300 },
     ultimate: { name: '메가 샷건', damage: 600, desc: '큰 총알 10발 발사, 사거리 더 짧음' },
+    gadget: { name: '무적', desc: '1.5초 동안 모든 피해를 받지 않음 (15초마다 사용 가능)' },
   },
   {
     id: 'wonhyo',
@@ -1554,6 +1555,20 @@ function drawPlayer(p, isMe) {
   ctx.fillStyle = '#fff';
   ctx.fillText(p.name, p.x, p.y - PLAYER_RADIUS - 22);
 
+  // 무적 상태 표시 (슈의 가젯): 몸 주변에 반짝이는 보호막
+  if (p.invincibleUntil && Date.now() < p.invincibleUntil) {
+    const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 90);
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, PLAYER_RADIUS + 8, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255, 235, 120, ${0.18 + 0.12 * pulse})`;
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = `rgba(255, 215, 0, ${0.7 + 0.3 * pulse})`;
+    ctx.stroke();
+    ctx.restore();
+  }
+
   // 기절 상태 표시 (변기 돌진 등에 맞았을 때)
   if (p.stunnedUntil && Date.now() < p.stunnedUntil) {
     ctx.font = `${PLAYER_RADIUS}px sans-serif`;
@@ -1775,23 +1790,25 @@ function drawBomb(bomb) {
 // 지속 지형 효과: 원효대사의 물웅덩이(적 대미지 + 아군 회복) / 여똥이의 똥가루 구름(적에게만 대미지)
 function drawWaterPool(pool) {
   const isPoisonGas = !pool.heal; // heal이 0(또는 없음)이면 회복 효과가 없는 독가스 구름(똥가루)으로 간주
+  // 내 팀(자신/아군)이 만든 원은 초록색, 적군이 만든 원은 빨간색으로 구분
+  const isAlly = pool.ownerId === myId || (myTeam && pool.team === myTeam);
+  const inner = isAlly ? '#82e0aa' : '#f1948a';
+  const outer = isAlly ? '#1e8449' : '#b03a2e';
+  const stroke = isAlly ? 'rgba(46, 204, 113, 1)' : 'rgba(231, 76, 60, 1)';
   ctx.save();
   const alpha = Math.max(0.15, Math.min(0.55, pool.life));
   ctx.globalAlpha = alpha;
   const gradient = ctx.createRadialGradient(pool.x, pool.y, 1, pool.x, pool.y, pool.radius);
-  if (isPoisonGas) {
-    gradient.addColorStop(0, '#a3783a');
-    gradient.addColorStop(1, '#5c3a17');
-  } else {
-    gradient.addColorStop(0, '#85c1e9');
-    gradient.addColorStop(1, '#2874a6');
-  }
+  gradient.addColorStop(0, inner);
+  gradient.addColorStop(1, outer);
   ctx.beginPath();
   ctx.arc(pool.x, pool.y, pool.radius, 0, Math.PI * 2);
   ctx.fillStyle = gradient;
   ctx.fill();
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = isPoisonGas ? 'rgba(163, 120, 58, 0.9)' : 'rgba(133, 193, 233, 0.9)';
+  // 테두리는 채우기보다 더 진하게 그려서 팀 색이 한눈에 보이게 함
+  ctx.globalAlpha = Math.min(1, alpha + 0.4);
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = stroke;
   ctx.stroke();
   ctx.globalAlpha = Math.min(1, alpha + 0.3);
   ctx.font = `${Math.min(28, pool.radius * 0.4)}px sans-serif`;
