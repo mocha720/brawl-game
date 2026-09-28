@@ -404,6 +404,59 @@
     0%, 100% { box-shadow: 0 0 0px rgba(241, 196, 15, 0.8); }
     50% { box-shadow: 0 0 18px rgba(241, 196, 15, 0.9); }
   }
+  /* ===== 가젯 버튼 (궁극기 버튼 왼쪽, 핀란드 국기 무늬) ===== */
+  #gadgetButton {
+    position: fixed;
+    bottom: calc(192px + env(safe-area-inset-bottom, 0px));
+    right: calc(116px + env(safe-area-inset-right, 0px));
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    z-index: 6;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    background: conic-gradient(#003580 100%, rgba(255,255,255,0.15) 100%);
+  }
+  #gadgetButton.ready { animation: gadPulse 1s infinite; }
+  #gadgetButton.armed { box-shadow: 0 0 0 4px rgba(231, 76, 60, 0.9); animation: none; }
+  #gadgetButton .gad-inner {
+    position: relative;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background:
+      linear-gradient(#003580, #003580) 0 50% / 100% 22% no-repeat,
+      linear-gradient(#003580, #003580) 30% 0 / 22% 100% no-repeat,
+      #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  #gadgetButton .gad-cd {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.55);
+    color: #fff;
+    font-weight: 700;
+    font-size: 18px;
+    opacity: 0;
+  }
+  #gadgetButton .gad-cd:not(:empty) { opacity: 1; }
+  @keyframes gadPulse {
+    0%, 100% { box-shadow: 0 0 0px rgba(0, 53, 128, 0.8); }
+    50% { box-shadow: 0 0 16px rgba(0, 120, 255, 0.9); }
+  }
+  @media (max-width: 480px) {
+    #gadgetButton { right: calc(98px + env(safe-area-inset-right, 0px)); bottom: calc(165px + env(safe-area-inset-bottom, 0px)); width: 52px; height: 52px; }
+    #gadgetButton .gad-inner { width: 42px; height: 42px; }
+    #gadgetButton .gad-cd { font-size: 15px; }
+  }
   @media (max-width: 480px) {
     #scoreboardToggleBtn { top: calc(10px + env(safe-area-inset-top, 0px)); right: calc(10px + env(safe-area-inset-right, 0px)); width: 36px; height: 36px; font-size: 16px; }
     #sfxToggleBtn { top: calc(10px + env(safe-area-inset-top, 0px)); right: calc(56px + env(safe-area-inset-right, 0px)); width: 36px; height: 36px; font-size: 16px; }
@@ -584,6 +637,9 @@
 <!-- 궁극기 버튼: 게이지가 차면 클릭/탭으로 발동 (PC/모바일 공용) -->
 <div id="ultimateButton"><div class="ult-inner">🤡</div></div>
 
+<!-- 가젯 버튼: 캐릭터에게 가젯이 있을 때만 표시. 쿨다운이 끝나면 탭(모바일) 또는 F키(PC)로 장전 -->
+<div id="gadgetButton"><div class="gad-inner"><div class="gad-cd"></div></div></div>
+
 <!-- 채팅: Enter 또는 💬 버튼으로 입력창 열기, Enter로 전송, Esc로 취소 -->
 <button id="chatToggleBtn" title="채팅 (Enter)">💬</button>
 <div id="chatContainer">
@@ -649,6 +705,7 @@ const CHARACTERS = [
     maxHp: 7000,
     basic: { name: '총 쏘기', damage: 1540 },
     ultimate: { name: '피에로 발사', damage: 3500, desc: '조준한 방향으로 발사' },
+    gadget: { name: '연발 사격', desc: '조준한 방향으로 총알 3발을 빠르게 연달아 발사, 발당 1,500 피해 (15초마다 사용 가능)' },
   },
   {
     id: 'jigi',
@@ -657,6 +714,7 @@ const CHARACTERS = [
     maxHp: 6000,
     basic: { name: '던지기', damage: 2500 },
     ultimate: { name: '벼락지기', damage: 3500, desc: '주변 고정된 위치에 번개 5회 낙하 (조준 불필요)' },
+    gadget: { name: '탄창 충전', desc: '즉시 탄창을 가득 채움 (15초마다 사용 가능)' },
   },
   {
     id: 'syu',
@@ -770,6 +828,7 @@ const SFX = (() => {
     hit() { noiseBurst({ duration: 0.1, volume: 0.22 }); beep({ freq: 160, freqEnd: 70, duration: 0.1, type: 'square', volume: 0.12 }); },
     death() { beep({ freq: 420, freqEnd: 50, duration: 0.6, type: 'sawtooth', volume: 0.22 }); },
     kill() { beep({ freq: 520, duration: 0.1, type: 'square', volume: 0.18 }); beep({ freq: 780, duration: 0.16, type: 'square', volume: 0.18, delay: 0.1 }); },
+    gadget() { beep({ freq: 500, freqEnd: 950, duration: 0.14, type: 'triangle', volume: 0.16 }); },
     ultimateReady() { beep({ freq: 600, duration: 0.1, type: 'sine', volume: 0.12 }); beep({ freq: 900, duration: 0.15, type: 'sine', volume: 0.12, delay: 0.1 }); },
     matchStart() { beep({ freq: 440, duration: 0.15, type: 'square', volume: 0.18 }); beep({ freq: 660, duration: 0.2, type: 'square', volume: 0.18, delay: 0.15 }); },
     win() { [523, 659, 784, 1046].forEach((f, i) => beep({ freq: f, duration: 0.18, type: 'square', volume: 0.18, delay: i * 0.13 })); },
@@ -813,6 +872,10 @@ let rightStickDragged = false;
 // 궁극기 '장전' 상태: 조준이 필요한 궁극기를 공격 조준(마우스/오른쪽 조이스틱)으로 발사하기 위한 모드
 let ultimateArmed = false;
 
+// 가젯 '장전' 상태: 조준이 필요한 가젯(예: 미남의 연발 사격)을 공격 조준으로 발사하기 위한 모드
+let gadgetArmed = false;
+const GADGET_COOLDOWN_SEC = 15; // server.js의 GADGET_COOLDOWN_SEC와 동일하게 유지
+
 // 기본 공격 발사 지점(마우스 클릭, 오른쪽 조이스틱 release)이 공통으로 거치는 함수.
 // 궁극기가 장전된 상태면 궁극기를, 아니면 기본 공격을 발사한다.
 function fireAttack() {
@@ -823,6 +886,11 @@ function fireAttack() {
     ultimateArmed = false;
     updateUltimateButton();
     SFX.ultimate();
+  } else if (gadgetArmed && me && me.gadget && !(me.gadgetCooldownLeft > 0)) {
+    socket.emit('gadget');
+    gadgetArmed = false;
+    updateGadgetButton();
+    SFX.gadget();
   } else {
     socket.emit('shoot');
     SFX.shoot();
@@ -957,6 +1025,7 @@ function renderCharacterList() {
       <div class="stat-line">❤️ 체력: ${c.maxHp.toLocaleString()}</div>
       <div class="stat-line">🎯 ${escapeHtml(c.basic.name)}${c.basic.damage ? `: ${c.basic.damage.toLocaleString()}` : ''}${c.basic.desc ? ` (${escapeHtml(c.basic.desc)})` : ''}</div>
       <div class="stat-line">✨ ${escapeHtml(c.ultimate.name)}${c.ultimate.damage ? `: ${c.ultimate.damage.toLocaleString()}` : ''}${c.ultimate.desc ? ` (${escapeHtml(c.ultimate.desc)})` : ''}</div>
+      ${c.gadget ? `<div class="stat-line">🔧 ${escapeHtml(c.gadget.name)}${c.gadget.desc ? ` (${escapeHtml(c.gadget.desc)})` : ''}</div>` : ''}
       <button data-char-id="${c.id}">선택</button>
     </div>
   `).join('');
@@ -1067,6 +1136,7 @@ socket.on('matchFound', (data) => {
 socket.on('matchOver', (data) => {
   joined = false;
   ultimateArmed = false;
+  gadgetArmed = false;
 
   const titleEl = document.getElementById('matchResultTitle');
   const descEl = document.getElementById('matchResultDesc');
@@ -1135,6 +1205,7 @@ socket.on('state', (state) => {
     wasAlive = me.alive;
   }
   updateUltimateButton();
+  updateGadgetButton();
   updateAmmoDisplay();
 });
 
@@ -1291,6 +1362,7 @@ function activateUltimateControl() {
     SFX.ultimate();
   } else {
     ultimateArmed = !ultimateArmed; // 다시 누르면 장전 취소
+    if (ultimateArmed) gadgetArmed = false; // 궁극기와 가젯은 동시에 장전할 수 없음
   }
   updateUltimateButton();
 }
@@ -1304,6 +1376,53 @@ window.addEventListener('keydown', (e) => {
   if (isChatFocused()) return; // 채팅 입력 중에는 궁극기 단축키 무시
   if (e.key === 'e' || e.key === 'E') activateUltimateControl();
 });
+
+// ===== 가젯 =====
+// 조준이 필요한 가젯(예: 연발 사격)은 '장전' 상태로 전환되고, 이후 기본 공격 입력으로 발사한다.
+// 조준이 필요 없는 가젯(instant, 예: 탄창 충전)은 누르는 즉시 발동한다.
+function activateGadgetControl() {
+  if (!joined) return;
+  const me = latestState.players[myId];
+  if (!me || !me.alive || !me.gadget) return;
+  if (me.gadgetCooldownLeft > 0) return;
+
+  if (me.gadget.instant) {
+    socket.emit('gadget');
+    gadgetArmed = false;
+    SFX.gadget();
+  } else {
+    gadgetArmed = !gadgetArmed; // 다시 누르면 장전 취소
+    if (gadgetArmed) ultimateArmed = false; // 궁극기와 가젯은 동시에 장전할 수 없음
+  }
+  updateGadgetButton();
+  updateUltimateButton();
+}
+
+document.getElementById('gadgetButton').addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  activateGadgetControl();
+});
+
+window.addEventListener('keydown', (e) => {
+  if (isChatFocused()) return; // 채팅 입력 중에는 가젯 단축키 무시
+  if (e.key === 'f' || e.key === 'F') activateGadgetControl();
+});
+
+function updateGadgetButton() {
+  const btn = document.getElementById('gadgetButton');
+  const me = latestState.players[myId];
+  const hasGadget = !!(joined && me && me.gadget);
+  btn.style.display = hasGadget ? 'flex' : 'none';
+  if (!hasGadget) { gadgetArmed = false; return; }
+
+  const left = me.gadgetCooldownLeft || 0;
+  if (left > 0 || !me.alive) gadgetArmed = false; // 쿨다운 중이거나 사망 시 장전 불가
+  const progress = Math.round((1 - left / GADGET_COOLDOWN_SEC) * 100);
+  btn.style.background = `conic-gradient(#003580 ${progress}%, rgba(255,255,255,0.15) ${progress}%)`;
+  btn.classList.toggle('ready', left <= 0);
+  btn.classList.toggle('armed', gadgetArmed);
+  btn.querySelector('.gad-cd').textContent = left > 0 ? String(Math.ceil(left)) : '';
+}
 
 function updateUltimateButton() {
   const btn = document.getElementById('ultimateButton');
@@ -1865,7 +1984,10 @@ function drawAimRangeIndicator() {
   if (!me || !me.alive) return;
 
   let range, color;
-  if (ultimateArmed && me.ultimate && me.ultimate.type !== 'lightning') {
+  if (gadgetArmed && me.gadget && me.gadget.speed) {
+    range = me.gadget.speed * me.gadget.lifetime;
+    color = 'rgba(52, 152, 219, 0.9)'; // 가젯은 파란색으로 구분
+  } else if (ultimateArmed && me.ultimate && me.ultimate.type !== 'lightning') {
     range = me.ultimate.speed * me.ultimate.lifetime;
     color = 'rgba(231, 76, 60, 0.85)'; // 궁극기는 빨간색으로 구분
   } else if (me.basic) {
