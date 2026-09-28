@@ -312,7 +312,7 @@ const CHARACTERS = {
     maxHp: 7000,
     basic: {
       name: '보배 던지기',
-      damage: 2000,
+      damage: 1400,   // 기존 2000에서 공격력 30% 감소
       speed: 380,     // 총알보다 느린 투척형
       radius: 12,
       lifetime: 2.0,   // 초
@@ -327,17 +327,6 @@ const CHARACTERS = {
       radius: 100,           // 잔소리/폭발 판정 반경
       explodeDamage: 3500,   // 폭발 시 대미지
       visual: 'bobaeBomb',
-    },
-    // 보배 전용 패시브 '보배의 복수': 체력이 30% 이하로 떨어지면 자동으로 발동하며(목숨당 1회),
-    // 이동속도/공격속도가 증가하고 지속시간 동안 받는 피해의 일부를 공격자에게 반사한다
-    passive: {
-      type: 'revenge',
-      name: '보배의 복수',
-      hpThreshold: 0.3,           // 체력이 최대 체력의 이 비율 이하가 되면 발동
-      duration: 5,                 // 지속 시간(초)
-      moveSpeedMultiplier: 1.5,
-      attackSpeedMultiplier: 1.5,
-      reflectPercent: 0.2,          // 지속시간 동안 받는 피해의 이 비율만큼 공격자에게 반사
     },
   },
 };
@@ -411,46 +400,22 @@ function buildPlayer(socketId, name, characterId, team, spawn) {
     ammoRegenElapsed: 0,
     lastShotAt: 0,
     lastDamageAt: Date.now(),
-    passive: character.passive || null, // 캐릭터 전용 패시브 정의 (예: 보배의 복수)
-    attackSpeedMultiplier: 1, // 패시브로 공격속도가 증가하면 1보다 커짐 (발사 쿨다운 계산에 사용)
-    moveSpeedMultiplier: 1,   // 패시브로 이동속도가 증가하면 1보다 커짐 (클라이언트 이동 계산에 사용)
-    revengeActive: false,     // '보배의 복수' 발동 중이면 true (이동/공격속도 증가 + 피해 반사)
-    revengeUntil: 0,          // 이 시각(ms)까지 발동 상태 유지
-    revengeUsed: false,       // 이번 목숨에서 이미 발동했는지 (사망/리스폰 시 초기화됨)
   };
 }
 
 // 대미지 적용 + 사망/리스폰/점수/승리 판정을 한 곳에서 관리 (총알 피격, 번개 피격이 공용으로 사용)
 // match: 이 대미지가 발생한 매치. 다른 매치의 상태에는 절대 영향을 주지 않는다.
 // 아군 피해 여부는 호출하는 쪽(총알 충돌 / 번개 판정)에서 이미 걸러서 넘겨준다.
-function applyDamage(match, target, damage, shooterId, { chargeShooter, isReflected } = {}) {
+function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
   if (!target.alive || match.over) return;
 
   const shooter = match.players[shooterId];
-
-  // 보배의 복수: 발동 중일 때 받는 피해의 일부를 공격자에게 그대로 반사한다
-  // (반사로 인해 발생한 피해는 다시 반사되지 않도록 isReflected로 막아 무한루프를 방지)
-  if (!isReflected && target.revengeActive && target.passive && target.passive.reflectPercent
-      && shooter && shooter.alive && shooter.id !== target.id) {
-    applyDamage(match, shooter, damage * target.passive.reflectPercent, target.id, { chargeShooter: false, isReflected: true });
-    if (match.over) return; // 반사 피해로 매치가 끝났으면 이후 처리는 하지 않음
-  }
 
   target.hp -= damage;
   target.lastDamageAt = Date.now(); // 무피격 회복 타이머 초기화
 
   if (shooter && chargeShooter) {
     shooter.ultimateCharge = Math.min(100, shooter.ultimateCharge + shooter.ultimateChargePerHit);
-  }
-
-  // 보배의 복수 발동 체크: 체력이 임계치 이하로 떨어지고 이번 목숨에 아직 발동하지 않았다면 발동
-  if (target.hp > 0 && target.passive && target.passive.type === 'revenge' && !target.revengeUsed
-      && target.hp <= target.maxHp * target.passive.hpThreshold) {
-    target.revengeUsed = true;
-    target.revengeActive = true;
-    target.revengeUntil = Date.now() + target.passive.duration * 1000;
-    target.attackSpeedMultiplier = target.passive.attackSpeedMultiplier;
-    target.moveSpeedMultiplier = target.passive.moveSpeedMultiplier;
   }
 
   if (target.hp <= 0) {
@@ -491,12 +456,6 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter, isReflec
       respawned.dashTimeLeft = 0;
       respawned.stunnedUntil = 0;
       respawned.knockbackTimeLeft = 0;
-      // 보배의 복수: 리스폰(새로운 목숨)하면 발동 여부/상태를 모두 초기화해서 다시 발동할 수 있게 함
-      respawned.revengeActive = false;
-      respawned.revengeUntil = 0;
-      respawned.revengeUsed = false;
-      respawned.attackSpeedMultiplier = 1;
-      respawned.moveSpeedMultiplier = 1;
       // 궁극기 게이지는 사망/리스폰 시에도 초기화하지 않고 그대로 유지함
       respawned.ammo = MAX_AMMO;
       respawned.ammoRegenElapsed = 0;
@@ -857,8 +816,7 @@ io.on('connection', (socket) => {
     if (p.dashing || p.knockbackTimeLeft > 0 || (p.stunnedUntil && Date.now() < p.stunnedUntil)) return; // 돌진/기절 중에는 공격 불가
 
     const now = Date.now();
-    // 보배의 복수 등으로 공격속도가 증가했으면 그만큼 쿨다운을 짧게 계산 (연사 방지는 그대로 유지)
-    if (now - p.lastShotAt < FIRE_COOLDOWN_MS / (p.attackSpeedMultiplier || 1)) return;
+    if (now - p.lastShotAt < FIRE_COOLDOWN_MS) return; // 연사 방지 (최소 발사 간격)
     if (p.ammo <= 0) return; // 탄창이 비어있으면 발사 불가
 
     p.ammo -= 1;
@@ -1287,15 +1245,6 @@ function updateMatch(match, dt, now) {
   }
   match.bombs = match.bombs.filter((b) => !b.exploded);
 
-  // 보배의 복수: 지속 시간이 끝나면 이동/공격속도 증가와 피해 반사 효과를 해제
-  for (const pid in match.players) {
-    const p = match.players[pid];
-    if (p.revengeActive && now >= p.revengeUntil) {
-      p.revengeActive = false;
-      p.attackSpeedMultiplier = 1;
-      p.moveSpeedMultiplier = 1;
-    }
-  }
 
   // 덤불 진입 여부 갱신 (죽은 플레이어는 어차피 화면에 그려지지 않으므로 false로 둠)
   for (const pid in match.players) {
