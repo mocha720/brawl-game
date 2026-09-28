@@ -703,9 +703,8 @@ const CHARACTERS = [
     name: '보배',
     color: '#d63384',
     maxHp: 7000,
-    basic: { name: '보배 던지기', damage: 2000 },
+    basic: { name: '보배 던지기', damage: 1400 },
     ultimate: { name: '보배 폭발', desc: '조준 불필요, 자신의 위치에 설치. 즉시 보배의 잔소리로 1초 후 주변에 500 피해를 주고, 2초 뒤 3500 피해로 폭발' },
-    passive: { name: '보배의 복수', desc: '체력 30% 이하가 되면(목숨당 1회) 5초간 이동/공격속도 50% 증가 + 받는 피해의 20% 반사' },
   },
 ];
 let selectedCharacterId = CHARACTERS[0].id;
@@ -958,7 +957,6 @@ function renderCharacterList() {
       <div class="stat-line">❤️ 체력: ${c.maxHp.toLocaleString()}</div>
       <div class="stat-line">🎯 ${escapeHtml(c.basic.name)}${c.basic.damage ? `: ${c.basic.damage.toLocaleString()}` : ''}${c.basic.desc ? ` (${escapeHtml(c.basic.desc)})` : ''}</div>
       <div class="stat-line">✨ ${escapeHtml(c.ultimate.name)}${c.ultimate.damage ? `: ${c.ultimate.damage.toLocaleString()}` : ''}${c.ultimate.desc ? ` (${escapeHtml(c.ultimate.desc)})` : ''}</div>
-      ${c.passive ? `<div class="stat-line">🔥 ${escapeHtml(c.passive.name)}${c.passive.desc ? ` (${escapeHtml(c.passive.desc)})` : ''}</div>` : ''}
       <button data-char-id="${c.id}">선택</button>
     </div>
   `).join('');
@@ -1370,9 +1368,8 @@ function update(dt) {
   if (len > 0.01) {
     // 조이스틱은 아날로그 값(0~1)이므로 그대로, 키보드(1 또는 √2)는 1로 눌러서 사용
     const magnitude = Math.min(1, len);
-    const speedMultiplier = (me && me.moveSpeedMultiplier) || 1; // 보배의 복수 등으로 이동속도가 증가하면 반영
-    const nextX = myX + (dx / len) * magnitude * MOVE_SPEED * speedMultiplier * dt;
-    const nextY = myY + (dy / len) * magnitude * MOVE_SPEED * speedMultiplier * dt;
+    const nextX = myX + (dx / len) * magnitude * MOVE_SPEED * dt;
+    const nextY = myY + (dy / len) * magnitude * MOVE_SPEED * dt;
 
     // 벽에 닿아도 옆으로는 미끄러지듯 이동하도록 축별로 검사
     if (!collidesWithWalls(nextX, myY, PLAYER_RADIUS)) myX = nextX;
@@ -1417,14 +1414,6 @@ function drawPlayer(p, isMe) {
   ctx.strokeStyle = isMe ? '#fff' : '#222';
   ctx.stroke();
 
-  // 보배의 복수 발동 중이면 빨간 테두리로 강조
-  if (p.revengeActive) {
-    ctx.beginPath();
-    ctx.arc(0, 0, PLAYER_RADIUS + 8, 0, Math.PI * 2);
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = 'rgba(255, 77, 109, 0.85)';
-    ctx.stroke();
-  }
 
   // 바라보는 방향 표시
   ctx.rotate(p.angle);
