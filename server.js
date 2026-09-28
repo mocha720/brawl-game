@@ -52,6 +52,7 @@ const AMMO_REGEN_SECONDS = 1.8;  // 탄약 1발이 다시 채워지는 데 걸�
 // ===== 무피격 체력 회복 =====
 const HP_REGEN_DELAY_MS = 4000;      // 마지막으로 피격당한 후 이 시간이 지나야 회복 시작
 const HP_REGEN_PERCENT_PER_SEC = 0.04; // 초당 최대 체력의 4%씩 회복
+const GADGET_COOLDOWN_SEC = 15; // 가젯 재사용 대기시간(초)
 
 // ===== 채팅 =====
 const CHAT_MAX_LENGTH = 120;      // 메시지 최대 글자 수
@@ -154,6 +155,17 @@ const CHARACTERS = {
       lifetime: 2.0,
       visual: 'clown',
     },
+    gadget: {
+      name: '연발 사격',
+      type: 'burst',       // 조준한 한 방향으로 총알을 빠르게 연달아 발사
+      bulletCount: 3,
+      interval: 0.07,      // 총알 사이 간격(초)
+      damage: 1500,
+      speed: 845,
+      radius: 6,
+      lifetime: 1.5,
+      visual: 'bullet',
+    },
   },
   jigi: {
     id: 'jigi',
@@ -174,6 +186,11 @@ const CHARACTERS = {
       strikeCount: 5,        // 떨어지는 번개 개수
       strikeRadius: 60,      // 번개 한 발의 피격 반경
       areaRadius: 220,       // 시전자로부터 번개가 떨어지는 고정 거리 (원형으로 균등 배치)
+    },
+    gadget: {
+      name: '탄창 충전',
+      type: 'reloadAmmo',   // 조준 불필요, 즉시 탄창을 가득 채움
+      instant: true,        // true면 누르는 즉시 발동 (조준 후 발사가 필요 없음)
     },
   },
   syu: {
@@ -395,6 +412,8 @@ function buildPlayer(socketId, name, characterId, team, spawn) {
     ultimate: character.ultimate,
     ultimateChargePerHit: character.ultimateChargePerHit || ULTIMATE_CHARGE_PER_HIT, // 캐릭터별로 다르게 설정 가능 (예: 슈는 펠릿이 많아 더 낮게)
     ultimateCharge: 0, // 0~100
+    gadget: character.gadget || null, // 캐릭터 전용 가젯 (없으면 null)
+    gadgetCooldownLeft: 0, // 가젯 재사용까지 남은 시간(초). 0이면 사용 가능
     ammo: MAX_AMMO,
     maxAmmo: MAX_AMMO,
     ammoRegenElapsed: 0,
@@ -466,14 +485,14 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
 
 // 총알(들)을 생성한다. spec.pelletCount가 있으면 spec.spreadDegrees 각도 안에 고르게 퍼뜨려서 여러 발을 동시에 발사한다.
 // (예: 슈의 샷건 - 탄창/쿨다운은 소비 1회로 취급되고, 여기서는 실제 총알 개체만 만든다)
-function spawnProjectiles(match, p, spec, isUltimate) {
+function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
   const pelletCount = spec.pelletCount || 1;
   const spreadRad = ((spec.spreadDegrees || 0) * Math.PI) / 180;
   const halfSpread = spreadRad / 2;
 
   for (let i = 0; i < pelletCount; i++) {
     const angleOffset = pelletCount > 1 ? -halfSpread + (spreadRad * i) / (pelletCount - 1) : 0;
-    const angle = p.angle + angleOffset;
+    const angle = baseAngle + angleOffset;
 
     bulletIdCounter += 1;
     match.bullets.push({
@@ -827,6 +846,40 @@ io.on('connection', (socket) => {
     } else {
       spawnProjectiles(match, p, p.basic, false);
     }
+  });
+
+  // 가젯 사용 요청 (재사용 대기시간이 끝났을 때만 발동, 탄약/궁극기 게이지는 소모하지 않음)
+  socket.on('gadget', () => {
+    const match = matches[socketToMatch[socket.id]];
+    if (!match || match.over) return;
+    const p = match.players[socket.id];
+    if (!p || !p.alive) return;
+    if (p.dashing || p.knockbackTimeLeft > 0 || (p.stunnedUntil && Date.now() < p.stunnedUntil)) return;
+    if (!p.gadget || p.gadgetCooldownLeft > 0) return;
+
+    const gadget = p.gadget;
+
+    if (gadget.type === 'burst') {
+      // 발사 순간의 조준 방향으로 총알을 짧은 간격으로 연달아 발사 (첫 발은 즉시)
+      const fireAngle = p.angle;
+      const shooterId = p.id;
+      for (let i = 0; i < gadget.bulletCount; i++) {
+        const fire = () => {
+          const m = matches[match.id];
+          if (!m || m.over) return;
+          const shooter = m.players[shooterId];
+          if (!shooter || !shooter.alive) return;
+          spawnProjectiles(m, shooter, gadget, false, fireAngle);
+        };
+        if (i === 0) fire();
+        else setTimeout(fire, i * gadget.interval * 1000);
+      }
+    } else if (gadget.type === 'reloadAmmo') {
+      p.ammo = p.maxAmmo;
+      p.ammoRegenElapsed = 0;
+    }
+
+    p.gadgetCooldownLeft = GADGET_COOLDOWN_SEC;
   });
 
   // 궁극기 발사 요청 (게이지가 100%일 때만 발동)
@@ -1250,6 +1303,12 @@ function updateMatch(match, dt, now) {
   for (const pid in match.players) {
     const p = match.players[pid];
     p.inBush = p.alive && isInBush(p.x, p.y);
+  }
+
+  // 가젯 재사용 대기시간 감소
+  for (const pid in match.players) {
+    const p = match.players[pid];
+    if (p.gadgetCooldownLeft > 0) p.gadgetCooldownLeft = Math.max(0, p.gadgetCooldownLeft - dt);
   }
 
   // 탄약 재충전 + 무피격 체력 회복
