@@ -222,6 +222,12 @@ const CHARACTERS = {
       pelletCount: 10,      // 큰 총알 10발
       spreadDegrees: 30,
     },
+    gadget: {
+      name: '무적',
+      type: 'invincible',  // 조준 불필요, 즉시 발동해서 일정 시간 동안 모든 피해를 받지 않음
+      instant: true,        // true면 누르는 즉시 발동
+      duration: 1.5,        // 무적 지속 시간(초)
+    },
   },
   wonhyo: {
     id: 'wonhyo',
@@ -241,6 +247,7 @@ const CHARACTERS = {
       poolTickInterval: 0.5, // 대미지/회복이 적용되는 주기(초)
       poolDamage: 1000,     // 적이 물에 닿았을 때 주기당 대미지 (공격력 2배 적용, 기존 500에서 증가)
       poolHeal: 500,        // 자신/아군이 물에 닿았을 때 주기당 회복량
+      directDamage: 1500,   // 해골이 물이 퍼지기 전에 적(플레이어/터렛)에게 직접 적중했을 때 주는 대미지
     },
     ultimate: {
       name: '은신',
@@ -414,6 +421,7 @@ function buildPlayer(socketId, name, characterId, team, spawn) {
     ultimateCharge: 0, // 0~100
     gadget: character.gadget || null, // 캐릭터 전용 가젯 (없으면 null)
     gadgetCooldownLeft: 0, // 가젯 재사용까지 남은 시간(초). 0이면 사용 가능
+    invincibleUntil: 0,    // 이 시각(ms, Date.now() 기준) 전까지는 무적 상태 (슈의 가젯 등)
     ammo: MAX_AMMO,
     maxAmmo: MAX_AMMO,
     ammoRegenElapsed: 0,
@@ -427,6 +435,7 @@ function buildPlayer(socketId, name, characterId, team, spawn) {
 // 아군 피해 여부는 호출하는 쪽(총알 충돌 / 번개 판정)에서 이미 걸러서 넘겨준다.
 function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
   if (!target.alive || match.over) return;
+  if (target.invincibleUntil && Date.now() < target.invincibleUntil) return; // 무적 상태(슈의 가젯)면 피해/궁극기 충전 모두 무시
 
   const shooter = match.players[shooterId];
 
@@ -474,6 +483,7 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
       respawned.dashing = false;
       respawned.dashTimeLeft = 0;
       respawned.stunnedUntil = 0;
+      respawned.invincibleUntil = 0; // 리스폰 시 이전 무적 상태는 초기화
       respawned.knockbackTimeLeft = 0;
       // 궁극기 게이지는 사망/리스폰 시에도 초기화하지 않고 그대로 유지함
       respawned.ammo = MAX_AMMO;
@@ -516,6 +526,7 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
       poolTickInterval: spec.poolTickInterval,
       poolDamage: spec.poolDamage,
       poolHeal: spec.poolHeal,
+      directDamage: spec.directDamage || 0, // 물웅덩이 생성 전 적에게 직접 적중 시 주는 대미지
     });
   }
 }
@@ -563,7 +574,7 @@ function performMeleeAttack(match, p, spec, isUltimate) {
 
     // 넉백: 즉시 순간이동시키지 않고, 방향/거리만 기록해서 이후 updateMatch 틱마다
     // 점점 감속하며 자연스럽게 날아가도록 처리한다 (실제 이동은 아래 넉백 처리 루프에서 수행)
-    if (spec.knockback && dist > 0.001) {
+    if (spec.knockback && dist > 0.001 && !(target.invincibleUntil && Date.now() < target.invincibleUntil)) {
       target.knockbackDirX = dx / dist;
       target.knockbackDirY = dy / dist;
       target.knockbackDistance = spec.knockback;
@@ -877,6 +888,9 @@ io.on('connection', (socket) => {
     } else if (gadget.type === 'reloadAmmo') {
       p.ammo = p.maxAmmo;
       p.ammoRegenElapsed = 0;
+    } else if (gadget.type === 'invincible') {
+      // 슈의 가젯: duration초 동안 무적 (재사용 시 남은 시간이 아니라 새로 duration초로 갱신)
+      p.invincibleUntil = Date.now() + (gadget.duration || 1.5) * 1000;
     }
 
     p.gadgetCooldownLeft = GADGET_COOLDOWN_SEC;
@@ -1041,7 +1055,7 @@ function updateMatch(match, dt, now) {
       if (Math.sqrt(ddx * ddx + ddy * ddy) < PLAYER_RADIUS * 2) {
         applyDamage(match, target, ult.damage, pid, { chargeShooter: false });
         hitSomeone = true;
-        if (!match.over) target.stunnedUntil = now + (ult.stunDuration || 0) * 1000;
+        if (!match.over && !(target.invincibleUntil && now < target.invincibleUntil)) target.stunnedUntil = now + (ult.stunDuration || 0) * 1000;
         break;
       }
     }
@@ -1168,6 +1182,10 @@ function updateMatch(match, dt, now) {
         if (b.poolOnImpact) {
           // 해골물 뿌리기: 적중 시 직접 대미지 대신 물웅덩이를 생성 (궁극기 게이지는 적중으로 충전됨)
           spawnWaterPool(match, b);
+          // 물이 퍼지기 전에 해골이 적에게 직접 적중하면 추가로 직접 대미지를 준다
+          if (b.directDamage > 0) {
+            applyDamage(match, target, b.directDamage, b.ownerId, { chargeShooter: false });
+          }
           if (!b.isUltimate) {
             const shooter = match.players[b.ownerId];
             if (shooter) shooter.ultimateCharge = Math.min(100, shooter.ultimateCharge + shooter.ultimateChargePerHit);
@@ -1197,6 +1215,7 @@ function updateMatch(match, dt, now) {
           // 해골물/똥가루 뿌리기: 터렛에 적중하면 직접 대미지 대신 물웅덩이/똥가루 구름을 남겨
           // 이후 지속 대미지 판정(아래 물웅덩이 루프)으로 터렛에 피해를 준다
           spawnWaterPool(match, b);
+          if (b.directDamage > 0) turret.hp -= b.directDamage; // 직접 적중 대미지
         } else {
           turret.hp -= b.damage;
         }
