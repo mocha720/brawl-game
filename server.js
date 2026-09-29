@@ -239,7 +239,7 @@ const CHARACTERS = {
       damage: 0,          // 해골 자체는 직접 대미지를 주지 않음 (벽/적에게 닿으면 물웅덩이 생성)
       speed: 480,
       radius: 14,
-      lifetime: 1.8,       // 초 (사거리 ≈ 864px)
+      lifetime: 2,         // 초 (기존 1.8초에서 증가, 사거리 ≈ 960px)
       visual: 'skull',
       poolOnImpact: true,  // 벽 또는 적과 충돌 시 물웅덩이를 생성
       poolRadius: 90,       // 물웅덩이 반경
@@ -247,7 +247,7 @@ const CHARACTERS = {
       poolTickInterval: 0.5, // 대미지/회복이 적용되는 주기(초)
       poolDamage: 1000,     // 적이 물에 닿았을 때 주기당 대미지 (공격력 2배 적용, 기존 500에서 증가)
       poolHeal: 300,        // 자신/아군이 물에 닿았을 때 주기당 회복량 (기존 500에서 너프)
-      directDamage: 1000,   // 해골이 물이 퍼지기 전에 적(플레이어/터렛)에게 직접 적중했을 때 주는 대미지 (기존 1500에서 너프)
+      directDamage: 700,    // 해골이 물이 퍼지기 전에 적(플레이어/터렛)에게 직접 적중했을 때 주는 대미지 (기존 1000에서 너프)
       ammoRegenSeconds: AMMO_REGEN_SECONDS * 1.3, // 기본공격 재장전 시간이 다른 캐릭터보다 30% 느림
     },
     ultimate: {
