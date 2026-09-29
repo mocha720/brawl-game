@@ -1488,8 +1488,10 @@ function update(dt) {
   if (len > 0.01) {
     // 조이스틱은 아날로그 값(0~1)이므로 그대로, 키보드(1 또는 √2)는 1로 눌러서 사용
     const magnitude = Math.min(1, len);
-    const nextX = myX + (dx / len) * magnitude * MOVE_SPEED * dt;
-    const nextY = myY + (dy / len) * magnitude * MOVE_SPEED * dt;
+    // 보배 폭탄 범위 등에 들어가 있으면 서버가 내려주는 speedMultiplier만큼 이동속도가 느려짐
+    const speedMultiplier = (me && typeof me.speedMultiplier === 'number') ? me.speedMultiplier : 1;
+    const nextX = myX + (dx / len) * magnitude * MOVE_SPEED * speedMultiplier * dt;
+    const nextY = myY + (dy / len) * magnitude * MOVE_SPEED * speedMultiplier * dt;
 
     // 벽에 닿아도 옆으로는 미끄러지듯 이동하도록 축별로 검사
     if (!collidesWithWalls(nextX, myY, PLAYER_RADIUS)) myX = nextX;
