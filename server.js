@@ -47,7 +47,7 @@ const FRIENDLY_FIRE = false; // 같은 팀끼리는 서로 피해를 주지 않�
 // ===== 탄창 / 연사 방지 =====
 const MAX_AMMO = 3;              // 모든 캐릭터 공통 탄창 크기
 const FIRE_COOLDOWN_MS = 350;    // 한 발 쏜 뒤 다음 발사까지 최소 대기시간 (연사 방지)
-const AMMO_REGEN_SECONDS = 1.8;  // 탄약 1발이 다시 채워지는 데 걸리는 시간
+const AMMO_REGEN_SECONDS = 1.8;  // 탄약 1발이 다시 채워지는 데 걸리는 시간 (캐릭터별로 spec.ammoRegenSeconds로 덮어쓸 수 있음)
 
 // ===== 무피격 체력 회복 =====
 const HP_REGEN_DELAY_MS = 4000;      // 마지막으로 피격당한 후 이 시간이 지나야 회복 시작
@@ -246,8 +246,9 @@ const CHARACTERS = {
       poolLifetime: 2.5,    // 물웅덩이가 유지되는 시간(초) - 기존 2초에서 증가
       poolTickInterval: 0.5, // 대미지/회복이 적용되는 주기(초)
       poolDamage: 1000,     // 적이 물에 닿았을 때 주기당 대미지 (공격력 2배 적용, 기존 500에서 증가)
-      poolHeal: 500,        // 자신/아군이 물에 닿았을 때 주기당 회복량
-      directDamage: 1500,   // 해골이 물이 퍼지기 전에 적(플레이어/터렛)에게 직접 적중했을 때 주는 대미지
+      poolHeal: 300,        // 자신/아군이 물에 닿았을 때 주기당 회복량 (기존 500에서 너프)
+      directDamage: 1000,   // 해골이 물이 퍼지기 전에 적(플레이어/터렛)에게 직접 적중했을 때 주는 대미지 (기존 1500에서 너프)
+      ammoRegenSeconds: AMMO_REGEN_SECONDS * 1.3, // 기본공격 재장전 시간이 다른 캐릭터보다 30% 느림
     },
     ultimate: {
       name: '은신',
@@ -348,8 +349,9 @@ const CHARACTERS = {
       fuseTime: 2,          // 설치 후 폭발까지 걸리는 시간(초)
       tickInterval: 1,       // 잔소리(지속 피해) 적용 주기(초)
       tickDamage: 500,       // 잔소리 주기당 대미지
-      radius: 100,           // 잔소리/폭발 판정 반경
+      radius: 150,           // 잔소리/폭발 판정 반경 (기존 100에서 50% 증가)
       explodeDamage: 3500,   // 폭발 시 대미지
+      slowMultiplier: 0.7,   // 범위 안에 있는 적의 이동속도 배율 (0.7 = 30% 감소)
       visual: 'bobaeBomb',
     },
   },
@@ -422,8 +424,10 @@ function buildPlayer(socketId, name, characterId, team, spawn) {
     gadget: character.gadget || null, // 캐릭터 전용 가젯 (없으면 null)
     gadgetCooldownLeft: 0, // 가젯 재사용까지 남은 시간(초). 0이면 사용 가능
     invincibleUntil: 0,    // 이 시각(ms, Date.now() 기준) 전까지는 무적 상태 (슈의 가젯 등)
+    speedMultiplier: 1,     // 이동속도 배율. 매 틱 1로 초기화된 뒤 보배 폭탄 범위 등에 의해 낮아질 수 있음
     ammo: MAX_AMMO,
     maxAmmo: MAX_AMMO,
+    ammoRegenSeconds: character.basic.ammoRegenSeconds || AMMO_REGEN_SECONDS, // 캐릭터별 기본공격 재장전 시간
     ammoRegenElapsed: 0,
     lastShotAt: 0,
     lastDamageAt: Date.now(),
@@ -664,6 +668,7 @@ function spawnBomb(match, p, spec) {
     tickTimer: 0,
     tickDamage: spec.tickDamage,
     explodeDamage: spec.explodeDamage,
+    slowMultiplier: spec.slowMultiplier != null ? spec.slowMultiplier : 1,
     exploded: false,
     visual: spec.visual || 'bobaeBomb',
   });
@@ -1273,11 +1278,27 @@ function updateMatch(match, dt, now) {
   }
   match.waterPools = match.waterPools.filter((pool) => pool.life > 0);
 
+  // 매 틱마다 이동속도 배율을 먼저 1로 초기화한 뒤, 아래에서 보배 폭탄 범위 안에 있으면 다시 낮춘다
+  for (const pid in match.players) {
+    match.players[pid].speedMultiplier = 1;
+  }
+
   // 보배 폭발(보배 궁극기): 설치 직후에는 '보배의 잔소리'로 주기적인 지속 피해를 주다가,
   // 퓨즈(fuseLeft)가 다 되면 한 번 크게 폭발하고 사라진다
   for (const bomb of match.bombs) {
     if (match.over) break;
     if (bomb.exploded) continue;
+
+    // 폭발 전까지, 범위 안에 있는 적은 매 프레임(피해 주기와 무관하게) 이동속도가 감소한다
+    for (const pid in match.players) {
+      const target = match.players[pid];
+      if (!target.alive) continue;
+      if (!FRIENDLY_FIRE && target.team === bomb.team) continue;
+      const sdx = target.x - bomb.x;
+      const sdy = target.y - bomb.y;
+      if (Math.sqrt(sdx * sdx + sdy * sdy) >= PLAYER_RADIUS + bomb.radius) continue;
+      target.speedMultiplier = Math.min(target.speedMultiplier, bomb.slowMultiplier != null ? bomb.slowMultiplier : 1);
+    }
 
     bomb.fuseLeft -= dt;
     bomb.tickTimer += dt;
@@ -1338,7 +1359,7 @@ function updateMatch(match, dt, now) {
     // 탄창이 가득 차지 않았으면 시간이 지날 때마다 한 발씩 채워짐
     if (p.ammo < p.maxAmmo) {
       p.ammoRegenElapsed += dt;
-      if (p.ammoRegenElapsed >= AMMO_REGEN_SECONDS) {
+      if (p.ammoRegenElapsed >= (p.ammoRegenSeconds || AMMO_REGEN_SECONDS)) {
         p.ammo = Math.min(p.maxAmmo, p.ammo + 1);
         p.ammoRegenElapsed = 0;
       }
