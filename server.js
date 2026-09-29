@@ -75,27 +75,63 @@ function mirrorAcrossCenter(rects) {
 // x, y는 좌상단 좌표. 이동/총알 모두 벽에 막힘
 // 맵 크기를 70% 배율(1100x1000 → 770x700)로 줄인 데 맞춰, 벽 좌표/크기도 동일 비율로 축소해
 // 기존 레이아웃 비율을 그대로 유지함
-const WALLS = [
-  ...mirrorAcrossCenter([
-    { x: 112, y: 98, width: 112, height: 18 }, // 사분면 상단 가로 벽
-    { x: 238, y: 133, width: 18, height: 91 }, // 사분면 세로 벽
-  ]),
-  // 맵 중앙 구조물
-  { x: ARENA_WIDTH / 2 - 11, y: ARENA_HEIGHT / 2 - 49, width: 21, height: 98 },  // 중앙 세로 기둥
+//
+// ===== 맵 목록 =====
+// 매치가 시작될 때마다 이 중 하나를 무작위로 골라서 사용한다 (2:2 밸런스를 위해 모든 맵은 4방향 대칭).
+// 새 맵을 추가할 때는 캐릭터 반지름(PLAYER_RADIUS=20)보다 넓은 빈 통로를 항상 남겨서,
+// 스폰 지점이 벽 사이에 끼어버리는 일이 없도록 주의할 것 (randomSpawnPoint가 안전장치를 갖고 있긴 하지만,
+// 애초에 맵 자체에 사람이 낄 만큼 좁은 틈을 만들지 않는 것이 가장 안전함).
+const MAP_LAYOUTS = [
+  {
+    id: 'temple',
+    name: '고전 사원',
+    walls: [
+      ...mirrorAcrossCenter([
+        { x: 112, y: 98, width: 112, height: 18 }, // 사분면 상단 가로 벽
+        { x: 238, y: 133, width: 18, height: 91 }, // 사분면 세로 벽
+      ]),
+      // 맵 중앙 구조물
+      { x: ARENA_WIDTH / 2 - 11, y: ARENA_HEIGHT / 2 - 49, width: 21, height: 98 },  // 중앙 세로 기둥
+    ],
+    bushes: [
+      ...mirrorAcrossCenter([
+        { x: 13, y: 16, width: 74, height: 69 },  // 코너 덤불
+        { x: 142, y: 250, width: 57, height: 57 }, // 사분면 안쪽 덤불
+      ]),
+      // 맵 중앙 좌우의 덤불 (근접 교전용)
+      { x: ARENA_WIDTH / 2 - 120, y: ARENA_HEIGHT / 2 - 32, width: 50, height: 64 },
+      { x: ARENA_WIDTH / 2 + 71, y: ARENA_HEIGHT / 2 - 32, width: 50, height: 64 },
+    ],
+  },
+  {
+    id: 'crossroads',
+    name: '사거리',
+    walls: [
+      ...mirrorAcrossCenter([
+        { x: 60, y: 250, width: 130, height: 20 }, // 좌/상단 쪽 가로 벽 (중앙 통로를 감싸는 형태)
+        { x: 330, y: 60, width: 20, height: 130 }, // 좌/상단 쪽 세로 벽
+      ]),
+      // 중앙에 마름모 형태로 배치한 작은 엄폐 기둥 4개 (사이 통로는 넉넉히 비워둠)
+      { x: ARENA_WIDTH / 2 - 60, y: ARENA_HEIGHT / 2 - 10, width: 20, height: 20 },
+      { x: ARENA_WIDTH / 2 + 40, y: ARENA_HEIGHT / 2 - 10, width: 20, height: 20 },
+      { x: ARENA_WIDTH / 2 - 10, y: ARENA_HEIGHT / 2 - 60, width: 20, height: 20 },
+      { x: ARENA_WIDTH / 2 - 10, y: ARENA_HEIGHT / 2 + 40, width: 20, height: 20 },
+    ],
+    bushes: [
+      ...mirrorAcrossCenter([
+        { x: 40, y: 40, width: 60, height: 60 }, // 네 귀퉁이 덤불
+      ]),
+      // 중앙 기둥 위아래의 덤불 (근접 교전용)
+      { x: ARENA_WIDTH / 2 - 30, y: ARENA_HEIGHT / 2 - 130, width: 60, height: 40 },
+      { x: ARENA_WIDTH / 2 - 30, y: ARENA_HEIGHT / 2 + 90, width: 60, height: 40 },
+    ],
+  },
 ];
 
-// ===== 맵 지형(덤불) =====
-// 벽과 달리 이동/총알을 막지 않으며, 그 안에 들어간 플레이어는 적 팀에게 보이지 않게 됨
-// (같은 덤불 안에 함께 있는 적끼리는 서로 보임 - 은신 궁극기와 달리 예외 있음)
-const BUSHES = [
-  ...mirrorAcrossCenter([
-    { x: 13, y: 16, width: 74, height: 69 },  // 코너 덤불
-    { x: 142, y: 250, width: 57, height: 57 }, // 사분면 안쪽 덤불
-  ]),
-  // 맵 중앙 좌우의 덤불 (근접 교전용)
-  { x: ARENA_WIDTH / 2 - 120, y: ARENA_HEIGHT / 2 - 32, width: 50, height: 64 },
-  { x: ARENA_WIDTH / 2 + 71, y: ARENA_HEIGHT / 2 - 32, width: 50, height: 64 },
-];
+// 매치 시작 시 이 중 하나를 무작위로 고르기 위한 함수
+function pickRandomMapLayout() {
+  return MAP_LAYOUTS[Math.floor(Math.random() * MAP_LAYOUTS.length)];
+}
 
 function circleIntersectsRect(cx, cy, radius, rect) {
   const closestX = Math.max(rect.x, Math.min(cx, rect.x + rect.width));
@@ -105,30 +141,30 @@ function circleIntersectsRect(cx, cy, radius, rect) {
   return (dx * dx + dy * dy) < (radius * radius);
 }
 
-function collidesWithWalls(x, y, radius) {
-  return WALLS.some((w) => circleIntersectsRect(x, y, radius, w));
+function collidesWithWalls(walls, x, y, radius) {
+  return walls.some((w) => circleIntersectsRect(x, y, radius, w));
 }
 
 function pointInRect(x, y, rect) {
   return x >= rect.x && x <= rect.x + rect.width && y >= rect.y && y <= rect.y + rect.height;
 }
 
-function isInBush(x, y) {
-  return BUSHES.some((b) => pointInRect(x, y, b));
+function isInBush(bushes, x, y) {
+  return bushes.some((b) => pointInRect(x, y, b));
 }
 
 // target과 viewer가 같은 덤불 하나에 동시에 들어가 있는지 (같은 덤불 안이면 서로 보임)
-function sharedBush(target, viewer) {
-  return BUSHES.some((b) => pointInRect(target.x, target.y, b) && pointInRect(viewer.x, viewer.y, b));
+function sharedBush(bushes, target, viewer) {
+  return bushes.some((b) => pointInRect(target.x, target.y, b) && pointInRect(viewer.x, viewer.y, b));
 }
 
 // 적(viewer 기준)에게 target이 보이지 않는 상태인지 판정
 // - 은신 궁극기(invisible)는 예외 없이 항상 안 보임
 // - 덤불(inBush)은 같은 덤불 안에 viewer도 함께 있으면 보임
-function isHiddenFromEnemy(target, viewer) {
+function isHiddenFromEnemy(bushes, target, viewer) {
   if (!target.alive) return false;
   if (target.invisible) return true;
-  if (target.inBush) return !sharedBush(target, viewer);
+  if (target.inBush) return !sharedBush(bushes, target, viewer);
   return false;
 }
 
@@ -245,9 +281,9 @@ const CHARACTERS = {
       poolRadius: 90,       // 물웅덩이 반경
       poolLifetime: 2.5,    // 물웅덩이가 유지되는 시간(초) - 기존 2초에서 증가
       poolTickInterval: 0.5, // 대미지/회복이 적용되는 주기(초)
-      poolDamage: 1000,     // 적이 물에 닿았을 때 주기당 대미지 (공격력 2배 적용, 기존 500에서 증가)
+      poolDamage: 700,      // 적이 물에 닿았을 때 주기당 대미지 (기존 1000에서 변경)
       poolHeal: 300,        // 자신/아군이 물에 닿았을 때 주기당 회복량 (기존 500에서 너프)
-      directDamage: 700,    // 해골이 물이 퍼지기 전에 적(플레이어/터렛)에게 직접 적중했을 때 주는 대미지 (기존 1000에서 너프)
+      directDamage: 1200,   // 해골이 물이 퍼지기 전에 적(플레이어/터렛)에게 직접 적중했을 때 주는 대미지 (기존 700에서 변경)
       ammoRegenSeconds: AMMO_REGEN_SECONDS * 1.3, // 기본공격 재장전 시간이 다른 캐릭터보다 30% 느림
     },
     ultimate: {
@@ -378,14 +414,26 @@ let waterPoolIdCounter = 0;
 let turretIdCounter = 0;
 let bombIdCounter = 0;
 
-function randomSpawnPoint() {
-  // 벽과 겹치지 않는 위치를 찾을 때까지 몇 번 시도
-  for (let i = 0; i < 20; i++) {
-    const x = PLAYER_RADIUS + Math.random() * (ARENA_WIDTH - PLAYER_RADIUS * 2);
-    const y = PLAYER_RADIUS + Math.random() * (ARENA_HEIGHT - PLAYER_RADIUS * 2);
-    if (!collidesWithWalls(x, y, PLAYER_RADIUS + 10)) return { x, y };
+function randomSpawnPoint(walls) {
+  // 벽과 겹치지 않는 위치를 찾을 때까지 여러 번 무작위로 시도 (여유 반지름을 둬서 벽에 바짝 붙어 끼는 것도 방지)
+  for (let i = 0; i < 40; i++) {
+    const x = PLAYER_RADIUS + 10 + Math.random() * (ARENA_WIDTH - (PLAYER_RADIUS + 10) * 2);
+    const y = PLAYER_RADIUS + 10 + Math.random() * (ARENA_HEIGHT - (PLAYER_RADIUS + 10) * 2);
+    if (!collidesWithWalls(walls, x, y, PLAYER_RADIUS + 10)) return { x, y };
   }
-  return { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT / 2 };
+  // 40번을 시도해도 못 찾은 극히 드문 경우를 대비해, 모든 맵에서 벽이 없도록 설계된
+  // 네 귀퉁이 및 중앙을 순서대로 확인해서 실제로 비어있는 지점을 반환 (벽에 끼는 버그 방지용 안전장치)
+  const fallbackCandidates = [
+    { x: 60, y: 60 },
+    { x: ARENA_WIDTH - 60, y: 60 },
+    { x: 60, y: ARENA_HEIGHT - 60 },
+    { x: ARENA_WIDTH - 60, y: ARENA_HEIGHT - 60 },
+    { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT / 2 },
+  ];
+  for (const c of fallbackCandidates) {
+    if (!collidesWithWalls(walls, c.x, c.y, PLAYER_RADIUS)) return c;
+  }
+  return fallbackCandidates[0];
 }
 
 function buildPlayer(socketId, name, characterId, team, spawn) {
@@ -477,7 +525,7 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
       if (!m || m.over) return; // 이미 매치가 끝났거나 정리된 경우
       const respawned = m.players[deadId];
       if (!respawned) return; // 이미 접속 해제한 경우
-      const spawn = randomSpawnPoint();
+      const spawn = randomSpawnPoint(m.walls);
       respawned.x = spawn.x;
       respawned.y = spawn.y;
       respawned.hp = respawned.maxHp;
@@ -705,9 +753,14 @@ function startMatch(mode, entries) {
     socketToMatch[e.socket.id] = matchId;
   });
 
+  const map = pickRandomMapLayout();
+
   const match = {
     id: matchId,
     mode,
+    mapId: map.id,
+    walls: map.walls,
+    bushes: map.bushes,
     players: {},
     bullets: [],
     effects: [],
@@ -723,7 +776,7 @@ function startMatch(mode, entries) {
   // 대기열에 들어온 순서대로 앞쪽 teamSize명은 A팀, 나머지는 B팀으로 배정
   entries.forEach((e, idx) => {
     const team = idx < cfg.teamSize ? 'A' : 'B';
-    match.players[e.socket.id] = buildPlayer(e.socket.id, e.name, e.characterId, team, randomSpawnPoint());
+    match.players[e.socket.id] = buildPlayer(e.socket.id, e.name, e.characterId, team, randomSpawnPoint(match.walls));
   });
 
   entries.forEach((e) => {
@@ -741,8 +794,10 @@ function startMatch(mode, entries) {
       team: self.team,
       arena: { width: ARENA_WIDTH, height: ARENA_HEIGHT },
       playerRadius: PLAYER_RADIUS,
-      walls: WALLS,
-      bushes: BUSHES,
+      mapId: map.id,
+      mapName: map.name,
+      walls: map.walls,
+      bushes: map.bushes,
       winScore: cfg.winScore,
       teammateNames,
       opponentNames,
@@ -832,10 +887,10 @@ io.on('connection', (socket) => {
     const newY = Math.max(PLAYER_RADIUS, Math.min(ARENA_HEIGHT - PLAYER_RADIUS, data.y));
 
     // 벽 충돌: 축별로 따로 검사해서 벽에 닿아도 옆으로는 미끄러지듯 이동 가능
-    if (!collidesWithWalls(newX, p.y, PLAYER_RADIUS)) {
+    if (!collidesWithWalls(match.walls, newX, p.y, PLAYER_RADIUS)) {
       p.x = newX;
     }
-    if (!collidesWithWalls(p.x, newY, PLAYER_RADIUS)) {
+    if (!collidesWithWalls(match.walls, p.x, newY, PLAYER_RADIUS)) {
       p.y = newY;
     }
 
@@ -1043,8 +1098,8 @@ function updateMatch(match, dt, now) {
     const ny = Math.max(PLAYER_RADIUS, Math.min(ARENA_HEIGHT - PLAYER_RADIUS, p.y + p.dashDirY * step));
 
     let blockedByWall = false;
-    if (!collidesWithWalls(nx, p.y, PLAYER_RADIUS)) p.x = nx; else blockedByWall = true;
-    if (!collidesWithWalls(p.x, ny, PLAYER_RADIUS)) p.y = ny; else blockedByWall = true;
+    if (!collidesWithWalls(match.walls, nx, p.y, PLAYER_RADIUS)) p.x = nx; else blockedByWall = true;
+    if (!collidesWithWalls(match.walls, p.x, ny, PLAYER_RADIUS)) p.y = ny; else blockedByWall = true;
 
     p.dashTimeLeft -= dt;
 
@@ -1084,8 +1139,8 @@ function updateMatch(match, dt, now) {
     const ny = Math.max(PLAYER_RADIUS, Math.min(ARENA_HEIGHT - PLAYER_RADIUS, p.y + p.knockbackDirY * step));
 
     let blockedByWall2 = false;
-    if (!collidesWithWalls(nx, p.y, PLAYER_RADIUS)) p.x = nx; else blockedByWall2 = true;
-    if (!collidesWithWalls(p.x, ny, PLAYER_RADIUS)) p.y = ny; else blockedByWall2 = true;
+    if (!collidesWithWalls(match.walls, nx, p.y, PLAYER_RADIUS)) p.x = nx; else blockedByWall2 = true;
+    if (!collidesWithWalls(match.walls, p.x, ny, PLAYER_RADIUS)) p.y = ny; else blockedByWall2 = true;
 
     p.knockbackTimeLeft -= dt;
     if (blockedByWall2) p.knockbackTimeLeft = 0; // 벽에 부딪히면 그 자리에서 멈춤
@@ -1103,7 +1158,7 @@ function updateMatch(match, dt, now) {
       const target = match.players[pid];
       if (!target.alive) continue;
       if (!FRIENDLY_FIRE && target.team === turret.team) continue;
-      if (isHiddenFromEnemy(target, turret)) continue; // 덤불/은신으로 숨은 적은 터렛도 조준하지 못함
+      if (isHiddenFromEnemy(match.bushes, target, turret)) continue; // 덤불/은신으로 숨은 적은 터렛도 조준하지 못함
 
       const ddx = target.x - turret.x;
       const ddy = target.y - turret.y;
@@ -1157,7 +1212,7 @@ function updateMatch(match, dt, now) {
       }
       return false;
     }
-    if (!b.pierceWalls && collidesWithWalls(b.x, b.y, b.radius)) {
+    if (!b.pierceWalls && collidesWithWalls(match.walls, b.x, b.y, b.radius)) {
       if (b.poolOnImpact) spawnWaterPool(match, b);
       return false; // 벽에 막힘 (pierceWalls 발사체는 벽을 그대로 통과함)
     }
@@ -1342,7 +1397,7 @@ function updateMatch(match, dt, now) {
   // 덤불 진입 여부 갱신 (죽은 플레이어는 어차피 화면에 그려지지 않으므로 false로 둠)
   for (const pid in match.players) {
     const p = match.players[pid];
-    p.inBush = p.alive && isInBush(p.x, p.y);
+    p.inBush = p.alive && isInBush(match.bushes, p.x, p.y);
   }
 
   // 가젯 재사용 대기시간 감소
@@ -1386,7 +1441,7 @@ function buildVisiblePlayers(match, viewerId) {
       result[pid] = p;
       continue;
     }
-    if (isHiddenFromEnemy(p, viewer)) {
+    if (isHiddenFromEnemy(match.bushes, p, viewer)) {
       const { x, y, ...rest } = p; // 위치 정보만 제거
       result[pid] = rest;
     } else {
