@@ -268,7 +268,7 @@ const CHARACTERS = {
   wonhyo: {
     id: 'wonhyo',
     name: '원효대사',
-    maxHp: 7500,
+    maxHp: 6500, // 기존 7500에서 너프
     basic: {
       name: '해골물 뿌리기',
       type: 'skullwater',
@@ -290,6 +290,13 @@ const CHARACTERS = {
       name: '은신',
       type: 'stealth',    // 조준 없이 즉시 발동, 일정 시간 동안 적에게 보이지 않음
       duration: 5,          // 초
+    },
+    gadget: {
+      name: '초인적인 힘',
+      type: 'speedBoost',   // 조준 불필요, 즉시 발동해서 일정 시간 동안 이동속도가 빨라짐
+      instant: true,
+      duration: 2,          // 지속 시간(초)
+      speedMultiplier: 1.3, // 이동속도 배율 (1.3 = 30% 증가)
     },
   },
   byeongitong: {
@@ -390,6 +397,14 @@ const CHARACTERS = {
       slowMultiplier: 0.7,   // 범위 안에 있는 적의 이동속도 배율 (0.7 = 30% 감소)
       visual: 'bobaeBomb',
     },
+    gadget: {
+      name: '보조배터리 충전',
+      type: 'powerCharge',    // 조준 불필요, 즉시 발동. 충전 동안은 이동/공격 불가(무방비) -> 충전이 끝나면 공격력 강화
+      instant: true,
+      chargeTime: 2,          // 충전(무방비) 시간(초)
+      boostDuration: 5,       // 충전 완료 후 공격력이 강화되는 시간(초)
+      damageMultiplier: 1.5,  // 공격력 배율 (1.5 = 50% 증가)
+    },
   },
 };
 const DEFAULT_CHARACTER_ID = 'minam';
@@ -473,6 +488,12 @@ function buildPlayer(socketId, name, characterId, team, spawn) {
     gadgetCooldownLeft: 0, // 가젯 재사용까지 남은 시간(초). 0이면 사용 가능
     invincibleUntil: 0,    // 이 시각(ms, Date.now() 기준) 전까지는 무적 상태 (슈의 가젯 등)
     speedMultiplier: 1,     // 이동속도 배율. 매 틱 1로 초기화된 뒤 보배 폭탄 범위 등에 의해 낮아질 수 있음
+    speedBoostUntil: 0,      // 이 시각(ms) 전까지 이동속도 증가 (원효대사의 가젯 '초인적인 힘')
+    speedBoostMultiplier: 1,
+    chargingUntil: 0,        // 이 시각(ms) 전까지 충전 중 (보배의 가젯 '보조배터리 충전') - 이동/공격 불가
+    damageBoostFrom: 0,      // damageBoostFrom ~ damageBoostUntil (ms) 동안 공격력 증가
+    damageBoostUntil: 0,
+    damageBoostMultiplier: 1,
     ammo: MAX_AMMO,
     maxAmmo: MAX_AMMO,
     ammoRegenSeconds: character.basic.ammoRegenSeconds || AMMO_REGEN_SECONDS, // 캐릭터별 기본공격 재장전 시간
@@ -485,11 +506,20 @@ function buildPlayer(socketId, name, characterId, team, spawn) {
 // 대미지 적용 + 사망/리스폰/점수/승리 판정을 한 곳에서 관리 (총알 피격, 번개 피격이 공용으로 사용)
 // match: 이 대미지가 발생한 매치. 다른 매치의 상태에는 절대 영향을 주지 않는다.
 // 아군 피해 여부는 호출하는 쪽(총알 충돌 / 번개 판정)에서 이미 걸러서 넘겨준다.
+// 공격자의 현재 공격력 배율 (보배의 가젯 '보조배터리 충전' 등)
+function getDamageMultiplier(p) {
+  if (!p) return 1;
+  const now = Date.now();
+  if (p.damageBoostUntil && now >= p.damageBoostFrom && now < p.damageBoostUntil) return p.damageBoostMultiplier || 1;
+  return 1;
+}
+
 function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
   if (!target.alive || match.over) return;
   if (target.invincibleUntil && Date.now() < target.invincibleUntil) return; // 무적 상태(슈의 가젯)면 피해/궁극기 충전 모두 무시
 
   const shooter = match.players[shooterId];
+  damage = Math.round(damage * getDamageMultiplier(shooter)); // 공격력 증가 효과 적용
 
   target.hp -= damage;
   target.lastDamageAt = Date.now(); // 무피격 회복 타이머 초기화
@@ -536,6 +566,10 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
       respawned.dashTimeLeft = 0;
       respawned.stunnedUntil = 0;
       respawned.invincibleUntil = 0; // 리스폰 시 이전 무적 상태는 초기화
+      respawned.speedBoostUntil = 0; // 리스폰 시 가젯 효과(이동속도 증가/충전/공격력 증가)도 초기화
+      respawned.chargingUntil = 0;
+      respawned.damageBoostFrom = 0;
+      respawned.damageBoostUntil = 0;
       respawned.knockbackTimeLeft = 0;
       // 궁극기 게이지는 사망/리스폰 시에도 초기화하지 않고 그대로 유지함
       respawned.ammo = MAX_AMMO;
@@ -951,6 +985,19 @@ io.on('connection', (socket) => {
     } else if (gadget.type === 'invincible') {
       // 슈의 가젯: duration초 동안 무적 (재사용 시 남은 시간이 아니라 새로 duration초로 갱신)
       p.invincibleUntil = Date.now() + (gadget.duration || 1.5) * 1000;
+    } else if (gadget.type === 'speedBoost') {
+      // 원효대사의 가젯: duration초 동안 이동속도 증가 (재사용 시 새로 duration초로 갱신)
+      p.speedBoostUntil = Date.now() + (gadget.duration || 2) * 1000;
+      p.speedBoostMultiplier = gadget.speedMultiplier || 1.3;
+    } else if (gadget.type === 'powerCharge') {
+      // 보배의 가젯: chargeTime초 동안 이동/공격 불가(기절과 같은 방식으로 막음) -> 이후 boostDuration초 동안 공격력 증가
+      const now = Date.now();
+      const chargeMs = (gadget.chargeTime || 2) * 1000;
+      p.stunnedUntil = Math.max(p.stunnedUntil || 0, now + chargeMs);
+      p.chargingUntil = now + chargeMs;
+      p.damageBoostFrom = now + chargeMs;
+      p.damageBoostUntil = now + chargeMs + (gadget.boostDuration || 5) * 1000;
+      p.damageBoostMultiplier = gadget.damageMultiplier || 1.5;
     }
 
     p.gadgetCooldownLeft = GADGET_COOLDOWN_SEC;
@@ -1277,7 +1324,7 @@ function updateMatch(match, dt, now) {
           spawnWaterPool(match, b);
           if (b.directDamage > 0) turret.hp -= b.directDamage; // 직접 적중 대미지
         } else {
-          turret.hp -= b.damage;
+          turret.hp -= b.damage * getDamageMultiplier(match.players[b.ownerId]);
         }
         break;
       }
@@ -1392,6 +1439,12 @@ function updateMatch(match, dt, now) {
     }
   }
   match.bombs = match.bombs.filter((b) => !b.exploded);
+
+  // 원효대사 가젯 '초인적인 힘': 감속 계산이 끝난 뒤 곱해서 적용
+  for (const pid in match.players) {
+    const p = match.players[pid];
+    if (p.speedBoostUntil && now < p.speedBoostUntil) p.speedMultiplier *= p.speedBoostMultiplier || 1;
+  }
 
 
   // 덤불 진입 여부 갱신 (죽은 플레이어는 어차피 화면에 그려지지 않으므로 false로 둠)
