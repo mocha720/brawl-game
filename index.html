@@ -729,9 +729,10 @@ const CHARACTERS = [
     id: 'wonhyo',
     name: '원효대사',
     color: '#9b59b6',
-    maxHp: 7500,
+    maxHp: 6500,
     basic: { name: '해골물 뿌리기', desc: '적 직접 적중 시 700 피해 + 그 자리에 물웅덩이 생성 (적 0.5초마다 1000 피해 / 아군 0.5초마다 300 회복, 2.5초 후 소멸, 적 터렛도 파괴 가능)' },
     ultimate: { name: '은신', desc: '5초 동안 적에게 보이지 않음' },
+    gadget: { name: '초인적인 힘', desc: '2초 동안 이동속도 1.3배 (15초마다 사용 가능)' },
   },
   {
     id: 'byeongitong',
@@ -764,6 +765,7 @@ const CHARACTERS = [
     maxHp: 7000,
     basic: { name: '보배 던지기', damage: 1400 },
     ultimate: { name: '보배 폭발', desc: '조준 불필요, 자신의 위치에 설치. 즉시 보배의 잔소리로 1초 후 주변에 500 피해를 주고, 2초 뒤 3500 피해로 폭발' },
+    gadget: { name: '보조배터리 충전', desc: '2초 동안 이동/공격 불가 상태가 되지만, 이후 5초 동안 공격력 1.5배 (15초마다 사용 가능)' },
   },
 ];
 let selectedCharacterId = CHARACTERS[0].id;
@@ -1571,10 +1573,25 @@ function drawPlayer(p, isMe) {
     ctx.restore();
   }
 
-  // 기절 상태 표시 (변기 돌진 등에 맞았을 때)
-  if (p.stunnedUntil && Date.now() < p.stunnedUntil) {
+  // 기절 상태 표시 (변기 돌진 등에 맞았을 때) / 충전 중 표시 (보배의 가젯)
+  if (p.chargingUntil && Date.now() < p.chargingUntil) {
+    ctx.font = `${PLAYER_RADIUS}px sans-serif`;
+    ctx.fillText('🔋', p.x, p.y - PLAYER_RADIUS - 34);
+  } else if (p.stunnedUntil && Date.now() < p.stunnedUntil) {
     ctx.font = `${PLAYER_RADIUS}px sans-serif`;
     ctx.fillText('💫', p.x, p.y - PLAYER_RADIUS - 34);
+  }
+
+  // 가젯 효과 표시: 이동속도 증가(원효대사) / 공격력 증가(보배)
+  {
+    const nowMs = Date.now();
+    ctx.font = `${Math.round(PLAYER_RADIUS * 0.8)}px sans-serif`;
+    if (p.speedBoostUntil && nowMs < p.speedBoostUntil) {
+      ctx.fillText('💨', p.x - PLAYER_RADIUS - 6, p.y);
+    }
+    if (p.damageBoostUntil && nowMs >= p.damageBoostFrom && nowMs < p.damageBoostUntil) {
+      ctx.fillText('🔥', p.x, p.y - PLAYER_RADIUS - 34);
+    }
   }
 
   // HP 바
