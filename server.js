@@ -406,6 +406,41 @@ const CHARACTERS = {
       damageMultiplier: 1.5,  // 공격력 배율 (1.5 = 50% 증가)
     },
   },
+  ekhe: {
+    id: 'ekhe',
+    name: '엑헤',
+    maxHp: 6500,
+    basic: {
+      name: '계란 던지기',
+      type: 'eggthrow',   // 계란이 깨지면(적 적중 / 벽 / 최대 사거리 도달) 흰자가 퍼져 광역 피해
+      damage: 0,          // 직접 대미지는 directDamage로 처리
+      speed: 420,
+      radius: 13,
+      lifetime: 1.3,       // 초 (사거리 ≈ 546px). 수명이 끝나면 그 자리에서 깨짐
+      visual: 'egg',
+      poolOnImpact: true,   // 벽 또는 적과 충돌 시 흰자 웅덩이 생성
+      poolOnExpire: true,   // 아무것도 안 맞고 최대 사거리에 도달해도 깨져서 흰자가 퍼짐
+      poolVisual: 'eggWhite',
+      poolRadius: 85,       // 흰자가 퍼지는 반경
+      poolLifetime: 1,       // 퍼진 계란이 유지되는 시간(초)
+      poolTickInterval: 0.2, // 0.2초마다 대미지 적용
+      poolDamage: 300,      // 흰자에 닿은 적이 주기(0.2초)마다 입는 대미지
+      poolHeal: 0,          // 아군/자신에게는 아무 효과 없음
+      directDamage: 1200,   // 계란에 직접 맞았을 때의 대미지
+    },
+    ultimate: {
+      name: '닭 소환',
+      type: 'summonChicken', // 조준 불필요, 자신의 위치에 닭을 소환. 닭은 적을 자동으로 추격해서 공격
+      hp: 2500,              // 닭의 체력 (적이 공격하면 죽을 수 있음)
+      damage: 500,           // 닭이 한 번 쪼을 때의 대미지
+      attackInterval: 0.8,   // 공격 주기(초)
+      attackRange: 14,       // 닭 몸 가장자리에서 적 몸 가장자리까지의 공격 가능 거리(px)
+      moveSpeed: 220,        // 닭 이동속도(px/초)
+      chaseRange: 700,       // 이 거리 안의 적을 추격
+      radius: 16,
+      duration: 8,           // 닭이 남아있는 시간(초)
+    },
+  },
 };
 const DEFAULT_CHARACTER_ID = 'minam';
 
@@ -428,6 +463,7 @@ let effectIdCounter = 0;
 let waterPoolIdCounter = 0;
 let turretIdCounter = 0;
 let bombIdCounter = 0;
+let chickenIdCounter = 0;
 
 function randomSpawnPoint(walls) {
   // 벽과 겹치지 않는 위치를 찾을 때까지 여러 번 무작위로 시도 (여유 반지름을 둬서 벽에 바짝 붙어 끼는 것도 방지)
@@ -612,6 +648,8 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
       poolTickInterval: spec.poolTickInterval,
       poolDamage: spec.poolDamage,
       poolHeal: spec.poolHeal,
+      poolVisual: spec.poolVisual,       // 웅덩이 모양(예: 계란 흰자)
+      poolOnExpire: !!spec.poolOnExpire, // 사거리 끝에서도 깨져서 웅덩이를 남기는 발사체(계란)
       directDamage: spec.directDamage || 0, // 물웅덩이 생성 전 적에게 직접 적중 시 주는 대미지
     });
   }
@@ -687,6 +725,22 @@ function performMeleeAttack(match, p, spec, isUltimate) {
     turret.hp -= spec.damage;
   }
   match.turrets = match.turrets.filter((t) => t.hp > 0);
+
+  // 적 닭도 근접 공격 범위/각도 판정에 포함
+  for (const chicken of match.chickens) {
+    if (match.over) break;
+    if (!FRIENDLY_FIRE && chicken.team === p.team) continue;
+    const cdx = chicken.x - p.x;
+    const cdy = chicken.y - p.y;
+    const cdist = Math.sqrt(cdx * cdx + cdy * cdy);
+    if (cdist > range + chicken.radius) continue;
+    let cdiff = Math.atan2(cdy, cdx) - p.angle;
+    while (cdiff > Math.PI) cdiff -= Math.PI * 2;
+    while (cdiff < -Math.PI) cdiff += Math.PI * 2;
+    if (Math.abs(cdiff) > halfAngle) continue;
+    chicken.hp -= spec.damage * getDamageMultiplier(p);
+  }
+  match.chickens = match.chickens.filter((c) => c.hp > 0);
 }
 
 // 저격 터렛(성스럽다 궁극기): 자신의 위치에 설치되어, 사거리 안의 적 중 가장 가까운 대상을
@@ -716,6 +770,44 @@ function spawnTurret(match, p, spec) {
   });
 }
 
+// 닭 소환(엑헤 궁극기): 자신의 위치 옆에 닭을 소환한다. 실제 추격/공격은 updateMatch의 닭 AI 루프에서 처리
+function spawnChicken(match, p, spec) {
+  // 같은 사람의 닭이 남아있으면 먼저 제거하고 새로 소환 (닭이 무한히 쌓이지 않도록)
+  match.chickens = match.chickens.filter((c) => c.ownerId !== p.id);
+
+  chickenIdCounter += 1;
+  match.chickens.push({
+    id: chickenIdCounter,
+    ownerId: p.id,
+    team: p.team,
+    x: p.x + Math.cos(p.angle) * (PLAYER_RADIUS + spec.radius + 6),
+    y: p.y + Math.sin(p.angle) * (PLAYER_RADIUS + spec.radius + 6),
+    hp: spec.hp,
+    maxHp: spec.hp,
+    radius: spec.radius || 16,
+    damage: spec.damage,
+    attackInterval: spec.attackInterval || 0.8,
+    attackRange: spec.attackRange || 14,
+    attackCooldown: 0.3,
+    moveSpeed: spec.moveSpeed || 220,
+    chaseRange: spec.chaseRange || 700,
+    life: spec.duration || 8, // 남은 지속 시간(초)
+    peckTimer: 0,             // 쪼는 동작 연출용 (클라이언트에서 사용)
+  });
+
+  // 소환 위치가 벽 안이면 소환자 위치로 대체
+  const c = match.chickens[match.chickens.length - 1];
+  if (collidesWithWalls(match.walls, c.x, c.y, c.radius)) { c.x = p.x; c.y = p.y; }
+}
+
+// 닭 이동: 벽에 닿아도 옆으로 미끄러지도록 축별로 검사
+function moveChicken(match, c, dirX, dirY, step) {
+  const nx = Math.max(c.radius, Math.min(ARENA_WIDTH - c.radius, c.x + dirX * step));
+  const ny = Math.max(c.radius, Math.min(ARENA_HEIGHT - c.radius, c.y + dirY * step));
+  if (!collidesWithWalls(match.walls, nx, c.y, c.radius)) c.x = nx;
+  if (!collidesWithWalls(match.walls, c.x, ny, c.radius)) c.y = ny;
+}
+
 // 물웅덩이(원효대사): 벽 또는 적과 충돌한 poolOnImpact 발사체가 남기는 물웅덩이를 생성한다
 function spawnWaterPool(match, b) {
   waterPoolIdCounter += 1;
@@ -731,6 +823,7 @@ function spawnWaterPool(match, b) {
     tickInterval: b.poolTickInterval,
     damage: b.poolDamage,
     heal: b.poolHeal,
+    visual: b.poolVisual || null,
   });
 }
 
@@ -801,6 +894,7 @@ function startMatch(mode, entries) {
     waterPools: [],
     turrets: [],
     bombs: [],
+    chickens: [],
     teamScore: { A: 0, B: 0 },
     winScore: cfg.winScore,
     over: false,
@@ -1071,6 +1165,9 @@ io.on('connection', (socket) => {
     } else if (ult.type === 'timedBomb') {
       // 보배 폭발: 조준 불필요, 자신의 위치에 설치
       spawnBomb(match, p, ult);
+    } else if (ult.type === 'summonChicken') {
+      // 엑헤의 닭 소환: 조준 불필요, 즉시 닭을 소환
+      spawnChicken(match, p, ult);
     } else {
       // 조준한 방향으로 날아가는 궁극기 (예: 피에로 발사, 메가 샷건)
       spawnProjectiles(match, p, ult, true);
@@ -1240,6 +1337,72 @@ function updateMatch(match, dt, now) {
     turret.fireCooldown = turret.fireInterval;
   }
 
+  // 닭(엑헤 궁극기) AI: 가장 가까운 적(플레이어/터렛/적 닭)을 자동으로 추격하고, 닿으면 주기적으로 공격한다
+  // 추격할 적이 없으면 주인 곁을 따라다닌다
+  for (const chicken of match.chickens) {
+    if (match.over) break;
+    chicken.life -= dt;
+    if (chicken.attackCooldown > 0) chicken.attackCooldown -= dt;
+    if (chicken.peckTimer > 0) chicken.peckTimer -= dt;
+    if (chicken.life <= 0 || chicken.hp <= 0) continue;
+
+    const owner = match.players[chicken.ownerId];
+    let target = null;
+    let targetKind = null;
+    let targetRadius = 0;
+    let nearestDist = Infinity;
+
+    for (const pid in match.players) {
+      const t = match.players[pid];
+      if (!t.alive) continue;
+      if (t.team === chicken.team) continue;
+      if (isHiddenFromEnemy(match.bushes, t, chicken)) continue; // 덤불/은신으로 숨은 적은 닭도 찾지 못함
+      const d = Math.hypot(t.x - chicken.x, t.y - chicken.y);
+      if (d <= chicken.chaseRange && d < nearestDist) { nearestDist = d; target = t; targetKind = 'player'; targetRadius = PLAYER_RADIUS; }
+    }
+    for (const t of match.turrets) {
+      if (t.team === chicken.team) continue;
+      const d = Math.hypot(t.x - chicken.x, t.y - chicken.y);
+      if (d <= chicken.chaseRange && d < nearestDist) { nearestDist = d; target = t; targetKind = 'turret'; targetRadius = t.radius; }
+    }
+    for (const t of match.chickens) {
+      if (t.team === chicken.team || t.hp <= 0 || t.life <= 0) continue;
+      const d = Math.hypot(t.x - chicken.x, t.y - chicken.y);
+      if (d <= chicken.chaseRange && d < nearestDist) { nearestDist = d; target = t; targetKind = 'chicken'; targetRadius = t.radius; }
+    }
+
+    if (target) {
+      const reach = chicken.attackRange + chicken.radius + targetRadius;
+      const dx = target.x - chicken.x;
+      const dy = target.y - chicken.y;
+      const dist = Math.hypot(dx, dy) || 1;
+
+      if (dist > reach) {
+        // 사거리 밖이면 추격 (목표를 지나치지 않도록 남은 거리까지만 이동)
+        const step = Math.min(chicken.moveSpeed * dt, dist - reach + 1);
+        moveChicken(match, chicken, dx / dist, dy / dist, step);
+      }
+
+      if (dist <= reach + 4 && chicken.attackCooldown <= 0) {
+        chicken.attackCooldown = chicken.attackInterval;
+        chicken.peckTimer = 0.15;
+        const dmg = chicken.damage;
+        if (targetKind === 'player') {
+          applyDamage(match, target, dmg, chicken.ownerId, { chargeShooter: false });
+        } else {
+          target.hp -= dmg * getDamageMultiplier(owner);
+        }
+      }
+    } else if (owner && owner.alive) {
+      const dx = owner.x - chicken.x;
+      const dy = owner.y - chicken.y;
+      const dist = Math.hypot(dx, dy) || 1;
+      if (dist > 90) moveChicken(match, chicken, dx / dist, dy / dist, Math.min(chicken.moveSpeed * dt, dist - 90));
+    }
+  }
+  match.turrets = match.turrets.filter((t) => t.hp > 0);
+  match.chickens = match.chickens.filter((c) => c.hp > 0 && c.life > 0);
+
   // 총알 이동
   for (const b of match.bullets) {
     b.x += b.vx * dt;
@@ -1249,7 +1412,10 @@ function updateMatch(match, dt, now) {
 
   // 화면 밖, 수명 종료, 벽 충돌한 총알 제거 (poolOnImpact 발사체는 벽/맵 경계에 닿으면 물웅덩이를 남김)
   match.bullets = match.bullets.filter((b) => {
-    if (b.life <= 0) return false;
+    if (b.life <= 0) {
+      if (b.poolOnImpact && b.poolOnExpire) spawnWaterPool(match, b); // 계란: 사거리 끝에서 깨짐
+      return false;
+    }
     if (b.x < 0 || b.x > ARENA_WIDTH || b.y < 0 || b.y > ARENA_HEIGHT) {
       if (b.poolOnImpact) {
         // 맵 끝 벽에 닿은 지점(경계선 위)으로 좌표를 고정해서 물웅덩이를 생성
@@ -1332,6 +1498,30 @@ function updateMatch(match, dt, now) {
   }
   match.turrets = match.turrets.filter((t) => t.hp > 0);
 
+  // 총알-닭 충돌 판정: 적의 닭도 총알에 맞아 죽을 수 있음
+  for (const b of match.bullets) {
+    if (match.over) break;
+    if (hitBulletIds.has(b.id)) continue;
+    for (const chicken of match.chickens) {
+      if (chicken.hp <= 0) continue;
+      if (!FRIENDLY_FIRE && chicken.team === b.team) continue;
+      const cdx = chicken.x - b.x;
+      const cdy = chicken.y - b.y;
+      if (Math.sqrt(cdx * cdx + cdy * cdy) < chicken.radius + b.radius) {
+        hitBulletIds.add(b.id);
+        const mult = getDamageMultiplier(match.players[b.ownerId]);
+        if (b.poolOnImpact) {
+          spawnWaterPool(match, b);
+          if (b.directDamage > 0) chicken.hp -= b.directDamage * mult;
+        } else {
+          chicken.hp -= b.damage * mult;
+        }
+        break;
+      }
+    }
+  }
+  match.chickens = match.chickens.filter((c) => c.hp > 0);
+
   match.bullets = match.bullets.filter((b) => !hitBulletIds.has(b.id));
 
   // 시각 이펙트(번개 등) 수명 관리
@@ -1376,6 +1566,16 @@ function updateMatch(match, dt, now) {
         turret.hp -= pool.damage;
       }
       match.turrets = match.turrets.filter((t) => t.hp > 0);
+
+      // 적 닭도 웅덩이 범위 안에 있으면 함께 대미지를 입음
+      for (const chicken of match.chickens) {
+        if (chicken.team === pool.team) continue;
+        const cdx = chicken.x - pool.x;
+        const cdy = chicken.y - pool.y;
+        if (Math.sqrt(cdx * cdx + cdy * cdy) >= chicken.radius + pool.radius) continue;
+        chicken.hp -= pool.damage * getDamageMultiplier(match.players[pool.ownerId]);
+      }
+      match.chickens = match.chickens.filter((c) => c.hp > 0);
     }
   }
   match.waterPools = match.waterPools.filter((pool) => pool.life > 0);
@@ -1526,6 +1726,7 @@ function gameLoop() {
         waterPools: match.waterPools,
         turrets: match.turrets,
         bombs: match.bombs,
+        chickens: match.chickens,
       });
     }
   }
