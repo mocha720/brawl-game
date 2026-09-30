@@ -694,7 +694,7 @@ function updateCamera() {
   camera.y = (ARENA_HEIGHT - viewH) / 2;
 }
 
-let latestState = { players: {}, bullets: [], effects: [], waterPools: [], turrets: [], bombs: [] };
+let latestState = { players: {}, bullets: [], effects: [], waterPools: [], turrets: [], bombs: [], chickens: [] };
 
 // ===== 캐릭터 정의 (선택 화면 표시용 - 실제 능력치는 서버가 검증/적용) =====
 const CHARACTERS = [
@@ -766,6 +766,14 @@ const CHARACTERS = [
     basic: { name: '보배 던지기', damage: 1400 },
     ultimate: { name: '보배 폭발', desc: '조준 불필요, 자신의 위치에 설치. 즉시 보배의 잔소리로 1초 후 주변에 500 피해를 주고, 2초 뒤 3500 피해로 폭발' },
     gadget: { name: '보조배터리 충전', desc: '2초 동안 이동/공격 불가 상태가 되지만, 이후 5초 동안 공격력 1.5배 (15초마다 사용 가능)' },
+  },
+  {
+    id: 'ekhe',
+    name: '엑헤',
+    color: '#f5b041',
+    maxHp: 6500,
+    basic: { name: '계란 던지기', desc: '적 직접 적중 시 1,200 피해 + 깨지면서 흰자가 퍼짐 (닿은 적에게 0.2초마다 300 피해, 1초 후 소멸, 벽에 닿거나 최대 사거리에서도 깨짐)' },
+    ultimate: { name: '닭 소환', desc: '조준 불필요, 체력 2,500의 닭을 소환. 8초 동안 적을 자동으로 추격해서 0.8초마다 500 피해' },
   },
 ];
 let selectedCharacterId = CHARACTERS[0].id;
@@ -1103,7 +1111,7 @@ socket.on('matchFound', (data) => {
   chatMessages = [];
   chatBubbles = {};
   renderChatLog();
-  latestState = { players: {}, bullets: [], effects: [], waterPools: [], turrets: [], bombs: [] };
+  latestState = { players: {}, bullets: [], effects: [], waterPools: [], turrets: [], bombs: [], chickens: [] };
   wasAlive = false; // 새 매치이므로, 첫 상태 수신 시 서버 스폰 위치로 무조건 동기화되게 함
   prevMyHp = null; // 새 매치 시작 시 이전 매치의 체력/점수 기록으로 인한 오작동(사운드 오재생) 방지
   prevMyScore = null;
@@ -1710,6 +1718,24 @@ function drawBullet(b) {
     return;
   }
 
+  if (b.visual === 'egg') {
+    // 엑헤의 계란 던지기 - 깨지면 흰자가 퍼지는 계란
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
+    ctx.fillStyle = '#fdf6e3';
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = 'rgba(200,160,80,0.9)';
+    ctx.stroke();
+    ctx.font = `${b.radius * 1.7}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('🥚', b.x, b.y + 1);
+    ctx.restore();
+    return;
+  }
+
   if (b.visual === 'poop') {
     // 여똥이의 똥가루 뿌리기 - 벽/적에 닿으면 독가스(똥가루) 구름을 남기는 발사체
     ctx.save();
@@ -1751,22 +1777,34 @@ function drawBullet(b) {
 
 // 성스럽다의 저격 터렛 - 팀 색 링 + 체력바가 있는 고정 설치물
 function drawTurret(t) {
+  // 내 팀(자신/아군)의 터렛은 초록색, 적군의 터렛은 빨간색으로 구분 (물웅덩이와 같은 규칙)
+  const isAlly = t.ownerId === myId || (myTeam && t.team === myTeam);
+  const ringColor = isAlly ? '#2ecc71' : '#e74c3c';
+  const bodyColor = isAlly ? '#1e6b45' : '#7b241c';
+  const glowColor = isAlly ? 'rgba(46, 204, 113, 0.28)' : 'rgba(231, 76, 60, 0.28)';
+
   ctx.save();
   ctx.translate(t.x, t.y);
 
-  // 팀 구분 링 (플레이어와 동일한 색상 규칙)
+  // 바닥에 깔리는 은은한 팀 색 발광 (멀리서도 아군/적군이 한눈에 보이도록)
+  ctx.beginPath();
+  ctx.arc(0, 0, t.radius + 12, 0, Math.PI * 2);
+  ctx.fillStyle = glowColor;
+  ctx.fill();
+
+  // 팀 구분 링
   ctx.beginPath();
   ctx.arc(0, 0, t.radius + 5, 0, Math.PI * 2);
-  ctx.strokeStyle = t.team === 'A' ? '#5dade2' : '#ec7063';
+  ctx.strokeStyle = ringColor;
   ctx.lineWidth = 3;
   ctx.stroke();
 
   ctx.beginPath();
   ctx.arc(0, 0, t.radius, 0, Math.PI * 2);
-  ctx.fillStyle = '#34495e';
+  ctx.fillStyle = bodyColor;
   ctx.fill();
   ctx.lineWidth = 2;
-  ctx.strokeStyle = '#1abc9c';
+  ctx.strokeStyle = ringColor;
   ctx.stroke();
 
   ctx.font = `${t.radius * 1.5}px sans-serif`;
@@ -1807,7 +1845,63 @@ function drawBomb(bomb) {
 }
 
 // 지속 지형 효과: 원효대사의 물웅덩이(적 대미지 + 아군 회복) / 여똥이의 똥가루 구름(적에게만 대미지)
+// 엑헤의 계란 흰자: 깨진 계란이 퍼진 웅덩이 (적에게만 대미지)
+function drawEggWhite(pool) {
+  const isAlly = pool.ownerId === myId || (myTeam && pool.team === myTeam);
+  const stroke = isAlly ? 'rgba(46, 204, 113, 1)' : 'rgba(231, 76, 60, 1)';
+  ctx.save();
+  const alpha = Math.max(0.2, Math.min(0.75, pool.life + 0.2));
+  ctx.globalAlpha = alpha;
+  const gradient = ctx.createRadialGradient(pool.x, pool.y, 1, pool.x, pool.y, pool.radius);
+  gradient.addColorStop(0, 'rgba(255, 220, 90, 0.95)');   // 노른자 느낌의 중심
+  gradient.addColorStop(0.25, 'rgba(255, 255, 255, 0.95)');
+  gradient.addColorStop(1, 'rgba(235, 240, 235, 0.55)');
+  ctx.beginPath();
+  ctx.arc(pool.x, pool.y, pool.radius, 0, Math.PI * 2);
+  ctx.fillStyle = gradient;
+  ctx.fill();
+  ctx.globalAlpha = Math.min(1, alpha + 0.3);
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = stroke;
+  ctx.stroke();
+  ctx.font = `${Math.min(30, pool.radius * 0.4)}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('🍳', pool.x, pool.y);
+  ctx.restore();
+}
+
+// 엑헤의 닭 (궁극기로 소환된 자동 추격 유닛)
+function drawChicken(c) {
+  const isAlly = c.ownerId === myId || (myTeam && c.team === myTeam);
+  const peck = c.peckTimer > 0 ? 4 : 0; // 쪼는 순간 살짝 튀어나오는 연출
+  ctx.save();
+  ctx.translate(c.x, c.y + peck);
+  ctx.beginPath();
+  ctx.arc(0, 0, c.radius + 4, 0, Math.PI * 2);
+  ctx.strokeStyle = isAlly ? '#2ecc71' : '#e74c3c';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(0, 0, c.radius, 0, Math.PI * 2);
+  ctx.fillStyle = '#fff8e1';
+  ctx.fill();
+  ctx.font = `${c.radius * 1.7}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('🐔', 0, 1);
+  ctx.restore();
+
+  const barW = 40, barH = 5;
+  const hpRatio = Math.max(0, c.hp / (c.maxHp || 1));
+  ctx.fillStyle = '#555';
+  ctx.fillRect(c.x - barW / 2, c.y - c.radius - 14, barW, barH);
+  ctx.fillStyle = hpRatio > 0.5 ? '#2ecc71' : hpRatio > 0.2 ? '#f1c40f' : '#e74c3c';
+  ctx.fillRect(c.x - barW / 2, c.y - c.radius - 14, barW * hpRatio, barH);
+}
+
 function drawWaterPool(pool) {
+  if (pool.visual === 'eggWhite') { drawEggWhite(pool); return; }
   const isPoisonGas = !pool.heal; // heal이 0(또는 없음)이면 회복 효과가 없는 독가스 구름(똥가루)으로 간주
   // 내 팀(자신/아군)이 만든 원은 초록색, 적군이 만든 원은 빨간색으로 구분
   const isAlly = pool.ownerId === myId || (myTeam && pool.team === myTeam);
@@ -1991,6 +2085,9 @@ function render() {
 
   const turretsArr = Array.isArray(latestState.turrets) ? latestState.turrets : [];
   for (const t of turretsArr) drawTurret(t);
+
+  const chickensArr = Array.isArray(latestState.chickens) ? latestState.chickens : [];
+  for (const c of chickensArr) drawChicken(c);
 
   const bombsArr = Array.isArray(latestState.bombs) ? latestState.bombs : [];
   for (const bomb of bombsArr) drawBomb(bomb);
