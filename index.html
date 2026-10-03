@@ -123,6 +123,25 @@
     justify-content: center;
   }
   #sfxToggleBtn:hover { background: rgba(0, 0, 0, 0.75); }
+  /* 배경음악 on/off 버튼: 로그인/메뉴 화면 위에서도 눌러서 끌 수 있도록 오버레이보다 위(z-index)에 둠 */
+  #bgmToggleBtn {
+    position: fixed;
+    top: calc(20px + env(safe-area-inset-top, 0px));
+    right: calc(128px + env(safe-area-inset-right, 0px));
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(0, 0, 0, 0.55);
+    color: #fff;
+    font-size: 20px;
+    cursor: pointer;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #bgmToggleBtn:hover { background: rgba(0, 0, 0, 0.75); }
   #scoreboard {
     position: fixed;
     top: calc(72px + env(safe-area-inset-top, 0px));
@@ -539,6 +558,7 @@
   @media (max-width: 480px) {
     #scoreboardToggleBtn { top: calc(10px + env(safe-area-inset-top, 0px)); right: calc(10px + env(safe-area-inset-right, 0px)); width: 36px; height: 36px; font-size: 16px; }
     #sfxToggleBtn { top: calc(10px + env(safe-area-inset-top, 0px)); right: calc(56px + env(safe-area-inset-right, 0px)); width: 36px; height: 36px; font-size: 16px; }
+    #bgmToggleBtn { top: calc(10px + env(safe-area-inset-top, 0px)); right: calc(102px + env(safe-area-inset-right, 0px)); width: 36px; height: 36px; font-size: 16px; }
     #scoreboard { top: calc(54px + env(safe-area-inset-top, 0px)); right: calc(10px + env(safe-area-inset-right, 0px)); min-width: 120px; padding: 8px 10px; }
     #scoreboard h3 { font-size: 12px; }
     #scoreboard ol { font-size: 11px; }
@@ -723,6 +743,7 @@
 </div>
 
 <button id="sfxToggleBtn" title="효과음 켜기/끄기">🔊</button>
+<button id="bgmToggleBtn" title="배경음악 켜기/끄기">🎵</button>
 <button id="scoreboardToggleBtn" title="전적">🏆</button>
 <div id="scoreboard">
   <h3>🏆 1:1 전적</h3>
@@ -962,6 +983,37 @@ const sfxToggleBtn = document.getElementById('sfxToggleBtn');
 function updateSfxButton() { sfxToggleBtn.textContent = SFX.isEnabled() ? '🔊' : '🔇'; }
 sfxToggleBtn.addEventListener('click', () => { SFX.setEnabled(!SFX.isEnabled()); updateSfxButton(); });
 updateSfxButton();
+
+// ===== 배경음악 =====
+// bgm.mp3 를 반복 재생한다. 브라우저 정책상 소리는 사용자가 화면을 처음 누른/키를 친 뒤에야 재생할 수 있어서,
+// 첫 입력이 들어오는 순간 시작한다. 켜기/끄기 설정은 브라우저에 저장된다.
+const BGM_VOLUME = 0.3; // 0~1, 효과음보다 작게 (너무 크면 이 값을 낮추면 됨)
+const bgm = new Audio('bgm.mp3');
+bgm.loop = true;
+bgm.volume = BGM_VOLUME;
+bgm.preload = 'auto';
+let bgmEnabled = localStorage.getItem('bgmEnabled') !== 'off';
+const bgmToggleBtn = document.getElementById('bgmToggleBtn');
+function updateBgmButton() { bgmToggleBtn.textContent = bgmEnabled ? '🎵' : '🔇'; }
+function tryPlayBgm() {
+  if (!bgmEnabled) return;
+  const p = bgm.play();
+  if (p && p.catch) p.catch(() => { /* 아직 사용자 입력이 없어서 막힌 경우 - 다음 입력 때 다시 시도 */ });
+}
+bgmToggleBtn.addEventListener('click', () => {
+  bgmEnabled = !bgmEnabled;
+  localStorage.setItem('bgmEnabled', bgmEnabled ? 'on' : 'off');
+  if (bgmEnabled) tryPlayBgm(); else bgm.pause();
+  updateBgmButton();
+});
+updateBgmButton();
+['pointerdown', 'keydown', 'touchstart'].forEach((evt) => {
+  const startOnce = () => {
+    tryPlayBgm();
+    if (!bgmEnabled || !bgm.paused) window.removeEventListener(evt, startOnce, true);
+  };
+  window.addEventListener(evt, startOnce, true);
+});
 
 // ===== 로컬 입력 상태 =====
 const keys = { w: false, a: false, s: false, d: false, up: false, down: false, left: false, right: false };
