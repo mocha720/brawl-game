@@ -229,7 +229,7 @@ const CHARACTERS = {
     basic: {
       name: '던지기',
       damage: 2500,
-      speed: 350,      // 총알보다 느린 구체
+      speed: 420,      // 총알보다 느린 구체 (기존 350에서 20% 증가)
       radius: 12,
       lifetime: 2.2,
       visual: 'orb',
@@ -278,10 +278,10 @@ const CHARACTERS = {
       spreadDegrees: 30,
     },
     gadget: {
-      name: '무적',
-      type: 'invincible',  // 조준 불필요, 즉시 발동해서 일정 시간 동안 모든 피해를 받지 않음
+      name: '보호막',
+      type: 'shield',      // 조준 불필요, 즉시 발동해서 shieldHp만큼의 피해를 대신 흡수하는 보호막을 두름
       instant: true,        // true면 누르는 즉시 발동
-      duration: 1.5,        // 무적 지속 시간(초)
+      shieldHp: 1000,       // 보호막이 막아주는 피해량. 다 소모되면 보호막이 사라지고, 다시 쓰면 1000으로 새로 채워짐
     },
   },
   wonhyo: {
@@ -561,6 +561,9 @@ function describeGadget(g) {
     case 'reloadAmmo':
       desc = '즉시 탄창을 가득 채움';
       break;
+    case 'shield':
+      desc = `${fmtNum(g.shieldHp)} 피해를 막아주는 보호막을 두름 (다 막으면 사라짐)`;
+      break;
     case 'invincible':
       desc = `${g.duration}초 동안 모든 피해를 받지 않음`;
       break;
@@ -638,12 +641,51 @@ const TROPHY_RANKS = [
   { name: '다이아', icon: '💎', min: 600 },
   { name: '마스터', icon: '👑', min: 1000 },
 ];
+// ===== 일일 미션 =====
+// 미션은 매일 0시(한국 시간)에 진행도와 보상 수령 기록이 초기화된다.
+// 진행도는 '점수로 승패가 갈린 정상 종료 매치'에서만 올라간다 (상대가 나가서 끝난 매치는 제외 - 부계정으로 쉽게 올리는 것을 방지).
+// metric: play(매치 1판) / win(승리 1회) / kills(그 매치에서 처치한 수) / win2v2(2:2 승리 1회)
+// 새 미션을 추가하거나 보상(reward, 코인)/목표(goal)를 바꾸려면 여기만 고치면 된다.
+const MISSIONS = [
+  { id: 'play3', name: '매치 3판 플레이', metric: 'play', goal: 3, reward: 30 },
+  { id: 'win2', name: '매치 2번 승리', metric: 'win', goal: 2, reward: 50 },
+  { id: 'kill15', name: '적 15명 처치', metric: 'kills', goal: 15, reward: 40 },
+  { id: 'win2v2', name: '2:2 매치 1번 승리', metric: 'win2v2', goal: 1, reward: 40 },
+];
+function missionDay() {
+  return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10); // 한국 시간(UTC+9) 기준 날짜 YYYY-MM-DD
+}
+// 한 매치 결과(이긴 여부, 모드, 처치 수)를 미션별 증가량으로 변환
+function missionIncrements(won, mode, kills) {
+  const incs = {};
+  for (const m of MISSIONS) {
+    const v = m.metric === 'play' ? 1
+      : m.metric === 'win' ? (won ? 1 : 0)
+      : m.metric === 'kills' ? kills
+      : m.metric === 'win2v2' ? (won && mode === '2v2' ? 1 : 0)
+      : 0;
+    if (v > 0) incs[m.id] = v;
+  }
+  return incs;
+}
+function missionsView(u) {
+  const m = u.missions && u.missions.day === missionDay() ? u.missions : { progress: {}, claimed: [] };
+  return MISSIONS.map((ms) => ({
+    id: ms.id,
+    name: ms.name,
+    goal: ms.goal,
+    reward: ms.reward,
+    progress: Math.min(ms.goal, (m.progress && m.progress[ms.id]) || 0),
+    claimed: (m.claimed || []).includes(ms.id),
+  }));
+}
+
 function publicProfile(u) {
   const trophies = {};
   for (const id in CHARACTERS) trophies[id] = (u.trophies && u.trophies[id]) || 0;
   const streaks = {};
   for (const id in CHARACTERS) streaks[id] = (u.streaks && u.streaks[id]) || 0;
-  return { username: u.name, coins: u.coins, wins: u.wins || 0, losses: u.losses || 0, unlocked: effectiveUnlocked(u), prices: allPrices(), trophies, streaks, ranks: TROPHY_RANKS, characters: CHARACTER_INFO };
+  return { username: u.name, coins: u.coins, wins: u.wins || 0, losses: u.losses || 0, unlocked: effectiveUnlocked(u), prices: allPrices(), trophies, streaks, missions: missionsView(u), ranks: TROPHY_RANKS, characters: CHARACTER_INFO };
 }
 
 // ----- 저장소 -----
@@ -653,7 +695,7 @@ function publicProfile(u) {
 const USERS_FILE = process.env.USERS_FILE || path.join(os.tmpdir(), 'brawl-users.json');
 
 function cloneUser(u) {
-  return u ? { ...u, unlocked: [...(u.unlocked || [])], trophies: { ...(u.trophies || {}) }, streaks: { ...(u.streaks || {}) }, redeemed: [...(u.redeemed || [])] } : null;
+  return u ? { ...u, unlocked: [...(u.unlocked || [])], trophies: { ...(u.trophies || {}) }, streaks: { ...(u.streaks || {}) }, redeemed: [...(u.redeemed || [])], missions: u.missions ? { day: u.missions.day, progress: { ...(u.missions.progress || {}) }, claimed: [...(u.missions.claimed || [])] } : undefined } : null;
 }
 
 function createFileDb() {
@@ -720,6 +762,27 @@ function createFileDb() {
       scheduleSave();
       return { ok: true, user: cloneUser(u) };
     },
+    // 미션 진행도 누적 (날짜가 바뀌었으면 먼저 초기화). incs: { 미션id: 증가량 }
+    async addMissionProgress(key, day, incs) {
+      const u = users[key];
+      if (!u) return;
+      if (!u.missions || u.missions.day !== day) u.missions = { day, progress: {}, claimed: [] };
+      for (const id in incs) if (incs[id] > 0) u.missions.progress[id] = (u.missions.progress[id] || 0) + incs[id];
+      scheduleSave();
+    },
+    // 미션 보상 수령: 목표 달성 + 아직 안 받은 경우에만 코인 지급
+    async claimMission(key, day, missionId, goal, coins) {
+      const u = users[key];
+      if (!u) return { ok: false, reason: 'noUser' };
+      if (!u.missions || u.missions.day !== day) u.missions = { day, progress: {}, claimed: [] };
+      const m = u.missions;
+      if (m.claimed.includes(missionId)) return { ok: false, reason: 'claimed', user: cloneUser(u) };
+      if ((m.progress[missionId] || 0) < goal) return { ok: false, reason: 'notDone', user: cloneUser(u) };
+      m.claimed.push(missionId);
+      u.coins += coins;
+      scheduleSave();
+      return { ok: true, user: cloneUser(u) };
+    },
   };
 }
 
@@ -777,6 +840,31 @@ function createMongoDb(uri) {
       const user = await col.findOne({ key }, { projection });
       if (!user) return { ok: false, reason: 'noUser' };
       return { ok: false, reason: 'used', user };
+    },
+    // 날짜가 바뀐 계정의 미션 기록을 오늘 것으로 초기화 (이미 오늘 날짜면 아무 일도 하지 않음)
+    async resetMissionsIfNewDay(key, day) {
+      await col.updateOne({ key, 'missions.day': { $ne: day } }, { $set: { missions: { day, progress: {}, claimed: [] } } });
+    },
+    async addMissionProgress(key, day, incs) {
+      const inc = {};
+      for (const id in incs) if (incs[id] > 0) inc[`missions.progress.${id}`] = incs[id]; // id는 서버가 정의한 미션 id만 들어옴
+      if (!Object.keys(inc).length) return;
+      await this.resetMissionsIfNewDay(key, day);
+      await col.updateOne({ key }, { $inc: inc });
+    },
+    async claimMission(key, day, missionId, goal, coins) {
+      await this.resetMissionsIfNewDay(key, day);
+      // 달성 여부 확인 + 중복 수령 방지 + 코인 지급을 한 번의 원자적 연산으로 처리
+      const updated = await col.findOneAndUpdate(
+        { key, 'missions.day': day, [`missions.progress.${missionId}`]: { $gte: goal }, 'missions.claimed': { $ne: missionId } },
+        { $inc: { coins }, $push: { 'missions.claimed': missionId } },
+        { returnDocument: 'after', projection }
+      );
+      if (updated) return { ok: true, user: updated };
+      const user = await col.findOne({ key }, { projection });
+      if (!user) return { ok: false, reason: 'noUser' };
+      if (user.missions && (user.missions.claimed || []).includes(missionId)) return { ok: false, reason: 'claimed', user };
+      return { ok: false, reason: 'notDone', user };
     },
   };
 }
@@ -984,6 +1072,28 @@ function registerAuthHandlers(socket) {
       ack({ ok: false, message: '서버 오류가 발생했습니다.' });
     }
   });
+
+  // 미션 보상 받기: 달성 여부/중복 수령은 항상 서버가 판단한다 (클라이언트가 보낸 값은 미션 id만 사용)
+  socket.on('claimMission', async (data, ack) => {
+    if (typeof ack !== 'function') return;
+    try {
+      const key = socket.data.userKey;
+      if (!key) return ack({ ok: false, message: '로그인이 필요합니다.' });
+      const missionId = data && data.missionId;
+      const mission = MISSIONS.find((m) => m.id === missionId);
+      if (!mission) return ack({ ok: false, message: '존재하지 않는 미션입니다.' });
+
+      const r = await db.claimMission(key, missionDay(), mission.id, mission.goal, mission.reward);
+      if (r.ok) return ack({ ok: true, message: `🎉 ${mission.reward.toLocaleString()} 코인을 받았습니다!`, profile: publicProfile(r.user) });
+      const message = r.reason === 'claimed' ? '이미 보상을 받은 미션입니다.'
+        : r.reason === 'notDone' ? '아직 목표를 달성하지 못했습니다.'
+        : '보상 받기에 실패했습니다.';
+      ack({ ok: false, message, profile: r.user ? publicProfile(r.user) : undefined });
+    } catch (e) {
+      console.error('claimMission 오류', e);
+      ack({ ok: false, message: '서버 오류가 발생했습니다.' });
+    }
+  });
 }
 
 // 매치 결과 정산: 승리 팀에는 코인 + 승수, 패배 팀에는 패수를 기록한다 (매치당 한 번만 실행)
@@ -1014,6 +1124,10 @@ async function settleMatch(match, winnerTeam, reason, leaverId) {
       const trophyDelta = won ? trophyReward + streakBonus : (penalized ? -trophyLoss : 0);
       // 승리: 연승 +1 / 페널티 받는 패배: 연승 0 / 페널티 없는 패배(팀원 이탈 등): 연승 유지
       const newStreak = won ? previousStreak + 1 : (penalized ? 0 : null);
+      // 미션 진행도 누적 (정상 종료된 매치만). addResult보다 먼저 해서 아래 profileUpdate에 최신 진행도가 담기게 함
+      if (reason === 'scoreLimit') {
+        await db.addMissionProgress(key, missionDay(), missionIncrements(won, match.mode, p.score || 0));
+      }
       const user = await db.addResult(key, won ? coinReward : 0, won, p.characterId, trophyDelta, newStreak);
       const s = io.sockets.sockets.get(pid);
       if (s && user) {
@@ -1107,7 +1221,9 @@ function buildPlayer(socketId, name, characterId, team, spawn) {
     ultimateCharge: 0, // 0~100
     gadget: character.gadget || null, // 캐릭터 전용 가젯 (없으면 null)
     gadgetCooldownLeft: 0, // 가젯 재사용까지 남은 시간(초). 0이면 사용 가능
-    invincibleUntil: 0,    // 이 시각(ms, Date.now() 기준) 전까지는 무적 상태 (슈의 가젯 등)
+    invincibleUntil: 0,    // 이 시각(ms, Date.now() 기준) 전까지는 무적 상태 (현재 사용하는 캐릭터는 없지만 'invincible' 가젯용으로 남겨둠)
+    shieldHp: 0,           // 남은 보호막 수치 (슈의 가젯). 0이면 보호막 없음
+    shieldMax: 0,          // 이번에 발동한 보호막의 최대치 (화면 표시용)
     speedMultiplier: 1,     // 이동속도 배율. 매 틱 1로 초기화된 뒤 보배 폭탄 범위 등에 의해 낮아질 수 있음
     speedBoostUntil: 0,      // 이 시각(ms) 전까지 이동속도 증가 (원효대사의 가젯 '초인적인 힘')
     speedBoostMultiplier: 1,
@@ -1142,9 +1258,19 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
   const shooter = match.players[shooterId];
   damage = Math.round(damage * getDamageMultiplier(shooter)); // 공격력 증가 효과 적용
 
-  target.hp -= damage;
-  target.lastDamageAt = Date.now(); // 무피격 회복 타이머 초기화
+  // 보호막(슈의 가젯): 남은 보호막 수치만큼 피해를 대신 흡수하고, 넘치는 피해만 체력에 적용
+  if (target.shieldHp > 0) {
+    const absorbed = Math.min(target.shieldHp, damage);
+    target.shieldHp -= absorbed;
+    damage -= absorbed;
+  }
 
+  if (damage > 0) {
+    target.hp -= damage;
+    target.lastDamageAt = Date.now(); // 무피격 회복 타이머 초기화 (보호막이 전부 막은 피해는 체력 회복을 끊지 않음)
+  }
+
+  // 공격이 적중했으면(보호막이 막았더라도) 궁극기 게이지는 충전됨
   if (shooter && chargeShooter) {
     shooter.ultimateCharge = Math.min(100, shooter.ultimateCharge + shooter.ultimateChargePerHit);
   }
@@ -1189,6 +1315,8 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
       respawned.dashTimeLeft = 0;
       respawned.stunnedUntil = 0;
       respawned.invincibleUntil = 0; // 리스폰 시 이전 무적 상태는 초기화
+      respawned.shieldHp = 0;        // 리스폰 시 보호막도 초기화
+      respawned.shieldMax = 0;
       respawned.speedBoostUntil = 0; // 리스폰 시 가젯 효과(이동속도 증가/충전/공격력 증가)도 초기화
       respawned.chargingUntil = 0;
       respawned.damageBoostFrom = 0;
@@ -1702,6 +1830,10 @@ io.on('connection', (socket) => {
     } else if (gadget.type === 'reloadAmmo') {
       p.ammo = p.maxAmmo;
       p.ammoRegenElapsed = 0;
+    } else if (gadget.type === 'shield') {
+      // 슈의 가젯: shieldHp만큼 피해를 막는 보호막 (재사용 시 남은 양이 아니라 새로 shieldHp로 채워짐)
+      p.shieldHp = gadget.shieldHp || 1000;
+      p.shieldMax = p.shieldHp;
     } else if (gadget.type === 'invincible') {
       // 슈의 가젯: duration초 동안 무적 (재사용 시 남은 시간이 아니라 새로 duration초로 갱신)
       p.invincibleUntil = Date.now() + (gadget.duration || 1.5) * 1000;
