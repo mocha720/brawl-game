@@ -449,6 +449,132 @@ const CHARACTERS = {
     },
   },
 };
+
+// ===== 캐릭터 설명(캐릭터 선택 화면용) 자동 생성 =====
+// 위 CHARACTERS 의 실제 수치에서 설명 문구를 만들어 클라이언트에 내려준다.
+// 그래서 대미지/체력/시간 등을 바꾸면 캐릭터 선택 화면의 스펙도 자동으로 같이 바뀐다 (설명을 따로 고칠 필요 없음).
+const fmtNum = (n) => Number(n).toLocaleString('en-US');
+const fmtMult = (n) => String(Math.round(n * 100) / 100);
+const rangeOf = (spec) => (spec.speed && spec.lifetime ? Math.round(spec.speed * spec.lifetime) : 0);
+
+function describeBasic(b) {
+  const parts = [];
+  let damage = null;
+  const poolLabel = b.type === 'skullwater' ? '물웅덩이' : b.type === 'poopgas' ? '똥가루 구름' : b.type === 'eggthrow' ? '흰자' : '웅덩이';
+
+  if (b.type === 'melee') {
+    damage = b.damage;
+    parts.push(`전방 ${b.angleDegrees}도 부채꼴 범위(사거리 ${b.range})를 휘둘러 ${fmtNum(b.damage)} 피해를 주고 ${b.knockback}만큼 뒤로 밀쳐냄`);
+  } else if (b.poolOnImpact) {
+    // 해골물 / 똥가루 / 계란처럼 맞은 자리에 웅덩이를 남기는 공격
+    if (b.pelletCount > 1) parts.push(`${b.pelletCount}발 동시 발사`);
+    if (b.directDamage > 0) parts.push(`적 직접 적중 시 ${fmtNum(b.directDamage)} 피해`);
+    const pool = [`닿은 적에게 ${b.poolTickInterval}초마다 ${fmtNum(b.poolDamage)} 피해`];
+    if (b.poolHeal > 0) pool.push(`아군 ${b.poolTickInterval}초마다 ${fmtNum(b.poolHeal)} 회복`);
+    pool.push(`${b.poolLifetime}초 후 소멸`);
+    pool.push('적 터렛·닭도 피해');
+    parts.push(`${poolLabel} 생성 (${pool.join(', ')})`);
+    if (b.poolOnExpire) parts.push('최대 사거리에서도 깨짐');
+    const r = rangeOf(b);
+    if (r) parts.push(`사거리 약 ${r}`);
+  } else if (b.pelletCount > 1) {
+    parts.push(`펠릿 ${b.pelletCount}발 동시 발사 (발당 ${fmtNum(b.damage)} 피해, 탄퍼짐 ${b.spreadDegrees}도)`);
+    const r = rangeOf(b);
+    if (r) parts.push(`사거리 약 ${r}`);
+  } else {
+    damage = b.damage;
+    const r = rangeOf(b);
+    if (r) parts.push(`사거리 약 ${r}`);
+  }
+  if (b.pierceWalls) parts.push('벽(장애물)을 그대로 통과');
+  if (b.ammoRegenSeconds && b.ammoRegenSeconds > AMMO_REGEN_SECONDS) {
+    parts.push(`재장전 시간 ${Math.round((b.ammoRegenSeconds / AMMO_REGEN_SECONDS - 1) * 100)}% 증가`);
+  }
+  return { name: b.name, damage, desc: parts.join(', ') };
+}
+
+function describeUltimate(u) {
+  let damage = null;
+  let desc = '';
+  switch (u.type) {
+    case 'projectile': {
+      const r = rangeOf(u);
+      if (u.pelletCount > 1) {
+        desc = `조준한 방향으로 큰 총알 ${u.pelletCount}발 발사 (발당 ${fmtNum(u.damage)} 피해${r ? `, 사거리 약 ${r}` : ''})`;
+      } else {
+        damage = u.damage;
+        desc = `조준한 방향으로 발사${r ? ` (사거리 약 ${r})` : ''}`;
+      }
+      break;
+    }
+    case 'lightning':
+      damage = u.damage;
+      desc = `주변 고정된 위치에 번개 ${u.strikeCount}회 낙하 (조준 불필요)`;
+      break;
+    case 'stealth':
+      desc = `${u.duration}초 동안 적에게 보이지 않음`;
+      break;
+    case 'dash':
+      desc = `바라보는 방향으로 매우 빠르게 돌진, 적과 충돌 시 ${fmtNum(u.damage)} 피해 + ${u.stunDuration}초 기절`;
+      break;
+    case 'turret':
+      desc = `조준 불필요, 체력 ${fmtNum(u.hp)}의 자동 사격 터렛을 설치 (사거리 ${u.range}, ${u.fireInterval}초마다 ${fmtNum(u.damage)} 피해 저격탄 발사)`;
+      break;
+    case 'heal':
+      desc = '조준 불필요, 즉시 체력을 가득 채움';
+      break;
+    case 'timedBomb':
+      desc = `조준 불필요, 자신의 위치에 설치. 반경 ${u.radius} 안의 적에게 ${u.tickInterval}초마다 ${fmtNum(u.tickDamage)} 피해 + 이동속도 ${Math.round((1 - u.slowMultiplier) * 100)}% 감소, ${u.fuseTime}초 뒤 ${fmtNum(u.explodeDamage)} 피해로 폭발`;
+      break;
+    case 'summonChicken':
+      desc = `조준 불필요, 체력 ${fmtNum(u.hp)}의 닭을 소환. ${u.duration}초 동안 적을 자동으로 추격해서 ${u.attackInterval}초마다 ${fmtNum(u.damage)} 피해`;
+      break;
+    default:
+      if (u.damage) damage = u.damage;
+  }
+  return { name: u.name, damage, desc };
+}
+
+function describeGadget(g) {
+  let desc = '';
+  switch (g.type) {
+    case 'burst':
+      desc = `조준한 방향으로 총알 ${g.bulletCount}발을 빠르게 연달아 발사, 발당 ${fmtNum(g.damage)} 피해`;
+      break;
+    case 'reloadAmmo':
+      desc = '즉시 탄창을 가득 채움';
+      break;
+    case 'invincible':
+      desc = `${g.duration}초 동안 모든 피해를 받지 않음`;
+      break;
+    case 'speedBoost':
+      desc = `${g.duration}초 동안 이동속도 ${fmtMult(g.speedMultiplier)}배`;
+      break;
+    case 'powerCharge':
+      desc = `${g.chargeTime}초 동안 이동/공격 불가 상태가 되지만, 이후 ${g.boostDuration}초 동안 공격력 ${fmtMult(g.damageMultiplier)}배`;
+      break;
+    default:
+      break;
+  }
+  return { name: g.name, desc: desc ? `${desc} (${GADGET_COOLDOWN_SEC}초마다 사용 가능)` : '' };
+}
+
+function buildCharacterInfo() {
+  const out = {};
+  for (const id in CHARACTERS) {
+    const c = CHARACTERS[id];
+    out[id] = {
+      id,
+      name: c.name,
+      maxHp: c.maxHp,
+      basic: describeBasic(c.basic),
+      ultimate: describeUltimate(c.ultimate),
+      gadget: c.gadget ? describeGadget(c.gadget) : null,
+    };
+  }
+  return out;
+}
+const CHARACTER_INFO = buildCharacterInfo();
 const DEFAULT_CHARACTER_ID = 'minam';
 
 // ===== 계정 / 코인 / 캐릭터 잠금해제 시스템 =====
@@ -488,7 +614,7 @@ const TROPHY_RANKS = [
 function publicProfile(u) {
   const trophies = {};
   for (const id in CHARACTERS) trophies[id] = (u.trophies && u.trophies[id]) || 0;
-  return { username: u.name, coins: u.coins, wins: u.wins || 0, losses: u.losses || 0, unlocked: effectiveUnlocked(u), prices: allPrices(), trophies, ranks: TROPHY_RANKS };
+  return { username: u.name, coins: u.coins, wins: u.wins || 0, losses: u.losses || 0, unlocked: effectiveUnlocked(u), prices: allPrices(), trophies, ranks: TROPHY_RANKS, characters: CHARACTER_INFO };
 }
 
 // ----- 저장소 -----
