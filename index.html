@@ -263,6 +263,23 @@
   .mission-item button:disabled { background: #555; cursor: default; }
   #missionMsg { min-height: 20px; margin: 10px 0; font-size: 14px; color: #e74c3c; }
   #missionMsg.ok { color: #2ecc71; }
+  /* ===== 계정 설정 (아이디/비밀번호 변경) ===== */
+  #openAccountBtn { margin-top: 20px; margin-right: 8px; padding: 8px 18px; font-size: 13px; border-radius: 6px; border: none; background: #2980b9; color: #fff; cursor: pointer; }
+  #openAccountBtn:hover { background: #21618c; }
+  #accountOverlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+    display: none; align-items: center; justify-content: center; flex-direction: column;
+    z-index: 40; text-align: center; padding: 0 16px; box-sizing: border-box; color: #fff;
+  }
+  #accountOverlay.open { display: flex; }
+  #accountOverlay h2 { margin: 0 0 8px 0; }
+  #accountOverlay input { width: 250px; max-width: 100%; padding: 10px 12px; font-size: 15px; border-radius: 6px; border: 1px solid #555; background: #222; color: #fff; text-align: center; box-sizing: border-box; margin: 5px 0; }
+  .account-sub { font-size: 12px; color: #aaa; margin: 4px 0 6px 0; max-width: 280px; }
+  #accountMsg { min-height: 20px; margin: 8px 0; font-size: 13px; color: #e74c3c; max-width: 280px; }
+  #accountMsg.ok { color: #2ecc71; }
+  #accountOverlay .account-btns button { margin: 0 4px; padding: 9px 20px; font-size: 14px; border-radius: 6px; border: none; color: #fff; cursor: pointer; background: #2980b9; }
+  #accountOverlay .account-btns button.secondary { background: #7f8c8d; }
+  #accountOverlay .account-btns button:disabled { opacity: 0.6; cursor: default; }
   #missionCloseBtn { padding: 9px 22px; font-size: 14px; border-radius: 6px; border: none; background: #7f8c8d; color: #fff; cursor: pointer; }
   /* ===== 코드 입력창 ===== */
   #codeOverlay {
@@ -720,7 +737,22 @@
     </div>
   </div>
   <div><button id="openMissionBtn">📋 미션</button><button id="openCodeBtn">🎁 코드 입력</button></div>
-  <button id="logoutBtn">로그아웃</button>
+  <div><button id="openAccountBtn">⚙️ 계정 설정</button><button id="logoutBtn" style="margin-top:20px">로그아웃</button></div>
+</div>
+
+<div id="accountOverlay">
+  <h2>⚙️ 계정 설정</h2>
+  <div class="profile-line"></div>
+  <div class="account-sub">바꾸고 싶은 항목만 입력하세요. 변경하려면 현재 비밀번호가 필요합니다. 매치 중에는 변경할 수 없습니다.</div>
+  <input id="accCurrentPw" type="password" maxlength="64" placeholder="현재 비밀번호 (필수)" autocomplete="current-password" />
+  <input id="accNewName" maxlength="12" placeholder="새 아이디 (2~12자, 선택)" autocomplete="off" />
+  <input id="accNewPw" type="password" maxlength="64" placeholder="새 비밀번호 (4자 이상, 선택)" autocomplete="new-password" />
+  <input id="accNewPw2" type="password" maxlength="64" placeholder="새 비밀번호 확인" autocomplete="new-password" />
+  <div id="accountMsg"></div>
+  <div class="account-btns">
+    <button id="accountSubmitBtn">변경하기</button>
+    <button id="accountCloseBtn" class="secondary">닫기</button>
+  </div>
 </div>
 
 <div id="missionOverlay">
@@ -1256,6 +1288,57 @@ function closeMissionDialog() { document.getElementById('missionOverlay').classL
 document.getElementById('openMissionBtn').addEventListener('click', openMissionDialog);
 document.getElementById('missionCloseBtn').addEventListener('click', closeMissionDialog);
 
+// ===== 계정 설정: 아이디 / 비밀번호 변경 =====
+function setAccountMsg(text, ok) {
+  const el = document.getElementById('accountMsg');
+  el.textContent = text || '';
+  el.classList.toggle('ok', !!ok);
+}
+function clearAccountInputs() {
+  ['accCurrentPw', 'accNewName', 'accNewPw', 'accNewPw2'].forEach((id) => { document.getElementById(id).value = ''; });
+}
+function openAccountDialog() {
+  clearAccountInputs();
+  setAccountMsg('');
+  updateProfileUI();
+  document.getElementById('accountOverlay').classList.add('open');
+  document.getElementById('accCurrentPw').focus();
+}
+function closeAccountDialog() {
+  clearAccountInputs(); // 비밀번호가 화면에 남지 않게 닫을 때 항상 비움
+  document.getElementById('accountOverlay').classList.remove('open');
+}
+function submitAccount() {
+  const currentPassword = document.getElementById('accCurrentPw').value;
+  const newUsername = document.getElementById('accNewName').value.trim();
+  const newPassword = document.getElementById('accNewPw').value;
+  const newPassword2 = document.getElementById('accNewPw2').value;
+  if (!currentPassword) { setAccountMsg('현재 비밀번호를 입력하세요.'); return; }
+  if (!newUsername && !newPassword) { setAccountMsg('변경할 아이디나 새 비밀번호를 입력하세요.'); return; }
+  if (newPassword && newPassword !== newPassword2) { setAccountMsg('새 비밀번호와 확인이 서로 다릅니다.'); return; }
+  const btn = document.getElementById('accountSubmitBtn');
+  btn.disabled = true;
+  setAccountMsg('');
+  socket.timeout(8000).emit('updateAccount', { currentPassword, newUsername, newPassword }, (err, res) => {
+    btn.disabled = false;
+    if (err || !res) { setAccountMsg('서버 응답이 없습니다. 잠시 후 다시 시도해주세요.'); return; }
+    if (!res.ok) { setAccountMsg(res.message || '변경에 실패했습니다.'); return; }
+    if (res.profile) { currentProfile = res.profile; updateProfileUI(); }
+    try { localStorage.setItem('lastUsername', currentProfile.username); } catch (e) {}
+    clearAccountInputs();
+    setAccountMsg(res.message || '변경되었습니다.', true);
+  });
+}
+document.getElementById('openAccountBtn').addEventListener('click', openAccountDialog);
+document.getElementById('accountCloseBtn').addEventListener('click', closeAccountDialog);
+document.getElementById('accountSubmitBtn').addEventListener('click', submitAccount);
+['accCurrentPw', 'accNewName', 'accNewPw', 'accNewPw2'].forEach((id) => {
+  document.getElementById(id).addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') submitAccount();
+    if (e.key === 'Escape') closeAccountDialog();
+  });
+});
+
 // 캐릭터의 트로피 수로 현재 등급과 다음 등급을 구한다 (등급표는 서버가 내려줌)
 function rankInfo(trophies) {
   const ranks = (currentProfile && currentProfile.ranks) || [];
@@ -1357,6 +1440,7 @@ document.getElementById('logoutBtn').addEventListener('click', () => {
     updateProfileUI();
     closeCodeDialog();
     closeMissionDialog();
+    closeAccountDialog();
     document.getElementById('modeOverlay').style.display = 'none';
     document.getElementById('joinOverlay').style.display = 'flex';
     showAuthMsg('로그아웃되었습니다.', true);
@@ -1372,6 +1456,7 @@ function forceReLogin(message) {
   updateProfileUI();
   closeCodeDialog();
   closeMissionDialog();
+  closeAccountDialog();
   ['modeOverlay', 'characterOverlay'].forEach((id) => { document.getElementById(id).style.display = 'none'; });
   ['matchingOverlay', 'matchResultOverlay', 'scoreboard'].forEach((id) => { document.getElementById(id).classList.remove('open'); });
   document.getElementById('joinOverlay').style.display = 'flex';
