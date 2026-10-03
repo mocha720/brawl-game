@@ -207,6 +207,23 @@
     font-size: 12px;
     color: #aaa;
   }
+  /* ===== 로그인 / 코인 / 잠금 캐릭터 ===== */
+  #authMsg { min-height: 18px; margin: 2px 0 10px 0; font-size: 13px; color: #e74c3c; text-align: center; max-width: 280px; }
+  #authMsg.ok { color: #2ecc71; }
+  #joinOverlay .auth-btns { display: flex; gap: 10px; }
+  #joinOverlay button.secondary { background: #7f8c8d; }
+  #joinOverlay button.secondary:hover { background: #6b7677; }
+  #joinOverlay button:disabled { opacity: 0.6; cursor: default; }
+  .profile-line { font-size: 14px; color: #f1c40f; margin: 0 0 16px 0; text-align: center; }
+  .profile-line:empty { display: none; }
+  #logoutBtn { margin-top: 20px; padding: 8px 18px; font-size: 13px; border-radius: 6px; border: none; background: #7f8c8d; color: #fff; cursor: pointer; }
+  #logoutBtn:hover { background: #6b7677; }
+  .char-card.locked { border-color: #6c3483; }
+  .char-card .trophy-line { font-size: 12px; color: #f1c40f; margin: 2px 0 6px 0; }
+  .char-card.locked .char-avatar { filter: grayscale(0.7); }
+  .char-card button.locked-btn { background: #8e44ad; }
+  .char-card button.locked-btn:hover { background: #7d3c98; }
+  .char-card button.locked-btn:disabled { background: #555; cursor: not-allowed; }
   /* ===== 모드 선택 화면 ===== */
   #modeOverlay {
     position: fixed;
@@ -572,13 +589,19 @@
 <div id="onlineCountBadge">🟢 접속자 수 확인 중...</div>
 
 <div id="joinOverlay">
-  <h2>닉네임을 입력하세요</h2>
-  <input id="nameInput" maxlength="12" placeholder="예: Hero" />
-  <button id="joinBtn">다음</button>
+  <h2>로그인</h2>
+  <input id="nameInput" maxlength="12" placeholder="아이디 (2~12자)" autocomplete="username" />
+  <input id="pwInput" type="password" maxlength="64" placeholder="비밀번호 (4자 이상)" autocomplete="current-password" />
+  <div id="authMsg"></div>
+  <div class="auth-btns">
+    <button id="loginBtn">로그인</button>
+    <button id="registerBtn" class="secondary">회원가입</button>
+  </div>
 </div>
 
 <div id="modeOverlay">
   <h2>모드를 선택하세요</h2>
+  <div class="profile-line"></div>
   <div id="modeList">
     <div class="mode-card" data-mode="1v1">
       <div class="mode-title">1 : 1</div>
@@ -589,10 +612,12 @@
       <div class="mode-desc">팀원과 함께 2대2 협동전</div>
     </div>
   </div>
+  <button id="logoutBtn">로그아웃</button>
 </div>
 
 <div id="characterOverlay">
   <h2>캐릭터를 선택하세요</h2>
+  <div class="profile-line"></div>
   <div id="characterList"></div>
 </div>
 
@@ -606,6 +631,7 @@
 <div id="matchResultOverlay">
   <h2 id="matchResultTitle"></h2>
   <div id="matchResultDesc"></div>
+  <div class="profile-line"></div>
   <div>
     <button id="rematchBtn">다시 매칭하기</button>
     <button id="backToMenuBtn">모드 다시 선택</button>
@@ -1001,9 +1027,121 @@ setupStick('rightStick', 'rightNub',
 );
 
 // ===== 조인 처리: 닉네임 입력 -> 모드 선택 -> 캐릭터 선택 -> 매칭 대기 =====
-document.getElementById('joinBtn').addEventListener('click', goToModeSelect);
-document.getElementById('nameInput').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') goToModeSelect();
+// ===== 로그인 / 회원가입 =====
+let currentProfile = null; // 서버가 알려주는 내 계정 정보 { username, coins, wins, losses, unlocked, prices }
+
+function updateProfileUI() {
+  const text = currentProfile
+    ? `👤 ${currentProfile.username}  |  🪙 ${currentProfile.coins.toLocaleString()} 코인  |  🏆 ${currentProfile.wins}승 ${currentProfile.losses}패`
+    : '';
+  document.querySelectorAll('.profile-line').forEach((el) => { el.textContent = text; });
+}
+
+// 캐릭터의 트로피 수로 현재 등급과 다음 등급을 구한다 (등급표는 서버가 내려줌)
+function rankInfo(trophies) {
+  const ranks = (currentProfile && currentProfile.ranks) || [];
+  let cur = ranks[0] || { name: '', icon: '', min: 0 };
+  let next = null;
+  for (const r of ranks) {
+    if (trophies >= r.min) cur = r;
+    else if (!next) next = r;
+  }
+  return { cur, next };
+}
+
+function isCharacterUnlocked(id) {
+  return !!currentProfile && currentProfile.unlocked.includes(id);
+}
+
+function showAuthMsg(text, ok) {
+  const el = document.getElementById('authMsg');
+  el.textContent = text || '';
+  el.classList.toggle('ok', !!ok);
+}
+
+function setAuthBusy(busy) {
+  document.getElementById('loginBtn').disabled = busy;
+  document.getElementById('registerBtn').disabled = busy;
+}
+
+function submitAuth(eventName) {
+  const username = document.getElementById('nameInput').value.trim();
+  const password = document.getElementById('pwInput').value;
+  if (!username || !password) { showAuthMsg('아이디와 비밀번호를 입력하세요.'); return; }
+  showAuthMsg('');
+  setAuthBusy(true);
+  socket.timeout(8000).emit(eventName, { username, password }, (err, res) => {
+    setAuthBusy(false);
+    if (err || !res) { showAuthMsg('서버 응답이 없습니다. 잠시 후 다시 시도해주세요.'); return; }
+    if (!res.ok) { showAuthMsg(res.message || '요청에 실패했습니다.'); return; }
+    try { localStorage.setItem('lastUsername', username); } catch (e) {}
+    currentProfile = res.profile;
+    document.getElementById('pwInput').value = '';
+    showAuthMsg('');
+    updateProfileUI();
+    goToModeSelect();
+  });
+}
+
+document.getElementById('loginBtn').addEventListener('click', () => submitAuth('login'));
+document.getElementById('registerBtn').addEventListener('click', () => submitAuth('register'));
+['nameInput', 'pwInput'].forEach((id) => {
+  document.getElementById(id).addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') submitAuth('login');
+  });
+});
+try {
+  const lastUsername = localStorage.getItem('lastUsername');
+  if (lastUsername) document.getElementById('nameInput').value = lastUsername;
+} catch (e) {}
+
+document.getElementById('logoutBtn').addEventListener('click', () => {
+  socket.timeout(5000).emit('logout', (err, res) => {
+    if (err || !res || !res.ok) return;
+    currentProfile = null;
+    updateProfileUI();
+    document.getElementById('modeOverlay').style.display = 'none';
+    document.getElementById('joinOverlay').style.display = 'flex';
+    showAuthMsg('로그아웃되었습니다.', true);
+  });
+});
+
+// 서버 연결이 끊겼다가 다시 연결되면 서버 쪽 로그인 상태가 사라지므로, 로그인 화면으로 돌려보낸다
+function forceReLogin(message) {
+  currentProfile = null;
+  joined = false;
+  ultimateArmed = false;
+  gadgetArmed = false;
+  updateProfileUI();
+  ['modeOverlay', 'characterOverlay'].forEach((id) => { document.getElementById(id).style.display = 'none'; });
+  ['matchingOverlay', 'matchResultOverlay', 'scoreboard'].forEach((id) => { document.getElementById(id).classList.remove('open'); });
+  document.getElementById('joinOverlay').style.display = 'flex';
+  showAuthMsg(message);
+}
+let hadConnection = false;
+socket.on('connect', () => {
+  if (hadConnection && currentProfile) forceReLogin('연결이 끊어졌습니다. 다시 로그인해주세요.');
+  hadConnection = true;
+});
+
+// 매치 정산 후 서버가 보내주는 최신 코인/전적/잠금해제 정보
+socket.on('profileUpdate', (data) => {
+  const before = (currentProfile && currentProfile.trophies) || {};
+  currentProfile = data;
+  updateProfileUI();
+  // 방금 끝난 매치에서 쓴 캐릭터의 트로피 증감(승리 +, 패배 -)을 결과 화면에 표시
+  const id = data.lastResult && data.lastResult.characterId;
+  const resultOpen = document.getElementById('matchResultOverlay').classList.contains('open');
+  if (id && resultOpen) {
+    const diff = ((data.trophies && data.trophies[id]) || 0) - (before[id] || 0);
+    if (diff !== 0) document.getElementById('matchResultDesc').textContent += `  |  🏆 ${diff > 0 ? '+' : ''}${diff} 트로피`;
+  }
+});
+
+socket.on('findMatchError', (data) => {
+  document.getElementById('matchingOverlay').classList.remove('open');
+  alert((data && data.message) || '매칭을 시작할 수 없습니다.');
+  goToCharacterSelect();
 });
 
 let selectedMode = '1v1';
@@ -1029,22 +1167,51 @@ function goToCharacterSelect() {
 
 function renderCharacterList() {
   const list = document.getElementById('characterList');
-  list.innerHTML = CHARACTERS.map((c) => `
-    <div class="char-card">
+  list.innerHTML = CHARACTERS.map((c) => {
+    const owned = isCharacterUnlocked(c.id);
+    const price = (currentProfile && currentProfile.prices && currentProfile.prices[c.id]) || 0;
+    const canAfford = !!currentProfile && currentProfile.coins >= price;
+    const trophies = (currentProfile && currentProfile.trophies && currentProfile.trophies[c.id]) || 0;
+    const rk = rankInfo(trophies);
+    const trophyLine = owned
+      ? `<div class="trophy-line">${rk.cur.icon} ${escapeHtml(rk.cur.name)} · 🏆 ${trophies.toLocaleString()}${rk.next ? ` / ${rk.next.min.toLocaleString()}` : ' (최고 등급)'}</div>`
+      : '';
+    const action = owned
+      ? `<button data-char-id="${c.id}">선택</button>`
+      : `<button class="locked-btn" data-unlock-id="${c.id}" ${canAfford ? '' : 'disabled'}>🔒 🪙 ${price.toLocaleString()} ${canAfford ? '잠금해제' : '(코인 부족)'}</button>`;
+    return `
+    <div class="char-card${owned ? '' : ' locked'}">
       <div class="char-avatar" style="background:${c.color}">${escapeHtml(c.name.slice(0, 1))}</div>
       <h3>${escapeHtml(c.name)}</h3>
+      ${trophyLine}
       <div class="stat-line">❤️ 체력: ${c.maxHp.toLocaleString()}</div>
       <div class="stat-line">🎯 ${escapeHtml(c.basic.name)}${c.basic.damage ? `: ${c.basic.damage.toLocaleString()}` : ''}${c.basic.desc ? ` (${escapeHtml(c.basic.desc)})` : ''}</div>
       <div class="stat-line">✨ ${escapeHtml(c.ultimate.name)}${c.ultimate.damage ? `: ${c.ultimate.damage.toLocaleString()}` : ''}${c.ultimate.desc ? ` (${escapeHtml(c.ultimate.desc)})` : ''}</div>
       ${c.gadget ? `<div class="stat-line">🔧 ${escapeHtml(c.gadget.name)}${c.gadget.desc ? ` (${escapeHtml(c.gadget.desc)})` : ''}</div>` : ''}
-      <button data-char-id="${c.id}">선택</button>
-    </div>
-  `).join('');
+      ${action}
+    </div>`;
+  }).join('');
 
   list.querySelectorAll('button[data-char-id]').forEach((btn) => {
     btn.addEventListener('click', () => {
       selectedCharacterId = btn.getAttribute('data-char-id');
       doJoin();
+    });
+  });
+
+  list.querySelectorAll('button[data-unlock-id]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-unlock-id');
+      const c = CHARACTERS.find((x) => x.id === id);
+      const price = currentProfile.prices[id];
+      if (!confirm(`${c.name}을(를) 🪙 ${price} 코인으로 잠금해제할까요?`)) return;
+      btn.disabled = true;
+      socket.timeout(8000).emit('unlockCharacter', { characterId: id }, (err, res) => {
+        if (err || !res) { alert('서버 응답이 없습니다. 잠시 후 다시 시도해주세요.'); renderCharacterList(); return; }
+        if (res.profile) { currentProfile = res.profile; updateProfileUI(); }
+        if (!res.ok) alert(res.message || '잠금해제에 실패했습니다.');
+        renderCharacterList();
+      });
     });
   });
 }
@@ -1055,7 +1222,7 @@ let matchMode = '1v1';  // 'matchFound'에서 서버가 알려주는 실제 매�
 let matchWinScore = 5;  // 팀이 승리하는 데 필요한 누적 킬 수. matchFound에서 갱신됨
 
 function doJoin() {
-  myName = document.getElementById('nameInput').value.trim() || 'Player';
+  myName = (currentProfile && currentProfile.username) || 'Player';
   document.getElementById('characterOverlay').style.display = 'none';
   requestMatch();
 }
@@ -1166,6 +1333,8 @@ socket.on('matchOver', (data) => {
     titleEl.classList.add(iWon ? 'win' : 'lose');
     descEl.textContent = `${myScore} : ${oppScore} (${matchWinScore}킬 선취)`;
   }
+
+  if (iWon && data.coinReward) descEl.textContent += `  |  🪙 +${data.coinReward} 코인`;
 
   document.getElementById('matchResultOverlay').classList.add('open');
 
