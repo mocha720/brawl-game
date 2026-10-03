@@ -577,6 +577,16 @@ function buildCharacterInfo() {
 const CHARACTER_INFO = buildCharacterInfo();
 const DEFAULT_CHARACTER_ID = 'minam';
 
+// ===== 쿠폰(코드) 설정 =====
+// 코드 입력창에 이 코드를 입력하면 코인을 받는다. 코드는 대문자로 적고(입력은 대소문자/공백 상관없음),
+// 계정당 같은 코드는 한 번만 사용할 수 있다. 코드를 추가/변경하려면 여기만 고치면 된다.
+const REDEEM_CODES = {
+  'FREE1972': { coins: 200 },
+};
+function normalizeCode(raw) {
+  return String(raw || '').replace(/\s+/g, '').toUpperCase();
+}
+
 // ===== 계정 / 코인 / 캐릭터 잠금해제 시스템 =====
 // 가격이 0인 캐릭터는 모든 계정이 처음부터 사용할 수 있고, 나머지는 코인으로 잠금해제해야 함 (가격은 여기서 자유롭게 수정)
 const CHARACTER_PRICES = {
@@ -624,7 +634,7 @@ function publicProfile(u) {
 const USERS_FILE = process.env.USERS_FILE || path.join(os.tmpdir(), 'brawl-users.json');
 
 function cloneUser(u) {
-  return u ? { ...u, unlocked: [...(u.unlocked || [])], trophies: { ...(u.trophies || {}) } } : null;
+  return u ? { ...u, unlocked: [...(u.unlocked || [])], trophies: { ...(u.trophies || {}) }, redeemed: [...(u.redeemed || [])] } : null;
 }
 
 function createFileDb() {
@@ -676,6 +686,16 @@ function createFileDb() {
       scheduleSave();
       return { ok: true, user: cloneUser(u) };
     },
+    async redeemCode(key, code, coins) {
+      const u = users[key];
+      if (!u) return { ok: false, reason: 'noUser' };
+      u.redeemed = u.redeemed || [];
+      if (u.redeemed.includes(code)) return { ok: false, reason: 'used', user: cloneUser(u) };
+      u.redeemed.push(code);
+      u.coins += coins;
+      scheduleSave();
+      return { ok: true, user: cloneUser(u) };
+    },
   };
 }
 
@@ -720,6 +740,18 @@ function createMongoDb(uri) {
       if ((user.unlocked || []).includes(charId)) return { ok: false, reason: 'already', user };
       return { ok: false, reason: 'coins', user };
     },
+    async redeemCode(key, code, coins) {
+      // 사용 기록 확인과 코인 지급을 한 번의 원자적 연산으로 처리 (동시에 여러 번 눌러도 한 번만 지급됨)
+      const updated = await col.findOneAndUpdate(
+        { key, redeemed: { $ne: code } },
+        { $inc: { coins }, $push: { redeemed: code } },
+        { returnDocument: 'after', projection }
+      );
+      if (updated) return { ok: true, user: updated };
+      const user = await col.findOne({ key }, { projection });
+      if (!user) return { ok: false, reason: 'noUser' };
+      return { ok: false, reason: 'used', user };
+    },
   };
 }
 
@@ -740,7 +772,7 @@ const DUMMY_SALT = crypto.randomBytes(16).toString('hex'); // 없는 아이디�
 
 // ----- 무차별 대입 / 대량 가입 방지 (메모리 기반 간단한 제한) -----
 const RATE_WINDOW_MS = 10 * 60 * 1000;
-const RATE_LIMITS = { loginFail: 8, register: 5 }; // 10분 동안 허용되는 횟수
+const RATE_LIMITS = { loginFail: 8, register: 5, redeemFail: 10 }; // 10분 동안 허용되는 횟수
 const rateBuckets = new Map();
 function clientIp(socket) {
   const xff = String(socket.handshake.headers['x-forwarded-for'] || '').split(',')[0].trim();
@@ -880,6 +912,29 @@ function registerAuthHandlers(socket) {
   });
 
   // 코인으로 캐릭터 잠금해제. 가격/보유 여부는 항상 서버가 판단한다 (클라이언트가 보낸 값은 신뢰하지 않음)
+  // 코드 입력: 정해진 코드를 입력하면 코인을 지급 (계정당 코드별 1회)
+  socket.on('redeemCode', async (data, ack) => {
+    if (typeof ack !== 'function') return;
+    try {
+      const key = socket.data.userKey;
+      if (!key) return ack({ ok: false, message: '로그인이 필요합니다.' });
+      if (isRateLimited('redeemFail', key)) return ack({ ok: false, message: '시도 횟수가 너무 많습니다. 잠시 후 다시 시도해주세요.' });
+
+      const code = normalizeCode(data && data.code);
+      if (!code || code.length > 40) { hitRate('redeemFail', key); return ack({ ok: false, message: '올바르지 않은 코드입니다.' }); }
+      const reward = Object.prototype.hasOwnProperty.call(REDEEM_CODES, code) ? REDEEM_CODES[code] : null;
+      if (!reward) { hitRate('redeemFail', key); return ack({ ok: false, message: '올바르지 않은 코드입니다.' }); }
+
+      const r = await db.redeemCode(key, code, reward.coins);
+      if (r.ok) return ack({ ok: true, message: `🎉 ${reward.coins.toLocaleString()} 코인을 받았습니다!`, profile: publicProfile(r.user) });
+      const message = r.reason === 'used' ? '이미 사용한 코드입니다.' : '코드 사용에 실패했습니다.';
+      ack({ ok: false, message, profile: r.user ? publicProfile(r.user) : undefined });
+    } catch (e) {
+      console.error('redeemCode 오류', e);
+      ack({ ok: false, message: '서버 오류가 발생했습니다.' });
+    }
+  });
+
   socket.on('unlockCharacter', async (data, ack) => {
     if (typeof ack !== 'function') return;
     try {
