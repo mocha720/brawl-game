@@ -218,6 +218,20 @@
   .profile-line:empty { display: none; }
   #logoutBtn { margin-top: 20px; padding: 8px 18px; font-size: 13px; border-radius: 6px; border: none; background: #7f8c8d; color: #fff; cursor: pointer; }
   #logoutBtn:hover { background: #6b7677; }
+  #openCodeBtn { margin-top: 14px; padding: 8px 18px; font-size: 13px; border-radius: 6px; border: none; background: #8e44ad; color: #fff; cursor: pointer; }
+  #openCodeBtn:hover { background: #7d3c98; }
+  /* ===== 코드 입력창 ===== */
+  #codeOverlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.8);
+    display: none; align-items: center; justify-content: center; flex-direction: column;
+    z-index: 40; text-align: center; padding: 0 20px; box-sizing: border-box; color: #fff;
+  }
+  #codeOverlay.open { display: flex; }
+  #codeInput { width: 240px; padding: 10px 12px; font-size: 16px; border-radius: 6px; border: 1px solid #555; background: #222; color: #fff; text-align: center; letter-spacing: 1px; box-sizing: border-box; }
+  #codeMsg { min-height: 20px; margin: 10px 0; font-size: 14px; color: #e74c3c; max-width: 280px; }
+  #codeMsg.ok { color: #2ecc71; }
+  #codeOverlay .code-btns button { margin: 0 4px; padding: 9px 20px; font-size: 14px; border-radius: 6px; border: none; color: #fff; cursor: pointer; background: #8e44ad; }
+  #codeOverlay .code-btns button.secondary { background: #7f8c8d; }
   .char-card.locked { border-color: #6c3483; }
   .char-card .trophy-line { font-size: 12px; color: #f1c40f; margin: 2px 0 6px 0; }
   .char-card.locked .char-avatar { filter: grayscale(0.7); }
@@ -660,7 +674,19 @@
       <div class="mode-desc">팀원과 함께 2대2 협동전</div>
     </div>
   </div>
+  <div><button id="openCodeBtn">🎁 코드 입력</button></div>
   <button id="logoutBtn">로그아웃</button>
+</div>
+
+<div id="codeOverlay">
+  <h2>🎁 코드 입력</h2>
+  <div class="profile-line"></div>
+  <input id="codeInput" maxlength="40" placeholder="코드를 입력하세요" autocomplete="off" autocapitalize="characters" spellcheck="false" />
+  <div id="codeMsg"></div>
+  <div class="code-btns">
+    <button id="codeSubmitBtn">확인</button>
+    <button id="codeCloseBtn" class="secondary">닫기</button>
+  </div>
 </div>
 
 <div id="characterOverlay">
@@ -1153,11 +1179,48 @@ try {
   if (lastUsername) document.getElementById('nameInput').value = lastUsername;
 } catch (e) {}
 
+// ===== 코드 입력창 =====
+function setCodeMsg(text, ok) {
+  const el = document.getElementById('codeMsg');
+  el.textContent = text || '';
+  el.classList.toggle('ok', !!ok);
+}
+function openCodeDialog() {
+  setCodeMsg('');
+  document.getElementById('codeInput').value = '';
+  document.getElementById('codeOverlay').classList.add('open');
+  updateProfileUI();
+  document.getElementById('codeInput').focus();
+}
+function closeCodeDialog() { document.getElementById('codeOverlay').classList.remove('open'); }
+function submitCode() {
+  const input = document.getElementById('codeInput');
+  const btn = document.getElementById('codeSubmitBtn');
+  const code = input.value.trim();
+  if (!code) { setCodeMsg('코드를 입력해주세요.'); return; }
+  btn.disabled = true;
+  socket.timeout(8000).emit('redeemCode', { code }, (err, res) => {
+    btn.disabled = false;
+    if (err || !res) { setCodeMsg('서버 응답이 없습니다. 잠시 후 다시 시도해주세요.'); return; }
+    if (res.profile) { currentProfile = res.profile; updateProfileUI(); }
+    setCodeMsg(res.message || (res.ok ? '완료!' : '실패했습니다.'), res.ok);
+    if (res.ok) input.value = '';
+  });
+}
+document.getElementById('openCodeBtn').addEventListener('click', openCodeDialog);
+document.getElementById('codeCloseBtn').addEventListener('click', closeCodeDialog);
+document.getElementById('codeSubmitBtn').addEventListener('click', submitCode);
+document.getElementById('codeInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') submitCode();
+  if (e.key === 'Escape') closeCodeDialog();
+});
+
 document.getElementById('logoutBtn').addEventListener('click', () => {
   socket.timeout(5000).emit('logout', (err, res) => {
     if (err || !res || !res.ok) return;
     currentProfile = null;
     updateProfileUI();
+    closeCodeDialog();
     document.getElementById('modeOverlay').style.display = 'none';
     document.getElementById('joinOverlay').style.display = 'flex';
     showAuthMsg('로그아웃되었습니다.', true);
@@ -1171,6 +1234,7 @@ function forceReLogin(message) {
   ultimateArmed = false;
   gadgetArmed = false;
   updateProfileUI();
+  closeCodeDialog();
   ['modeOverlay', 'characterOverlay'].forEach((id) => { document.getElementById(id).style.display = 'none'; });
   ['matchingOverlay', 'matchResultOverlay', 'scoreboard'].forEach((id) => { document.getElementById(id).classList.remove('open'); });
   document.getElementById('joinOverlay').style.display = 'flex';
