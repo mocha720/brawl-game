@@ -904,7 +904,7 @@ const CHARACTERS = [
     color: '#f5b041',
     maxHp: 6500,
     basic: { name: '계란 던지기', desc: '적 직접 적중 시 1,200 피해 + 깨지면서 흰자가 퍼짐 (닿은 적에게 0.2초마다 300 피해, 1초 후 소멸, 벽에 닿거나 최대 사거리에서도 깨짐)' },
-    ultimate: { name: '닭 소환', desc: '조준 불필요, 체력 2,500의 닭을 소환. 8초 동안 적을 자동으로 추격해서 0.8초마다 500 피해' },
+    ultimate: { name: '닭 소환', desc: '조준 불필요, 체력 8,000의 닭을 소환. 8초 동안 적을 추격하다가 적에게 돌격해서 1,500 피해 (1.5초마다 돌격 가능)' },
   },
 ];
 let selectedCharacterId = CHARACTERS[0].id;
@@ -1301,6 +1301,7 @@ socket.on('connect', () => {
 // 매치 정산 후 서버가 보내주는 최신 코인/전적/잠금해제 정보
 socket.on('profileUpdate', (data) => {
   const before = (currentProfile && currentProfile.trophies) || {};
+  const beforeStreaks = (currentProfile && currentProfile.streaks) || {};
   currentProfile = data;
   updateProfileUI();
   // 방금 끝난 매치에서 쓴 캐릭터의 트로피 증감(승리 +, 패배 -)을 결과 화면에 표시
@@ -1308,7 +1309,14 @@ socket.on('profileUpdate', (data) => {
   const resultOpen = document.getElementById('matchResultOverlay').classList.contains('open');
   if (id && resultOpen) {
     const diff = ((data.trophies && data.trophies[id]) || 0) - (before[id] || 0);
-    if (diff !== 0) document.getElementById('matchResultDesc').textContent += `  |  🏆 ${diff > 0 ? '+' : ''}${diff} 트로피`;
+    const lr = data.lastResult;
+    const descEl = document.getElementById('matchResultDesc');
+    if (diff !== 0) {
+      descEl.textContent += `  |  🏆 ${diff > 0 ? '+' : ''}${diff} 트로피`;
+      if (lr.streakBonus > 0) descEl.textContent += ` (연승 보너스 +${lr.streakBonus})`;
+    }
+    if (lr.won && lr.streak >= 2) descEl.textContent += `  |  🔥 ${lr.streak}연승!`;
+    else if (!lr.won && (beforeStreaks[id] || 0) > 0 && lr.streak === 0) descEl.textContent += '  |  연승 종료';
   }
 });
 
@@ -1365,8 +1373,9 @@ function renderCharacterList() {
     const canAfford = !!currentProfile && currentProfile.coins >= price;
     const trophies = (currentProfile && currentProfile.trophies && currentProfile.trophies[c.id]) || 0;
     const rk = rankInfo(trophies);
+    const streak = (currentProfile && currentProfile.streaks && currentProfile.streaks[c.id]) || 0;
     const trophyLine = owned
-      ? `<div class="trophy-line">${rk.cur.icon} ${escapeHtml(rk.cur.name)} · 🏆 ${trophies.toLocaleString()}${rk.next ? ` / ${rk.next.min.toLocaleString()}` : ' (최고 등급)'}</div>`
+      ? `<div class="trophy-line">${rk.cur.icon} ${escapeHtml(rk.cur.name)} · 🏆 ${trophies.toLocaleString()}${rk.next ? ` / ${rk.next.min.toLocaleString()}` : ' (최고 등급)'}${streak > 0 ? `<br>🔥 ${streak}연승 중` : ''}</div>`
       : '';
     const action = owned
       ? `<button data-char-id="${c.id}">선택</button>`
