@@ -44,8 +44,8 @@ const KNOCKBACK_DURATION = 0.28; // 넉백(밀쳐냄)이 순간이동처럼 보�
 const MODES = {
   // coinReward: 승리한 팀의 각 플레이어가 받는 코인 / trophyReward: 승리할 때 그 매치에서 쓴 캐릭터가 얻는 트로피 (상대가 중도 이탈해서 이긴 경우는 코인/트로피 모두 절반)
   // trophyLoss: 패배할 때 그 매치에서 쓴 캐릭터가 잃는 트로피 (0 아래로는 내려가지 않음)
-  '1v1': { size: 2, teamSize: 1, winScore: 5, coinReward: 30, trophyReward: 10, trophyLoss: 5 },
-  '2v2': { size: 4, teamSize: 2, winScore: 8, coinReward: 40, trophyReward: 8, trophyLoss: 4 },
+  '1v1': { size: 2, teamSize: 1, winScore: 5, coinReward: 45, trophyReward: 15, trophyLoss: 5 },
+  '2v2': { size: 4, teamSize: 2, winScore: 8, coinReward: 60, trophyReward: 12, trophyLoss: 4 },
 };
 const MATCH_CLEANUP_DELAY_MS = 600; // 승리 판정 후 마지막 상태를 한 번 더 보낸 뒤 방을 정리하기까지의 지연
 const FRIENDLY_FIRE = false; // 같은 팀끼리는 서로 피해를 주지 않음 (총알은 아군을 그대로 통과)
@@ -333,7 +333,7 @@ const CHARACTERS = {
     maxHp: 6000,
     basic: {
       name: '칼 던지기',
-      damage: 2000,
+      damage: 1750,
       speed: 600,
       radius: 8,
       lifetime: 1.4,     // 초 (사거리 ≈ 840px)
@@ -437,9 +437,9 @@ const CHARACTERS = {
     ultimate: {
       name: '닭 소환',
       type: 'summonChicken', // 조준 불필요, 자신의 위치에 닭을 소환. 닭은 적을 자동으로 추격해서 공격
-      hp: 2500,              // 닭의 체력 (적이 공격하면 죽을 수 있음)
-      damage: 500,           // 닭이 한 번 쪼을 때의 대미지
-      attackInterval: 0.8,   // 공격 주기(초)
+      hp: 8000,              // 닭의 체력 (적이 공격하면 죽을 수 있음)
+      damage: 800,           // 닭이 한 번 쪼을 때의 대미지
+      attackInterval: 0.5,   // 공격 주기(초)
       attackRange: 14,       // 닭 몸 가장자리에서 적 몸 가장자리까지의 공격 가능 거리(px)
       moveSpeed: 220,        // 닭 이동속도(px/초)
       chaseRange: 700,       // 이 거리 안의 적을 추격
