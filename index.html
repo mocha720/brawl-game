@@ -285,6 +285,54 @@
     cursor: pointer;
   }
   #cancelMatchBtn:hover { background: #6b7677; }
+  /* ===== 대결(VS) 화면: 매칭 직후 상대 캐릭터/트로피를 보여주고 카운트다운 ===== */
+  #versusOverlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.88);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    z-index: 30;
+    text-align: center;
+    padding: 0 12px;
+    box-sizing: border-box;
+    color: #fff;
+  }
+  #versusOverlay.open { display: flex; }
+  .vs-title { font-size: 22px; font-weight: bold; margin-bottom: 18px; color: #f1c40f; }
+  .vs-teams { display: flex; align-items: center; justify-content: center; gap: 18px; flex-wrap: wrap; }
+  .vs-side { display: flex; flex-direction: column; gap: 10px; }
+  .vs-side-label { font-size: 12px; color: #aaa; }
+  .vs-card {
+    width: 150px;
+    background: rgba(255,255,255,0.08);
+    border: 2px solid rgba(255,255,255,0.15);
+    border-radius: 12px;
+    padding: 12px 8px;
+    box-sizing: border-box;
+  }
+  .vs-card.me { border-color: #3498db; }
+  .vs-card.enemy { border-color: #e74c3c; }
+  .vs-avatar {
+    width: 60px; height: 60px; border-radius: 50%;
+    margin: 0 auto 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 28px; font-weight: bold; color: #fff;
+    border: 3px solid rgba(255,255,255,0.4);
+  }
+  .vs-name { font-size: 15px; font-weight: bold; word-break: break-all; }
+  .vs-char { font-size: 12px; color: #ccc; margin-top: 2px; }
+  .vs-trophy { font-size: 13px; margin-top: 6px; color: #f1c40f; }
+  .vs-mark { font-size: 40px; font-weight: bold; color: #e74c3c; text-shadow: 0 0 12px rgba(231,76,60,0.7); }
+  #vsCountdown { font-size: 54px; font-weight: bold; margin-top: 22px; }
+  @media (max-width: 560px) {
+    .vs-card { width: 120px; padding: 8px 6px; }
+    .vs-avatar { width: 46px; height: 46px; font-size: 22px; }
+    .vs-mark { font-size: 28px; }
+    .vs-teams { gap: 10px; }
+  }
   /* ===== 매치 결과 화면 ===== */
   #matchResultOverlay {
     position: fixed;
@@ -628,6 +676,16 @@
   <button id="cancelMatchBtn">취소</button>
 </div>
 
+<div id="versusOverlay">
+  <div class="vs-title">상대가 정해졌습니다!</div>
+  <div class="vs-teams">
+    <div class="vs-side" id="vsMySide"></div>
+    <div class="vs-mark">VS</div>
+    <div class="vs-side" id="vsEnemySide"></div>
+  </div>
+  <div id="vsCountdown"></div>
+</div>
+
 <div id="matchResultOverlay">
   <h2 id="matchResultTitle"></h2>
   <div id="matchResultDesc"></div>
@@ -916,7 +974,7 @@ const GADGET_COOLDOWN_SEC = 15; // server.js의 GADGET_COOLDOWN_SEC와 동일하
 // 기본 공격 발사 지점(마우스 클릭, 오른쪽 조이스틱 release)이 공통으로 거치는 함수.
 // 궁극기가 장전된 상태면 궁극기를, 아니면 기본 공격을 발사한다.
 function fireAttack() {
-  if (!joined) return;
+  if (!joined || inCountdown()) return;
   const me = latestState.players[myId];
   if (ultimateArmed && me && me.ultimateCharge >= 100) {
     socket.emit('ultimate');
@@ -1258,6 +1316,55 @@ socket.on('queueUpdate', (data) => {
     `대기 인원 ${waiting} / ${needed}명...`;
 });
 
+// ===== 대결(VS) 화면 =====
+let countdownEndsAt = 0; // 이 시각(ms) 전까지는 대결 화면 - 이동/공격/스킬 입력을 막는다
+let vsTimer = null;
+function inCountdown() { return Date.now() < countdownEndsAt; }
+
+function vsCardHtml(r, isMe, side) {
+  const ch = CHARACTERS.find((c) => c.id === r.characterId);
+  const color = ch ? ch.color : '#777';
+  const rk = rankInfo(r.trophies || 0);
+  return `<div class="vs-card ${side}">
+    <div class="vs-avatar" style="background:${color}">${escapeHtml((r.characterName || (ch && ch.name) || '?').slice(0, 1))}</div>
+    <div class="vs-name">${escapeHtml(r.name)}${isMe ? ' (나)' : ''}</div>
+    <div class="vs-char">${escapeHtml(r.characterName || (ch && ch.name) || '')}</div>
+    <div class="vs-trophy">${rk.cur.icon || ''} ${escapeHtml(rk.cur.name || '')} · 🏆 ${(r.trophies || 0).toLocaleString()}</div>
+  </div>`;
+}
+
+function hideVersusScreen() {
+  if (vsTimer) { clearInterval(vsTimer); vsTimer = null; }
+  document.getElementById('versusOverlay').classList.remove('open');
+}
+
+function showVersusScreen(data) {
+  const roster = data.roster || [];
+  const mine = roster.filter((r) => r.team === data.team);
+  const enemy = roster.filter((r) => r.team !== data.team);
+  document.getElementById('vsMySide').innerHTML =
+    '<div class="vs-side-label">우리 팀</div>' + mine.map((r) => vsCardHtml(r, r.id === data.id, 'me')).join('');
+  document.getElementById('vsEnemySide').innerHTML =
+    '<div class="vs-side-label">상대 팀</div>' + enemy.map((r) => vsCardHtml(r, false, 'enemy')).join('');
+
+  countdownEndsAt = Date.now() + (data.startsInMs || 0);
+  const cdEl = document.getElementById('vsCountdown');
+  document.getElementById('versusOverlay').classList.add('open');
+  if (vsTimer) clearInterval(vsTimer);
+  const tick = () => {
+    const left = countdownEndsAt - Date.now();
+    if (left <= 0) {
+      cdEl.textContent = 'START!';
+      clearInterval(vsTimer); vsTimer = null;
+      setTimeout(() => { if (!vsTimer) document.getElementById('versusOverlay').classList.remove('open'); }, 400);
+      return;
+    }
+    cdEl.textContent = Math.ceil(left / 1000);
+  };
+  tick();
+  vsTimer = setInterval(tick, 100);
+}
+
 // 상대(들)가 정해지면 매치가 시작된다: 대기 화면을 닫고 새 아레나 상태로 게임 화면을 초기화
 socket.on('matchFound', (data) => {
   myId = data.id;
@@ -1299,6 +1406,7 @@ socket.on('matchFound', (data) => {
   }
 
   joined = true;
+  showVersusScreen(data); // 상대 캐릭터/트로피를 보여주고 카운트다운 후 시작
   canvas.focus();
 
   const mobileHintEl = document.getElementById('mobileHint');
@@ -1313,6 +1421,8 @@ socket.on('matchFound', (data) => {
 // 매치가 끝나면(승리/패배/상대 이탈) 결과 화면을 보여준다
 socket.on('matchOver', (data) => {
   joined = false;
+  countdownEndsAt = 0;
+  hideVersusScreen();
   ultimateArmed = false;
   gadgetArmed = false;
 
@@ -1531,7 +1641,7 @@ canvas.addEventListener('mousedown', (e) => {
 // 조준이 필요한 궁극기(예: 피에로 발사)는 '장전' 상태로 전환되고,
 // 이후 기본 공격 입력(마우스 클릭 / 오른쪽 조이스틱)으로 조준해서 발사한다.
 function activateUltimateControl() {
-  if (!joined) return;
+  if (!joined || inCountdown()) return;
   const me = latestState.players[myId];
   if (!me || !me.alive) return;
   if (me.ultimateCharge < 100) return;
@@ -1561,7 +1671,7 @@ window.addEventListener('keydown', (e) => {
 // 조준이 필요한 가젯(예: 연발 사격)은 '장전' 상태로 전환되고, 이후 기본 공격 입력으로 발사한다.
 // 조준이 필요 없는 가젯(instant, 예: 탄창 충전)은 누르는 즉시 발동한다.
 function activateGadgetControl() {
-  if (!joined) return;
+  if (!joined || inCountdown()) return;
   const me = latestState.players[myId];
   if (!me || !me.alive || !me.gadget) return;
   if (me.gadgetCooldownLeft > 0) return;
@@ -1642,6 +1752,11 @@ let lastTime = performance.now();
 
 function update(dt) {
   if (!joined) return;
+  if (inCountdown()) { // 대결 화면 중에는 이동 불가 - 서버가 정해준 시작 위치에 고정
+    const m0 = latestState.players[myId];
+    if (m0) { myX = m0.x; myY = m0.y; }
+    return;
+  }
   const me = latestState.players[myId];
   if (me && !me.alive) return; // 사망 중에는 이동 불가
   if (me && (me.dashing || (me.stunnedUntil && Date.now() < me.stunnedUntil) || (me.knockbackTimeLeft && me.knockbackTimeLeft > 0))) {
