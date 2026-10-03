@@ -1223,7 +1223,25 @@ function goToCharacterSelect() {
   document.getElementById('characterOverlay').style.display = 'flex';
 }
 
+// 서버가 내려준 실제 캐릭터 스펙(체력/공격/궁극기/가젯 설명)을 선택 화면 데이터에 덮어쓴다.
+// 색상만 클라이언트에서 정하고, 수치와 설명은 항상 서버(게임 내 실제 값)를 따른다.
+function applyServerCharacterInfo() {
+  const info = currentProfile && currentProfile.characters;
+  if (!info) return;
+  for (const id in info) {
+    const sc = info[id];
+    let c = CHARACTERS.find((x) => x.id === id);
+    if (!c) { c = { id, color: '#888' }; CHARACTERS.push(c); } // 서버에만 있는 새 캐릭터도 자동으로 표시
+    c.name = sc.name;
+    c.maxHp = sc.maxHp;
+    c.basic = sc.basic;
+    c.ultimate = sc.ultimate;
+    if (sc.gadget) c.gadget = sc.gadget; else delete c.gadget;
+  }
+}
+
 function renderCharacterList() {
+  applyServerCharacterInfo();
   const list = document.getElementById('characterList');
   list.innerHTML = CHARACTERS.map((c) => {
     const owned = isCharacterUnlocked(c.id);
