@@ -783,6 +783,18 @@ function createFileDb() {
       scheduleSave();
       return { ok: true, user: cloneUser(u) };
     },
+    // 계정 정보 변경 (아이디 표시명/키, 비밀번호 해시). changes: { newKey, newName, salt, hash } - 바꿀 항목만 들어옴
+    async updateAccount(key, changes) {
+      const u = users[key];
+      if (!u) return { ok: false, reason: 'noUser' };
+      const newKey = changes.newKey || key;
+      if (newKey !== key && users[newKey]) return { ok: false, reason: 'taken' };
+      if (changes.newName) u.name = changes.newName;
+      if (changes.salt && changes.hash) { u.salt = changes.salt; u.hash = changes.hash; }
+      if (newKey !== key) { u.key = newKey; users[newKey] = u; delete users[key]; }
+      scheduleSave();
+      return { ok: true, user: cloneUser(u) };
+    },
   };
 }
 
@@ -865,6 +877,20 @@ function createMongoDb(uri) {
       if (!user) return { ok: false, reason: 'noUser' };
       if (user.missions && (user.missions.claimed || []).includes(missionId)) return { ok: false, reason: 'claimed', user };
       return { ok: false, reason: 'notDone', user };
+    },
+    async updateAccount(key, changes) {
+      const set = {};
+      if (changes.newName) set.name = changes.newName;
+      if (changes.newKey && changes.newKey !== key) set.key = changes.newKey;
+      if (changes.salt && changes.hash) { set.salt = changes.salt; set.hash = changes.hash; }
+      try {
+        // key에는 unique 인덱스가 있어서, 이미 있는 아이디로 바꾸려 하면 중복 오류(11000)로 거절된다
+        const user = await col.findOneAndUpdate({ key }, { $set: set }, { returnDocument: 'after', projection });
+        return user ? { ok: true, user } : { ok: false, reason: 'noUser' };
+      } catch (e) {
+        if (e && e.code === 11000) return { ok: false, reason: 'taken' };
+        throw e;
+      }
     },
   };
 }
@@ -1023,6 +1049,72 @@ function registerAuthHandlers(socket) {
     if (socketToMatch[socket.id] || isQueued(socket.id)) return ack({ ok: false });
     releaseAccount(socket);
     ack({ ok: true });
+  });
+
+  // 계정 설정: 아이디 및/또는 비밀번호 변경. 항상 현재 비밀번호를 다시 확인한다.
+  // 매치 중이거나 대기열에 있는 동안은 계정 키가 바뀌면 정산이 꼬일 수 있어서 변경할 수 없다.
+  socket.on('updateAccount', async (data, ack) => {
+    if (typeof ack !== 'function') return;
+    if (authBusy) return ack({ ok: false, message: '처리 중입니다. 잠시만 기다려주세요.' });
+    authBusy = true;
+    try {
+      const key = socket.data.userKey;
+      if (!key) return ack({ ok: false, message: '로그인이 필요합니다.' });
+      if (socketToMatch[socket.id] || isQueued(socket.id)) return ack({ ok: false, message: '매치 중이거나 대기 중에는 변경할 수 없습니다.' });
+
+      const currentPassword = data && data.currentPassword;
+      const newUsername = data && typeof data.newUsername === 'string' ? data.newUsername.trim() : '';
+      const newPassword = data && typeof data.newPassword === 'string' ? data.newPassword : '';
+      if (typeof currentPassword !== 'string' || !currentPassword || currentPassword.length > 64) return ack({ ok: false, message: '현재 비밀번호를 입력하세요.' });
+      if (!newUsername && !newPassword) return ack({ ok: false, message: '변경할 아이디나 새 비밀번호를 입력하세요.' });
+      if (newUsername && !USERNAME_RE.test(newUsername)) return ack({ ok: false, message: '아이디는 2~12자의 한글/영문/숫자/밑줄(_)만 사용할 수 있습니다.' });
+      if (newPassword && (newPassword.length < 4 || newPassword.length > 64)) return ack({ ok: false, message: '비밀번호는 4~64자여야 합니다.' });
+
+      if (isRateLimited('loginFail', key)) return ack({ ok: false, message: '비밀번호 오류가 너무 많습니다. 잠시 후 다시 시도해주세요.' });
+      const user = await db.findUser(key);
+      if (!user) return ack({ ok: false, message: '계정을 찾을 수 없습니다.' });
+      const computed = await hashPassword(currentPassword, user.salt);
+      if (!safeEqualHex(computed, user.hash)) {
+        hitRate('loginFail', key);
+        return ack({ ok: false, message: '현재 비밀번호가 올바르지 않습니다.' });
+      }
+
+      const changes = {};
+      if (newUsername && newUsername !== user.name) {
+        changes.newName = newUsername;
+        const newKey = newUsername.toLowerCase(); // 대소문자만 다른 아이디는 같은 아이디로 취급 (대소문자만 바꾸는 경우는 표시명만 바뀜)
+        if (newKey !== key) changes.newKey = newKey;
+      }
+      if (newPassword) {
+        const salt = crypto.randomBytes(16).toString('hex');
+        changes.salt = salt;
+        changes.hash = await hashPassword(newPassword, salt);
+      }
+      if (!changes.newName && !changes.hash) return ack({ ok: false, message: '변경된 내용이 없습니다.' });
+
+      const r = await db.updateAccount(key, changes);
+      if (!r.ok) {
+        return ack({ ok: false, message: r.reason === 'taken' ? '이미 사용 중인 아이디입니다.' : '계정 정보를 바꾸지 못했습니다.' });
+      }
+
+      rateBuckets.delete(`loginFail:${key}`);
+      // 아이디(키)가 바뀌었으면 이 소켓의 로그인 정보와 접속 중 목록도 새 키로 옮긴다
+      if (changes.newKey) {
+        if (onlineUsers.get(key) === socket.id) onlineUsers.delete(key);
+        onlineUsers.set(changes.newKey, socket.id);
+        socket.data.userKey = changes.newKey;
+      }
+      socket.data.displayName = r.user.name;
+      const parts = [];
+      if (changes.newName) parts.push('아이디');
+      if (changes.hash) parts.push('비밀번호');
+      ack({ ok: true, message: `✅ ${parts.join('와 ')}가 변경되었습니다.`, profile: publicProfile(r.user) });
+    } catch (e) {
+      console.error('updateAccount 오류', e);
+      ack({ ok: false, message: '서버 오류가 발생했습니다.' });
+    } finally {
+      authBusy = false;
+    }
   });
 
   // 코인으로 캐릭터 잠금해제. 가격/보유 여부는 항상 서버가 판단한다 (클라이언트가 보낸 값은 신뢰하지 않음)
