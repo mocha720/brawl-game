@@ -458,6 +458,8 @@ const CHARACTERS = {
       chargeRange: 300,      // 이 거리 안에 적이 들어오고 돌격이 준비되면 돌격 시작
       chargeSpeed: 950,      // 돌격 중 이동속도(px/초)
       chargeMaxTime: 0.6,    // 한 번의 돌격이 최대로 지속되는 시간(초). 이 안에 못 맞추면 돌격 종료
+      retreatTime: 0.4,      // 돌격으로 부딪힌 뒤 뒤로 물러나는 시간(초)
+      retreatSpeed: 450,     // 물러나는 속도(px/초) - 다음 돌격이 매번 실제 돌진이 되도록 거리를 벌림
       chaseRange: 700,       // 이 거리 안의 적을 추격
       radius: 16,
       duration: 8,           // 닭이 남아있는 시간(초)
@@ -1379,6 +1381,9 @@ function spawnChicken(match, p, spec) {
     chargeRange: spec.chargeRange || 300,
     chargeSpeed: spec.chargeSpeed || 950,
     chargeMaxTime: spec.chargeMaxTime || 0.6,
+    retreatTime: spec.retreatTime != null ? spec.retreatTime : 0.4,
+    retreatSpeed: spec.retreatSpeed || 450,
+    retreatTimeLeft: 0,       // 돌격 후 물러나는 동작이 끝날 때까지 남은 시간(초)
     charging: false,          // 적에게 돌격 중이면 true
     chargeTimeLeft: 0,        // 현재 돌격이 끝날 때까지 남은 시간(초)
     life: spec.duration || 8, // 남은 지속 시간(초)
@@ -2000,6 +2005,13 @@ function updateMatch(match, dt, now) {
       const dy = target.y - chicken.y;
       const dist = Math.hypot(dx, dy) || 1;
 
+      if (chicken.retreatTimeLeft > 0) {
+        // 돌격 직후: 적에게서 잠깐 물러나 거리를 벌린다 (그래야 다음 돌격이 매번 진짜 '돌진'이 됨)
+        chicken.retreatTimeLeft -= dt;
+        moveChicken(match, chicken, -dx / dist, -dy / dist, chicken.retreatSpeed * dt);
+        continue;
+      }
+
       // 돌격 준비가 되었고(쿨타임 종료) 적이 돌격 사거리 안에 있으면 돌격 시작
       if (!chicken.charging && chicken.attackCooldown <= 0 && dist <= chicken.chargeRange) {
         chicken.charging = true;
@@ -2022,7 +2034,8 @@ function updateMatch(match, dt, now) {
         if (hit) {
           // 적과 부딪히면 돌격 대미지를 주고 돌격 종료 (대미지는 공격력 증가 효과도 적용)
           chicken.charging = false;
-          chicken.attackCooldown = chicken.attackInterval;
+          chicken.attackCooldown = chicken.attackInterval; // 이 시간이 지나야 다음 돌격 가능 (돌격 간격)
+          chicken.retreatTimeLeft = chicken.retreatTime;   // 부딪힌 뒤 잠깐 뒤로 물러남
           chicken.peckTimer = 0.15;
           const dmg = chicken.damage;
           if (targetKind === 'player') {
@@ -2035,10 +2048,14 @@ function updateMatch(match, dt, now) {
           chicken.charging = false;
           chicken.attackCooldown = Math.max(chicken.attackCooldown, 0.4);
         }
-      } else if (dist > reach) {
-        // 돌격 대기 중에는 평상시 속도로 추격 (목표를 지나치지 않도록 남은 거리까지만 이동)
-        const step = Math.min(chicken.moveSpeed * dt, dist - reach + 1);
-        moveChicken(match, chicken, dx / dist, dy / dist, step);
+      } else {
+        // 돌격 대기 중에는 평상시 속도로 추격하되, 돌격 쿨타임 중에는 적에게 딱 붙지 않고
+        // 돌진 거리를 확보할 수 있는 간격(chargeRange의 60%)에서 멈춰 기다린다
+        const stopDist = chicken.attackCooldown > 0 ? Math.max(reach, chicken.chargeRange * 0.6) : reach;
+        if (dist > stopDist) {
+          const step = Math.min(chicken.moveSpeed * dt, dist - stopDist + 1);
+          moveChicken(match, chicken, dx / dist, dy / dist, step);
+        }
       }
     } else if (chicken.charging) {
       chicken.charging = false; // 돌격 중 목표가 사라짐(죽음/은신/덤불)
