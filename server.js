@@ -5,6 +5,10 @@ const express = require('express');
 const http = require('http');
 const path = require('path');
 const { Server } = require('socket.io');
+const fs = require('fs');
+const os = require('os');
+const crypto = require('crypto');
+const util = require('util');
 
 const app = express();
 const server = http.createServer(app);
@@ -38,8 +42,10 @@ const KNOCKBACK_DURATION = 0.28; // 넉백(밀쳐냄)이 순간이동처럼 보�
 // size: 매치를 시작하는 데 필요한 총 인원, teamSize: 한 팀의 인원 수
 // winScore: 팀 누적 킬 수가 이 값에 도달하면 그 팀이 승리 (1:1은 사실상 개인 킬 수와 동일)
 const MODES = {
-  '1v1': { size: 2, teamSize: 1, winScore: 5 },
-  '2v2': { size: 4, teamSize: 2, winScore: 8 },
+  // coinReward: 승리한 팀의 각 플레이어가 받는 코인 / trophyReward: 승리할 때 그 매치에서 쓴 캐릭터가 얻는 트로피 (상대가 중도 이탈해서 이긴 경우는 코인/트로피 모두 절반)
+  // trophyLoss: 패배할 때 그 매치에서 쓴 캐릭터가 잃는 트로피 (0 아래로는 내려가지 않음)
+  '1v1': { size: 2, teamSize: 1, winScore: 5, coinReward: 30, trophyReward: 10, trophyLoss: 5 },
+  '2v2': { size: 4, teamSize: 2, winScore: 8, coinReward: 40, trophyReward: 8, trophyLoss: 4 },
 };
 const MATCH_CLEANUP_DELAY_MS = 600; // 승리 판정 후 마지막 상태를 한 번 더 보낸 뒤 방을 정리하기까지의 지연
 const FRIENDLY_FIRE = false; // 같은 팀끼리는 서로 피해를 주지 않음 (총알은 아군을 그대로 통과)
@@ -444,6 +450,364 @@ const CHARACTERS = {
 };
 const DEFAULT_CHARACTER_ID = 'minam';
 
+// ===== 계정 / 코인 / 캐릭터 잠금해제 시스템 =====
+// 가격이 0인 캐릭터는 모든 계정이 처음부터 사용할 수 있고, 나머지는 코인으로 잠금해제해야 함 (가격은 여기서 자유롭게 수정)
+const CHARACTER_PRICES = {
+  minam: 0,
+  jigi: 0,
+  syu: 100,
+  wonhyo: 150,
+  byeongitong: 150,
+  seongseureopda: 200,
+  yeoddongi: 200,
+  bobae: 250,
+  ekhe: 300,
+};
+CHARACTER_PRICES[DEFAULT_CHARACTER_ID] = 0; // 기본 캐릭터는 항상 무료 (사용 가능한 캐릭터가 하나도 없는 상황 방지)
+function priceOf(id) {
+  return Object.prototype.hasOwnProperty.call(CHARACTER_PRICES, id) ? CHARACTER_PRICES[id] : 200; // 가격표에 없는 새 캐릭터의 기본 가격
+}
+const FREE_CHARACTER_IDS = Object.keys(CHARACTERS).filter((id) => priceOf(id) === 0);
+function allPrices() {
+  const out = {};
+  for (const id in CHARACTERS) out[id] = priceOf(id);
+  return out;
+}
+function effectiveUnlocked(u) {
+  return Array.from(new Set([...FREE_CHARACTER_IDS, ...(u.unlocked || [])])).filter((id) => CHARACTERS[id]);
+}
+// 캐릭터별 트로피 등급 (min: 해당 등급이 되기 위한 최소 트로피). 패배하면 트로피가 깎이므로 등급도 내려갈 수 있음
+const TROPHY_RANKS = [
+  { name: '브론즈', icon: '🥉', min: 0 },
+  { name: '실버', icon: '🥈', min: 100 },
+  { name: '골드', icon: '🥇', min: 300 },
+  { name: '다이아', icon: '💎', min: 600 },
+  { name: '마스터', icon: '👑', min: 1000 },
+];
+function publicProfile(u) {
+  const trophies = {};
+  for (const id in CHARACTERS) trophies[id] = (u.trophies && u.trophies[id]) || 0;
+  return { username: u.name, coins: u.coins, wins: u.wins || 0, losses: u.losses || 0, unlocked: effectiveUnlocked(u), prices: allPrices(), trophies, ranks: TROPHY_RANKS };
+}
+
+// ----- 저장소 -----
+// MONGODB_URI 환경변수가 있으면 MongoDB(영구 저장)를, 없으면 JSON 파일을 사용한다.
+// 주의: Render는 재시작/재배포 때 서버 파일이 초기화되므로, 실제 서비스에서는 반드시 MONGODB_URI를 설정할 것.
+// (정적 파일 서빙 폴더 밖인 임시 폴더를 기본값으로 써서, 계정 파일이 브라우저로 내려받아지지 않게 함)
+const USERS_FILE = process.env.USERS_FILE || path.join(os.tmpdir(), 'brawl-users.json');
+
+function cloneUser(u) {
+  return u ? { ...u, unlocked: [...(u.unlocked || [])], trophies: { ...(u.trophies || {}) } } : null;
+}
+
+function createFileDb() {
+  let users = {};
+  let saveTimer = null;
+  function scheduleSave() {
+    if (saveTimer) return;
+    saveTimer = setTimeout(() => {
+      saveTimer = null;
+      const tmp = USERS_FILE + '.tmp';
+      fs.writeFile(tmp, JSON.stringify(users), (err) => {
+        if (err) return console.error('계정 파일 저장 실패', err);
+        fs.rename(tmp, USERS_FILE, (e) => e && console.error('계정 파일 저장 실패', e));
+      });
+    }, 300);
+  }
+  return {
+    kind: 'file',
+    async init() {
+      try { users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8')); } catch (e) { users = {}; }
+      console.warn(`[계정] JSON 파일 저장소 사용 중 (${USERS_FILE}). Render에서는 재시작 시 데이터가 사라질 수 있으니 MONGODB_URI 설정을 권장합니다.`);
+    },
+    async findUser(key) { return cloneUser(users[key]); },
+    async createUser(u) {
+      if (users[u.key]) return false;
+      users[u.key] = cloneUser(u);
+      scheduleSave();
+      return true;
+    },
+    async addResult(key, coins, won, charId, trophies) {
+      const u = users[key];
+      if (!u) return null;
+      u.coins += coins;
+      if (trophies && charId) {
+        u.trophies = u.trophies || {};
+        u.trophies[charId] = Math.max(0, (u.trophies[charId] || 0) + trophies);
+      }
+      if (won) u.wins = (u.wins || 0) + 1; else u.losses = (u.losses || 0) + 1;
+      scheduleSave();
+      return cloneUser(u);
+    },
+    async buyCharacter(key, charId, price) {
+      const u = users[key];
+      if (!u) return { ok: false, reason: 'noUser' };
+      if (u.unlocked.includes(charId)) return { ok: false, reason: 'already', user: cloneUser(u) };
+      if (u.coins < price) return { ok: false, reason: 'coins', user: cloneUser(u) };
+      u.coins -= price;
+      u.unlocked.push(charId);
+      scheduleSave();
+      return { ok: true, user: cloneUser(u) };
+    },
+  };
+}
+
+function createMongoDb(uri) {
+  let col = null;
+  const projection = { _id: 0 };
+  return {
+    kind: 'mongo',
+    async init() {
+      const { MongoClient } = require('mongodb');
+      const client = new MongoClient(uri);
+      await client.connect();
+      col = client.db(process.env.MONGODB_DB || 'brawl').collection('users');
+      await col.createIndex({ key: 1 }, { unique: true });
+      console.log('[계정] MongoDB 연결 완료');
+    },
+    async findUser(key) { return col.findOne({ key }, { projection }); },
+    async createUser(u) {
+      try { await col.insertOne({ ...u }); return true; } catch (e) { if (e && e.code === 11000) return false; throw e; }
+    },
+    async addResult(key, coins, won, charId, trophies) {
+      const inc = { coins, wins: won ? 1 : 0, losses: won ? 0 : 1 };
+      const path = `trophies.${charId}`; // charId는 서버가 검증한 캐릭터 id만 들어옴
+      if (trophies && CHARACTERS[charId]) inc[path] = trophies;
+      let user = await col.findOneAndUpdate({ key }, { $inc: inc }, { returnDocument: 'after', projection });
+      // 패배로 트로피가 0 미만이 되었다면 0으로 보정
+      if (user && trophies < 0 && user.trophies && user.trophies[charId] < 0) {
+        user = await col.findOneAndUpdate({ key }, { $set: { [path]: 0 } }, { returnDocument: 'after', projection });
+      }
+      return user;
+    },
+    async buyCharacter(key, charId, price) {
+      // 코인 차감과 잠금해제를 한 번의 원자적 연산으로 처리 (중복 클릭/동시 요청으로 코인이 이중 차감되지 않음)
+      const updated = await col.findOneAndUpdate(
+        { key, coins: { $gte: price }, unlocked: { $ne: charId } },
+        { $inc: { coins: -price }, $push: { unlocked: charId } },
+        { returnDocument: 'after', projection }
+      );
+      if (updated) return { ok: true, user: updated };
+      const user = await col.findOne({ key }, { projection });
+      if (!user) return { ok: false, reason: 'noUser' };
+      if ((user.unlocked || []).includes(charId)) return { ok: false, reason: 'already', user };
+      return { ok: false, reason: 'coins', user };
+    },
+  };
+}
+
+const db = process.env.MONGODB_URI ? createMongoDb(process.env.MONGODB_URI) : createFileDb();
+
+// ----- 비밀번호 해시 (Node 내장 scrypt, 별도 패키지 불필요) -----
+const scryptAsync = util.promisify(crypto.scrypt);
+async function hashPassword(password, saltHex) {
+  const buf = await scryptAsync(password, Buffer.from(saltHex, 'hex'), 64);
+  return buf.toString('hex');
+}
+function safeEqualHex(a, b) {
+  const ba = Buffer.from(String(a), 'hex');
+  const bb = Buffer.from(String(b), 'hex');
+  return ba.length === bb.length && crypto.timingSafeEqual(ba, bb);
+}
+const DUMMY_SALT = crypto.randomBytes(16).toString('hex'); // 없는 아이디도 같은 시간이 걸리게 해서 아이디 존재 여부가 드러나지 않게 함
+
+// ----- 무차별 대입 / 대량 가입 방지 (메모리 기반 간단한 제한) -----
+const RATE_WINDOW_MS = 10 * 60 * 1000;
+const RATE_LIMITS = { loginFail: 8, register: 5 }; // 10분 동안 허용되는 횟수
+const rateBuckets = new Map();
+function clientIp(socket) {
+  const xff = String(socket.handshake.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  return xff || socket.handshake.address || 'unknown';
+}
+function isRateLimited(kind, id) {
+  const b = rateBuckets.get(`${kind}:${id}`);
+  return !!b && b.resetAt > Date.now() && b.count >= RATE_LIMITS[kind];
+}
+function hitRate(kind, id) {
+  const k = `${kind}:${id}`;
+  const now = Date.now();
+  let b = rateBuckets.get(k);
+  if (!b || b.resetAt <= now) { b = { count: 0, resetAt: now + RATE_WINDOW_MS }; rateBuckets.set(k, b); }
+  b.count += 1;
+}
+setInterval(() => {
+  const now = Date.now();
+  for (const [k, b] of rateBuckets) if (b.resetAt <= now) rateBuckets.delete(k);
+}, 60 * 1000);
+
+const USERNAME_RE = /^[A-Za-z0-9_가-힣]{2,12}$/;
+function validateRegisterInput(username, password) {
+  if (typeof username !== 'string' || typeof password !== 'string') return '잘못된 요청입니다.';
+  if (!USERNAME_RE.test(username)) return '아이디는 2~12자의 한글/영문/숫자/밑줄(_)만 사용할 수 있습니다.';
+  if (password.length < 4 || password.length > 64) return '비밀번호는 4~64자여야 합니다.';
+  return null;
+}
+
+// onlineUsers: 현재 로그인 중인 계정 -> 소켓 id (한 계정이 동시에 두 곳에서 접속하지 못하게 함)
+const onlineUsers = new Map();
+
+function releaseAccount(socket) {
+  const key = socket.data.userKey;
+  if (key && onlineUsers.get(key) === socket.id) onlineUsers.delete(key);
+  socket.data.userKey = null;
+  socket.data.displayName = null;
+  socket.data.unlocked = new Set();
+}
+
+function registerAuthHandlers(socket) {
+  socket.data.userKey = null;
+  socket.data.displayName = null;
+  socket.data.unlocked = new Set();
+  let authBusy = false;
+
+  function attachAccount(user) {
+    socket.data.userKey = user.key;
+    socket.data.displayName = user.name;
+    socket.data.unlocked = new Set(effectiveUnlocked(user));
+    onlineUsers.set(user.key, socket.id);
+  }
+
+  socket.on('register', async (data, ack) => {
+    if (typeof ack !== 'function') return;
+    if (authBusy) return ack({ ok: false, message: '처리 중입니다. 잠시만 기다려주세요.' });
+    authBusy = true;
+    try {
+      if (socket.data.userKey) return ack({ ok: false, message: '이미 로그인되어 있습니다.' });
+      const username = data && data.username;
+      const password = data && data.password;
+      const err = validateRegisterInput(username, password);
+      if (err) return ack({ ok: false, message: err });
+
+      const ip = clientIp(socket);
+      if (isRateLimited('register', ip)) return ack({ ok: false, message: '가입 시도가 너무 많습니다. 잠시 후 다시 시도해주세요.' });
+      hitRate('register', ip);
+
+      const salt = crypto.randomBytes(16).toString('hex');
+      const hash = await hashPassword(password, salt);
+      const user = {
+        key: username.toLowerCase(), // 대소문자만 다른 아이디는 같은 아이디로 취급
+        name: username,
+        salt,
+        hash,
+        coins: 0,
+        unlocked: [...FREE_CHARACTER_IDS],
+        wins: 0,
+        losses: 0,
+        createdAt: Date.now(),
+      };
+      const created = await db.createUser(user);
+      if (!created) return ack({ ok: false, message: '이미 사용 중인 아이디입니다.' });
+
+      attachAccount(user);
+      ack({ ok: true, profile: publicProfile(user) });
+    } catch (e) {
+      console.error('register 오류', e);
+      ack({ ok: false, message: '서버 오류가 발생했습니다.' });
+    } finally {
+      authBusy = false;
+    }
+  });
+
+  socket.on('login', async (data, ack) => {
+    if (typeof ack !== 'function') return;
+    if (authBusy) return ack({ ok: false, message: '처리 중입니다. 잠시만 기다려주세요.' });
+    authBusy = true;
+    try {
+      if (socket.data.userKey) return ack({ ok: false, message: '이미 로그인되어 있습니다.' });
+      const username = data && data.username;
+      const password = data && data.password;
+      if (typeof username !== 'string' || typeof password !== 'string' || username.length > 12 || password.length > 64) {
+        return ack({ ok: false, message: '아이디 또는 비밀번호가 올바르지 않습니다.' });
+      }
+      const key = username.toLowerCase();
+      if (isRateLimited('loginFail', key)) return ack({ ok: false, message: '로그인 실패가 너무 많습니다. 잠시 후 다시 시도해주세요.' });
+
+      const user = await db.findUser(key);
+      const computed = await hashPassword(password, user ? user.salt : DUMMY_SALT);
+      if (!user || !safeEqualHex(computed, user.hash)) {
+        hitRate('loginFail', key);
+        return ack({ ok: false, message: '아이디 또는 비밀번호가 올바르지 않습니다.' });
+      }
+
+      const existing = onlineUsers.get(key);
+      if (existing && existing !== socket.id && io.sockets.sockets.has(existing)) {
+        return ack({ ok: false, message: '이미 다른 곳에서 접속 중인 계정입니다.' });
+      }
+
+      rateBuckets.delete(`loginFail:${key}`);
+      attachAccount(user);
+      ack({ ok: true, profile: publicProfile(user) });
+    } catch (e) {
+      console.error('login 오류', e);
+      ack({ ok: false, message: '서버 오류가 발생했습니다.' });
+    } finally {
+      authBusy = false;
+    }
+  });
+
+  socket.on('logout', (ack) => {
+    if (typeof ack !== 'function') ack = () => {};
+    if (socketToMatch[socket.id] || isQueued(socket.id)) return ack({ ok: false });
+    releaseAccount(socket);
+    ack({ ok: true });
+  });
+
+  // 코인으로 캐릭터 잠금해제. 가격/보유 여부는 항상 서버가 판단한다 (클라이언트가 보낸 값은 신뢰하지 않음)
+  socket.on('unlockCharacter', async (data, ack) => {
+    if (typeof ack !== 'function') return;
+    try {
+      const key = socket.data.userKey;
+      if (!key) return ack({ ok: false, message: '로그인이 필요합니다.' });
+      if (socketToMatch[socket.id]) return ack({ ok: false, message: '매치 중에는 잠금해제할 수 없습니다.' });
+      const charId = data && data.characterId;
+      if (typeof charId !== 'string' || !CHARACTERS[charId]) return ack({ ok: false, message: '존재하지 않는 캐릭터입니다.' });
+      if (socket.data.unlocked.has(charId)) return ack({ ok: false, message: '이미 잠금해제된 캐릭터입니다.' });
+
+      const r = await db.buyCharacter(key, charId, priceOf(charId));
+      if (r.user) socket.data.unlocked = new Set(effectiveUnlocked(r.user));
+      if (r.ok) return ack({ ok: true, profile: publicProfile(r.user) });
+
+      const message = r.reason === 'coins' ? '코인이 부족합니다.'
+        : r.reason === 'already' ? '이미 잠금해제된 캐릭터입니다.'
+        : '잠금해제에 실패했습니다.';
+      ack({ ok: false, message, profile: r.user ? publicProfile(r.user) : undefined });
+    } catch (e) {
+      console.error('unlockCharacter 오류', e);
+      ack({ ok: false, message: '서버 오류가 발생했습니다.' });
+    }
+  });
+}
+
+// 매치 결과 정산: 승리 팀에는 코인 + 승수, 패배 팀에는 패수를 기록한다 (매치당 한 번만 실행)
+async function settleMatch(match, winnerTeam, reason, leaverId) {
+  if (match.settled) return;
+  match.settled = true;
+  const cfg = MODES[match.mode];
+  const half = reason === 'opponentLeft'; // 상대가 나가서 얻은 승리는 보상을 절반만 지급
+  const coinReward = half ? Math.floor((cfg.coinReward || 0) / 2) : (cfg.coinReward || 0);
+  const trophyReward = half ? Math.floor((cfg.trophyReward || 0) / 2) : (cfg.trophyReward || 0);
+  const trophyLoss = cfg.trophyLoss || 0;
+  for (const pid in match.players) {
+    const key = match.accounts[pid];
+    if (!key) continue;
+    const p = match.players[pid];
+    const won = p.team === winnerTeam;
+    // 패배 페널티: 점수로 져서 끝난 매치는 패배한 팀 전원, 중도 이탈로 끝난 매치는 나간 사람만 (남은 팀원은 깎이지 않음)
+    const penalized = !won && (reason === 'scoreLimit' || pid === leaverId);
+    const trophyDelta = won ? trophyReward : (penalized ? -trophyLoss : 0);
+    try {
+      const user = await db.addResult(key, won ? coinReward : 0, won, p.characterId, trophyDelta);
+      const s = io.sockets.sockets.get(pid);
+      if (s && user) {
+        s.data.unlocked = new Set(effectiveUnlocked(user));
+        s.emit('profileUpdate', { ...publicProfile(user), lastResult: { characterId: p.characterId } });
+      }
+    } catch (e) {
+      console.error('매치 결과 저장 실패', key, e);
+    }
+  }
+}
+
 // 플레이어 색상 팔레트 (랜덤 배정)
 const COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22', '#1abc9c', '#fd79a8'];
 
@@ -580,7 +944,9 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
         reason: 'scoreLimit',
         winnerTeam: shooter.team,
         teamScore: match.teamScore,
+        coinReward: MODES[match.mode].coinReward || 0,
       });
+      settleMatch(match, shooter.team, 'scoreLimit');
       setTimeout(() => endMatch(match.id), MATCH_CLEANUP_DELAY_MS);
       return;
     }
@@ -898,6 +1264,8 @@ function startMatch(mode, entries) {
     teamScore: { A: 0, B: 0 },
     winScore: cfg.winScore,
     over: false,
+    accounts: {},   // socketId -> 계정 키 (코인 정산용, 클라이언트에는 전송하지 않음)
+    settled: false,
   };
   matches[matchId] = match;
 
@@ -905,6 +1273,7 @@ function startMatch(mode, entries) {
   entries.forEach((e, idx) => {
     const team = idx < cfg.teamSize ? 'A' : 'B';
     match.players[e.socket.id] = buildPlayer(e.socket.id, e.name, e.characterId, team, randomSpawnPoint(match.walls));
+    match.accounts[e.socket.id] = e.userKey;
   });
 
   entries.forEach((e) => {
@@ -976,19 +1345,25 @@ function endMatch(matchId) {
 io.on('connection', (socket) => {
   console.log(`플레이어 접속: ${socket.id}`);
   broadcastOnlineCount();
+  registerAuthHandlers(socket); // 회원가입 / 로그인 / 로그아웃 / 캐릭터 잠금해제
 
   // 클라이언트가 닉네임 + 모드 + 캐릭터를 정한 뒤 'findMatch' 이벤트를 보내면 대기열에 등록하고 매칭을 시도
   socket.on('findMatch', (data) => {
     if (socketToMatch[socket.id]) return; // 이미 매치 중이면 무시
     if (isQueued(socket.id)) return; // 이미 어딘가 대기 중이면 무시
+    if (!socket.data.userKey) { socket.emit('findMatchError', { message: '로그인이 필요합니다.' }); return; }
 
     const mode = data && MODES[data.mode] ? data.mode : '1v1';
-    const name = (data && data.name ? String(data.name) : 'Player').slice(0, 12);
+    const name = socket.data.displayName; // 닉네임은 로그인한 아이디로 고정
     const requestedId = data && data.characterId;
     // 서버가 직접 캐릭터 ID를 검증 (클라이언트가 보낸 능력치는 절대 신뢰하지 않음)
-    const characterId = CHARACTERS[requestedId] ? requestedId : DEFAULT_CHARACTER_ID;
+    if (!CHARACTERS[requestedId] || !socket.data.unlocked.has(requestedId)) {
+      socket.emit('findMatchError', { message: '잠금해제되지 않은 캐릭터입니다.' });
+      return;
+    }
+    const characterId = requestedId;
 
-    queues[mode].push({ socket, name, characterId });
+    queues[mode].push({ socket, name, characterId, userKey: socket.data.userKey });
     // 이 모드에서 이미 기다리고 있던 사람들에게도 갱신된 인원수를 함께 알림
     broadcastQueueStatus(mode);
 
@@ -1204,6 +1579,7 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     console.log(`플레이어 접속 해제: ${socket.id}`);
+    releaseAccount(socket);
     const queuedMode = Object.keys(queues).find((m) => queues[m].some((q) => q.socket.id === socket.id));
     leaveQueue(socket.id);
     if (queuedMode) broadcastQueueStatus(queuedMode); // 남아있는 대기자들에게 줄어든 인원수를 알림
@@ -1221,7 +1597,8 @@ io.on('connection', (socket) => {
       const leaver = match.players[socket.id];
       const winnerTeam = leaver && leaver.team === 'A' ? 'B' : 'A';
       match.over = true;
-      io.to(matchId).emit('matchOver', { reason: 'opponentLeft', winnerTeam, teamScore: match.teamScore });
+      io.to(matchId).emit('matchOver', { reason: 'opponentLeft', winnerTeam, teamScore: match.teamScore, coinReward: Math.floor((MODES[match.mode].coinReward || 0) / 2) });
+      settleMatch(match, winnerTeam, 'opponentLeft', socket.id);
     }
     endMatch(matchId);
   });
@@ -1734,6 +2111,14 @@ function gameLoop() {
 
 setInterval(gameLoop, TICK_MS);
 
-server.listen(PORT, () => {
-  console.log(`서버가 포트 ${PORT}에서 실행 중입니다.`);
-});
+// 저장소(DB) 연결이 끝난 뒤에 서버를 시작한다
+db.init()
+  .then(() => {
+    server.listen(PORT, () => {
+      console.log(`서버가 포트 ${PORT}에서 실행 중입니다.`);
+    });
+  })
+  .catch((e) => {
+    console.error('저장소 초기화 실패 - 서버를 시작하지 않습니다:', e);
+    process.exit(1);
+  });
