@@ -47,6 +47,7 @@ const MODES = {
   '1v1': { size: 2, teamSize: 1, winScore: 5, coinReward: 45, trophyReward: 15, trophyLoss: 5 },
   '2v2': { size: 4, teamSize: 2, winScore: 8, coinReward: 60, trophyReward: 12, trophyLoss: 4 },
 };
+const MATCH_COUNTDOWN_MS = 4000; // 매칭 직후 상대 정보(캐릭터/트로피)를 보여주는 대결 화면 시간. 이 동안은 이동/공격/스킬 입력이 막힘
 const MATCH_CLEANUP_DELAY_MS = 600; // 승리 판정 후 마지막 상태를 한 번 더 보낸 뒤 방을 정리하기까지의 지연
 const FRIENDLY_FIRE = false; // 같은 팀끼리는 서로 피해를 주지 않음 (총알은 아군을 그대로 통과)
 
@@ -1264,6 +1265,7 @@ function startMatch(mode, entries) {
     teamScore: { A: 0, B: 0 },
     winScore: cfg.winScore,
     over: false,
+    startsAt: Date.now() + MATCH_COUNTDOWN_MS, // 이 시각 전까지는 대결 화면 (이동/공격/스킬 불가)
     accounts: {},   // socketId -> 계정 키 (코인 정산용, 클라이언트에는 전송하지 않음)
     settled: false,
   };
@@ -1274,6 +1276,12 @@ function startMatch(mode, entries) {
     const team = idx < cfg.teamSize ? 'A' : 'B';
     match.players[e.socket.id] = buildPlayer(e.socket.id, e.name, e.characterId, team, randomSpawnPoint(match.walls));
     match.accounts[e.socket.id] = e.userKey;
+  });
+
+  // 대결 화면용 참가자 목록: 닉네임, 팀, 캐릭터, 그 캐릭터의 트로피
+  const roster = entries.map((e) => {
+    const pl = match.players[e.socket.id];
+    return { id: pl.id, name: pl.name, team: pl.team, characterId: pl.characterId, characterName: pl.characterName, trophies: e.trophies || 0 };
   });
 
   entries.forEach((e) => {
@@ -1298,6 +1306,8 @@ function startMatch(mode, entries) {
       winScore: cfg.winScore,
       teammateNames,
       opponentNames,
+      roster,
+      startsInMs: MATCH_COUNTDOWN_MS,
     });
   });
 }
@@ -1348,7 +1358,7 @@ io.on('connection', (socket) => {
   registerAuthHandlers(socket); // 회원가입 / 로그인 / 로그아웃 / 캐릭터 잠금해제
 
   // 클라이언트가 닉네임 + 모드 + 캐릭터를 정한 뒤 'findMatch' 이벤트를 보내면 대기열에 등록하고 매칭을 시도
-  socket.on('findMatch', (data) => {
+  socket.on('findMatch', async (data) => {
     if (socketToMatch[socket.id]) return; // 이미 매치 중이면 무시
     if (isQueued(socket.id)) return; // 이미 어딘가 대기 중이면 무시
     if (!socket.data.userKey) { socket.emit('findMatchError', { message: '로그인이 필요합니다.' }); return; }
@@ -1362,15 +1372,28 @@ io.on('connection', (socket) => {
       return;
     }
     const characterId = requestedId;
+    const userKey = socket.data.userKey;
 
-    queues[mode].push({ socket, name, characterId, userKey: socket.data.userKey });
+    // 대결 화면에 보여줄 트로피는 클라이언트가 보낸 값이 아니라 서버 저장소의 값을 사용
+    let trophies = 0;
+    try {
+      const u = await db.findUser(userKey);
+      trophies = (u && u.trophies && u.trophies[characterId]) || 0;
+    } catch (e) {
+      console.error('트로피 조회 실패', userKey, e);
+    }
+
+    // 조회하는 동안 연결이 끊기거나 로그아웃/중복 요청이 있었는지 다시 확인
+    if (!socket.connected || socket.data.userKey !== userKey) return;
+    if (socketToMatch[socket.id] || isQueued(socket.id)) return;
+
+    queues[mode].push({ socket, name, characterId, userKey, trophies });
     // 이 모드에서 이미 기다리고 있던 사람들에게도 갱신된 인원수를 함께 알림
     broadcastQueueStatus(mode);
 
     tryMatchmaking(mode);
   });
 
-  // 매칭 대기를 취소
   socket.on('cancelFindMatch', () => {
     const mode = Object.keys(queues).find((m) => queues[m].some((q) => q.socket.id === socket.id));
     leaveQueue(socket.id);
@@ -1380,7 +1403,7 @@ io.on('connection', (socket) => {
   // 클라이언트가 매 프레임 자신의 위치/각도를 전송
   socket.on('playerUpdate', (data) => {
     const match = matches[socketToMatch[socket.id]];
-    if (!match || match.over) return;
+    if (!match || match.over || Date.now() < match.startsAt) return; // 대결 화면(카운트다운) 중에는 입력 무시
     const p = match.players[socket.id];
     if (!p || !p.alive) return;
     if (p.dashing || p.knockbackTimeLeft > 0 || (p.stunnedUntil && Date.now() < p.stunnedUntil)) return; // 돌진/기절 중에는 서버가 위치를 제어하므로 클라이언트 입력을 무시
@@ -1403,7 +1426,7 @@ io.on('connection', (socket) => {
   // 기본 공격 발사 요청
   socket.on('shoot', () => {
     const match = matches[socketToMatch[socket.id]];
-    if (!match || match.over) return;
+    if (!match || match.over || Date.now() < match.startsAt) return; // 대결 화면(카운트다운) 중에는 입력 무시
     const p = match.players[socket.id];
     if (!p || !p.alive) return;
     if (p.dashing || p.knockbackTimeLeft > 0 || (p.stunnedUntil && Date.now() < p.stunnedUntil)) return; // 돌진/기절 중에는 공격 불가
@@ -1425,7 +1448,7 @@ io.on('connection', (socket) => {
   // 가젯 사용 요청 (재사용 대기시간이 끝났을 때만 발동, 탄약/궁극기 게이지는 소모하지 않음)
   socket.on('gadget', () => {
     const match = matches[socketToMatch[socket.id]];
-    if (!match || match.over) return;
+    if (!match || match.over || Date.now() < match.startsAt) return; // 대결 화면(카운트다운) 중에는 입력 무시
     const p = match.players[socket.id];
     if (!p || !p.alive) return;
     if (p.dashing || p.knockbackTimeLeft > 0 || (p.stunnedUntil && Date.now() < p.stunnedUntil)) return;
@@ -1475,7 +1498,7 @@ io.on('connection', (socket) => {
   // 궁극기 발사 요청 (게이지가 100%일 때만 발동)
   socket.on('ultimate', () => {
     const match = matches[socketToMatch[socket.id]];
-    if (!match || match.over) return;
+    if (!match || match.over || Date.now() < match.startsAt) return; // 대결 화면(카운트다운) 중에는 입력 무시
     const p = match.players[socket.id];
     if (!p || !p.alive) return;
     if (p.dashing || p.knockbackTimeLeft > 0 || (p.stunnedUntil && Date.now() < p.stunnedUntil)) return; // 이미 돌진 중이거나 기절 상태면 재발동 불가
