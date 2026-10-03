@@ -239,6 +239,31 @@
   #logoutBtn:hover { background: #6b7677; }
   #openCodeBtn { margin-top: 14px; padding: 8px 18px; font-size: 13px; border-radius: 6px; border: none; background: #8e44ad; color: #fff; cursor: pointer; }
   #openCodeBtn:hover { background: #7d3c98; }
+  /* ===== 일일 미션 ===== */
+  #openMissionBtn { margin: 14px 6px 0 0; padding: 8px 18px; font-size: 13px; border-radius: 6px; border: none; background: #16a085; color: #fff; cursor: pointer; }
+  #openMissionBtn:hover { background: #12806a; }
+  #missionOverlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+    display: none; align-items: center; justify-content: center; flex-direction: column;
+    z-index: 40; text-align: center; padding: 0 16px; box-sizing: border-box; color: #fff;
+  }
+  #missionOverlay.open { display: flex; }
+  #missionOverlay h2 { margin: 0 0 6px 0; }
+  .mission-sub { font-size: 12px; color: #aaa; margin-bottom: 12px; }
+  #missionList { width: 100%; max-width: 380px; display: flex; flex-direction: column; gap: 10px; }
+  .mission-item { background: #2c3e50; border: 2px solid #34495e; border-radius: 10px; padding: 10px 12px; text-align: left; }
+  .mission-item.done { border-color: #f1c40f; }
+  .mission-item.claimed { opacity: 0.55; }
+  .mission-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 14px; }
+  .mission-reward { color: #f1c40f; font-size: 12px; white-space: nowrap; }
+  .mission-bar { height: 8px; background: rgba(255,255,255,0.15); border-radius: 4px; margin: 8px 0 4px 0; overflow: hidden; }
+  .mission-bar > div { height: 100%; background: #2ecc71; }
+  .mission-foot { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #ccc; }
+  .mission-item button { padding: 5px 14px; font-size: 12px; border-radius: 6px; border: none; background: #f39c12; color: #fff; cursor: pointer; }
+  .mission-item button:disabled { background: #555; cursor: default; }
+  #missionMsg { min-height: 20px; margin: 10px 0; font-size: 14px; color: #e74c3c; }
+  #missionMsg.ok { color: #2ecc71; }
+  #missionCloseBtn { padding: 9px 22px; font-size: 14px; border-radius: 6px; border: none; background: #7f8c8d; color: #fff; cursor: pointer; }
   /* ===== 코드 입력창 ===== */
   #codeOverlay {
     position: fixed; inset: 0; background: rgba(0,0,0,0.8);
@@ -694,8 +719,17 @@
       <div class="mode-desc">팀원과 함께 2대2 협동전</div>
     </div>
   </div>
-  <div><button id="openCodeBtn">🎁 코드 입력</button></div>
+  <div><button id="openMissionBtn">📋 미션</button><button id="openCodeBtn">🎁 코드 입력</button></div>
   <button id="logoutBtn">로그아웃</button>
+</div>
+
+<div id="missionOverlay">
+  <h2>📋 오늘의 미션</h2>
+  <div class="mission-sub">매일 0시(한국 시간)에 초기화 · 정상 종료된 매치만 인정</div>
+  <div class="profile-line"></div>
+  <div id="missionList"></div>
+  <div id="missionMsg"></div>
+  <button id="missionCloseBtn">닫기</button>
 </div>
 
 <div id="codeOverlay">
@@ -854,7 +888,7 @@ const CHARACTERS = [
     maxHp: 6000,
     basic: { name: '샷건 발사 (펠릿 10발, 사거리 짧음)', damage: 300 },
     ultimate: { name: '메가 샷건', damage: 600, desc: '큰 총알 10발 발사, 사거리 더 짧음' },
-    gadget: { name: '무적', desc: '1.5초 동안 모든 피해를 받지 않음 (15초마다 사용 가능)' },
+    gadget: { name: '보호막', desc: '1,000 피해를 막아주는 보호막을 두름, 다 막으면 사라짐 (15초마다 사용 가능)' },
   },
   {
     id: 'wonhyo',
@@ -1171,7 +1205,56 @@ function updateProfileUI() {
     ? `👤 ${currentProfile.username}  |  🪙 ${currentProfile.coins.toLocaleString()} 코인  |  🏆 ${currentProfile.wins}승 ${currentProfile.losses}패`
     : '';
   document.querySelectorAll('.profile-line').forEach((el) => { el.textContent = text; });
+  updateMissionUI();
 }
+
+// ===== 일일 미션 =====
+// 진행도/달성/수령 여부는 전부 서버가 판단하고, 클라이언트는 profile.missions를 그대로 보여주기만 한다
+function updateMissionUI() {
+  const missions = (currentProfile && currentProfile.missions) || [];
+  const claimable = missions.some((m) => m.progress >= m.goal && !m.claimed);
+  const openBtn = document.getElementById('openMissionBtn');
+  if (openBtn) openBtn.textContent = claimable ? '📋 미션 🔴' : '📋 미션';
+
+  const listEl = document.getElementById('missionList');
+  if (!listEl) return;
+  listEl.innerHTML = missions.map((m) => {
+    const done = m.progress >= m.goal;
+    const pct = Math.round((Math.min(m.progress, m.goal) / m.goal) * 100);
+    const btn = m.claimed
+      ? '<button disabled>✅ 수령 완료</button>'
+      : `<button data-mission-id="${escapeHtml(m.id)}" ${done ? '' : 'disabled'}>${done ? '🪙 보상 받기' : '진행 중'}</button>`;
+    return `<div class="mission-item${done ? ' done' : ''}${m.claimed ? ' claimed' : ''}">
+      <div class="mission-row"><span>${escapeHtml(m.name)}</span><span class="mission-reward">🪙 ${m.reward.toLocaleString()}</span></div>
+      <div class="mission-bar"><div style="width:${pct}%"></div></div>
+      <div class="mission-foot"><span>${m.progress} / ${m.goal}</span>${btn}</div>
+    </div>`;
+  }).join('');
+
+  listEl.querySelectorAll('button[data-mission-id]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      btn.disabled = true;
+      socket.timeout(8000).emit('claimMission', { missionId: btn.getAttribute('data-mission-id') }, (err, res) => {
+        if (err || !res) { setMissionMsg('서버 응답이 없습니다. 잠시 후 다시 시도해주세요.'); updateMissionUI(); return; }
+        if (res.profile) { currentProfile = res.profile; updateProfileUI(); }
+        setMissionMsg(res.message || (res.ok ? '완료!' : '실패했습니다.'), res.ok);
+      });
+    });
+  });
+}
+function setMissionMsg(text, ok) {
+  const el = document.getElementById('missionMsg');
+  el.textContent = text || '';
+  el.classList.toggle('ok', !!ok);
+}
+function openMissionDialog() {
+  setMissionMsg('');
+  updateProfileUI();
+  document.getElementById('missionOverlay').classList.add('open');
+}
+function closeMissionDialog() { document.getElementById('missionOverlay').classList.remove('open'); }
+document.getElementById('openMissionBtn').addEventListener('click', openMissionDialog);
+document.getElementById('missionCloseBtn').addEventListener('click', closeMissionDialog);
 
 // 캐릭터의 트로피 수로 현재 등급과 다음 등급을 구한다 (등급표는 서버가 내려줌)
 function rankInfo(trophies) {
@@ -1273,6 +1356,7 @@ document.getElementById('logoutBtn').addEventListener('click', () => {
     currentProfile = null;
     updateProfileUI();
     closeCodeDialog();
+    closeMissionDialog();
     document.getElementById('modeOverlay').style.display = 'none';
     document.getElementById('joinOverlay').style.display = 'flex';
     showAuthMsg('로그아웃되었습니다.', true);
@@ -1287,6 +1371,7 @@ function forceReLogin(message) {
   gadgetArmed = false;
   updateProfileUI();
   closeCodeDialog();
+  closeMissionDialog();
   ['modeOverlay', 'characterOverlay'].forEach((id) => { document.getElementById(id).style.display = 'none'; });
   ['matchingOverlay', 'matchResultOverlay', 'scoreboard'].forEach((id) => { document.getElementById(id).classList.remove('open'); });
   document.getElementById('joinOverlay').style.display = 'flex';
@@ -1994,7 +2079,21 @@ function drawPlayer(p, isMe) {
   ctx.fillStyle = '#fff';
   ctx.fillText(p.name, p.x, p.y - PLAYER_RADIUS - 22);
 
-  // 무적 상태 표시 (슈의 가젯): 몸 주변에 반짝이는 보호막
+  // 보호막 표시 (슈의 가젯): 몸 주변에 푸른 막이 둘러지고, 남은 수치가 줄수록 옅어진다
+  if (p.shieldHp > 0) {
+    const ratio = Math.max(0.15, Math.min(1, p.shieldHp / (p.shieldMax || p.shieldHp)));
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, PLAYER_RADIUS + 9, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(90, 190, 255, ${0.08 + 0.22 * ratio})`;
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = `rgba(120, 210, 255, ${0.35 + 0.6 * ratio})`;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // 무적 상태 표시 (invincible 가젯): 몸 주변에 반짝이는 보호막
   if (p.invincibleUntil && Date.now() < p.invincibleUntil) {
     const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 90);
     ctx.save();
