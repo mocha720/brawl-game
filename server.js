@@ -51,6 +51,18 @@ const MATCH_COUNTDOWN_MS = 4000; // 매칭 직후 상대 정보(캐릭터/트로
 const MATCH_CLEANUP_DELAY_MS = 600; // 승리 판정 후 마지막 상태를 한 번 더 보낸 뒤 방을 정리하기까지의 지연
 const FRIENDLY_FIRE = false; // 같은 팀끼리는 서로 피해를 주지 않음 (총알은 아군을 그대로 통과)
 
+// ===== 연승 보너스 (캐릭터별) =====
+// 같은 캐릭터로 연속 승리할수록 승리 때 받는 트로피가 늘어난다. 연승은 캐릭터마다 따로 센다.
+// 보너스 = 모드의 기본 승리 트로피 × STREAK_BONUS_RATE × min(직전까지의 연승 수, STREAK_BONUS_MAX_STEPS)
+// 예) 1:1(기본 15): 2연승째 +3, 3연승째 +6 ... 6연승째부터 최대 +15 (기본 보상이 최대 2배)
+// 패배(점수로 진 경우/매치 도중 나간 경우)하면 그 캐릭터의 연승은 0으로 초기화된다.
+const STREAK_BONUS_RATE = 0.2;
+const STREAK_BONUS_MAX_STEPS = 5;
+function streakBonusTrophies(baseReward, previousStreak) {
+  const steps = Math.min(Math.max(0, previousStreak || 0), STREAK_BONUS_MAX_STEPS);
+  return Math.round(baseReward * STREAK_BONUS_RATE * steps);
+}
+
 // ===== 탄창 / 연사 방지 =====
 const MAX_AMMO = 3;              // 모든 캐릭터 공통 탄창 크기
 const FIRE_COOLDOWN_MS = 350;    // 한 발 쏜 뒤 다음 발사까지 최소 대기시간 (연사 방지)
@@ -439,10 +451,13 @@ const CHARACTERS = {
       name: '닭 소환',
       type: 'summonChicken', // 조준 불필요, 자신의 위치에 닭을 소환. 닭은 적을 자동으로 추격해서 공격
       hp: 8000,              // 닭의 체력 (적이 공격하면 죽을 수 있음)
-      damage: 800,           // 닭이 한 번 쪼을 때의 대미지
-      attackInterval: 0.5,   // 공격 주기(초)
-      attackRange: 14,       // 닭 몸 가장자리에서 적 몸 가장자리까지의 공격 가능 거리(px)
-      moveSpeed: 220,        // 닭 이동속도(px/초)
+      damage: 1500,          // 닭이 적에게 돌격해서 부딪힐 때의 대미지
+      attackInterval: 1.5,   // 돌격 재사용 대기시간(초) - 한 번 돌격한 뒤 다음 돌격까지 걸리는 시간 (밸런스 조절용)
+      attackRange: 14,       // 닭 몸 가장자리에서 적 몸 가장자리까지의 충돌(공격) 판정 거리(px)
+      moveSpeed: 220,        // 닭 평상시 이동속도(px/초)
+      chargeRange: 300,      // 이 거리 안에 적이 들어오고 돌격이 준비되면 돌격 시작
+      chargeSpeed: 950,      // 돌격 중 이동속도(px/초)
+      chargeMaxTime: 0.6,    // 한 번의 돌격이 최대로 지속되는 시간(초). 이 안에 못 맞추면 돌격 종료
       chaseRange: 700,       // 이 거리 안의 적을 추격
       radius: 16,
       duration: 8,           // 닭이 남아있는 시간(초)
@@ -527,7 +542,7 @@ function describeUltimate(u) {
       desc = `조준 불필요, 자신의 위치에 설치. 반경 ${u.radius} 안의 적에게 ${u.tickInterval}초마다 ${fmtNum(u.tickDamage)} 피해 + 이동속도 ${Math.round((1 - u.slowMultiplier) * 100)}% 감소, ${u.fuseTime}초 뒤 ${fmtNum(u.explodeDamage)} 피해로 폭발`;
       break;
     case 'summonChicken':
-      desc = `조준 불필요, 체력 ${fmtNum(u.hp)}의 닭을 소환. ${u.duration}초 동안 적을 자동으로 추격해서 ${u.attackInterval}초마다 ${fmtNum(u.damage)} 피해`;
+      desc = `조준 불필요, 체력 ${fmtNum(u.hp)}의 닭을 소환. ${u.duration}초 동안 적을 자동으로 추격하다가 사거리 안에 들어오면 적에게 돌격해서 ${fmtNum(u.damage)} 피해 (${u.attackInterval}초마다 돌격 가능)`;
       break;
     default:
       if (u.damage) damage = u.damage;
@@ -624,7 +639,9 @@ const TROPHY_RANKS = [
 function publicProfile(u) {
   const trophies = {};
   for (const id in CHARACTERS) trophies[id] = (u.trophies && u.trophies[id]) || 0;
-  return { username: u.name, coins: u.coins, wins: u.wins || 0, losses: u.losses || 0, unlocked: effectiveUnlocked(u), prices: allPrices(), trophies, ranks: TROPHY_RANKS, characters: CHARACTER_INFO };
+  const streaks = {};
+  for (const id in CHARACTERS) streaks[id] = (u.streaks && u.streaks[id]) || 0;
+  return { username: u.name, coins: u.coins, wins: u.wins || 0, losses: u.losses || 0, unlocked: effectiveUnlocked(u), prices: allPrices(), trophies, streaks, ranks: TROPHY_RANKS, characters: CHARACTER_INFO };
 }
 
 // ----- 저장소 -----
@@ -634,7 +651,7 @@ function publicProfile(u) {
 const USERS_FILE = process.env.USERS_FILE || path.join(os.tmpdir(), 'brawl-users.json');
 
 function cloneUser(u) {
-  return u ? { ...u, unlocked: [...(u.unlocked || [])], trophies: { ...(u.trophies || {}) }, redeemed: [...(u.redeemed || [])] } : null;
+  return u ? { ...u, unlocked: [...(u.unlocked || [])], trophies: { ...(u.trophies || {}) }, streaks: { ...(u.streaks || {}) }, redeemed: [...(u.redeemed || [])] } : null;
 }
 
 function createFileDb() {
@@ -664,13 +681,18 @@ function createFileDb() {
       scheduleSave();
       return true;
     },
-    async addResult(key, coins, won, charId, trophies) {
+    // newStreak: 그 캐릭터의 새 연승 수 (null이면 연승 기록을 건드리지 않음)
+    async addResult(key, coins, won, charId, trophies, newStreak) {
       const u = users[key];
       if (!u) return null;
       u.coins += coins;
       if (trophies && charId) {
         u.trophies = u.trophies || {};
         u.trophies[charId] = Math.max(0, (u.trophies[charId] || 0) + trophies);
+      }
+      if (newStreak != null && charId) {
+        u.streaks = u.streaks || {};
+        u.streaks[charId] = newStreak;
       }
       if (won) u.wins = (u.wins || 0) + 1; else u.losses = (u.losses || 0) + 1;
       scheduleSave();
@@ -716,11 +738,13 @@ function createMongoDb(uri) {
     async createUser(u) {
       try { await col.insertOne({ ...u }); return true; } catch (e) { if (e && e.code === 11000) return false; throw e; }
     },
-    async addResult(key, coins, won, charId, trophies) {
+    async addResult(key, coins, won, charId, trophies, newStreak) {
       const inc = { coins, wins: won ? 1 : 0, losses: won ? 0 : 1 };
       const path = `trophies.${charId}`; // charId는 서버가 검증한 캐릭터 id만 들어옴
       if (trophies && CHARACTERS[charId]) inc[path] = trophies;
-      let user = await col.findOneAndUpdate({ key }, { $inc: inc }, { returnDocument: 'after', projection });
+      const update = { $inc: inc };
+      if (newStreak != null && CHARACTERS[charId]) update.$set = { [`streaks.${charId}`]: newStreak };
+      let user = await col.findOneAndUpdate({ key }, update, { returnDocument: 'after', projection });
       // 패배로 트로피가 0 미만이 되었다면 0으로 보정
       if (user && trophies < 0 && user.trophies && user.trophies[charId] < 0) {
         user = await col.findOneAndUpdate({ key }, { $set: { [path]: 0 } }, { returnDocument: 'after', projection });
@@ -976,13 +1000,26 @@ async function settleMatch(match, winnerTeam, reason, leaverId) {
     const won = p.team === winnerTeam;
     // 패배 페널티: 점수로 져서 끝난 매치는 패배한 팀 전원, 중도 이탈로 끝난 매치는 나간 사람만 (남은 팀원은 깎이지 않음)
     const penalized = !won && (reason === 'scoreLimit' || pid === leaverId);
-    const trophyDelta = won ? trophyReward : (penalized ? -trophyLoss : 0);
     try {
-      const user = await db.addResult(key, won ? coinReward : 0, won, p.characterId, trophyDelta);
+      // 연승 계산: 이 매치에서 쓴 캐릭터의 직전 연승 수를 서버 저장소에서 읽는다
+      let previousStreak = 0;
+      if (won) {
+        const before = await db.findUser(key);
+        previousStreak = (before && before.streaks && before.streaks[p.characterId]) || 0;
+      }
+      // 연승 보너스는 기본 보상과 같은 비율로 계산 (상대 이탈 승리는 기본 보상이 절반이라 보너스도 절반)
+      const streakBonus = won ? streakBonusTrophies(trophyReward, previousStreak) : 0;
+      const trophyDelta = won ? trophyReward + streakBonus : (penalized ? -trophyLoss : 0);
+      // 승리: 연승 +1 / 페널티 받는 패배: 연승 0 / 페널티 없는 패배(팀원 이탈 등): 연승 유지
+      const newStreak = won ? previousStreak + 1 : (penalized ? 0 : null);
+      const user = await db.addResult(key, won ? coinReward : 0, won, p.characterId, trophyDelta, newStreak);
       const s = io.sockets.sockets.get(pid);
       if (s && user) {
         s.data.unlocked = new Set(effectiveUnlocked(user));
-        s.emit('profileUpdate', { ...publicProfile(user), lastResult: { characterId: p.characterId } });
+        s.emit('profileUpdate', {
+          ...publicProfile(user),
+          lastResult: { characterId: p.characterId, won, streak: newStreak != null ? newStreak : ((user.streaks && user.streaks[p.characterId]) || 0), streakBonus },
+        });
       }
     } catch (e) {
       console.error('매치 결과 저장 실패', key, e);
@@ -1339,8 +1376,13 @@ function spawnChicken(match, p, spec) {
     attackCooldown: 0.3,
     moveSpeed: spec.moveSpeed || 220,
     chaseRange: spec.chaseRange || 700,
+    chargeRange: spec.chargeRange || 300,
+    chargeSpeed: spec.chargeSpeed || 950,
+    chargeMaxTime: spec.chargeMaxTime || 0.6,
+    charging: false,          // 적에게 돌격 중이면 true
+    chargeTimeLeft: 0,        // 현재 돌격이 끝날 때까지 남은 시간(초)
     life: spec.duration || 8, // 남은 지속 시간(초)
-    peckTimer: 0,             // 쪼는 동작 연출용 (클라이언트에서 사용)
+    peckTimer: 0,             // 부딪히는 순간 연출용 (클라이언트에서 사용)
   });
 
   // 소환 위치가 벽 안이면 소환자 위치로 대체
@@ -1958,22 +2000,49 @@ function updateMatch(match, dt, now) {
       const dy = target.y - chicken.y;
       const dist = Math.hypot(dx, dy) || 1;
 
-      if (dist > reach) {
-        // 사거리 밖이면 추격 (목표를 지나치지 않도록 남은 거리까지만 이동)
+      // 돌격 준비가 되었고(쿨타임 종료) 적이 돌격 사거리 안에 있으면 돌격 시작
+      if (!chicken.charging && chicken.attackCooldown <= 0 && dist <= chicken.chargeRange) {
+        chicken.charging = true;
+        chicken.chargeTimeLeft = chicken.chargeMaxTime;
+      }
+
+      if (chicken.charging) {
+        // 돌격 중: 매우 빠른 속도로 목표를 향해 직진 (목표를 지나치지 않도록 남은 거리까지만 이동)
+        chicken.chargeTimeLeft -= dt;
+        let hit = dist <= reach;
+        let blocked = false;
+        if (!hit) {
+          const step = Math.min(chicken.chargeSpeed * dt, dist - reach + 1);
+          const bx = chicken.x, by = chicken.y;
+          moveChicken(match, chicken, dx / dist, dy / dist, step);
+          blocked = Math.hypot(chicken.x - bx, chicken.y - by) < step * 0.3; // 벽에 막힘
+          hit = Math.hypot(target.x - chicken.x, target.y - chicken.y) <= reach;
+        }
+
+        if (hit) {
+          // 적과 부딪히면 돌격 대미지를 주고 돌격 종료 (대미지는 공격력 증가 효과도 적용)
+          chicken.charging = false;
+          chicken.attackCooldown = chicken.attackInterval;
+          chicken.peckTimer = 0.15;
+          const dmg = chicken.damage;
+          if (targetKind === 'player') {
+            applyDamage(match, target, dmg, chicken.ownerId, { chargeShooter: false });
+          } else {
+            target.hp -= dmg * getDamageMultiplier(owner);
+          }
+        } else if (blocked || chicken.chargeTimeLeft <= 0) {
+          // 돌격이 벽에 막히거나 시간 내에 못 맞췄으면 짧게 쉬었다가 다시 시도
+          chicken.charging = false;
+          chicken.attackCooldown = Math.max(chicken.attackCooldown, 0.4);
+        }
+      } else if (dist > reach) {
+        // 돌격 대기 중에는 평상시 속도로 추격 (목표를 지나치지 않도록 남은 거리까지만 이동)
         const step = Math.min(chicken.moveSpeed * dt, dist - reach + 1);
         moveChicken(match, chicken, dx / dist, dy / dist, step);
       }
-
-      if (dist <= reach + 4 && chicken.attackCooldown <= 0) {
-        chicken.attackCooldown = chicken.attackInterval;
-        chicken.peckTimer = 0.15;
-        const dmg = chicken.damage;
-        if (targetKind === 'player') {
-          applyDamage(match, target, dmg, chicken.ownerId, { chargeShooter: false });
-        } else {
-          target.hp -= dmg * getDamageMultiplier(owner);
-        }
-      }
+    } else if (chicken.charging) {
+      chicken.charging = false; // 돌격 중 목표가 사라짐(죽음/은신/덤불)
+      chicken.attackCooldown = Math.max(chicken.attackCooldown, 0.4);
     } else if (owner && owner.alive) {
       const dx = owner.x - chicken.x;
       const dy = owner.y - chicken.y;
