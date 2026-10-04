@@ -960,6 +960,15 @@ const CHARACTERS = [
     basic: { name: '계란 던지기', desc: '적 직접 적중 시 1,200 피해 + 깨지면서 흰자가 퍼짐 (닿은 적에게 0.2초마다 300 피해, 1초 후 소멸, 벽에 닿거나 최대 사거리에서도 깨짐)' },
     ultimate: { name: '닭 소환', desc: '조준 불필요, 체력 8,000의 닭을 소환. 8초 동안 적을 추격하다가 적에게 돌격해서 1,500 피해 (1.5초마다 돌격 가능)' },
   },
+  {
+    id: 'gwari',
+    name: '꽈리',
+    color: '#e74c3c',
+    maxHp: 5500,
+    basic: { name: '돌진 박치기', damage: 2000, desc: '바라보는 방향으로 약 198px를 돌진, 적과 부딪히면 2,000 피해, 재장전 시간 30% 증가' },
+    ultimate: { name: '고추 발사', desc: '조준한 방향으로 고추 3개를 연달아 발사 (개당 1,500 피해, 사거리 약 960)' },
+    gadget: { name: '재장전 가속', desc: '3초 동안 재장전 속도 25% 빨라짐 (15초마다 사용 가능)' },
+  },
 ];
 let selectedCharacterId = CHARACTERS[0].id;
 
@@ -2419,6 +2428,26 @@ function drawBullet(b) {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('💩', b.x, b.y + 1);
+    ctx.restore();
+    return;
+  }
+
+  if (b.visual === 'chili') {
+    // 꽈리의 고추 발사 - 날아가는 방향으로 회전한 빨간 고추
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.rotate(Math.atan2(b.vy || 0, b.vx || 1) + Math.PI); // 뾰족한 끝이 진행 방향, 꼭지가 뒤쪽
+    ctx.fillStyle = '#d62d20';
+    ctx.beginPath();
+    ctx.moveTo(-b.radius * 2.2, 0);
+    ctx.quadraticCurveTo(-b.radius * 0.6, -b.radius * 1.1, b.radius * 1.4, -b.radius * 0.5);
+    ctx.quadraticCurveTo(b.radius * 1.8, 0, b.radius * 1.4, b.radius * 0.5);
+    ctx.quadraticCurveTo(-b.radius * 0.6, b.radius * 1.1, -b.radius * 2.2, 0);
+    ctx.fill();
+    ctx.fillStyle = '#2e8b3d'; // 초록 꼭지
+    ctx.beginPath();
+    ctx.ellipse(b.radius * 1.55, 0, b.radius * 0.55, b.radius * 0.5, 0, 0, Math.PI * 2);
+    ctx.fill();
     ctx.restore();
     return;
   }
