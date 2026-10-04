@@ -422,6 +422,33 @@
   #rankingMe { min-height: 20px; font-size: 14px; color: var(--sun); }
   #rankingMsg { min-height: 18px; font-size: 13px; color: var(--berry); }
 
+  /* ----- 유저 현황 (메인화면) ----- */
+  .presence-card { width: min(420px, 100%); box-sizing: border-box; margin-top: 22px; padding: 14px 14px 12px; text-align: left; background: var(--night); border: 3px solid var(--lift); border-radius: 18px; box-shadow: 0 5px 0 var(--ink); }
+  .presence-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .presence-title { font-family: var(--font-display); font-size: 19px; }
+  .presence-refresh { min-width: 34px; min-height: 34px; padding: 0; font-size: 18px; line-height: 1; color: var(--paper); background: var(--dusk); border: 2px solid var(--lift); border-radius: 10px; cursor: pointer; }
+  .presence-refresh:disabled { opacity: 0.5; cursor: default; }
+  .presence-summary { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-bottom: 10px; font-size: 13px; color: var(--mute); }
+  .presence-summary b { color: var(--paper); font-family: var(--font-display); font-weight: 400; }
+  .presence-list { max-height: 210px; overflow-y: auto; display: flex; flex-direction: column; gap: 5px; -webkit-overflow-scrolling: touch; }
+  .presence-row { display: flex; align-items: center; gap: 8px; padding: 6px 10px; font-size: 14px; background: var(--dusk); border: 2px solid transparent; border-radius: 11px; }
+  .presence-row.me { border-color: var(--sun); }
+  .presence-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: #6b6f9c; }
+  .presence-row.online .presence-dot { background: var(--mint); box-shadow: 0 0 6px var(--mint); }
+  .presence-row.battle .presence-dot { background: var(--berry); box-shadow: 0 0 6px var(--berry); }
+  .presence-row.offline { opacity: 0.7; }
+  .presence-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .presence-device { flex: none; font-size: 14px; }
+  .presence-state { flex: none; font-size: 12px; color: var(--mute); white-space: nowrap; }
+  .presence-row.online .presence-state { color: var(--mint); }
+  .presence-row.battle .presence-state { color: var(--berry); }
+  .presence-empty { padding: 14px 0; text-align: center; font-size: 13px; color: var(--mute); }
+
+  /* ----- 대결 화면 / 점수판의 접속 기기 표시 ----- */
+  .vs-device { display: inline-block; margin-top: 6px; padding: 2px 10px; font-size: 12px; color: var(--paper); background: rgba(255, 255, 255, 0.1); border: 1px solid rgba(255, 255, 255, 0.18); border-radius: 999px; }
+  .vs-device.mobile { color: var(--sky); border-color: var(--sky); }
+  .vs-device.desktop { color: var(--plum); border-color: var(--plum); }
+
   /* ----- 안내 문구 / 기타 ----- */
   #hint { position: fixed; bottom: 12px; left: 20px; font-size: 12px; color: var(--mute); }
   @media (max-width: 480px) {
@@ -687,6 +714,14 @@
       <div class="mode-desc">팀원과 함께 2대2 협동전</div>
     </div>
   </div>
+  <div id="presenceCard" class="presence-card">
+    <div class="presence-head">
+      <span class="presence-title">👥 유저 현황</span>
+      <button id="presenceRefreshBtn" class="presence-refresh" title="새로고침" aria-label="유저 현황 새로고침">⟳</button>
+    </div>
+    <div id="presenceSummary" class="presence-summary">불러오는 중...</div>
+    <div id="presenceList" class="presence-list"></div>
+  </div>
   <div class="menu-row">
     <button id="openRankingBtn" class="btn btn-ghost">랭킹</button>
     <button id="openMissionBtn" class="btn btn-ghost">미션</button>
@@ -836,7 +871,25 @@
 
 <script src="/socket.io/socket.io.js"></script>
 <script>
-const socket = io();
+// 접속 기기(모바일/컴퓨터): 서버에 알려줘서 유저 현황과 대결 화면에 표시한다.
+// 터치스크린 노트북이 모바일로 잡히지 않도록, 터치 지원 여부가 아니라 브라우저가 알려주는 기기 종류로 판단한다.
+function detectDeviceType() {
+  try {
+    if (navigator.userAgentData && typeof navigator.userAgentData.mobile === 'boolean') {
+      return navigator.userAgentData.mobile ? 'mobile' : 'desktop';
+    }
+    const ua = navigator.userAgent || '';
+    if (/Android|iPhone|iPad|iPod|Mobile|Windows Phone/i.test(ua)) return 'mobile';
+    if (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1) return 'mobile'; // 데스크톱 모드로 접속한 iPad
+  } catch (e) {}
+  return 'desktop';
+}
+const MY_DEVICE = detectDeviceType();
+const DEVICE_ICON = { mobile: '📱', desktop: '💻' };
+const DEVICE_LABEL = { mobile: '📱 모바일', desktop: '💻 컴퓨터' };
+const matchDevices = {}; // 이번 매치 참가자의 기기 { socketId: 'mobile' | 'desktop' } (점수판 표시용)
+
+const socket = io({ auth: { device: MY_DEVICE } });
 
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
@@ -1346,6 +1399,65 @@ function deleteAccount() {
 }
 document.getElementById('accountDeleteBtn').addEventListener('click', deleteAccount);
 
+// ===== 유저 현황 (메인화면) =====
+// 서버가 알려주는 '전투 중 / 접속 중 / 오프라인' 목록을 메인화면에 보여준다.
+// 메인화면이 보이는 동안에만 5초마다 갱신한다 (화면 밖이거나 탭이 숨겨져 있으면 요청하지 않음).
+const PRESENCE_POLL_MS = 5000;
+const PRESENCE_STATE_TEXT = { battle: '⚔️ 전투 중', online: '접속 중' };
+let presenceLastFetch = 0;
+let presenceBusy = false;
+
+function formatAgo(ms) {
+  if (ms == null) return '오프라인';
+  const min = Math.floor(ms / 60000);
+  if (min < 1) return '방금 전 접속';
+  if (min < 60) return `${min}분 전 접속`;
+  const hour = Math.floor(min / 60);
+  if (hour < 24) return `${hour}시간 전 접속`;
+  return `${Math.floor(hour / 24)}일 전 접속`;
+}
+
+function renderPresence(res) {
+  const c = res.counts || { battle: 0, online: 0, offline: 0 };
+  document.getElementById('presenceSummary').innerHTML =
+    `<span>⚔️ 전투 중 <b>${c.battle}</b></span><span>🟢 접속 중 <b>${c.online}</b></span><span>⚫ 오프라인 <b>${c.offline}</b></span>`;
+  const users = res.users || [];
+  document.getElementById('presenceList').innerHTML = users.length
+    ? users.map((u) => {
+        const state = u.status === 'offline' ? formatAgo(u.agoMs) : (PRESENCE_STATE_TEXT[u.status] || '접속 중');
+        const device = u.status === 'offline' ? '' : `<span class="presence-device" title="${u.device === 'mobile' ? '모바일' : '컴퓨터'}">${DEVICE_ICON[u.device] || ''}</span>`;
+        return `<div class="presence-row ${u.status}${u.isMe ? ' me' : ''}">
+          <span class="presence-dot"></span>
+          <span class="presence-name">${escapeHtml(u.name)}${u.isMe ? ' (나)' : ''}</span>
+          ${device}
+          <span class="presence-state">${state}</span>
+        </div>`;
+      }).join('')
+    : '<div class="presence-empty">표시할 유저가 없습니다.</div>';
+}
+
+function fetchPresence(force) {
+  if (presenceBusy || !currentProfile) return;
+  const now = Date.now();
+  if (!force && now - presenceLastFetch < PRESENCE_POLL_MS) return;
+  presenceBusy = true;
+  presenceLastFetch = now;
+  const btn = document.getElementById('presenceRefreshBtn');
+  btn.disabled = true;
+  socket.timeout(6000).emit('getPresence', {}, (err, res) => {
+    presenceBusy = false;
+    btn.disabled = false;
+    if (err || !res || !res.ok) return; // 실패해도 이전 목록을 그대로 두고 다음 주기에 다시 시도
+    renderPresence(res);
+  });
+}
+
+function isMainMenuVisible() {
+  return !!currentProfile && !document.hidden && getComputedStyle(document.getElementById('modeOverlay')).display !== 'none';
+}
+setInterval(() => { if (isMainMenuVisible()) fetchPresence(false); }, 1000);
+document.getElementById('presenceRefreshBtn').addEventListener('click', () => fetchPresence(true));
+
 // ===== 랭킹 =====
 // 순위/총합 계산은 전부 서버가 하고, 클라이언트는 받은 목록을 그대로 보여주기만 한다
 function loadRanking() {
@@ -1713,6 +1825,7 @@ function vsCardHtml(r, isMe, side) {
     <div class="vs-name">${escapeHtml(r.name)}${isMe ? ' (나)' : ''}</div>
     <div class="vs-char">${escapeHtml(r.characterName || (ch && ch.name) || '')}</div>
     <div class="vs-trophy">${rk.cur.icon || ''} ${escapeHtml(rk.cur.name || '')} · 🏆 ${(r.trophies || 0).toLocaleString()}</div>
+    <div class="vs-device ${r.device === 'mobile' ? 'mobile' : 'desktop'}">${DEVICE_LABEL[r.device] || DEVICE_LABEL.desktop}</div>
   </div>`;
 }
 
@@ -1723,6 +1836,8 @@ function hideVersusScreen() {
 
 function showVersusScreen(data) {
   const roster = data.roster || [];
+  for (const k in matchDevices) delete matchDevices[k];
+  roster.forEach((r) => { matchDevices[r.id] = r.device === 'mobile' ? 'mobile' : 'desktop'; });
   const mine = roster.filter((r) => r.team === data.team);
   const enemy = roster.filter((r) => r.team !== data.team);
   document.getElementById('vsMySide').innerHTML =
@@ -2863,13 +2978,13 @@ function updateScoreboard() {
     const oppTeamArr = playersArr.filter((p) => p.team !== myTeam);
     const renderTeam = (label, arr) => (
       `<li class="team-header"><b>${label} — ${sumScore(arr)}킬</b></li>` +
-      arr.map((p) => `<li>${escapeHtml(p.name)}${p.id === myId ? ' (나)' : ''} — ${p.score}</li>`).join('')
+      arr.map((p) => `<li>${DEVICE_ICON[matchDevices[p.id]] || ''} ${escapeHtml(p.name)}${p.id === myId ? ' (나)' : ''} — ${p.score}</li>`).join('')
     );
     list.innerHTML = renderTeam('우리 팀', myTeamArr) + renderTeam('상대 팀', oppTeamArr);
   } else {
     playersArr.sort((a, b) => b.score - a.score);
     list.innerHTML = playersArr
-      .map((p) => `<li>${escapeHtml(p.name)}${p.id === myId ? ' (나)' : ''} — ${p.score}</li>`)
+      .map((p) => `<li>${DEVICE_ICON[matchDevices[p.id]] || ''} ${escapeHtml(p.name)}${p.id === myId ? ' (나)' : ''} — ${p.score}</li>`)
       .join('');
   }
 }
