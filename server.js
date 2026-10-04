@@ -894,6 +894,21 @@ function createFileDb() {
       scheduleSave();
       return true;
     },
+    // 마지막 접속 시각 기록 (유저 현황의 '오프라인' 표시용)
+    async touchLastSeen(key) {
+      const u = users[key];
+      if (!u) return;
+      u.lastSeenAt = Date.now();
+      scheduleSave();
+    },
+    // 최근에 접속했던 순서로 계정 목록 (접속 기록이 없는 옛 계정은 맨 뒤)
+    async getRecentUsers(limit) {
+      return Object.values(users)
+        .map((u) => ({ key: u.key, name: u.name, lastSeenAt: u.lastSeenAt || 0 }))
+        .sort((a, b) => b.lastSeenAt - a.lastSeenAt || String(a.name).localeCompare(String(b.name)))
+        .slice(0, limit);
+    },
+    async countUsers() { return Object.keys(users).length; },
   };
 }
 
@@ -908,6 +923,7 @@ function createMongoDb(uri) {
       await client.connect();
       col = client.db(process.env.MONGODB_DB || 'brawl').collection('users');
       await col.createIndex({ key: 1 }, { unique: true });
+      await col.createIndex({ lastSeenAt: -1 }); // 유저 현황(최근 접속 순) 조회용
       console.log('[계정] MongoDB 연결 완료');
     },
     async findUser(key) { return col.findOne({ key }, { projection }); },
@@ -1031,6 +1047,15 @@ function createMongoDb(uri) {
       const r = await col.deleteOne({ key });
       return r.deletedCount > 0;
     },
+    async touchLastSeen(key) {
+      await col.updateOne({ key }, { $set: { lastSeenAt: Date.now() } });
+    },
+    async getRecentUsers(limit) {
+      const rows = await col.find({}, { projection: { _id: 0, key: 1, name: 1, lastSeenAt: 1 } })
+        .sort({ lastSeenAt: -1, name: 1 }).limit(limit).toArray();
+      return rows.map((r) => ({ key: r.key, name: r.name, lastSeenAt: r.lastSeenAt || 0 }));
+    },
+    async countUsers() { return col.estimatedDocumentCount(); },
   };
 }
 
@@ -1084,9 +1109,62 @@ function validateRegisterInput(username, password) {
 // onlineUsers: 현재 로그인 중인 계정 -> 소켓 id (한 계정이 동시에 두 곳에서 접속하지 못하게 함)
 const onlineUsers = new Map();
 
+// ===== 접속 상태 / 접속 기기 =====
+// 유저 현황(메인화면)에 보여줄 상태: 'battle'(전투 중) / 'online'(접속 중) / 'offline'(오프라인)
+// 접속 기기는 클라이언트가 알려주는 값('mobile' | 'desktop')을 쓰되, 값이 없거나 이상하면 User-Agent로 추측한다.
+// (표시용 정보일 뿐이라 클라이언트가 속여도 게임에는 영향이 없다)
+const PRESENCE_LIST_LIMIT = 40;   // 유저 현황 목록에 보여줄 최대 인원
+const PRESENCE_CACHE_MS = 3000;   // 오프라인 목록(DB 조회) 캐시 시간
+let presenceCache = { at: 0, rows: null, total: 0 };
+function normalizeDevice(raw, userAgent) {
+  if (raw === 'mobile' || raw === 'desktop') return raw;
+  return /Android|iPhone|iPad|iPod|Mobile|Windows Phone/i.test(String(userAgent || '')) ? 'mobile' : 'desktop';
+}
+function statusOfSocket(socketId) {
+  const m = matches[socketToMatch[socketId]];
+  return m && !m.over ? 'battle' : 'online';
+}
+async function buildPresence(viewerKey) {
+  const now = Date.now();
+  const onlineRows = [];
+  let battleCount = 0;
+  for (const [key, sid] of onlineUsers) {
+    const s = io.sockets.sockets.get(sid);
+    if (!s) continue;
+    const status = statusOfSocket(sid);
+    if (status === 'battle') battleCount += 1;
+    onlineRows.push({ name: s.data.displayName, status, device: s.data.device || 'desktop', isMe: key === viewerKey });
+  }
+  // 전투 중 -> 접속 중 순서, 같은 상태끼리는 이름순
+  onlineRows.sort((a, b) => (a.status === b.status ? String(a.name).localeCompare(String(b.name)) : a.status === 'battle' ? -1 : 1));
+
+  // 오프라인 목록: 최근 접속 순. DB 조회는 잠깐 캐시한다 (유저 현황을 여러 명이 동시에 보고 있어도 DB 부하가 늘지 않게)
+  if (!presenceCache.rows || now - presenceCache.at > PRESENCE_CACHE_MS) {
+    const [rows, total] = await Promise.all([db.getRecentUsers(PRESENCE_LIST_LIMIT + onlineUsers.size), db.countUsers()]);
+    presenceCache = { at: now, rows, total };
+  }
+  const shownOnline = onlineRows.slice(0, PRESENCE_LIST_LIMIT);
+  const offlineRows = presenceCache.rows
+    .filter((r) => !onlineUsers.has(r.key))
+    .slice(0, Math.max(0, PRESENCE_LIST_LIMIT - shownOnline.length))
+    .map((r) => ({ name: r.name, status: 'offline', agoMs: r.lastSeenAt ? Math.max(0, now - r.lastSeenAt) : null }));
+
+  return {
+    users: [...shownOnline, ...offlineRows],
+    counts: {
+      battle: battleCount,
+      online: onlineRows.length - battleCount,
+      offline: Math.max(0, presenceCache.total - onlineRows.length),
+    },
+  };
+}
+
 function releaseAccount(socket) {
   const key = socket.data.userKey;
-  if (key && onlineUsers.get(key) === socket.id) onlineUsers.delete(key);
+  if (key && onlineUsers.get(key) === socket.id) {
+    onlineUsers.delete(key);
+    db.touchLastSeen(key).catch((e) => console.error('마지막 접속 시각 저장 실패', e)); // 로그아웃/연결 종료 시각 = 마지막 접속
+  }
   socket.data.userKey = null;
   socket.data.displayName = null;
   socket.data.unlocked = new Set();
@@ -1103,6 +1181,7 @@ function registerAuthHandlers(socket) {
     socket.data.displayName = user.name;
     socket.data.unlocked = new Set(effectiveUnlocked(user));
     onlineUsers.set(user.key, socket.id);
+    db.touchLastSeen(user.key).catch((e) => console.error('마지막 접속 시각 저장 실패', e));
   }
 
   socket.on('register', async (data, ack) => {
@@ -1238,6 +1317,7 @@ function registerAuthHandlers(socket) {
 
       rateBuckets.delete(`loginFail:${key}`);
       rankingCache = { at: 0, top: null }; // 랭킹에 바뀐 아이디가 바로 반영되도록 캐시 비우기
+      presenceCache = { at: 0, rows: null, total: 0 }; // 유저 현황에도 바뀐 아이디가 바로 보이도록
       // 아이디(키)가 바뀌었으면 이 소켓의 로그인 정보와 접속 중 목록도 새 키로 옮긴다
       if (changes.newKey) {
         if (onlineUsers.get(key) === socket.id) onlineUsers.delete(key);
@@ -1284,6 +1364,7 @@ function registerAuthHandlers(socket) {
 
       rateBuckets.delete(`loginFail:${key}`);
       rankingCache = { at: 0, top: null }; // 삭제된 계정이 랭킹에 남지 않도록 캐시 비우기
+      presenceCache = { at: 0, rows: null, total: 0 }; // 삭제된 계정이 유저 현황에 남지 않도록
       releaseAccount(socket); // 로그인 상태 해제 (이 뒤로는 모든 요청이 '로그인 필요'로 거절됨)
       console.log(`[계정] 삭제됨: ${key}`);
       ack({ ok: true, message: '계정이 삭제되었습니다.' });
@@ -1292,6 +1373,23 @@ function registerAuthHandlers(socket) {
       ack({ ok: false, message: '서버 오류가 발생했습니다.' });
     } finally {
       authBusy = false;
+    }
+  });
+
+  // 유저 현황 조회: 접속 중/전투 중인 유저 + 최근 접속했던 오프라인 유저. 로그인한 사람만 볼 수 있고, 너무 자주 요청하지 못하게 한다.
+  let lastPresenceAt = 0;
+  socket.on('getPresence', async (data, ack) => {
+    if (typeof ack !== 'function') return;
+    try {
+      const key = socket.data.userKey;
+      if (!key) return ack({ ok: false, message: '로그인이 필요합니다.' });
+      const now = Date.now();
+      if (now - lastPresenceAt < 1000) return ack({ ok: false, message: '잠시 후 다시 시도해주세요.' });
+      lastPresenceAt = now;
+      ack({ ok: true, ...(await buildPresence(key)) });
+    } catch (e) {
+      console.error('getPresence 오류', e);
+      ack({ ok: false, message: '유저 현황을 불러오지 못했습니다.' });
     }
   });
 
@@ -1943,7 +2041,7 @@ function startMatch(mode, entries) {
   // 대결 화면용 참가자 목록: 닉네임, 팀, 캐릭터, 그 캐릭터의 트로피
   const roster = entries.map((e) => {
     const pl = match.players[e.socket.id];
-    return { id: pl.id, name: pl.name, team: pl.team, characterId: pl.characterId, characterName: pl.characterName, trophies: e.trophies || 0 };
+    return { id: pl.id, name: pl.name, team: pl.team, characterId: pl.characterId, characterName: pl.characterName, trophies: e.trophies || 0, device: e.socket.data.device || 'desktop' };
   });
 
   entries.forEach((e) => {
@@ -2016,6 +2114,7 @@ function endMatch(matchId) {
 
 io.on('connection', (socket) => {
   console.log(`플레이어 접속: ${socket.id}`);
+  socket.data.device = normalizeDevice(socket.handshake.auth && socket.handshake.auth.device, socket.handshake.headers['user-agent']);
   broadcastOnlineCount();
   registerAuthHandlers(socket); // 회원가입 / 로그인 / 로그아웃 / 캐릭터 잠금해제
 
