@@ -472,6 +472,38 @@ const CHARACTERS = {
       duration: 8,           // 닭이 남아있는 시간(초)
     },
   },
+  gwari: {
+    id: 'gwari',
+    name: '꽈리',
+    maxHp: 5500,
+    basic: {
+      name: '돌진 박치기',
+      type: 'dash',          // 발사체 없이 바라보는 방향으로 짧게 돌진, 적과 부딪히면 피해를 주고 멈춤
+      damage: 2000,
+      speed: 860,            // 돌진 속도(px/초)
+      duration: 0.23,        // 돌진 시간(초) -> 이동 거리 ≈ speed * duration ≈ 200px (서버 틱 단위로 끝나 실제로는 약 200px)
+      lifetime: 0.23,        // (클라이언트 사거리 표시용: speed * lifetime = 돌진 거리)
+      ammoRegenSeconds: AMMO_REGEN_SECONDS * 1.3, // 원효대사처럼 재장전 시간이 다른 캐릭터보다 30% 느림
+    },
+    ultimate: {
+      name: '고추 발사',
+      type: 'burst',         // 조준한 방향으로 고추를 연달아 발사
+      bulletCount: 3,
+      interval: 0.1,         // 고추 사이 발사 간격(초)
+      damage: 1500,          // 고추 한 개당 피해
+      speed: 800,
+      radius: 9,
+      lifetime: 1.2,         // 사거리 ≈ 960px
+      visual: 'chili',
+    },
+    gadget: {
+      name: '재장전 가속',
+      type: 'reloadBoost',   // 조준 불필요, 즉시 발동
+      instant: true,
+      duration: 3,           // 지속 시간(초)
+      speedMultiplier: 1.25, // 재장전 속도 배율 (1.25 = 25% 빨라짐)
+    },
+  },
 };
 
 // ===== 캐릭터 설명(캐릭터 선택 화면용) 자동 생성 =====
@@ -486,7 +518,10 @@ function describeBasic(b) {
   let damage = null;
   const poolLabel = b.type === 'skullwater' ? '물웅덩이' : b.type === 'poopgas' ? '똥가루 구름' : b.type === 'eggthrow' ? '흰자' : '웅덩이';
 
-  if (b.type === 'melee') {
+  if (b.type === 'dash') {
+    damage = b.damage;
+    parts.push(`바라보는 방향으로 약 ${fmtNum(Math.round(b.speed * b.duration))}px를 돌진, 적과 부딪히면 ${fmtNum(b.damage)} 피해`);
+  } else if (b.type === 'melee') {
     damage = b.damage;
     parts.push(`전방 ${b.angleDegrees}도 부채꼴 범위(사거리 ${b.range})를 휘둘러 ${fmtNum(b.damage)} 피해를 주고 ${b.knockback}만큼 뒤로 밀쳐냄`);
   } else if (b.poolOnImpact) {
@@ -550,6 +585,11 @@ function describeUltimate(u) {
     case 'timedBomb':
       desc = `조준 불필요, 자신의 위치에 설치. 반경 ${u.radius} 안의 적에게 ${u.tickInterval}초마다 ${fmtNum(u.tickDamage)} 피해 + 이동속도 ${Math.round((1 - u.slowMultiplier) * 100)}% 감소, ${u.fuseTime}초 뒤 ${fmtNum(u.explodeDamage)} 피해로 폭발`;
       break;
+    case 'burst': {
+      const r = rangeOf(u);
+      desc = `조준한 방향으로 고추 ${u.bulletCount}개를 연달아 발사 (개당 ${fmtNum(u.damage)} 피해${r ? `, 사거리 약 ${r}` : ''})`;
+      break;
+    }
     case 'summonChicken':
       desc = `조준 불필요, 체력 ${fmtNum(u.hp)}의 닭을 소환. ${u.duration}초 동안 적을 자동으로 추격하다가 사거리 안에 들어오면 적에게 돌격해서 ${fmtNum(u.damage)} 피해 (${u.attackInterval}초마다 돌격 가능)`;
       break;
@@ -579,6 +619,9 @@ function describeGadget(g) {
       break;
     case 'sprint':
       desc = `조준한 방향으로 ${fmtNum(Math.round(g.speed * g.duration))}px를 순식간에 돌진, 피해나 기절을 주지 않는 도주용 (적을 통과함)`;
+      break;
+    case 'reloadBoost':
+      desc = `${g.duration}초 동안 재장전 속도 ${Math.round((g.speedMultiplier - 1) * 100)}% 빨라짐`;
       break;
     case 'powerCharge':
       desc = `${g.chargeTime}초 동안 이동/공격 불가 상태가 되지만, 이후 ${g.boostDuration}초 동안 공격력 ${fmtMult(g.damageMultiplier)}배`;
@@ -629,6 +672,7 @@ const CHARACTER_PRICES = {
   yeoddongi: 200,
   bobae: 250,
   ekhe: 300,
+  gwari: 300,
 };
 CHARACTER_PRICES[DEFAULT_CHARACTER_ID] = 0; // 기본 캐릭터는 항상 무료 (사용 가능한 캐릭터가 하나도 없는 상황 방지)
 function priceOf(id) {
@@ -1461,7 +1505,12 @@ function buildPlayer(socketId, name, characterId, team, spawn) {
     dashTimeLeft: 0,
     dashSpeed: 0,        // 이번 돌진의 속도(px/초) - 궁극기 돌진과 가젯 돌진이 서로 다른 속도를 쓰기 때문에 돌진을 시작할 때 기록함
     dashHarmless: false, // true면 피해/기절 없이 이동만 하는 돌진 (변기통의 가젯 '질주'). 적과 부딪혀도 멈추지 않고 통과함
-    stunnedUntil: 0,    // 이 시각(ms, Date.now() 기준) 전까지는 기절 상태 (이동/공격 불가)
+    dashDamage: 0,       // 이번 돌진이 적에게 주는 피해 (궁극기 돌진 / 꽈리의 기본공격 돌진이 서로 다름)
+    dashStun: 0,         // 이번 돌진이 주는 기절 시간(초)
+    dashCharge: false,   // true면 이 돌진의 적중이 궁극기 게이지를 채움 (기본공격 돌진)
+    reloadBoostUntil: 0,       // 이 시각(ms) 전까지 재장전 속도 증가 (꽈리의 가젯 '재장전 가속')
+    reloadBoostMultiplier: 1,
+    stunnedUntil: 0,   // 이 시각(ms, Date.now() 기준) 전까지는 기절 상태 (이동/공격 불가)
     knockbackDirX: 0,   // 넉백(밀쳐냄) 진행 방향
     knockbackDirY: 0,
     knockbackDistance: 0, // 넉백으로 이동해야 할 총 거리(px)
@@ -1573,6 +1622,7 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
       respawned.invincibleUntil = 0; // 리스폰 시 이전 무적 상태는 초기화
       respawned.shieldHp = 0;        // 리스폰 시 보호막도 초기화
       respawned.shieldMax = 0;
+      respawned.reloadBoostUntil = 0;
       respawned.speedBoostUntil = 0; // 리스폰 시 가젯 효과(이동속도 증가/충전/공격력 증가)도 초기화
       respawned.chargingUntil = 0;
       respawned.damageBoostFrom = 0;
@@ -2052,6 +2102,17 @@ io.on('connection', (socket) => {
 
     if (p.basic.type === 'melee') {
       performMeleeAttack(match, p, p.basic, false);
+    } else if (p.basic.type === 'dash') {
+      // 꽈리의 돌진 박치기: 실제 이동/충돌 판정은 updateMatch의 돌진 처리가 수행
+      p.dashing = true;
+      p.dashHarmless = false;
+      p.dashSpeed = p.basic.speed;
+      p.dashDamage = p.basic.damage;
+      p.dashStun = 0;
+      p.dashCharge = true;
+      p.dashDirX = Math.cos(p.angle);
+      p.dashDirY = Math.sin(p.angle);
+      p.dashTimeLeft = p.basic.duration;
     } else {
       spawnProjectiles(match, p, p.basic, false);
     }
@@ -2097,6 +2158,10 @@ io.on('connection', (socket) => {
       // 원효대사의 가젯: duration초 동안 이동속도 증가 (재사용 시 새로 duration초로 갱신)
       p.speedBoostUntil = Date.now() + (gadget.duration || 2) * 1000;
       p.speedBoostMultiplier = gadget.speedMultiplier || 1.3;
+    } else if (gadget.type === 'reloadBoost') {
+      // 꽈리의 가젯: duration초 동안 재장전 속도 증가 (재사용 시 새로 duration초로 갱신)
+      p.reloadBoostUntil = Date.now() + (gadget.duration || 3) * 1000;
+      p.reloadBoostMultiplier = gadget.speedMultiplier || 1.25;
     } else if (gadget.type === 'sprint') {
       // 변기통의 가젯: 바라보는(조준) 방향으로 짧게 돌진. 실제 이동/벽 충돌은 updateMatch의 돌진 처리가 수행하고,
       // dashHarmless라서 적에게 피해/기절을 주지 않고 적을 그대로 통과한다
@@ -2178,9 +2243,27 @@ io.on('connection', (socket) => {
       p.dashing = true;
       p.dashHarmless = false;
       p.dashSpeed = ult.speed || 0;
+      p.dashDamage = ult.damage;
+      p.dashStun = ult.stunDuration || 0;
+      p.dashCharge = false;
       p.dashDirX = Math.cos(p.angle);
       p.dashDirY = Math.sin(p.angle);
       p.dashTimeLeft = ult.duration || 0.4;
+    } else if (ult.type === 'burst') {
+      // 꽈리의 고추 발사: 발사 순간의 조준 방향으로 고추를 짧은 간격으로 연달아 발사 (첫 발은 즉시)
+      const fireAngle = p.angle;
+      const shooterId = p.id;
+      for (let i = 0; i < ult.bulletCount; i++) {
+        const fire = () => {
+          const m = matches[match.id];
+          if (!m || m.over) return;
+          const shooter = m.players[shooterId];
+          if (!shooter || !shooter.alive) return;
+          spawnProjectiles(m, shooter, ult, true, fireAngle);
+        };
+        if (i === 0) fire();
+        else setTimeout(fire, i * ult.interval * 1000);
+      }
     } else if (ult.type === 'turret') {
       // 성스럽다의 저격 터렛: 조준 불필요, 즉시 자신의 위치에 자동 사격 터렛을 설치
       spawnTurret(match, p, ult);
@@ -2298,9 +2381,9 @@ function updateMatch(match, dt, now) {
       const ddx = target.x - p.x;
       const ddy = target.y - p.y;
       if (Math.sqrt(ddx * ddx + ddy * ddy) < PLAYER_RADIUS * 2) {
-        applyDamage(match, target, ult.damage, pid, { chargeShooter: false });
+        applyDamage(match, target, p.dashDamage, pid, { chargeShooter: !!p.dashCharge });
         hitSomeone = true;
-        if (!match.over && !(target.invincibleUntil && now < target.invincibleUntil)) target.stunnedUntil = now + (ult.stunDuration || 0) * 1000;
+        if (!match.over && p.dashStun > 0 && !(target.invincibleUntil && now < target.invincibleUntil)) target.stunnedUntil = now + p.dashStun * 1000;
         break;
       }
     }
@@ -2746,7 +2829,7 @@ function updateMatch(match, dt, now) {
 
     // 탄창이 가득 차지 않았으면 시간이 지날 때마다 한 발씩 채워짐
     if (p.ammo < p.maxAmmo) {
-      p.ammoRegenElapsed += dt;
+      p.ammoRegenElapsed += dt * (p.reloadBoostUntil && now < p.reloadBoostUntil ? p.reloadBoostMultiplier || 1 : 1);
       if (p.ammoRegenElapsed >= (p.ammoRegenSeconds || AMMO_REGEN_SECONDS)) {
         p.ammo = Math.min(p.maxAmmo, p.ammo + 1);
         p.ammoRegenElapsed = 0;
