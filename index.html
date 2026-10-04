@@ -264,6 +264,34 @@
   #missionMsg { min-height: 20px; margin: 10px 0; font-size: 14px; color: #e74c3c; }
   #missionMsg.ok { color: #2ecc71; }
   /* ===== 계정 설정 (아이디/비밀번호 변경) ===== */
+  /* ===== 랭킹 ===== */
+  #openRankingBtn { margin: 14px 6px 0 0; padding: 8px 18px; font-size: 13px; border-radius: 6px; border: none; background: #d35400; color: #fff; cursor: pointer; }
+  #openRankingBtn:hover { background: #b34700; }
+  #rankingOverlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+    display: none; align-items: center; justify-content: center; flex-direction: column;
+    z-index: 40; text-align: center; padding: 0 16px; box-sizing: border-box; color: #fff;
+  }
+  #rankingOverlay.open { display: flex; }
+  #rankingOverlay h2 { margin: 0 0 4px 0; }
+  .ranking-sub { font-size: 12px; color: #aaa; margin-bottom: 10px; }
+  #rankingList { width: 100%; max-width: 380px; max-height: 52vh; overflow-y: auto; display: flex; flex-direction: column; gap: 5px; }
+  .rank-row { display: flex; align-items: center; gap: 10px; background: #2c3e50; border: 2px solid transparent; border-radius: 8px; padding: 7px 12px; font-size: 14px; text-align: left; }
+  .rank-row.me { border-color: #f1c40f; background: #3d4f63; }
+  .rank-no { width: 38px; text-align: center; font-weight: bold; color: #ecf0f1; }
+  .rank-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rank-score { color: #f1c40f; white-space: nowrap; }
+  .rank-empty { color: #aaa; padding: 20px 0; font-size: 14px; }
+  #rankingMe { width: 100%; max-width: 380px; margin-top: 10px; font-size: 14px; color: #f1c40f; min-height: 20px; }
+  #rankingMsg { min-height: 18px; margin: 6px 0; font-size: 13px; color: #e74c3c; }
+  #rankingBtns button { margin: 0 4px; padding: 9px 20px; font-size: 14px; border-radius: 6px; border: none; color: #fff; cursor: pointer; background: #d35400; }
+  #rankingBtns button.secondary { background: #7f8c8d; }
+  #rankingBtns button:disabled { opacity: 0.6; cursor: default; }
+  /* 계정 삭제 */
+  .account-danger { margin-top: 16px; padding-top: 12px; border-top: 1px solid #444; max-width: 280px; }
+  #accountDeleteBtn { padding: 8px 18px; font-size: 13px; border-radius: 6px; border: none; background: #c0392b; color: #fff; cursor: pointer; }
+  #accountDeleteBtn:hover { background: #a93226; }
+  #accountDeleteBtn:disabled { opacity: 0.6; cursor: default; }
   #openAccountBtn { margin-top: 20px; margin-right: 8px; padding: 8px 18px; font-size: 13px; border-radius: 6px; border: none; background: #2980b9; color: #fff; cursor: pointer; }
   #openAccountBtn:hover { background: #21618c; }
   #accountOverlay {
@@ -736,7 +764,7 @@
       <div class="mode-desc">팀원과 함께 2대2 협동전</div>
     </div>
   </div>
-  <div><button id="openMissionBtn">📋 미션</button><button id="openCodeBtn">🎁 코드 입력</button></div>
+  <div><button id="openRankingBtn">🏆 랭킹</button><button id="openMissionBtn">📋 미션</button><button id="openCodeBtn">🎁 코드 입력</button></div>
   <div><button id="openAccountBtn">⚙️ 계정 설정</button><button id="logoutBtn" style="margin-top:20px">로그아웃</button></div>
 </div>
 
@@ -752,6 +780,22 @@
   <div class="account-btns">
     <button id="accountSubmitBtn">변경하기</button>
     <button id="accountCloseBtn" class="secondary">닫기</button>
+  </div>
+  <div class="account-danger">
+    <button id="accountDeleteBtn">🗑️ 계정 삭제</button>
+    <div class="account-sub">위에 현재 비밀번호를 입력한 뒤 누르세요. 코인·트로피·캐릭터·미션 기록이 모두 사라지고 되돌릴 수 없습니다.</div>
+  </div>
+</div>
+
+<div id="rankingOverlay">
+  <h2>🏆 랭킹</h2>
+  <div class="ranking-sub">모든 캐릭터의 트로피 총합 기준 · 상위 50명</div>
+  <div id="rankingList"></div>
+  <div id="rankingMe"></div>
+  <div id="rankingMsg"></div>
+  <div id="rankingBtns">
+    <button id="rankingRefreshBtn">새로고침</button>
+    <button id="rankingCloseBtn" class="secondary">닫기</button>
   </div>
 </div>
 
@@ -1329,6 +1373,62 @@ function submitAccount() {
     setAccountMsg(res.message || '변경되었습니다.', true);
   });
 }
+// 계정 삭제: 현재 비밀번호 + 확인창을 거친 뒤 서버에 요청. 성공하면 로그인 화면으로 돌아간다
+function deleteAccount() {
+  const currentPassword = document.getElementById('accCurrentPw').value;
+  if (!currentPassword) { setAccountMsg('계정을 삭제하려면 현재 비밀번호를 입력하세요.'); return; }
+  const name = currentProfile ? currentProfile.username : '';
+  if (!confirm(`정말 '${name}' 계정을 삭제할까요?\n코인, 트로피, 캐릭터, 미션 기록이 모두 사라지고 되돌릴 수 없습니다.`)) return;
+  const btn = document.getElementById('accountDeleteBtn');
+  btn.disabled = true;
+  setAccountMsg('');
+  socket.timeout(8000).emit('deleteAccount', { currentPassword }, (err, res) => {
+    btn.disabled = false;
+    if (err || !res) { setAccountMsg('서버 응답이 없습니다. 잠시 후 다시 시도해주세요.'); return; }
+    if (!res.ok) { setAccountMsg(res.message || '삭제에 실패했습니다.'); return; }
+    try { localStorage.removeItem('lastUsername'); } catch (e) {}
+    forceReLogin(res.message || '계정이 삭제되었습니다.');
+    showAuthMsg(res.message || '계정이 삭제되었습니다.', true);
+  });
+}
+document.getElementById('accountDeleteBtn').addEventListener('click', deleteAccount);
+
+// ===== 랭킹 =====
+// 순위/총합 계산은 전부 서버가 하고, 클라이언트는 받은 목록을 그대로 보여주기만 한다
+function loadRanking() {
+  const refreshBtn = document.getElementById('rankingRefreshBtn');
+  const listEl = document.getElementById('rankingList');
+  refreshBtn.disabled = true;
+  document.getElementById('rankingMsg').textContent = '';
+  socket.timeout(8000).emit('getRanking', {}, (err, res) => {
+    refreshBtn.disabled = false;
+    if (err || !res) { document.getElementById('rankingMsg').textContent = '서버 응답이 없습니다. 잠시 후 다시 시도해주세요.'; return; }
+    if (!res.ok) { document.getElementById('rankingMsg').textContent = res.message || '랭킹을 불러오지 못했습니다.'; return; }
+    const medals = { 1: '🥇', 2: '🥈', 3: '🥉' };
+    listEl.innerHTML = res.top.length
+      ? res.top.map((r) => `<div class="rank-row${r.isMe ? ' me' : ''}">
+          <span class="rank-no">${medals[r.rank] || r.rank}</span>
+          <span class="rank-name">${escapeHtml(r.name)}${r.isMe ? ' (나)' : ''}</span>
+          <span class="rank-score">🏆 ${r.total.toLocaleString()}</span>
+        </div>`).join('')
+      : '<div class="rank-empty">아직 랭킹에 오른 플레이어가 없습니다.<br>매치에서 이겨 트로피를 모아보세요!</div>';
+    const me = res.me;
+    document.getElementById('rankingMe').textContent = !me ? ''
+      : me.total > 0 ? `내 순위: ${me.rank.toLocaleString()}위 (🏆 ${me.total.toLocaleString()}) · 전체 ${res.players.toLocaleString()}명`
+      : '내 순위: 아직 없음 (트로피를 얻으면 랭킹에 오릅니다)';
+  });
+}
+function openRankingDialog() {
+  document.getElementById('rankingList').innerHTML = '<div class="rank-empty">불러오는 중...</div>';
+  document.getElementById('rankingMe').textContent = '';
+  document.getElementById('rankingOverlay').classList.add('open');
+  loadRanking();
+}
+function closeRankingDialog() { document.getElementById('rankingOverlay').classList.remove('open'); }
+document.getElementById('openRankingBtn').addEventListener('click', openRankingDialog);
+document.getElementById('rankingRefreshBtn').addEventListener('click', loadRanking);
+document.getElementById('rankingCloseBtn').addEventListener('click', closeRankingDialog);
+
 document.getElementById('openAccountBtn').addEventListener('click', openAccountDialog);
 document.getElementById('accountCloseBtn').addEventListener('click', closeAccountDialog);
 document.getElementById('accountSubmitBtn').addEventListener('click', submitAccount);
@@ -1347,6 +1447,12 @@ function rankInfo(trophies) {
   for (const r of ranks) {
     if (trophies >= r.min) cur = r;
     else if (!next) next = r;
+  }
+  // 단계 등급(마스터): min부터 step마다 1단계씩 올라가 끝이 없다 (1000 → 마스터1, 2000 → 마스터2, ...)
+  if (cur.step && trophies >= cur.min) {
+    const level = Math.floor((trophies - cur.min) / cur.step) + 1;
+    cur = { ...cur, name: `${cur.name}${level}`, level };
+    next = { ...cur, name: `${cur.name.replace(/\d+$/, '')}${level + 1}`, min: cur.min + level * cur.step };
   }
   return { cur, next };
 }
@@ -1441,6 +1547,7 @@ document.getElementById('logoutBtn').addEventListener('click', () => {
     closeCodeDialog();
     closeMissionDialog();
     closeAccountDialog();
+    closeRankingDialog();
     document.getElementById('modeOverlay').style.display = 'none';
     document.getElementById('joinOverlay').style.display = 'flex';
     showAuthMsg('로그아웃되었습니다.', true);
@@ -1457,6 +1564,7 @@ function forceReLogin(message) {
   closeCodeDialog();
   closeMissionDialog();
   closeAccountDialog();
+  closeRankingDialog();
   ['modeOverlay', 'characterOverlay'].forEach((id) => { document.getElementById(id).style.display = 'none'; });
   ['matchingOverlay', 'matchResultOverlay', 'scoreboard'].forEach((id) => { document.getElementById(id).classList.remove('open'); });
   document.getElementById('joinOverlay').style.display = 'flex';
