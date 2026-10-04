@@ -339,6 +339,13 @@ const CHARACTERS = {
       duration: 0.4,        // 최대 돌진 지속 시간(초). 이 시간 동안 적과 충돌하지 않으면 그냥 종료됨
       stunDuration: 1.5,    // 충돌한 적을 기절시키는 시간(초)
     },
+    gadget: {
+      name: '질주',
+      type: 'sprint',       // 조준한 방향으로 짧은 거리를 순식간에 돌진 (적에게 피해/기절을 주지 않는 도주용, 적과 부딪혀도 그대로 통과)
+      instant: true,        // true면 누르는 즉시 발동
+      speed: 970,           // 돌진 속도(px/초)
+      duration: 0.165,      // 돌진 지속 시간(초). 이동 거리 ≈ speed × duration = 160px (서버 틱이 1/30초라 5틱 = 약 162px 이동). 벽에 막히면 그 앞에서 멈춤
+    },
   },
   seongseureopda: {
     id: 'seongseureopda',
@@ -569,6 +576,9 @@ function describeGadget(g) {
       break;
     case 'speedBoost':
       desc = `${g.duration}초 동안 이동속도 ${fmtMult(g.speedMultiplier)}배`;
+      break;
+    case 'sprint':
+      desc = `조준한 방향으로 ${fmtNum(Math.round(g.speed * g.duration))}px를 순식간에 돌진, 피해나 기절을 주지 않는 도주용 (적을 통과함)`;
       break;
     case 'powerCharge':
       desc = `${g.chargeTime}초 동안 이동/공격 불가 상태가 되지만, 이후 ${g.boostDuration}초 동안 공격력 ${fmtMult(g.damageMultiplier)}배`;
@@ -1449,6 +1459,8 @@ function buildPlayer(socketId, name, characterId, team, spawn) {
     dashDirX: 0,
     dashDirY: 0,
     dashTimeLeft: 0,
+    dashSpeed: 0,        // 이번 돌진의 속도(px/초) - 궁극기 돌진과 가젯 돌진이 서로 다른 속도를 쓰기 때문에 돌진을 시작할 때 기록함
+    dashHarmless: false, // true면 피해/기절 없이 이동만 하는 돌진 (변기통의 가젯 '질주'). 적과 부딪혀도 멈추지 않고 통과함
     stunnedUntil: 0,    // 이 시각(ms, Date.now() 기준) 전까지는 기절 상태 (이동/공격 불가)
     knockbackDirX: 0,   // 넉백(밀쳐냄) 진행 방향
     knockbackDirY: 0,
@@ -2085,6 +2097,15 @@ io.on('connection', (socket) => {
       // 원효대사의 가젯: duration초 동안 이동속도 증가 (재사용 시 새로 duration초로 갱신)
       p.speedBoostUntil = Date.now() + (gadget.duration || 2) * 1000;
       p.speedBoostMultiplier = gadget.speedMultiplier || 1.3;
+    } else if (gadget.type === 'sprint') {
+      // 변기통의 가젯: 바라보는(조준) 방향으로 짧게 돌진. 실제 이동/벽 충돌은 updateMatch의 돌진 처리가 수행하고,
+      // dashHarmless라서 적에게 피해/기절을 주지 않고 적을 그대로 통과한다
+      p.dashing = true;
+      p.dashHarmless = true;
+      p.dashSpeed = gadget.speed || 1000;
+      p.dashDirX = Math.cos(p.angle);
+      p.dashDirY = Math.sin(p.angle);
+      p.dashTimeLeft = gadget.duration || 0.16;
     } else if (gadget.type === 'powerCharge') {
       // 보배의 가젯: chargeTime초 동안 이동/공격 불가(기절과 같은 방식으로 막음) -> 이후 boostDuration초 동안 공격력 증가
       const now = Date.now();
@@ -2155,6 +2176,8 @@ io.on('connection', (socket) => {
       // 변기통의 돌진: 바라보는 방향으로 매우 빠르게 이동하며, 이후 updateMatch 틱에서
       // 실제 이동/벽 충돌/적 충돌(대미지+기절) 판정을 수행한다
       p.dashing = true;
+      p.dashHarmless = false;
+      p.dashSpeed = ult.speed || 0;
       p.dashDirX = Math.cos(p.angle);
       p.dashDirY = Math.sin(p.angle);
       p.dashTimeLeft = ult.duration || 0.4;
@@ -2241,15 +2264,29 @@ function updateMatch(match, dt, now) {
     if (!p.alive) { p.dashing = false; continue; }
 
     const ult = p.ultimate;
-    const step = (ult.speed || 0) * dt;
-    const nx = Math.max(PLAYER_RADIUS, Math.min(ARENA_WIDTH - PLAYER_RADIUS, p.x + p.dashDirX * step));
-    const ny = Math.max(PLAYER_RADIUS, Math.min(ARENA_HEIGHT - PLAYER_RADIUS, p.y + p.dashDirY * step));
-
+    const step = (p.dashSpeed || ult.speed || 0) * dt;
+    // 한 틱 이동량이 크므로(빠른 돌진) 5px 이하의 작은 걸음으로 나눠서 이동한다.
+    // 그래야 벽 앞에서 한 걸음 분량이 막혀도 벽에 닿기 직전까지는 가고, 벽을 통과하지도 않는다.
+    const subSteps = Math.max(1, Math.ceil(step / 5));
+    const subX = (p.dashDirX * step) / subSteps;
+    const subY = (p.dashDirY * step) / subSteps;
     let blockedByWall = false;
-    if (!collidesWithWalls(match.walls, nx, p.y, PLAYER_RADIUS)) p.x = nx; else blockedByWall = true;
-    if (!collidesWithWalls(match.walls, p.x, ny, PLAYER_RADIUS)) p.y = ny; else blockedByWall = true;
+    let moved = false;
+    for (let i = 0; i < subSteps; i++) {
+      const nx = Math.max(PLAYER_RADIUS, Math.min(ARENA_WIDTH - PLAYER_RADIUS, p.x + subX));
+      const ny = Math.max(PLAYER_RADIUS, Math.min(ARENA_HEIGHT - PLAYER_RADIUS, p.y + subY));
+      if (!collidesWithWalls(match.walls, nx, p.y, PLAYER_RADIUS)) { if (nx !== p.x) moved = true; p.x = nx; } else blockedByWall = true;
+      if (!collidesWithWalls(match.walls, p.x, ny, PLAYER_RADIUS)) { if (ny !== p.y) moved = true; p.y = ny; } else blockedByWall = true;
+    }
 
     p.dashTimeLeft -= dt;
+
+    // 가젯 돌진(질주): 피해/기절 없이 이동만 한다. 적과 부딪혀도 통과하고, 벽을 따라 미끄러지며 계속 가다가
+    // 두 방향 모두 막혀 더 이상 못 움직이거나 시간이 끝나면 종료
+    if (p.dashHarmless) {
+      if (!moved || p.dashTimeLeft <= 0) p.dashing = false;
+      continue;
+    }
 
     // 돌진 중 적과 충돌하면 대미지 + 기절을 주고 돌진을 즉시 종료 (벽에 막혀도 종료)
     let hitSomeone = false;
