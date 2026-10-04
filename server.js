@@ -634,13 +634,36 @@ function effectiveUnlocked(u) {
   return Array.from(new Set([...FREE_CHARACTER_IDS, ...(u.unlocked || [])])).filter((id) => CHARACTERS[id]);
 }
 // 캐릭터별 트로피 등급 (min: 해당 등급이 되기 위한 최소 트로피). 패배하면 트로피가 깎이므로 등급도 내려갈 수 있음
+// step이 있는 등급은 끝없이 이어지는 단계 등급이다: min부터 step마다 1단계씩 올라간다.
+// 마스터: 1000이상 마스터1, 2000이상 마스터2, 3000이상 마스터3 ... (단계 계산은 클라이언트 rankInfo에서 함)
 const TROPHY_RANKS = [
   { name: '브론즈', icon: '🥉', min: 0 },
   { name: '실버', icon: '🥈', min: 100 },
   { name: '골드', icon: '🥇', min: 300 },
   { name: '다이아', icon: '💎', min: 600 },
-  { name: '마스터', icon: '👑', min: 1000 },
+  { name: '마스터', icon: '👑', min: 1000, step: 1000 },
 ];
+// ===== 랭킹 =====
+// 순위 기준: 모든 캐릭터의 트로피 총합(많을수록 위). 총합이 같으면 승수 > 이름 순으로 정렬하고, 총합이 같은 사람은 같은 순위를 쓴다.
+// 트로피가 0인 계정은 랭킹 목록에 올리지 않는다 (내 순위는 0이어도 계산해서 보여줌).
+const RANKING_LIMIT = 50;          // 랭킹 화면에 보여줄 최대 인원
+const RANKING_CACHE_MS = 10 * 1000; // 상위 목록 캐시 시간 (요청이 몰려도 DB 조회를 줄이기 위함)
+function trophyTotal(u) {
+  let sum = 0;
+  for (const id in CHARACTERS) sum += (u.trophies && u.trophies[id]) || 0; // 삭제된 캐릭터의 옛 트로피는 합산하지 않음
+  return sum;
+}
+// 이미 정렬된 목록에 순위를 붙인다 (총합이 같으면 같은 순위)
+function withRanks(rows) {
+  let rank = 0;
+  let prevTotal = null;
+  return rows.map((r, i) => {
+    if (r.total !== prevTotal) { rank = i + 1; prevTotal = r.total; }
+    return { ...r, rank };
+  });
+}
+let rankingCache = { at: 0, top: null };
+
 // ===== 일일 미션 =====
 // 미션은 매일 0시(한국 시간)에 진행도와 보상 수령 기록이 초기화된다.
 // 진행도는 '점수로 승패가 갈린 정상 종료 매치'에서만 올라간다 (상대가 나가서 끝난 매치는 제외 - 부계정으로 쉽게 올리는 것을 방지).
@@ -795,6 +818,28 @@ function createFileDb() {
       scheduleSave();
       return { ok: true, user: cloneUser(u) };
     },
+    // 트로피 총합 상위 목록 (총합 0 제외)
+    async getRankingTop(limit) {
+      const rows = Object.values(users)
+        .map((u) => ({ key: u.key, name: u.name, total: trophyTotal(u), wins: u.wins || 0 }))
+        .filter((r) => r.total > 0)
+        .sort((a, b) => b.total - a.total || b.wins - a.wins || String(a.name).localeCompare(String(b.name)));
+      return withRanks(rows.slice(0, limit));
+    },
+    // 내 순위 = 나보다 총합이 높은 사람 수 + 1
+    async getRankOf(key) {
+      const u = users[key];
+      if (!u) return null;
+      const total = trophyTotal(u);
+      const higher = Object.values(users).filter((o) => trophyTotal(o) > total).length;
+      return { name: u.name, total, rank: higher + 1, players: Object.keys(users).length };
+    },
+    async deleteUser(key) {
+      if (!users[key]) return false;
+      delete users[key];
+      scheduleSave();
+      return true;
+    },
   };
 }
 
@@ -891,6 +936,46 @@ function createMongoDb(uri) {
         if (e && e.code === 11000) return { ok: false, reason: 'taken' };
         throw e;
       }
+    },
+    // 트로피 총합 계산식 (현재 존재하는 캐릭터의 트로피만 합산)
+    _totalExpr() {
+      const ids = Object.keys(CHARACTERS);
+      return {
+        $sum: {
+          $map: {
+            input: { $filter: { input: { $objectToArray: { $ifNull: ['$trophies', {}] } }, as: 't', cond: { $in: ['$$t.k', ids] } } },
+            as: 't',
+            in: '$$t.v',
+          },
+        },
+      };
+    },
+    async getRankingTop(limit) {
+      const rows = await col.aggregate([
+        { $project: { _id: 0, key: 1, name: 1, wins: { $ifNull: ['$wins', 0] }, total: this._totalExpr() } },
+        { $match: { total: { $gt: 0 } } },
+        { $sort: { total: -1, wins: -1, name: 1 } },
+        { $limit: limit },
+      ]).toArray();
+      return withRanks(rows);
+    },
+    async getRankOf(key) {
+      const mine = await col.aggregate([
+        { $match: { key } },
+        { $project: { _id: 0, name: 1, total: this._totalExpr() } },
+      ]).toArray();
+      if (!mine.length) return null;
+      const higher = await col.aggregate([
+        { $project: { total: this._totalExpr() } },
+        { $match: { total: { $gt: mine[0].total } } },
+        { $count: 'n' },
+      ]).toArray();
+      const players = await col.estimatedDocumentCount();
+      return { name: mine[0].name, total: mine[0].total, rank: (higher[0] ? higher[0].n : 0) + 1, players };
+    },
+    async deleteUser(key) {
+      const r = await col.deleteOne({ key });
+      return r.deletedCount > 0;
     },
   };
 }
@@ -1098,6 +1183,7 @@ function registerAuthHandlers(socket) {
       }
 
       rateBuckets.delete(`loginFail:${key}`);
+      rankingCache = { at: 0, top: null }; // 랭킹에 바뀐 아이디가 바로 반영되도록 캐시 비우기
       // 아이디(키)가 바뀌었으면 이 소켓의 로그인 정보와 접속 중 목록도 새 키로 옮긴다
       if (changes.newKey) {
         if (onlineUsers.get(key) === socket.id) onlineUsers.delete(key);
@@ -1114,6 +1200,72 @@ function registerAuthHandlers(socket) {
       ack({ ok: false, message: '서버 오류가 발생했습니다.' });
     } finally {
       authBusy = false;
+    }
+  });
+
+  // 계정 삭제: 현재 비밀번호를 다시 확인한 뒤 계정과 모든 기록(코인/트로피/캐릭터/미션)을 완전히 지운다. 되돌릴 수 없다.
+  socket.on('deleteAccount', async (data, ack) => {
+    if (typeof ack !== 'function') return;
+    if (authBusy) return ack({ ok: false, message: '처리 중입니다. 잠시만 기다려주세요.' });
+    authBusy = true;
+    try {
+      const key = socket.data.userKey;
+      if (!key) return ack({ ok: false, message: '로그인이 필요합니다.' });
+      if (socketToMatch[socket.id] || isQueued(socket.id)) return ack({ ok: false, message: '매치 중이거나 대기 중에는 계정을 삭제할 수 없습니다.' });
+
+      const currentPassword = data && data.currentPassword;
+      if (typeof currentPassword !== 'string' || !currentPassword || currentPassword.length > 64) return ack({ ok: false, message: '현재 비밀번호를 입력하세요.' });
+      if (isRateLimited('loginFail', key)) return ack({ ok: false, message: '비밀번호 오류가 너무 많습니다. 잠시 후 다시 시도해주세요.' });
+
+      const user = await db.findUser(key);
+      if (!user) return ack({ ok: false, message: '계정을 찾을 수 없습니다.' });
+      const computed = await hashPassword(currentPassword, user.salt);
+      if (!safeEqualHex(computed, user.hash)) {
+        hitRate('loginFail', key);
+        return ack({ ok: false, message: '현재 비밀번호가 올바르지 않습니다.' });
+      }
+
+      const deleted = await db.deleteUser(key);
+      if (!deleted) return ack({ ok: false, message: '계정을 삭제하지 못했습니다.' });
+
+      rateBuckets.delete(`loginFail:${key}`);
+      rankingCache = { at: 0, top: null }; // 삭제된 계정이 랭킹에 남지 않도록 캐시 비우기
+      releaseAccount(socket); // 로그인 상태 해제 (이 뒤로는 모든 요청이 '로그인 필요'로 거절됨)
+      console.log(`[계정] 삭제됨: ${key}`);
+      ack({ ok: true, message: '계정이 삭제되었습니다.' });
+    } catch (e) {
+      console.error('deleteAccount 오류', e);
+      ack({ ok: false, message: '서버 오류가 발생했습니다.' });
+    } finally {
+      authBusy = false;
+    }
+  });
+
+  // 랭킹 조회: 트로피 총합 상위 목록 + 내 순위. 상위 목록은 잠깐 캐시하고, 한 소켓이 너무 자주 요청하지 못하게 한다.
+  let lastRankingAt = 0;
+  socket.on('getRanking', async (data, ack) => {
+    if (typeof ack !== 'function') return;
+    try {
+      const key = socket.data.userKey;
+      if (!key) return ack({ ok: false, message: '로그인이 필요합니다.' });
+      const now = Date.now();
+      if (now - lastRankingAt < 1500) return ack({ ok: false, message: '잠시 후 다시 시도해주세요.' });
+      lastRankingAt = now;
+
+      if (!rankingCache.top || now - rankingCache.at > RANKING_CACHE_MS) {
+        rankingCache = { at: now, top: await db.getRankingTop(RANKING_LIMIT) };
+      }
+      const me = await db.getRankOf(key);
+      ack({
+        ok: true,
+        // 다른 사람의 계정 키는 내보내지 않고, 내 항목만 isMe로 표시한다
+        top: rankingCache.top.map((r) => ({ rank: r.rank, name: r.name, total: r.total, wins: r.wins, isMe: r.key === key })),
+        me: me ? { rank: me.rank, total: me.total, name: me.name } : null,
+        players: me ? me.players : 0,
+      });
+    } catch (e) {
+      console.error('getRanking 오류', e);
+      ack({ ok: false, message: '랭킹을 불러오지 못했습니다.' });
     }
   });
 
