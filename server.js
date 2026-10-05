@@ -49,6 +49,21 @@ const MODES = {
 };
 const MATCH_COUNTDOWN_MS = 4000; // 매칭 직후 상대 정보(캐릭터/트로피)를 보여주는 대결 화면 시간. 이 동안은 이동/공격/스킬 입력이 막힘
 const MATCH_CLEANUP_DELAY_MS = 600; // 승리 판정 후 마지막 상태를 한 번 더 보낸 뒤 방을 정리하기까지의 지연
+
+// ===== 개발자(관리자) 모드 =====
+// 이 아이디(대소문자 구분 없음)로 로그인한 계정만 개발자 모드를 쓸 수 있다. 판단은 항상 서버가 로그인된 계정 키로 한다 (클라이언트가 보낸 값은 믿지 않음).
+// 다른 아이디를 쓰고 싶으면 Render 환경변수 ADMIN_USERNAME 에 넣으면 된다. 반드시 이 아이디로 먼저 가입해서 선점해둘 것! (가입 전에는 누구나 이 아이디를 만들 수 있다)
+const ADMIN_USERNAME = (process.env.ADMIN_USERNAME || 'IQ1972').trim();
+const ADMIN_KEY = ADMIN_USERNAME.toLowerCase();
+const BAN_PERMANENT = 253402300799000; // 영구 정지 = 9999년까지 정지
+const BAN_MAX_MINUTES = 60 * 24 * 365;  // 기간 정지의 최대 길이: 1년
+function isActiveBan(u) { return !!(u && u.bannedUntil && u.bannedUntil > Date.now() && u.key !== ADMIN_KEY); }
+function banMessage(u) {
+  const reason = u.banReason ? ` / 사유: ${u.banReason}` : '';
+  if (u.bannedUntil >= BAN_PERMANENT) return `정지된 계정입니다. (영구 정지${reason})`;
+  const until = new Date(u.bannedUntil).toLocaleString('ko-KR', { timeZone: 'Asia/Seoul', hour12: false });
+  return `정지된 계정입니다. (해제: ${until}${reason})`;
+}
 const FRIENDLY_FIRE = false; // 같은 팀끼리는 서로 피해를 주지 않음 (총알은 아군을 그대로 통과)
 
 // ===== 연승 보너스 (캐릭터별) =====
@@ -732,6 +747,19 @@ function normalizeCode(raw) {
   return String(raw || '').replace(/\s+/g, '').toUpperCase();
 }
 
+// ===== 이벤트 설정 =====
+// 진행 중인 이벤트는 메인화면에 카드로 뜨고, 계정마다 한 번씩 코인을 받을 수 있다. (신규 가입자도 가입 후 받을 수 있음)
+// 이벤트를 끝내려면: enabled 를 false 로 바꾸거나, endsAt 에 종료 시각(예: new Date('2026-10-31T23:59:59+09:00').getTime())을 넣고 재배포.
+// 새 이벤트를 추가하려면 id 가 겹치지 않게 항목을 하나 더 적으면 된다. (이미 받은 기록은 id 기준으로 저장되어, id 를 바꾸면 모두 다시 받을 수 있게 됨)
+const EVENTS = [
+  { id: 'anggimochi', enabled: true, name: '앙기모찌', coins: 2000, desc: '모든 유저에게 2,000코인을 무료로 드려요!', endsAt: null },
+];
+function eventClaimCode(ev) { return `EVENT:${ev.id}`; } // 받은 기록은 쿠폰 사용 기록(redeemed)에 함께 저장 (유저가 코드창에 직접 입력해서 받을 수는 없음)
+function activeEvents() {
+  const now = Date.now();
+  return EVENTS.filter((e) => e.enabled && (!e.endsAt || now < e.endsAt));
+}
+
 // ===== 계정 / 코인 / 캐릭터 잠금해제 시스템 =====
 // 가격이 0인 캐릭터는 모든 계정이 처음부터 사용할 수 있고, 나머지는 코인으로 잠금해제해야 함 (가격은 여기서 자유롭게 수정)
 const CHARACTER_PRICES = {
@@ -836,7 +864,8 @@ function publicProfile(u) {
   for (const id in CHARACTERS) streaks[id] = (u.streaks && u.streaks[id]) || 0;
   const levels = {};
   for (const id in CHARACTERS) levels[id] = levelOf(u, id);
-  return { username: u.name, coins: u.coins, wins: u.wins || 0, losses: u.losses || 0, unlocked: effectiveUnlocked(u), prices: allPrices(), trophies, streaks, missions: missionsView(u), ranks: TROPHY_RANKS, characters: buildCharacterInfo(levels), levels, levelTable: LEVEL_TABLE_PUBLIC, maxLevel: MAX_CHARACTER_LEVEL };
+  return { username: u.name, coins: u.coins, wins: u.wins || 0, losses: u.losses || 0, unlocked: effectiveUnlocked(u), prices: allPrices(), trophies, streaks, missions: missionsView(u), ranks: TROPHY_RANKS, characters: buildCharacterInfo(levels), levels, levelTable: LEVEL_TABLE_PUBLIC, maxLevel: MAX_CHARACTER_LEVEL, isAdmin: u.key === ADMIN_KEY,
+    events: activeEvents().map((e) => ({ id: e.id, name: e.name, coins: e.coins, desc: e.desc, endsAt: e.endsAt || null, claimed: (u.redeemed || []).includes(eventClaimCode(e)) })) };
 }
 
 // ----- 저장소 -----
@@ -994,6 +1023,29 @@ function createFileDb() {
         .slice(0, limit);
     },
     async countUsers() { return Object.keys(users).length; },
+    // 정지 / 정지 해제 / 현재 정지 중인 계정 목록 (개발자 모드)
+    async setBan(key, until, reason) {
+      const u = users[key];
+      if (!u) return null;
+      u.bannedUntil = until; u.banReason = reason; u.bannedAt = Date.now();
+      scheduleSave();
+      return cloneUser(u);
+    },
+    async clearBan(key) {
+      const u = users[key];
+      if (!u) return null;
+      delete u.bannedUntil; delete u.banReason; delete u.bannedAt;
+      scheduleSave();
+      return cloneUser(u);
+    },
+    async getBannedUsers() {
+      const now = Date.now();
+      return Object.values(users)
+        .filter((u) => u.bannedUntil && u.bannedUntil > now)
+        .map((u) => ({ key: u.key, name: u.name, bannedUntil: u.bannedUntil, reason: u.banReason || '' }))
+        .sort((a, b) => b.bannedUntil - a.bannedUntil)
+        .slice(0, 100);
+    },
   };
 }
 
@@ -1158,6 +1210,17 @@ function createMongoDb(uri) {
       return rows.map((r) => ({ key: r.key, name: r.name, lastSeenAt: r.lastSeenAt || 0 }));
     },
     async countUsers() { return col.estimatedDocumentCount(); },
+    async setBan(key, until, reason) {
+      return col.findOneAndUpdate({ key }, { $set: { bannedUntil: until, banReason: reason, bannedAt: Date.now() } }, { returnDocument: 'after', projection });
+    },
+    async clearBan(key) {
+      return col.findOneAndUpdate({ key }, { $unset: { bannedUntil: '', banReason: '', bannedAt: '' } }, { returnDocument: 'after', projection });
+    },
+    async getBannedUsers() {
+      const rows = await col.find({ bannedUntil: { $gt: Date.now() } }, { projection: { _id: 0, key: 1, name: 1, bannedUntil: 1, banReason: 1 } })
+        .sort({ bannedUntil: -1 }).limit(100).toArray();
+      return rows.map((r) => ({ key: r.key, name: r.name, bannedUntil: r.bannedUntil, reason: r.banReason || '' }));
+    },
   };
 }
 
@@ -1348,6 +1411,8 @@ function registerAuthHandlers(socket) {
         return ack({ ok: false, message: '아이디 또는 비밀번호가 올바르지 않습니다.' });
       }
 
+      if (isActiveBan(user)) return ack({ ok: false, message: banMessage(user) }); // 비밀번호가 맞은 경우에만 정지 사실을 알려줌
+
       const existing = onlineUsers.get(key);
       if (existing && existing !== socket.id && io.sockets.sockets.has(existing)) {
         return ack({ ok: false, message: '이미 다른 곳에서 접속 중인 계정입니다.' });
@@ -1389,6 +1454,9 @@ function registerAuthHandlers(socket) {
       if (!newUsername && !newPassword) return ack({ ok: false, message: '변경할 아이디나 새 비밀번호를 입력하세요.' });
       if (newUsername && !USERNAME_RE.test(newUsername)) return ack({ ok: false, message: '아이디는 2~12자의 한글/영문/숫자/밑줄(_)만 사용할 수 있습니다.' });
       if (newPassword && (newPassword.length < 4 || newPassword.length > 64)) return ack({ ok: false, message: '비밀번호는 4~64자여야 합니다.' });
+      // 개발자 아이디는 다른 사람이 빼앗지 못하게 보호: 남이 이 아이디로 바꿀 수 없고, 개발자 계정도 다른 이름으로 바꿀 수 없다
+      if (newUsername && newUsername.toLowerCase() === ADMIN_KEY && key !== ADMIN_KEY) return ack({ ok: false, message: '사용할 수 없는 아이디입니다.' });
+      if (newUsername && key === ADMIN_KEY && newUsername.toLowerCase() !== ADMIN_KEY) return ack({ ok: false, message: '개발자 계정의 아이디는 변경할 수 없습니다.' });
 
       if (isRateLimited('loginFail', key)) return ack({ ok: false, message: '비밀번호 오류가 너무 많습니다. 잠시 후 다시 시도해주세요.' });
       const user = await db.findUser(key);
@@ -1448,6 +1516,7 @@ function registerAuthHandlers(socket) {
       const key = socket.data.userKey;
       if (!key) return ack({ ok: false, message: '로그인이 필요합니다.' });
       if (socketToMatch[socket.id] || isQueued(socket.id)) return ack({ ok: false, message: '매치 중이거나 대기 중에는 계정을 삭제할 수 없습니다.' });
+      if (key === ADMIN_KEY) return ack({ ok: false, message: '개발자 계정은 삭제할 수 없습니다.' }); // 삭제되면 아이디를 다른 사람이 선점할 수 있음
 
       const currentPassword = data && data.currentPassword;
       if (typeof currentPassword !== 'string' || !currentPassword || currentPassword.length > 64) return ack({ ok: false, message: '현재 비밀번호를 입력하세요.' });
@@ -1543,6 +1612,29 @@ function registerAuthHandlers(socket) {
       ack({ ok: false, message, profile: r.user ? publicProfile(r.user) : undefined });
     } catch (e) {
       console.error('redeemCode 오류', e);
+      ack({ ok: false, message: '서버 오류가 발생했습니다.' });
+    }
+  });
+
+  // 이벤트 보상 받기: 진행 중인 이벤트인지, 이미 받았는지는 항상 서버가 판단한다 (클라이언트가 보낸 값은 이벤트 id만 사용). 계정당 1회, 중복 클릭에도 한 번만 지급.
+  socket.on('claimEvent', async (data, ack) => {
+    if (typeof ack !== 'function') return;
+    try {
+      const key = socket.data.userKey;
+      if (!key) return ack({ ok: false, message: '로그인이 필요합니다.' });
+      if (isRateLimited('redeemFail', key)) return ack({ ok: false, message: '시도 횟수가 너무 많습니다. 잠시 후 다시 시도해주세요.' });
+      const ev = activeEvents().find((e) => e.id === (data && data.eventId));
+      if (!ev) { hitRate('redeemFail', key); return ack({ ok: false, message: '진행 중인 이벤트가 아닙니다.' }); }
+
+      const r = await db.redeemCode(key, eventClaimCode(ev), ev.coins);
+      if (r.ok) {
+        console.log(`[이벤트] ${ev.name}: ${socket.data.displayName} 님이 ${ev.coins}코인 수령`);
+        return ack({ ok: true, message: `🎉 ${ev.name} 이벤트! ${ev.coins.toLocaleString()}코인을 받았습니다!`, profile: publicProfile(r.user) });
+      }
+      const message = r.reason === 'used' ? '이미 이 이벤트의 보상을 받았습니다.' : '보상을 받지 못했습니다.';
+      ack({ ok: false, message, profile: r.user ? publicProfile(r.user) : undefined });
+    } catch (e) {
+      console.error('claimEvent 오류', e);
       ack({ ok: false, message: '서버 오류가 발생했습니다.' });
     }
   });
@@ -2244,10 +2336,165 @@ function endMatch(matchId) {
   delete matches[matchId];
 }
 
+// ===== 서버 일시정지(점검) =====
+// 켜면: 새 매칭을 막고, 대기 중인 사람을 모두 내보내고, 모든 접속자에게 안내 배너를 띄운다. (원하면 진행 중인 매치도 즉시 취소)
+// 서버 프로세스를 끄는 게 아니라서(Render가 자동으로 다시 켜버림) 개발자 모드에서 언제든 다시 켤 수 있고, 서버가 재시작되면 자동으로 해제된다.
+const serverPause = { on: false, message: '', since: 0, resumeAt: 0, timer: null };
+function pauseInfo() {
+  return serverPause.on ? { on: true, message: serverPause.message, since: serverPause.since, resumeAt: serverPause.resumeAt } : { on: false };
+}
+function setServerPause(on, { message, minutes, endMatches } = {}) {
+  if (serverPause.timer) { clearTimeout(serverPause.timer); serverPause.timer = null; }
+  if (!on) {
+    serverPause.on = false;
+    io.emit('serverPause', { on: false });
+    console.log('[관리자] 서버 일시정지 해제');
+    return;
+  }
+  serverPause.on = true;
+  serverPause.message = message || '서버 점검 중입니다. 잠시 후 다시 시도해주세요.';
+  serverPause.since = Date.now();
+  serverPause.resumeAt = minutes > 0 ? Date.now() + minutes * 60000 : 0;
+  if (minutes > 0) serverPause.timer = setTimeout(() => setServerPause(false), minutes * 60000);
+
+  // 대기열 비우기: 기다리던 사람들에게는 매칭 취소 안내가 간다
+  for (const mode in queues) {
+    queues[mode].forEach((q) => { if (q.socket.connected) q.socket.emit('findMatchError', { message: serverPause.message }); });
+    queues[mode] = [];
+  }
+  // 진행 중인 매치 취소 (코인/트로피/전적은 기록하지 않음)
+  let cancelled = 0;
+  if (endMatches) {
+    for (const matchId of Object.keys(matches)) {
+      const m = matches[matchId];
+      if (!m || m.over) continue;
+      m.over = true;
+      m.settled = true; // 정산 없이 종료
+      io.to(matchId).emit('matchOver', { reason: 'serverPaused', winnerTeam: null, teamScore: m.teamScore, coinReward: 0 });
+      setTimeout(() => endMatch(matchId), MATCH_CLEANUP_DELAY_MS);
+      cancelled += 1;
+    }
+  }
+  io.emit('serverPause', pauseInfo());
+  console.log(`[관리자] 서버 일시정지: "${serverPause.message}" ${minutes > 0 ? `${minutes}분 뒤 자동 해제` : '수동 해제'}${endMatches ? `, 진행 중 매치 ${cancelled}개 취소` : ''}`);
+}
+
+// ===== 개발자 모드 (관리자 전용 이벤트) =====
+async function buildAdminStatus() {
+  let activeMatches = 0;
+  for (const id in matches) if (matches[id] && !matches[id].over) activeMatches += 1;
+  let queued = 0;
+  for (const mode in queues) queued += queues[mode].length;
+  const banned = await db.getBannedUsers();
+  return {
+    pause: pauseInfo(),
+    connected: io.engine.clientsCount,
+    loggedIn: onlineUsers.size,
+    activeMatches,
+    queued,
+    banned: banned.map((b) => ({ name: b.name, permanent: b.bannedUntil >= BAN_PERMANENT, bannedUntil: b.bannedUntil, reason: b.reason })),
+  };
+}
+
+function registerAdminHandlers(socket) {
+  let lastAt = 0;
+  // 관리자가 아니면 어떤 정보도 알려주지 않고 거절. 너무 빠른 연타도 막는다.
+  function guard(ack) {
+    if (typeof ack !== 'function') return false;
+    if (!socket.data.userKey || socket.data.userKey !== ADMIN_KEY) { ack({ ok: false, message: '권한이 없습니다.' }); return false; }
+    const now = Date.now();
+    if (now - lastAt < 300) { ack({ ok: false, message: '잠시 후 다시 시도해주세요.' }); return false; }
+    lastAt = now;
+    return true;
+  }
+  async function reply(ack, message) {
+    ack({ ok: true, message, status: await buildAdminStatus() });
+  }
+
+  socket.on('adminStatus', async (data, ack) => {
+    if (!guard(ack)) return;
+    try { await reply(ack); } catch (e) { console.error('adminStatus 오류', e); ack({ ok: false, message: '서버 오류가 발생했습니다.' }); }
+  });
+
+  socket.on('adminBan', async (data, ack) => {
+    if (!guard(ack)) return;
+    try {
+      const username = data && typeof data.username === 'string' ? data.username.trim() : '';
+      if (!username || username.length > 12) return ack({ ok: false, message: '정지할 아이디를 입력하세요.' });
+      const key = username.toLowerCase();
+      if (key === ADMIN_KEY) return ack({ ok: false, message: '개발자 계정은 정지할 수 없습니다.' });
+
+      let until;
+      if (data.minutes === 'permanent') until = BAN_PERMANENT;
+      else {
+        const minutes = Math.floor(Number(data.minutes));
+        if (!Number.isFinite(minutes) || minutes < 1 || minutes > BAN_MAX_MINUTES) return ack({ ok: false, message: '정지 기간이 올바르지 않습니다.' });
+        until = Date.now() + minutes * 60000;
+      }
+      const reason = (typeof data.reason === 'string' ? data.reason : '').replace(/\s+/g, ' ').trim().slice(0, 60);
+
+      const user = await db.findUser(key);
+      if (!user) return ack({ ok: false, message: '존재하지 않는 아이디입니다.' });
+      const updated = await db.setBan(key, until, reason);
+      if (!updated) return ack({ ok: false, message: '정지에 실패했습니다.' });
+
+      // 지금 접속 중이면 바로 내보낸다 (매치 중이었다면 상대방이 이긴 것으로 처리됨)
+      const sid = onlineUsers.get(key);
+      const target = sid && io.sockets.sockets.get(sid);
+      if (target) {
+        target.emit('banned', { message: banMessage(updated) });
+        setTimeout(() => target.disconnect(true), 300);
+      }
+      presenceCache = { at: 0, rows: null, total: 0 };
+      console.log(`[관리자] 정지: ${updated.name} (${until >= BAN_PERMANENT ? '영구' : new Date(until).toISOString()}) 사유: ${reason || '없음'}`);
+      await reply(ack, `${updated.name} 님을 정지했습니다.${target ? ' (접속 중이어서 바로 내보냈어요)' : ''}`);
+    } catch (e) {
+      console.error('adminBan 오류', e);
+      ack({ ok: false, message: '서버 오류가 발생했습니다.' });
+    }
+  });
+
+  socket.on('adminUnban', async (data, ack) => {
+    if (!guard(ack)) return;
+    try {
+      const username = data && typeof data.username === 'string' ? data.username.trim() : '';
+      if (!username || username.length > 12) return ack({ ok: false, message: '아이디가 올바르지 않습니다.' });
+      const updated = await db.clearBan(username.toLowerCase());
+      if (!updated) return ack({ ok: false, message: '존재하지 않는 아이디입니다.' });
+      console.log(`[관리자] 정지 해제: ${updated.name}`);
+      await reply(ack, `${updated.name} 님의 정지를 해제했습니다.`);
+    } catch (e) {
+      console.error('adminUnban 오류', e);
+      ack({ ok: false, message: '서버 오류가 발생했습니다.' });
+    }
+  });
+
+  socket.on('adminSetPause', async (data, ack) => {
+    if (!guard(ack)) return;
+    try {
+      const on = !!(data && data.on);
+      if (!on) {
+        setServerPause(false);
+        return await reply(ack, '서버를 다시 시작했습니다. 이제 매칭할 수 있어요.');
+      }
+      const minutes = Math.floor(Number(data.minutes) || 0);
+      if (minutes < 0 || minutes > 1440) return ack({ ok: false, message: '자동 해제 시간은 0~1440분이어야 합니다.' });
+      const message = (typeof data.message === 'string' ? data.message : '').replace(/\s+/g, ' ').trim().slice(0, 60);
+      setServerPause(true, { message, minutes, endMatches: !!data.endMatches });
+      await reply(ack, '서버를 일시정지했습니다.');
+    } catch (e) {
+      console.error('adminSetPause 오류', e);
+      ack({ ok: false, message: '서버 오류가 발생했습니다.' });
+    }
+  });
+}
+
 io.on('connection', (socket) => {
   console.log(`플레이어 접속: ${socket.id}`);
   socket.data.device = normalizeDevice(socket.handshake.auth && socket.handshake.auth.device, socket.handshake.headers['user-agent']);
   broadcastOnlineCount();
+  registerAdminHandlers(socket); // 개발자 모드 (정지 / 서버 일시정지) - 개발자 계정만 사용 가능
+  if (serverPause.on) socket.emit('serverPause', pauseInfo()); // 점검 중에 들어온 사람에게도 안내 배너를 보여줌
   registerAuthHandlers(socket); // 회원가입 / 로그인 / 로그아웃 / 캐릭터 잠금해제
 
   // 클라이언트가 닉네임 + 모드 + 캐릭터를 정한 뒤 'findMatch' 이벤트를 보내면 대기열에 등록하고 매칭을 시도
@@ -2255,6 +2502,7 @@ io.on('connection', (socket) => {
     if (socketToMatch[socket.id]) return; // 이미 매치 중이면 무시
     if (isQueued(socket.id)) return; // 이미 어딘가 대기 중이면 무시
     if (!socket.data.userKey) { socket.emit('findMatchError', { message: '로그인이 필요합니다.' }); return; }
+    if (serverPause.on) { socket.emit('findMatchError', { message: serverPause.message }); return; } // 서버 일시정지 중에는 새 매칭 불가
 
     const mode = data && MODES[data.mode] ? data.mode : '1v1';
     const name = socket.data.displayName; // 닉네임은 로그인한 아이디로 고정
@@ -2282,6 +2530,7 @@ io.on('connection', (socket) => {
     // 조회하는 동안 연결이 끊기거나 로그아웃/중복 요청이 있었는지 다시 확인
     if (!socket.connected || socket.data.userKey !== userKey) return;
     if (socketToMatch[socket.id] || isQueued(socket.id)) return;
+    if (serverPause.on) { socket.emit('findMatchError', { message: serverPause.message }); return; } // 조회하는 사이에 일시정지가 켜진 경우
 
     queues[mode].push({ socket, name, characterId, userKey, trophies, level });
     // 이 모드에서 이미 기다리고 있던 사람들에게도 갱신된 인원수를 함께 알림
