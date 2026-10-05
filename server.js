@@ -496,8 +496,8 @@ const CHARACTERS = {
       type: 'dash',          // 발사체 없이 바라보는 방향으로 짧게 돌진, 적과 부딪히면 피해를 주고 멈춤
       damage: 2000,
       speed: 860,            // 돌진 속도(px/초)
-      duration: 0.23,        // 돌진 시간(초) -> 이동 거리 ≈ speed * duration ≈ 200px (서버 틱 단위로 끝나 실제로는 약 200px)
-      lifetime: 0.23,        // (클라이언트 사거리 표시용: speed * lifetime = 돌진 거리)
+      duration: 0.15,        // 돌진 시간(초) -> 이동 거리 ≈ speed * duration ≈ 129px (서버 틱이 0.05초라 3틱 = 129px 이동). 기존 약 198px에서 35% 감소
+      lifetime: 0.15,        // (클라이언트 사거리 표시용: speed * lifetime = 돌진 거리)
       ammoRegenSeconds: AMMO_REGEN_SECONDS * 1.3, // 원효대사처럼 재장전 시간이 다른 캐릭터보다 30% 느림
     },
     ultimate: {
@@ -950,6 +950,25 @@ function missionsView(u) {
 // id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
+  {
+    id: '2026-10-05-halloween-teaser',
+    date: '2026-10-05',
+    tag: 'etc',
+    title: '🎃 할로윈 이벤트 예고!',
+    items: [
+      '곧 할로윈 이벤트가 찾아와요! 🎃👻',
+      '이벤트 내용과 기간은 준비되는 대로 공지사항으로 알려드릴게요. 조금만 기다려 주세요!',
+    ],
+  },
+  {
+    id: '2026-10-05-gwari-balance',
+    date: '2026-10-05',
+    tag: 'balance',
+    title: '꽈리 밸런스 조정',
+    items: [
+      '꽈리 기본공격 [돌진 박치기] 돌진 거리: 약 198 → 약 129 (35% 감소)',
+    ],
+  },
   {
     id: '2026-10-05-uphal',
     date: '2026-10-05',
