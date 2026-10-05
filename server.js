@@ -243,10 +243,10 @@ const CHARACTERS = {
     maxHp: 6000,
     basic: {
       name: '던지기',
-      damage: 2500,
-      speed: 420,      // 총알보다 느린 구체 (기존 350에서 20% 증가)
+      damage: 2000,    // 1레벨 기준 (기존 2500에서 너프)
+      speed: 360,      // 탄속 감소 (기존 420에서 조금 느리게)
       radius: 12,
-      lifetime: 2.2,
+      lifetime: 2.57,  // 탄속이 느려진 만큼 늘려서 사거리는 기존과 동일하게 유지 (360 x 2.57 ≈ 925)
       visual: 'orb',
     },
     ultimate: {
@@ -533,7 +533,9 @@ const CHARACTERS = {
       stabCount: 4,          // 한 번 공격할 때 찌르는 횟수
       stabInterval: 0.08,    // 찌르기 사이 간격(초)
       angleDegrees: 70,      // 찌르기 부채꼴 각도 (좁게)
-      range: 75,             // 사거리 (근접 공격 중에서도 짧게)
+      range: 90,             // 사거리 - 기존 75에서 20% 증가
+      hitAssist: true,       // 판정 보정: 상대 몸통 크기만큼 부채꼴 각도를 너그럽게 판정 (중심점이 아니라 몸이 걸치면 적중)
+      hitPadding: 10,        // 서버/클라이언트 위치 오차를 감안한 추가 판정 거리(px) - 화면에 보이는 범위는 그대로
       effectLife: 0.2,       // 찌르기 이펙트(손이 뻗었다가 회수되는 동작)가 화면에 남는 시간(초). 찌르기 간격(0.08)보다 길어서 동작이 자연스럽게 겹침
       ammoRegenSeconds: AMMO_REGEN_SECONDS / 1.5, // 재장전 속도가 다른 캐릭터보다 50% 빠름 (1.8초 -> 1.2초)
       visual: 'stab',
@@ -564,8 +566,9 @@ const CHARACTERS = {
       type: 'quake',         // 망치를 내려쳐서 조준 방향으로 즉시 판정되는 지진 (부채꼴 범위 + 기절)
       damage: 2000,
       stunDuration: 0.5,     // 맞은 적을 기절시키는 시간(초)
-      angleDegrees: 40,      // 지진이 퍼지는 부채꼴 전체 각도 (조준 방향 기준)
-      range: 280,            // 중거리 (근접 공격보다 길고 발사체보다 짧음)
+      angleDegrees: 28,      // 지진이 퍼지는 부채꼴 전체 각도 (조준 방향 기준) - 기존 40도에서 30% 감소
+      range: 196,            // 사거리 - 기존 280에서 30% 감소
+      windup: 1,             // 공격 버튼을 누른 뒤 이 시간(초)이 지나야 지진이 실제로 나감. 그동안 이동 불가 (조준 방향만 돌릴 수 있음)
       effectLife: 0.5,
       visual: 'quake',
     },
@@ -608,7 +611,7 @@ function describeBasic(b) {
     parts.push(`양손으로 ${b.stabCount}번 빠르게 찌름 (한 번당 ${fmtNum(b.damage)} 피해, 전방 ${b.angleDegrees}도, 사거리 ${b.range}로 짧음)`);
   } else if (b.type === 'quake') {
     damage = b.damage;
-    parts.push(`망치를 내려쳐 조준 방향 전방 ${b.angleDegrees}도 부채꼴(사거리 ${b.range})에 지진을 일으켜 ${fmtNum(b.damage)} 피해 + ${b.stunDuration}초 기절`);
+    parts.push(`망치를 내려쳐 조준 방향 전방 ${b.angleDegrees}도 부채꼴(사거리 ${b.range})에 지진을 일으켜 ${fmtNum(b.damage)} 피해 + ${b.stunDuration}초 기절${b.windup ? ` (공격 후 ${b.windup}초 뒤에 발동, 그동안 이동 불가)` : ''}`);
   } else if (b.type === 'melee') {
     damage = b.damage;
     parts.push(`전방 ${b.angleDegrees}도 부채꼴 범위(사거리 ${b.range})를 휘둘러 ${fmtNum(b.damage)} 피해를 주고 ${b.knockback}만큼 뒤로 밀쳐냄`);
@@ -950,6 +953,29 @@ function missionsView(u) {
 // id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
+  {
+    id: '2026-10-05-uphal-mocha-balance',
+    date: '2026-10-05',
+    tag: 'balance',
+    title: '업할 · 모카 밸런스 조정',
+    items: [
+      '업할 기본공격(망치 지진) 공격 범위: 40도 → 28도 (30% 감소)',
+      '업할 기본공격(망치 지진) 사거리: 280 → 196 (30% 감소)',
+      '업할 기본공격(망치 지진)은 이제 공격 버튼을 누른 뒤 1초 뒤에 발동해요. 그동안 이동할 수 없지만 조준 방향은 돌릴 수 있고, 발동 전에는 붉은 경고 범위가 표시돼요. 선딜 중 기절하면 공격이 취소돼요.',
+      '모카 기본공격(양손 찌르기) 사거리: 75 → 90 (20% 증가)',
+      '모카 기본공격 판정 개선: 상대 몸이 부채꼴 가장자리에 조금만 걸쳐도 맞고, 위치 오차를 감안한 추가 판정 거리도 생겼어요.',
+    ],
+  },
+  {
+    id: '2026-10-05-jigi-balance',
+    date: '2026-10-05',
+    tag: 'balance',
+    title: '지기 밸런스 조정',
+    items: [
+      '지기 기본공격(던지기) 피해: 2,500 → 2,000 (1레벨 기준)',
+      '지기 기본공격(던지기) 탄속: 420 → 360 (조금 느려졌어요. 사거리는 그대로예요)',
+    ],
+  },
   {
     id: '2026-10-05-halloween-teaser',
     date: '2026-10-05',
@@ -1992,6 +2018,9 @@ function buildPlayer(socketId, name, characterId, team, spawn, level) {
     reloadBoostUntil: 0,       // 이 시각(ms) 전까지 재장전 속도 증가 (꽈리의 가젯 '재장전 가속')
     reloadBoostMultiplier: 1,
     stunnedUntil: 0,   // 이 시각(ms, Date.now() 기준) 전까지는 기절 상태 (이동/공격 불가)
+    windupUntil: 0,    // 이 시각(ms) 전까지는 공격 선딜 중 (업할의 망치 지진) - 이동 불가, 조준 방향만 변경 가능
+    windupTotal: 0,    // 이번 선딜의 전체 길이(ms) - 클라이언트가 경고 범위 진행도를 그릴 때 사용
+    windupId: 0,       // 선딜 취소/무효화용 번호 (타이머 핸들은 상태에 넣지 않음 - 클라이언트로 전송되는 객체이므로)
     knockbackDirX: 0,   // 넉백(밀쳐냄) 진행 방향
     knockbackDirY: 0,
     knockbackDistance: 0, // 넉백으로 이동해야 할 총 거리(px)
@@ -2109,6 +2138,8 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
       respawned.dashing = false;
       respawned.dashTimeLeft = 0;
       respawned.stunnedUntil = 0;
+      respawned.windupUntil = 0; // 진행 중이던 공격 선딜도 취소
+      respawned.windupId = (respawned.windupId || 0) + 1;
       respawned.invincibleUntil = 0; // 리스폰 시 이전 무적 상태는 초기화
       respawned.shieldHp = 0;        // 리스폰 시 보호막도 초기화
       respawned.shieldMax = 0;
@@ -2172,6 +2203,13 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
 function performMeleeAttack(match, p, spec, isUltimate, angle = p.angle, stabIndex = 0) {
   const halfAngle = ((spec.angleDegrees || 90) * Math.PI) / 180 / 2;
   const range = spec.range || 120;
+  // 판정 보정(모카): 상대 몸통 크기만큼 각도를 너그럽게 보고, 위치 오차를 감안해 판정 거리를 조금 더 준다
+  const reachPad = spec.hitAssist ? (spec.hitPadding || 0) : 0;
+  const angleSlack = (distance, bodyRadius) => {
+    if (!spec.hitAssist) return 0;
+    if (distance <= bodyRadius) return Math.PI; // 몸이 겹칠 만큼 가까우면 방향과 상관없이 적중
+    return Math.asin(Math.min(1, bodyRadius / distance));
+  };
 
   // 클라이언트가 부채꼴 스윙을 그릴 수 있도록 시각 이펙트로 전달
   effectIdCounter += 1;
@@ -2199,13 +2237,13 @@ function performMeleeAttack(match, p, spec, isUltimate, angle = p.angle, stabInd
     const dx = target.x - p.x;
     const dy = target.y - p.y;
     const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist > range + PLAYER_RADIUS) continue;
+    if (dist > range + PLAYER_RADIUS + reachPad) continue;
 
     // 목표가 공격자가 바라보는 방향 기준 부채꼴 각도 안에 있는지 확인
     let diff = Math.atan2(dy, dx) - angle;
     while (diff > Math.PI) diff -= Math.PI * 2;
     while (diff < -Math.PI) diff += Math.PI * 2;
-    if (Math.abs(diff) > halfAngle) continue;
+    if (Math.abs(diff) > halfAngle + angleSlack(dist, PLAYER_RADIUS)) continue;
 
     applyDamage(match, target, spec.damage, p.id, { chargeShooter: !isUltimate });
     if (match.over) break;
@@ -2234,12 +2272,12 @@ function performMeleeAttack(match, p, spec, isUltimate, angle = p.angle, stabInd
     const tdx = turret.x - p.x;
     const tdy = turret.y - p.y;
     const tdist = Math.sqrt(tdx * tdx + tdy * tdy);
-    if (tdist > range + turret.radius) continue;
+    if (tdist > range + turret.radius + reachPad) continue;
 
     let tdiff = Math.atan2(tdy, tdx) - angle;
     while (tdiff > Math.PI) tdiff -= Math.PI * 2;
     while (tdiff < -Math.PI) tdiff += Math.PI * 2;
-    if (Math.abs(tdiff) > halfAngle) continue;
+    if (Math.abs(tdiff) > halfAngle + angleSlack(tdist, turret.radius)) continue;
 
     turret.hp -= spec.damage;
   }
@@ -2252,11 +2290,11 @@ function performMeleeAttack(match, p, spec, isUltimate, angle = p.angle, stabInd
     const cdx = chicken.x - p.x;
     const cdy = chicken.y - p.y;
     const cdist = Math.sqrt(cdx * cdx + cdy * cdy);
-    if (cdist > range + chicken.radius) continue;
+    if (cdist > range + chicken.radius + reachPad) continue;
     let cdiff = Math.atan2(cdy, cdx) - angle;
     while (cdiff > Math.PI) cdiff -= Math.PI * 2;
     while (cdiff < -Math.PI) cdiff += Math.PI * 2;
-    if (Math.abs(cdiff) > halfAngle) continue;
+    if (Math.abs(cdiff) > halfAngle + angleSlack(cdist, chicken.radius)) continue;
     chicken.hp -= spec.damage * getDamageMultiplier(p);
   }
   match.chickens = match.chickens.filter((c) => c.hp > 0);
@@ -2730,6 +2768,12 @@ io.on('connection', (socket) => {
     if (p.dashing || p.knockbackTimeLeft > 0 || (p.stunnedUntil && Date.now() < p.stunnedUntil)) return; // 돌진/기절 중에는 서버가 위치를 제어하므로 클라이언트 입력을 무시
     if (typeof data.x !== 'number' || typeof data.y !== 'number') return;
 
+    // 공격 선딜 중(업할)에는 위치를 바꿀 수 없고 조준 방향만 돌릴 수 있다
+    if (p.windupUntil && Date.now() < p.windupUntil) {
+      if (typeof data.angle === 'number') p.angle = data.angle;
+      return;
+    }
+
     const newX = Math.max(PLAYER_RADIUS, Math.min(ARENA_WIDTH - PLAYER_RADIUS, data.x));
     const newY = Math.max(PLAYER_RADIUS, Math.min(ARENA_HEIGHT - PLAYER_RADIUS, data.y));
 
@@ -2753,13 +2797,33 @@ io.on('connection', (socket) => {
     if (p.dashing || p.knockbackTimeLeft > 0 || (p.stunnedUntil && Date.now() < p.stunnedUntil)) return; // 돌진/기절 중에는 공격 불가
 
     const now = Date.now();
+    if (p.windupUntil && now < p.windupUntil) return; // 공격 선딜 중에는 다시 공격할 수 없음
     if (now - p.lastShotAt < FIRE_COOLDOWN_MS) return; // 연사 방지 (최소 발사 간격)
     if (p.ammo <= 0) return; // 탄창이 비어있으면 발사 불가
 
     p.ammo -= 1;
     p.lastShotAt = now;
 
-    if (p.basic.type === 'melee' || p.basic.type === 'quake') {
+    if ((p.basic.type === 'melee' || p.basic.type === 'quake') && p.basic.windup > 0) {
+      // 업할의 망치 지진: 버튼을 누르면 windup초 동안 이동 불가 상태로 망치를 치켜들고, 시간이 지나면 그때의 조준 방향으로 지진 발동
+      const windupMs = p.basic.windup * 1000;
+      p.windupId = (p.windupId || 0) + 1;
+      const myWindupId = p.windupId;
+      p.windupUntil = now + windupMs;
+      p.windupTotal = windupMs;
+      const attackerId = p.id;
+      const atkSpec = p.basic;
+      const matchId = match.id;
+      setTimeout(() => {
+        const m = matches[matchId];
+        if (!m || m.over) return;
+        const s = m.players[attackerId];
+        if (!s || !s.alive || s.windupId !== myWindupId) return; // 죽었거나 리스폰/취소된 경우
+        s.windupUntil = 0;
+        if (s.leaping || (s.stunnedUntil && Date.now() < s.stunnedUntil)) return; // 선딜 중 기절당하면 공격이 취소됨
+        performMeleeAttack(m, s, atkSpec, false);
+      }, windupMs);
+    } else if (p.basic.type === 'melee' || p.basic.type === 'quake') {
       performMeleeAttack(match, p, p.basic, false);
     } else if (p.basic.type === 'multiStab') {
       // 모카의 양손 찌르기: 발사 순간의 조준 방향으로 짧은 간격으로 stabCount번 연달아 찌른다 (첫 번째는 즉시)
