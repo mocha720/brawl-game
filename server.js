@@ -871,6 +871,7 @@ const DEFAULT_CHARACTER_ID = 'minam';
 // 계정당 같은 코드는 한 번만 사용할 수 있다. 코드를 추가/변경하려면 여기만 고치면 된다.
 const REDEEM_CODES = {
   'FREE1972': { coins: 200 },
+  'SIU1972': { coins: 500 },
 };
 function normalizeCode(raw) {
   return String(raw || '').replace(/\s+/g, '').toUpperCase();
