@@ -1123,7 +1123,7 @@ const CHARACTERS = [
     name: '모카',
     color: '#6c5ce7',
     maxHp: 5500,
-    basic: { name: '양손 찌르기', damage: 500, desc: '양손으로 4번 빠르게 찌름 (한 번당 500 피해, 사거리 짧음)' },
+    basic: { name: '양손 찌르기', damage: 500, desc: '양손으로 4번 빠르게 찌름 (한 번당 500 피해, 사거리 짧음, 재장전 속도 50% 빠름)' },
     ultimate: { name: '도약 강습', desc: '바라보는 방향으로 벽을 무시하고 멀리 점프 (공중에서는 피격 불가), 착지 지점 주변 적에게 1,000 피해' },
     gadget: { name: '기합 충전', desc: '4초에 걸쳐 궁극기 게이지를 50%만큼 천천히 채움 (15초마다 사용 가능)' },
   },
@@ -2554,6 +2554,7 @@ function collidesWithWalls(x, y, radius) {
 
 // ===== 게임 루프 (클라이언트) =====
 let lastTime = performance.now();
+let wasServerControlled = false; // 직전 프레임에 서버가 내 위치를 직접 제어(돌진/기절/넉백/점프)하고 있었는지
 
 function update(dt) {
   if (!joined) return;
@@ -2568,7 +2569,15 @@ function update(dt) {
     // 돌진 중이거나 기절/넉백 상태면 서버가 위치를 직접 제어하므로, 로컬 입력을 무시하고 서버 위치를 그대로 따라간다
     myX = me.x;
     myY = me.y;
+    wasServerControlled = true;
     return;
+  }
+  if (wasServerControlled && me) {
+    // 서버의 제어가 막 끝난 프레임: 로컬 좌표는 한 틱(50ms) 전의 낡은 값이라 그대로 조작을 이어가면
+    // 돌진한 거리만큼 뒤로 튕겨 보이고 그 위치가 서버에 전송되어 실제로도 밀려난다 -> 최신 서버 위치로 먼저 맞춘다
+    myX = me.x;
+    myY = me.y;
+    wasServerControlled = false;
   }
 
   let dx = 0, dy = 0;
@@ -3119,10 +3128,11 @@ function drawEffect(e) {
     ctx.textBaseline = 'middle';
     ctx.fillText('💥', e.x, e.y);
     ctx.restore();
+  } else if (e.type === 'melee' && e.visual === 'stab') {
+    drawStabEffect(e);
   } else if (e.type === 'melee') {
-    // 변기통의 뚫어뻥 휘두르기 / 모카의 양손 찌르기 - 바라보는 방향을 중심으로 한 부채꼴 스윙
-    const isStab = e.visual === 'stab';
-    const alpha = Math.max(0, Math.min(1, e.life / (isStab ? 0.18 : 0.4)));
+    // 변기통의 뚫어뻥 휘두르기 - 바라보는 방향을 중심으로 한 부채꼴 스윙
+    const alpha = Math.max(0, Math.min(1, e.life / 0.4));
     const halfAngle = ((e.arcDegrees || 90) * Math.PI) / 180 / 2;
     ctx.save();
     ctx.globalAlpha = alpha;
@@ -3138,17 +3148,73 @@ function drawEffect(e) {
     ctx.font = `${Math.min(28, e.radius * 0.3)}px sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    if (isStab) {
-      // 왼손/오른손(e.side)이 번갈아 찌르도록 진행 방향의 수직으로 살짝 엇갈리게 표시
-      const off = (e.side || 1) * 9;
-      ctx.fillText('🗡️',
-        e.x + Math.cos(e.angle) * e.radius * 0.75 - Math.sin(e.angle) * off,
-        e.y + Math.sin(e.angle) * e.radius * 0.75 + Math.cos(e.angle) * off);
-    } else {
-      ctx.fillText('🪠', e.x + Math.cos(e.angle) * e.radius * 0.6, e.y + Math.sin(e.angle) * e.radius * 0.6);
-    }
+    ctx.fillText('🪠', e.x + Math.cos(e.angle) * e.radius * 0.6, e.y + Math.sin(e.angle) * e.radius * 0.6);
     ctx.restore();
   }
+}
+
+// 모카의 양손 찌르기: 손(단검)이 앞으로 쭉 뻗었다가 빠르게 회수되는 동작 + 궤적 + 끝에서 튀는 타격 불꽃.
+// 왼손/오른손(e.side)이 번갈아 나가고, 이펙트 수명(maxLife)보다 찌르기 간격이 짧아서 앞 동작이 끝나기 전에 다음 손이 겹쳐 나간다.
+function drawStabEffect(e) {
+  const maxLife = e.maxLife || 0.2;
+  const t = Math.max(0, Math.min(1, 1 - e.life / maxLife)); // 0 -> 1 진행도
+  // 앞 40%는 빠르게 뻗고(ease-out), 나머지 60%는 회수
+  const reach = t < 0.4 ? 1 - Math.pow(1 - t / 0.4, 3) : 1 - Math.pow((t - 0.4) / 0.6, 2);
+  const startD = PLAYER_RADIUS * 0.6;                    // 손이 출발하는 위치(몸 앞쪽)
+  const tipD = startD + reach * (e.radius - startD);     // 단검 끝의 현재 거리
+  const lateral = (e.side || 1) * 10;                    // 왼손/오른손 좌우 어긋남
+  const fade = t < 0.7 ? 1 : Math.max(0, (1 - t) / 0.3);
+
+  ctx.save();
+  ctx.translate(e.x, e.y);
+  ctx.rotate(e.angle);
+  ctx.globalAlpha = fade;
+  ctx.lineCap = 'round';
+
+  // 궤적: 뻗어나간 만큼 꼬리가 길게 남는다
+  if (tipD - startD > 4) {
+    const grad = ctx.createLinearGradient(startD, 0, tipD, 0);
+    grad.addColorStop(0, 'rgba(162, 155, 254, 0)');
+    grad.addColorStop(1, 'rgba(235, 238, 255, 0.85)');
+    ctx.strokeStyle = grad;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(startD, lateral);
+    ctx.lineTo(tipD, lateral);
+    ctx.stroke();
+  }
+
+  // 단검: 손잡이 + 끝으로 갈수록 뾰족한 칼날
+  const bladeLen = 22;
+  ctx.fillStyle = '#6c5ce7';
+  ctx.fillRect(tipD - bladeLen - 9, lateral - 2.5, 9, 5);
+  ctx.beginPath();
+  ctx.moveTo(tipD - bladeLen, lateral - 4);
+  ctx.lineTo(tipD, lateral);
+  ctx.lineTo(tipD - bladeLen, lateral + 4);
+  ctx.closePath();
+  ctx.fillStyle = '#eef0ff';
+  ctx.fill();
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = '#8e9dff';
+  ctx.stroke();
+
+  // 가장 멀리 뻗은 순간(t≈0.4) 끝에서 튀는 불꽃
+  const peak = 1 - Math.abs(t - 0.4) / 0.2;
+  if (peak > 0) {
+    ctx.strokeStyle = `rgba(255, 255, 255, ${peak})`;
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 4; i++) {
+      const a = (Math.PI / 2) * i + Math.PI / 4;
+      const r1 = 3 + (1 - peak) * 4;
+      const r2 = r1 + 7 * peak;
+      ctx.beginPath();
+      ctx.moveTo(tipD + Math.cos(a) * r1, lateral + Math.sin(a) * r1);
+      ctx.lineTo(tipD + Math.cos(a) * r2, lateral + Math.sin(a) * r2);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
 }
 
 // 맵을 둘러싸는 경계 벽 - 안(플레이 가능 구역)과 밖을 명확하게 구분해주는 두꺼운 벽 테두리
