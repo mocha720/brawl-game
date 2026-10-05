@@ -589,6 +589,37 @@ const CHARACTERS = {
       shieldHp: 3000,
     },
   },
+  jinwoopark: {
+    id: 'jinwoopark',
+    name: '진우Park',
+    maxHp: 6500,
+    basic: {
+      name: '하트 발사하기',
+      // 맞은 대상의 '현재 체력'의 일정 비율만큼 피해를 주는 하트 (보호막이 있으면 보호막 + 체력을 합친 값의 비율).
+      // 고정 피해(damage)가 없으므로 레벨 강화의 공격력 배율은 이 비율에는 적용되지 않는다 (체력 강화만 적용).
+      currentHpRatio: 0.25,
+      speed: 500,           // 중거리: 속도 x 수명 = 사거리 약 500px
+      radius: 11,
+      lifetime: 1.0,
+      visual: 'heart',
+    },
+    ultimate: {
+      name: '소다Bang',
+      type: 'leap',          // 벽을 무시하고 바라보는 방향으로 중거리 점프, 착지 지점 주변 적에게 피해 + 밀쳐냄
+      damage: 3000,
+      distance: 300,         // 최대 점프 거리(px) - 중거리
+      minDistance: 100,      // 최소 점프 거리(px). 조준에 따라 minDistance ~ distance 사이로 조절됨
+      duration: 0.55,        // 공중에 떠 있는 시간(초). 이 동안은 조작 불가 + 피격/총알 무시
+      landRadius: 110,       // 착지 지점 주변 피해 반경
+      knockback: 220,        // 맞은 적을 착지 지점 바깥쪽으로 밀어내는 거리(px)
+    },
+    gadget: {
+      name: '소다 마시기',
+      type: 'heal',          // 조준 불필요, 즉시 발동해서 healAmount만큼 체력을 회복 (최대 체력을 넘지 않음)
+      instant: true,
+      healAmount: 2000,
+    },
+  },
 };
 
 // ===== 캐릭터 설명(캐릭터 선택 화면용) 자동 생성 =====
@@ -615,6 +646,11 @@ function describeBasic(b) {
   } else if (b.type === 'melee') {
     damage = b.damage;
     parts.push(`전방 ${b.angleDegrees}도 부채꼴 범위(사거리 ${b.range})를 휘둘러 ${fmtNum(b.damage)} 피해를 주고 ${b.knockback}만큼 뒤로 밀쳐냄`);
+  } else if (b.currentHpRatio > 0) {
+    // 진우Park의 하트: 고정 피해가 아니라 대상의 현재 체력 비율로 피해를 줌
+    parts.push(`하트를 발사해 적의 현재 체력의 ${Math.round(b.currentHpRatio * 100)}% 피해 (보호막이 있으면 보호막까지 합친 체력 기준)`);
+    const r = rangeOf(b);
+    if (r) parts.push(`사거리 약 ${r}`);
   } else if (b.poolOnImpact) {
     // 해골물 / 똥가루 / 계란처럼 맞은 자리에 웅덩이를 남기는 공격
     if (b.pelletCount > 1) parts.push(`${b.pelletCount}발 동시 발사`);
@@ -685,7 +721,7 @@ function describeUltimate(u) {
     }
     case 'leap':
       damage = u.damage;
-      desc = `조준한 방향으로 벽을 무시하고 점프, 거리는 조준으로 ${fmtNum(u.minDistance || 0)}~${fmtNum(u.distance)}px 조절 (공중에서는 피격 불가), 착지 지점 반경 ${u.landRadius} 안의 적에게 ${fmtNum(u.damage)} 피해`;
+      desc = `조준한 방향으로 벽을 무시하고 점프, 거리는 조준으로 ${fmtNum(u.minDistance || 0)}~${fmtNum(u.distance)}px 조절 (공중에서는 피격 불가), 착지 지점 반경 ${u.landRadius} 안의 적에게 ${fmtNum(u.damage)} 피해${u.knockback ? ` + ${fmtNum(u.knockback)}만큼 밀쳐냄` : ''}`;
       break;
     case 'quake':
       damage = u.damage;
@@ -723,6 +759,9 @@ function describeGadget(g) {
       break;
     case 'reloadBoost':
       desc = `${g.duration}초 동안 재장전 속도 ${Math.round((g.speedMultiplier - 1) * 100)}% 빨라짐`;
+      break;
+    case 'heal':
+      desc = `체력을 즉시 ${fmtNum(g.healAmount)} 회복 (최대 체력까지)`;
       break;
     case 'ultCharge':
       desc = `${g.duration}초에 걸쳐 궁극기 게이지를 ${g.amount}%만큼 천천히 채움`;
@@ -864,6 +903,7 @@ const CHARACTER_PRICES = {
   gwari: 300,
   mocha: 300,
   uphal: 300,
+  jinwoopark: 300,
 };
 CHARACTER_PRICES[DEFAULT_CHARACTER_ID] = 0; // 기본 캐릭터는 항상 무료 (사용 가능한 캐릭터가 하나도 없는 상황 방지)
 function priceOf(id) {
@@ -953,6 +993,18 @@ function missionsView(u) {
 // id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
+  {
+    id: '2026-10-05-jinwoopark',
+    date: '2026-10-05',
+    tag: 'new',
+    title: '신규 캐릭터 「진우Park」 출시!',
+    items: [
+      '하트를 쏘는 캐릭터 진우Park이 추가되었어요. 🪙 300 코인으로 잠금해제할 수 있어요. (체력 6,500)',
+      '기본공격 [하트 발사하기]: 중거리로 하트를 발사해 맞은 적의 현재 체력의 25% 피해를 줘요. 보호막이 있으면 보호막까지 합친 체력의 25%예요.',
+      '궁극기 [소다Bang]: 벽을 무시하고 조준한 방향으로 중거리(100~300)를 점프해, 착지 지점 주변 적에게 3,000 피해를 주고 바깥으로 밀쳐내요. 점프 중에는 공격을 받지 않아요.',
+      '가젯 [소다 마시기]: 체력을 즉시 2,000 회복해요.',
+    ],
+  },
   {
     id: '2026-10-05-uphal-mocha-balance',
     date: '2026-10-05',
@@ -2044,6 +2096,7 @@ function buildPlayer(socketId, name, characterId, team, spawn, level) {
     leapStartX: 0, leapStartY: 0, leapTargetX: 0, leapTargetY: 0,
     leapEndsAt: 0,         // 점프 중 입력을 막기 위해 걸어둔 기절 시각(착지 때 같은 값이면 해제)
     leapDamage: 0, leapRadius: 0,
+    leapKnockback: 0,      // 점프 착지 때 적을 밀쳐내는 거리(px) (진우Park의 소다Bang). 0이면 밀치지 않음
     ultGadgetLeft: 0,      // 모카의 가젯: 궁극기 게이지가 천천히 채워지는 남은 시간(초)
     ultGadgetRate: 0,      // 초당 채워지는 게이지(%)
     invincibleUntil: 0,    // 이 시각(ms, Date.now() 기준) 전까지는 무적 상태 (현재 사용하는 캐릭터는 없지만 'invincible' 가젯용으로 남겨둠)
@@ -2074,6 +2127,12 @@ function getDamageMultiplier(p) {
   const now = Date.now();
   if (p.damageBoostUntil && now >= p.damageBoostFrom && now < p.damageBoostUntil) return p.damageBoostMultiplier || 1;
   return 1;
+}
+
+// 총알이 대상에게 줄 기본 피해: 비율형 총알(하트)은 대상의 현재 체력 + 보호막의 비율, 그 외는 고정 피해
+function bulletDamageFor(b, target) {
+  if (b.currentHpRatio > 0) return Math.max(1, Math.round(((target.hp || 0) + (target.shieldHp || 0)) * b.currentHpRatio));
+  return b.damage;
 }
 
 function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
@@ -2181,6 +2240,7 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
       team: p.team,
       life: spec.lifetime,
       damage: spec.damage,
+      currentHpRatio: spec.currentHpRatio || 0, // 0보다 크면 고정 피해 대신 대상 현재 체력(+보호막)의 비율만큼 피해 (진우Park의 하트)
       radius: spec.radius,
       isUltimate,
       visual: spec.visual,
@@ -2886,6 +2946,9 @@ io.on('connection', (socket) => {
         if (i === 0) fire();
         else setTimeout(fire, i * gadget.interval * 1000);
       }
+    } else if (gadget.type === 'heal') {
+      // 진우Park의 소다 마시기: 체력을 즉시 healAmount만큼 회복 (최대 체력 초과 불가)
+      p.hp = Math.min(p.maxHp, p.hp + (gadget.healAmount || 0));
     } else if (gadget.type === 'reloadAmmo') {
       p.ammo = p.maxAmmo;
       p.ammoRegenElapsed = 0;
@@ -3047,6 +3110,7 @@ io.on('connection', (socket) => {
       p.leapTargetY = ty;
       p.leapDamage = ult.damage;
       p.leapRadius = ult.landRadius || 90;
+      p.leapKnockback = ult.knockback || 0;
       p.leapEndsAt = Date.now() + leapMs + 400; // 서버 틱 오차를 감안한 여유
       p.stunnedUntil = p.leapEndsAt;
     } else if (ult.type === 'summonChicken') {
@@ -3148,6 +3212,18 @@ function updateMatch(match, dt, now) {
       if (Math.hypot(target.x - p.x, target.y - p.y) < PLAYER_RADIUS + p.leapRadius) {
         applyDamage(match, target, p.leapDamage, pid, { chargeShooter: false });
         if (match.over) break;
+        // 밀쳐내기(진우Park): 착지 지점 바깥쪽으로 날려보냄 (무적이면 밀리지 않음). 실제 이동은 넉백 처리 루프가 수행
+        if (p.leapKnockback > 0 && target.alive && !(target.invincibleUntil && Date.now() < target.invincibleUntil)) {
+          let kx = target.x - p.x;
+          let ky = target.y - p.y;
+          const kd = Math.hypot(kx, ky);
+          if (kd > 0.001) { kx /= kd; ky /= kd; } else { kx = Math.cos(p.angle); ky = Math.sin(p.angle); }
+          target.knockbackDirX = kx;
+          target.knockbackDirY = ky;
+          target.knockbackDistance = p.leapKnockback;
+          target.knockbackTimeLeft = KNOCKBACK_DURATION;
+          target.knockbackTotalTime = KNOCKBACK_DURATION;
+        }
       }
     }
     if (match.over) break;
@@ -3456,7 +3532,7 @@ function updateMatch(match, dt, now) {
           }
         } else {
           // 기본 공격만 궁극기 게이지를 충전시킴
-          applyDamage(match, target, b.damage, b.ownerId, { chargeShooter: !b.isUltimate });
+          applyDamage(match, target, bulletDamageFor(b, target), b.ownerId, { chargeShooter: !b.isUltimate });
         }
         break; // 이 총알은 이미 소모됨
       }
@@ -3481,7 +3557,7 @@ function updateMatch(match, dt, now) {
           spawnWaterPool(match, b);
           if (b.directDamage > 0) turret.hp -= b.directDamage; // 직접 적중 대미지
         } else {
-          turret.hp -= b.damage * getDamageMultiplier(match.players[b.ownerId]);
+          turret.hp -= bulletDamageFor(b, turret) * getDamageMultiplier(match.players[b.ownerId]);
         }
         break;
       }
@@ -3505,7 +3581,7 @@ function updateMatch(match, dt, now) {
           spawnWaterPool(match, b);
           if (b.directDamage > 0) chicken.hp -= b.directDamage * mult;
         } else {
-          chicken.hp -= b.damage * mult;
+          chicken.hp -= bulletDamageFor(b, chicken) * mult;
         }
         break;
       }
