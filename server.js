@@ -522,14 +522,14 @@ const CHARACTERS = {
   mocha: {
     id: 'mocha',
     name: '모카',
-    maxHp: 5500,
+    maxHp: 4500, // 기존 5500에서 너프
     // 찌르기 4번이 한 번에 나가므로, 다른 캐릭터와 같은 충전량을 쓰면 궁극기가 너무 빨리 참.
     // 그래서 슈처럼 '찌르기 1번 적중당' 충전량을 낮게 따로 설정함 (콤보 4번 전부 적중 = 약 20%)
     ultimateChargePerHit: 5,
     basic: {
       name: '양손 찌르기',
       type: 'multiStab',     // 양손으로 짧은 간격으로 연달아 찌르는 근접 공격 (한 번 누르면 stabCount번 판정)
-      damage: 500,           // 찌르기 1번당 대미지
+      damage: 450,           // 찌르기 1번당 대미지 (기존 500에서 너프)
       stabCount: 4,          // 한 번 공격할 때 찌르는 횟수
       stabInterval: 0.08,    // 찌르기 사이 간격(초)
       angleDegrees: 70,      // 찌르기 부채꼴 각도 (좁게)
@@ -906,6 +906,46 @@ function missionsView(u) {
   }));
 }
 
+// ===== 공지사항 =====
+// 메인 화면의 '공지사항' 버튼을 누르면 보이는 목록이다 (위에 있을수록 최신). 새 공지를 올리려면 배열 맨 앞에 항목을 추가하면 된다.
+// id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
+// date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
+const ANNOUNCEMENTS = [
+  {
+    id: '2026-10-05-mocha',
+    date: '2026-10-05',
+    tag: 'new',
+    title: '신규 캐릭터 「모카」 출시!',
+    items: [
+      '어쌔신 캐릭터 모카가 추가되었어요. 🪙 300 코인으로 잠금해제할 수 있어요.',
+      '기본공격 [양손 찌르기]: 양손으로 4번 빠르게 찌릅니다. (한 번당 450 피해, 사거리 짧음, 재장전 속도 50% 빠름)',
+      '궁극기 [도약 강습]: 벽을 무시하고 조준한 방향으로 점프해 착지 지점 주변 적에게 1,000 피해! 점프 중에는 공격을 받지 않아요.',
+      '점프 거리는 조준으로 조절할 수 있어요. (PC: 마우스 위치 / 모바일: 오른쪽 스틱을 당긴 정도, 100~380)',
+      '가젯 [기합 충전]: 4초에 걸쳐 궁극기 게이지를 50% 채웁니다.',
+    ],
+  },
+  {
+    id: '2026-10-05-mocha-balance',
+    date: '2026-10-05',
+    tag: 'balance',
+    title: '모카 밸런스 조정',
+    items: [
+      '모카 체력: 5,500 → 4,500 (1레벨 기준)',
+      '모카 기본공격 피해: 500 → 450 (1레벨 기준, 찌르기 한 번당)',
+    ],
+  },
+  {
+    id: '2026-10-05-dash-fix',
+    date: '2026-10-05',
+    tag: 'fix',
+    title: '돌진 버그 수정',
+    items: [
+      '변기통의 궁극기와 꽈리의 기본공격으로 돌진한 직후 뒤로 밀려나던 문제를 수정했어요.',
+      '돌진뿐 아니라 기절/넉백이 끝난 직후에도 위치가 튀던 현상이 함께 개선되었어요.',
+    ],
+  },
+];
+
 function publicProfile(u) {
   const trophies = {};
   for (const id in CHARACTERS) trophies[id] = (u.trophies && u.trophies[id]) || 0;
@@ -913,7 +953,7 @@ function publicProfile(u) {
   for (const id in CHARACTERS) streaks[id] = (u.streaks && u.streaks[id]) || 0;
   const levels = {};
   for (const id in CHARACTERS) levels[id] = levelOf(u, id);
-  return { username: u.name, coins: u.coins, wins: u.wins || 0, losses: u.losses || 0, unlocked: effectiveUnlocked(u), prices: allPrices(), trophies, streaks, missions: missionsView(u), ranks: TROPHY_RANKS, characters: buildCharacterInfo(levels), levels, levelTable: LEVEL_TABLE_PUBLIC, maxLevel: MAX_CHARACTER_LEVEL, isAdmin: u.key === ADMIN_KEY,
+  return { username: u.name, coins: u.coins, wins: u.wins || 0, losses: u.losses || 0, unlocked: effectiveUnlocked(u), prices: allPrices(), trophies, streaks, missions: missionsView(u), ranks: TROPHY_RANKS, characters: buildCharacterInfo(levels), levels, levelTable: LEVEL_TABLE_PUBLIC, maxLevel: MAX_CHARACTER_LEVEL, isAdmin: u.key === ADMIN_KEY, announcements: ANNOUNCEMENTS,
     events: activeEvents().map((e) => ({ id: e.id, name: e.name, coins: e.coins, desc: e.desc, endsAt: e.endsAt || null, claimed: (u.redeemed || []).includes(eventClaimCode(e)) })) };
 }
 
