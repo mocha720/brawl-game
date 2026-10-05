@@ -542,7 +542,8 @@ const CHARACTERS = {
       name: '도약 강습',
       type: 'leap',          // 벽을 무시하고 바라보는 방향으로 멀리 점프, 착지 지점 근처의 적에게 피해
       damage: 1000,
-      distance: 380,         // 점프 거리(px). 착지 지점이 벽 안이면 가장 가까운 빈 곳까지 되돌아옴
+      distance: 380,         // 최대 점프 거리(px). 착지 지점이 벽 안이면 가장 가까운 빈 곳까지 되돌아옴
+      minDistance: 100,      // 최소 점프 거리(px). 조준(PC 마우스 위치 / 모바일 스틱 당김)에 따라 minDistance ~ distance 사이로 조절됨
       duration: 0.55,        // 공중에 떠 있는 시간(초). 이 동안은 조작 불가 + 피격/총알 무시 (길수록 점프가 느리게 보임)
       landRadius: 90,        // 착지 지점 주변 피해 반경
     },
@@ -647,7 +648,7 @@ function describeUltimate(u) {
     }
     case 'leap':
       damage = u.damage;
-      desc = `바라보는 방향으로 벽을 무시하고 약 ${fmtNum(u.distance)}px 점프 (공중에서는 피격 불가), 착지 지점 반경 ${u.landRadius} 안의 적에게 ${fmtNum(u.damage)} 피해`;
+      desc = `조준한 방향으로 벽을 무시하고 점프, 거리는 조준으로 ${fmtNum(u.minDistance || 0)}~${fmtNum(u.distance)}px 조절 (공중에서는 피격 불가), 착지 지점 반경 ${u.landRadius} 안의 적에게 ${fmtNum(u.damage)} 피해`;
       break;
     case 'summonChicken':
       desc = `조준 불필요, 체력 ${fmtNum(u.hp)}의 닭을 소환. ${u.duration}초 동안 적을 자동으로 추격하다가 사거리 안에 들어오면 적에게 돌격해서 ${fmtNum(u.damage)} 피해 (${u.attackInterval}초마다 돌격 가능)`;
@@ -2750,7 +2751,7 @@ io.on('connection', (socket) => {
   });
 
   // 궁극기 발사 요청 (게이지가 100%일 때만 발동)
-  socket.on('ultimate', () => {
+  socket.on('ultimate', (data) => {
     const match = matches[socketToMatch[socket.id]];
     if (!match || match.over || Date.now() < match.startsAt) return; // 대결 화면(카운트다운) 중에는 입력 무시
     const p = match.players[socket.id];
@@ -2840,16 +2841,24 @@ io.on('connection', (socket) => {
     } else if (ult.type === 'leap') {
       // 모카의 도약 강습: 바라보는 방향으로 벽을 무시하고 점프. 착지 지점은 즉시 정하고(벽 안이면 가까운 빈 곳으로 되돌림),
       // 실제 이동/착지 피해는 updateMatch가 처리한다. 점프 시간 동안은 stunnedUntil로 입력을 막는다.
+      // 점프 거리는 클라이언트가 조준한 값(PC: 마우스까지의 거리 / 모바일: 스틱을 당긴 정도)을 보내오지만,
+      // 서버가 항상 minDistance ~ distance 범위로 제한한다 (이상한 값이 와도 최대 거리를 넘지 못함). 값이 없으면 최대 거리.
+      const maxDist = ult.distance;
+      const minDist = Math.min(maxDist, ult.minDistance || 0);
+      const sent = data && typeof data.distance === 'number' && Number.isFinite(data.distance) ? data.distance : maxDist;
+      const leapDist = Math.max(minDist, Math.min(maxDist, sent));
       let tx = p.x;
       let ty = p.y;
-      for (let d = ult.distance; d >= 0; d -= 10) {
+      for (let d = leapDist; d >= 0; d -= 10) {
         const cx = Math.max(PLAYER_RADIUS, Math.min(ARENA_WIDTH - PLAYER_RADIUS, p.x + Math.cos(p.angle) * d));
         const cy = Math.max(PLAYER_RADIUS, Math.min(ARENA_HEIGHT - PLAYER_RADIUS, p.y + Math.sin(p.angle) * d));
         if (!collidesWithWalls(match.walls, cx, cy, PLAYER_RADIUS + 4)) { tx = cx; ty = cy; break; }
       }
-      const leapMs = (ult.duration || 0.4) * 1000;
+      // 공중 시간은 거리에 비례시켜 짧게 뛰어도 점프 속도가 같게 하되, 너무 순식간이 되지 않도록 최소 0.3초
+      const leapDuration = Math.max(0.3, (ult.duration || 0.4) * (leapDist / maxDist));
+      const leapMs = leapDuration * 1000;
       p.leaping = true;
-      p.leapTotal = ult.duration || 0.4;
+      p.leapTotal = leapDuration;
       p.leapTimeLeft = p.leapTotal;
       p.leapStartX = p.x;
       p.leapStartY = p.y;
