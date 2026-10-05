@@ -598,6 +598,7 @@ const CHARACTERS = {
       // 맞은 대상의 '현재 체력'의 일정 비율만큼 피해를 주는 하트 (보호막이 있으면 보호막 + 체력을 합친 값의 비율).
       // 고정 피해(damage)가 없으므로 레벨 강화의 공격력 배율은 이 비율에는 적용되지 않는다 (체력 강화만 적용).
       currentHpRatio: 0.25,
+      executeBelowHp: 750,  // 맞은 적의 현재 체력이 이 값 이하이면 보호막과 상관없이 즉사 (무적/점프 중인 대상은 기존처럼 피해를 받지 않음)
       speed: 500,           // 중거리: 속도 x 수명 = 사거리 약 500px
       radius: 11,
       lifetime: 1.0,
@@ -648,7 +649,7 @@ function describeBasic(b) {
     parts.push(`전방 ${b.angleDegrees}도 부채꼴 범위(사거리 ${b.range})를 휘둘러 ${fmtNum(b.damage)} 피해를 주고 ${b.knockback}만큼 뒤로 밀쳐냄`);
   } else if (b.currentHpRatio > 0) {
     // 진우Park의 하트: 고정 피해가 아니라 대상의 현재 체력 비율로 피해를 줌
-    parts.push(`하트를 발사해 적의 현재 체력의 ${Math.round(b.currentHpRatio * 100)}% 피해 (보호막이 있으면 보호막까지 합친 체력 기준)`);
+    parts.push(`하트를 발사해 적의 현재 체력의 ${Math.round(b.currentHpRatio * 100)}% 피해 (보호막이 있으면 보호막까지 합친 체력 기준)${b.executeBelowHp > 0 ? `, 맞은 적의 체력이 ${fmtNum(b.executeBelowHp)} 이하면 즉사` : ''}`);
     const r = rangeOf(b);
     if (r) parts.push(`사거리 약 ${r}`);
   } else if (b.poolOnImpact) {
@@ -1001,6 +1002,7 @@ const ANNOUNCEMENTS = [
     items: [
       '하트를 쏘는 캐릭터 진우Park이 추가되었어요. 🪙 300 코인으로 잠금해제할 수 있어요. (체력 6,500)',
       '기본공격 [하트 발사하기]: 중거리로 하트를 발사해 맞은 적의 현재 체력의 25% 피해를 줘요. 보호막이 있으면 보호막까지 합친 체력의 25%예요.',
+      '하트에 맞은 적의 체력이 750 이하라면 즉사해요!',
       '궁극기 [소다Bang]: 벽을 무시하고 조준한 방향으로 중거리(100~300)를 점프해, 착지 지점 주변 적에게 3,000 피해를 주고 바깥으로 밀쳐내요. 점프 중에는 공격을 받지 않아요.',
       '가젯 [소다 마시기]: 체력을 즉시 2,000 회복해요.',
     ],
@@ -2131,6 +2133,8 @@ function getDamageMultiplier(p) {
 
 // 총알이 대상에게 줄 기본 피해: 비율형 총알(하트)은 대상의 현재 체력 + 보호막의 비율, 그 외는 고정 피해
 function bulletDamageFor(b, target) {
+  // 처형: 현재 체력이 기준 이하면 보호막까지 뚫고 확실히 죽을 만큼의 피해를 줌
+  if (b.executeBelowHp > 0 && (target.hp || 0) <= b.executeBelowHp) return (target.hp || 0) + (target.shieldHp || 0) + 1;
   if (b.currentHpRatio > 0) return Math.max(1, Math.round(((target.hp || 0) + (target.shieldHp || 0)) * b.currentHpRatio));
   return b.damage;
 }
@@ -2240,6 +2244,7 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
       team: p.team,
       life: spec.lifetime,
       damage: spec.damage,
+      executeBelowHp: spec.executeBelowHp || 0, // 0보다 크면 맞은 대상의 현재 체력이 이 값 이하일 때 즉사 (진우Park의 하트)
       currentHpRatio: spec.currentHpRatio || 0, // 0보다 크면 고정 피해 대신 대상 현재 체력(+보호막)의 비율만큼 피해 (진우Park의 하트)
       radius: spec.radius,
       isUltimate,
