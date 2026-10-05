@@ -1118,6 +1118,15 @@ const CHARACTERS = [
     ultimate: { name: '고추 발사', desc: '조준한 방향으로 고추 3개를 연달아 발사 (개당 1,500 피해, 사거리 약 960)' },
     gadget: { name: '재장전 가속', desc: '3초 동안 재장전 속도 25% 빨라짐 (15초마다 사용 가능)' },
   },
+  {
+    id: 'mocha',
+    name: '모카',
+    color: '#6c5ce7',
+    maxHp: 5500,
+    basic: { name: '양손 찌르기', damage: 500, desc: '양손으로 4번 빠르게 찌름 (한 번당 500 피해, 사거리 짧음)' },
+    ultimate: { name: '도약 강습', desc: '바라보는 방향으로 벽을 무시하고 멀리 점프 (공중에서는 피격 불가), 착지 지점 주변 적에게 1,000 피해' },
+    gadget: { name: '기합 충전', desc: '4초에 걸쳐 궁극기 게이지를 50%만큼 천천히 채움 (15초마다 사용 가능)' },
+  },
 ];
 let selectedCharacterId = CHARACTERS[0].id;
 
@@ -2599,9 +2608,22 @@ function update(dt) {
 }
 
 function drawPlayer(p, isMe) {
+  // 점프 중(모카의 도약 강습): 바닥에 그림자를 남기고 몸통만 포물선을 그리며 떠오른다
+  let lift = 0;
+  if (p.leaping && p.leapTotal > 0) {
+    const prog = Math.max(0, Math.min(1, 1 - p.leapTimeLeft / p.leapTotal));
+    lift = Math.sin(prog * Math.PI) * 55;
+    ctx.save();
+    ctx.globalAlpha = 0.35;
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.ellipse(p.x, p.y + PLAYER_RADIUS * 0.6, PLAYER_RADIUS * (1 - lift / 160), PLAYER_RADIUS * 0.45, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
   // 몸통
   ctx.save();
-  ctx.translate(p.x, p.y);
+  ctx.translate(p.x, p.y - lift);
 
   if (!p.alive) {
     ctx.globalAlpha = 0.25; // 사망 상태는 반투명 처리
@@ -2679,7 +2701,7 @@ function drawPlayer(p, isMe) {
   if (p.chargingUntil && Date.now() < p.chargingUntil) {
     ctx.font = `${PLAYER_RADIUS}px sans-serif`;
     ctx.fillText('🔋', p.x, p.y - PLAYER_RADIUS - 34);
-  } else if (p.stunnedUntil && Date.now() < p.stunnedUntil) {
+  } else if (!p.leaping && p.stunnedUntil && Date.now() < p.stunnedUntil) {
     ctx.font = `${PLAYER_RADIUS}px sans-serif`;
     ctx.fillText('💫', p.x, p.y - PLAYER_RADIUS - 34);
   }
@@ -3080,9 +3102,27 @@ function drawEffect(e) {
     ctx.textBaseline = 'middle';
     ctx.fillText('💥', e.x, e.y);
     ctx.restore();
-  } else if (e.type === 'melee') {
-    // 변기통의 뚫어뻥 휘두르기 - 바라보는 방향을 중심으로 한 부채꼴 스윙
+  } else if (e.type === 'leapLand') {
+    // 모카의 도약 강습 착지 - 충격파
     const alpha = Math.max(0, Math.min(1, e.life / 0.4));
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, e.radius, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(108, 92, 231, 0.3)';
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(162, 155, 254, 0.95)';
+    ctx.stroke();
+    ctx.font = `${Math.min(36, e.radius * 0.45)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('💥', e.x, e.y);
+    ctx.restore();
+  } else if (e.type === 'melee') {
+    // 변기통의 뚫어뻥 휘두르기 / 모카의 양손 찌르기 - 바라보는 방향을 중심으로 한 부채꼴 스윙
+    const isStab = e.visual === 'stab';
+    const alpha = Math.max(0, Math.min(1, e.life / (isStab ? 0.18 : 0.4)));
     const halfAngle = ((e.arcDegrees || 90) * Math.PI) / 180 / 2;
     ctx.save();
     ctx.globalAlpha = alpha;
@@ -3098,7 +3138,15 @@ function drawEffect(e) {
     ctx.font = `${Math.min(28, e.radius * 0.3)}px sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('🪠', e.x + Math.cos(e.angle) * e.radius * 0.6, e.y + Math.sin(e.angle) * e.radius * 0.6);
+    if (isStab) {
+      // 왼손/오른손(e.side)이 번갈아 찌르도록 진행 방향의 수직으로 살짝 엇갈리게 표시
+      const off = (e.side || 1) * 9;
+      ctx.fillText('🗡️',
+        e.x + Math.cos(e.angle) * e.radius * 0.75 - Math.sin(e.angle) * off,
+        e.y + Math.sin(e.angle) * e.radius * 0.75 + Math.cos(e.angle) * off);
+    } else {
+      ctx.fillText('🪠', e.x + Math.cos(e.angle) * e.radius * 0.6, e.y + Math.sin(e.angle) * e.radius * 0.6);
+    }
     ctx.restore();
   }
 }
@@ -3236,10 +3284,10 @@ function drawAimRangeIndicator() {
     range = me.gadget.speed * me.gadget.lifetime;
     color = 'rgba(52, 152, 219, 0.9)'; // 가젯은 파란색으로 구분
   } else if (ultimateArmed && me.ultimate && me.ultimate.type !== 'lightning') {
-    range = me.ultimate.speed * me.ultimate.lifetime;
+    range = me.ultimate.distance || me.ultimate.speed * me.ultimate.lifetime; // 점프 궁극기는 distance, 발사형은 속도×수명
     color = 'rgba(231, 76, 60, 0.85)'; // 궁극기는 빨간색으로 구분
   } else if (me.basic) {
-    range = me.basic.speed * me.basic.lifetime;
+    range = me.basic.range || me.basic.speed * me.basic.lifetime; // 근접 공격(찌르기 등)은 range
     color = 'rgba(255, 255, 255, 0.6)';
   } else {
     return;
