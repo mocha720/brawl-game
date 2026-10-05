@@ -632,22 +632,94 @@ function describeGadget(g) {
   return { name: g.name, desc: desc ? `${desc} (${GADGET_COOLDOWN_SEC}초마다 사용 가능)` : '' };
 }
 
-function buildCharacterInfo() {
+// ===== 캐릭터 강화(레벨) 시스템 =====
+// 코인으로 캐릭터마다 1레벨 -> 11레벨까지 강화한다. 레벨은 캐릭터별로 따로 저장된다. (1레벨 = 기존 스펙 그대로)
+// hp: 체력 배율 / atk: 공격력 배율 (기본공격·궁극기·가젯·물웅덩이·폭탄 등 모든 대미지에 적용) / cost: 이 레벨로 올리는 데 드는 코인
+// 밸런스 기준: 11레벨 = 체력 +35%, 공격력 +30%. (1레벨 상대로 맞붙으면 약 1.75배 유리 -> 실력으로 뒤집을 수 있는 수준)
+// 레벨 1->11 강화 총비용은 2,720코인 (1:1 승리 보상 45코인 기준 약 60승). 수치를 바꾸고 싶으면 이 표만 고치면 된다.
+const MAX_CHARACTER_LEVEL = 11;
+const LEVEL_TABLE = [
+  null, // 0번 칸은 사용하지 않음 (레벨은 1부터)
+  { hp: 1.000, atk: 1.00, cost: 0 },
+  { hp: 1.035, atk: 1.03, cost: 40 },
+  { hp: 1.070, atk: 1.06, cost: 60 },
+  { hp: 1.105, atk: 1.09, cost: 90 },
+  { hp: 1.140, atk: 1.12, cost: 130 },
+  { hp: 1.175, atk: 1.15, cost: 180 },
+  { hp: 1.210, atk: 1.18, cost: 240 },
+  { hp: 1.245, atk: 1.21, cost: 320 },
+  { hp: 1.280, atk: 1.24, cost: 420 },
+  { hp: 1.315, atk: 1.27, cost: 540 },
+  { hp: 1.350, atk: 1.30, cost: 700 },
+];
+const LEVEL_TABLE_PUBLIC = LEVEL_TABLE.slice(1).map((t, i) => ({ level: i + 1, hp: t.hp, atk: t.atk, cost: t.cost }));
+const DAMAGE_KEYS = new Set(['damage', 'directDamage', 'poolDamage', 'tickDamage', 'explodeDamage']); // 공격력 배율을 적용할 수치 이름
+function clampLevel(v) {
+  const n = Math.floor(Number(v));
+  if (!Number.isFinite(n) || n < 1) return 1;
+  return Math.min(n, MAX_CHARACTER_LEVEL);
+}
+function levelOf(u, charId) { return clampLevel(u && u.levels && u.levels[charId]); }
+function roundTo(v, unit) { return Math.round(v / unit) * unit; }
+function scaleDamageDeep(value, mult) {
+  if (Array.isArray(value)) return value.map((v) => scaleDamageDeep(v, mult));
+  if (value && typeof value === 'object') {
+    const out = {};
+    for (const k of Object.keys(value)) {
+      const v = value[k];
+      out[k] = DAMAGE_KEYS.has(k) && typeof v === 'number' ? roundTo(v * mult, 5) : scaleDamageDeep(v, mult);
+    }
+    return out;
+  }
+  return value;
+}
+// 레벨이 적용된 캐릭터 스펙: 체력과 모든 대미지 수치를 배율만큼 키운 복사본 (1레벨은 원본 그대로). 서버가 직접 계산하므로 클라이언트는 조작할 수 없다.
+// 소환물(터렛/닭)의 체력과 보호막 수치는 그대로 두고, 소환물이 주는 대미지만 공격력 배율을 받는다.
+const leveledCharacterCache = new Map();
+function getLeveledCharacter(id, level) {
+  const base = CHARACTERS[id] || CHARACTERS[DEFAULT_CHARACTER_ID];
+  const lv = clampLevel(level);
+  if (lv === 1) return base;
+  const cacheKey = `${base.id}:${lv}`;
+  let c = leveledCharacterCache.get(cacheKey);
+  if (!c) {
+    const t = LEVEL_TABLE[lv];
+    c = {
+      ...base,
+      maxHp: roundTo(base.maxHp * t.hp, 10),
+      basic: scaleDamageDeep(base.basic, t.atk),
+      ultimate: scaleDamageDeep(base.ultimate, t.atk),
+      gadget: base.gadget ? scaleDamageDeep(base.gadget, t.atk) : base.gadget,
+    };
+    leveledCharacterCache.set(cacheKey, c);
+  }
+  return c;
+}
+
+const characterInfoCache = new Map();
+function buildCharacterInfo(levels) {
   const out = {};
   for (const id in CHARACTERS) {
-    const c = CHARACTERS[id];
-    out[id] = {
-      id,
-      name: c.name,
-      maxHp: c.maxHp,
-      basic: describeBasic(c.basic),
-      ultimate: describeUltimate(c.ultimate),
-      gadget: c.gadget ? describeGadget(c.gadget) : null,
-    };
+    const lv = clampLevel(levels && levels[id]);
+    const cacheKey = `${id}:${lv}`;
+    let info = characterInfoCache.get(cacheKey);
+    if (!info) {
+      const c = getLeveledCharacter(id, lv);
+      info = {
+        id,
+        name: c.name,
+        level: lv,
+        maxHp: c.maxHp,
+        basic: describeBasic(c.basic),
+        ultimate: describeUltimate(c.ultimate),
+        gadget: c.gadget ? describeGadget(c.gadget) : null,
+      };
+      characterInfoCache.set(cacheKey, info);
+    }
+    out[id] = info;
   }
   return out;
 }
-const CHARACTER_INFO = buildCharacterInfo();
 const DEFAULT_CHARACTER_ID = 'minam';
 
 // ===== 쿠폰(코드) 설정 =====
@@ -762,7 +834,9 @@ function publicProfile(u) {
   for (const id in CHARACTERS) trophies[id] = (u.trophies && u.trophies[id]) || 0;
   const streaks = {};
   for (const id in CHARACTERS) streaks[id] = (u.streaks && u.streaks[id]) || 0;
-  return { username: u.name, coins: u.coins, wins: u.wins || 0, losses: u.losses || 0, unlocked: effectiveUnlocked(u), prices: allPrices(), trophies, streaks, missions: missionsView(u), ranks: TROPHY_RANKS, characters: CHARACTER_INFO };
+  const levels = {};
+  for (const id in CHARACTERS) levels[id] = levelOf(u, id);
+  return { username: u.name, coins: u.coins, wins: u.wins || 0, losses: u.losses || 0, unlocked: effectiveUnlocked(u), prices: allPrices(), trophies, streaks, missions: missionsView(u), ranks: TROPHY_RANKS, characters: buildCharacterInfo(levels), levels, levelTable: LEVEL_TABLE_PUBLIC, maxLevel: MAX_CHARACTER_LEVEL };
 }
 
 // ----- 저장소 -----
@@ -772,7 +846,7 @@ function publicProfile(u) {
 const USERS_FILE = process.env.USERS_FILE || path.join(os.tmpdir(), 'brawl-users.json');
 
 function cloneUser(u) {
-  return u ? { ...u, unlocked: [...(u.unlocked || [])], trophies: { ...(u.trophies || {}) }, streaks: { ...(u.streaks || {}) }, redeemed: [...(u.redeemed || [])], missions: u.missions ? { day: u.missions.day, progress: { ...(u.missions.progress || {}) }, claimed: [...(u.missions.claimed || [])] } : undefined } : null;
+  return u ? { ...u, unlocked: [...(u.unlocked || [])], trophies: { ...(u.trophies || {}) }, streaks: { ...(u.streaks || {}) }, levels: { ...(u.levels || {}) }, redeemed: [...(u.redeemed || [])], missions: u.missions ? { day: u.missions.day, progress: { ...(u.missions.progress || {}) }, claimed: [...(u.missions.claimed || [])] } : undefined } : null;
 }
 
 function createFileDb() {
@@ -826,6 +900,17 @@ function createFileDb() {
       if (u.coins < price) return { ok: false, reason: 'coins', user: cloneUser(u) };
       u.coins -= price;
       u.unlocked.push(charId);
+      scheduleSave();
+      return { ok: true, user: cloneUser(u) };
+    },
+    async upgradeCharacter(key, charId, fromLevel, cost) {
+      const u = users[key];
+      if (!u) return { ok: false, reason: 'noUser' };
+      if (levelOf(u, charId) !== fromLevel) return { ok: false, reason: 'level', user: cloneUser(u) };
+      if (u.coins < cost) return { ok: false, reason: 'coins', user: cloneUser(u) };
+      u.coins -= cost;
+      u.levels = u.levels || {};
+      u.levels[charId] = fromLevel + 1;
       scheduleSave();
       return { ok: true, user: cloneUser(u) };
     },
@@ -954,6 +1039,23 @@ function createMongoDb(uri) {
       const user = await col.findOne({ key }, { projection });
       if (!user) return { ok: false, reason: 'noUser' };
       if ((user.unlocked || []).includes(charId)) return { ok: false, reason: 'already', user };
+      return { ok: false, reason: 'coins', user };
+    },
+    async upgradeCharacter(key, charId, fromLevel, cost) {
+      // 코인 차감과 레벨 상승을 한 번의 원자적 연산으로 처리 (중복 클릭/동시 요청으로 코인이 이중 차감되거나 레벨이 두 번 오르지 않음)
+      const levelPath = `levels.${charId}`;
+      const levelFilter = fromLevel === 1
+        ? { $or: [{ [levelPath]: { $exists: false } }, { [levelPath]: 1 }] }
+        : { [levelPath]: fromLevel };
+      const updated = await col.findOneAndUpdate(
+        { key, coins: { $gte: cost }, ...levelFilter },
+        { $inc: { coins: -cost }, $set: { [levelPath]: fromLevel + 1 } },
+        { returnDocument: 'after', projection }
+      );
+      if (updated) return { ok: true, user: updated };
+      const user = await col.findOne({ key }, { projection });
+      if (!user) return { ok: false, reason: 'noUser' };
+      if (levelOf(user, charId) !== fromLevel) return { ok: false, reason: 'level', user };
       return { ok: false, reason: 'coins', user };
     },
     async redeemCode(key, code, coins) {
@@ -1469,6 +1571,35 @@ function registerAuthHandlers(socket) {
     }
   });
 
+  // 캐릭터 강화: 코인으로 해당 캐릭터의 레벨을 1 올린다. 현재 레벨/비용/코인은 항상 서버 기준으로 판단한다.
+  socket.on('upgradeCharacter', async (data, ack) => {
+    if (typeof ack !== 'function') return;
+    try {
+      const key = socket.data.userKey;
+      if (!key) return ack({ ok: false, message: '로그인이 필요합니다.' });
+      if (socketToMatch[socket.id] || isQueued(socket.id)) return ack({ ok: false, message: '매치 중이거나 대기 중에는 강화할 수 없습니다.' });
+      const charId = data && data.characterId;
+      if (typeof charId !== 'string' || !CHARACTERS[charId]) return ack({ ok: false, message: '존재하지 않는 캐릭터입니다.' });
+      if (!socket.data.unlocked.has(charId)) return ack({ ok: false, message: '잠금해제된 캐릭터만 강화할 수 있습니다.' });
+
+      const before = await db.findUser(key);
+      if (!before) return ack({ ok: false, message: '계정을 찾을 수 없습니다.' });
+      const current = levelOf(before, charId);
+      if (current >= MAX_CHARACTER_LEVEL) return ack({ ok: false, message: '이미 최고 레벨입니다.', profile: publicProfile(before) });
+
+      const r = await db.upgradeCharacter(key, charId, current, LEVEL_TABLE[current + 1].cost);
+      if (r.ok) return ack({ ok: true, message: `${CHARACTERS[charId].name} Lv.${current + 1} 강화 완료!`, profile: publicProfile(r.user) });
+
+      const message = r.reason === 'coins' ? '코인이 부족합니다.'
+        : r.reason === 'level' ? '이미 강화가 진행되었습니다. 화면을 갱신했어요.'
+        : '강화에 실패했습니다.';
+      ack({ ok: false, message, profile: r.user ? publicProfile(r.user) : undefined });
+    } catch (e) {
+      console.error('upgradeCharacter 오류', e);
+      ack({ ok: false, message: '서버 오류가 발생했습니다.' });
+    }
+  });
+
   // 미션 보상 받기: 달성 여부/중복 수령은 항상 서버가 판단한다 (클라이언트가 보낸 값은 미션 id만 사용)
   socket.on('claimMission', async (data, ack) => {
     if (typeof ack !== 'function') return;
@@ -1582,9 +1713,10 @@ function randomSpawnPoint(walls) {
   return fallbackCandidates[0];
 }
 
-function buildPlayer(socketId, name, characterId, team, spawn) {
-  const character = CHARACTERS[characterId] || CHARACTERS[DEFAULT_CHARACTER_ID];
+function buildPlayer(socketId, name, characterId, team, spawn, level) {
+  const character = getLeveledCharacter(characterId, level); // 레벨에 맞게 체력/대미지가 강화된 스펙 (1레벨은 기본 스펙)
   return {
+    level: clampLevel(level),
     id: socketId,
     name,
     team, // 'A' 또는 'B'
@@ -2034,14 +2166,14 @@ function startMatch(mode, entries) {
   // 대기열에 들어온 순서대로 앞쪽 teamSize명은 A팀, 나머지는 B팀으로 배정
   entries.forEach((e, idx) => {
     const team = idx < cfg.teamSize ? 'A' : 'B';
-    match.players[e.socket.id] = buildPlayer(e.socket.id, e.name, e.characterId, team, randomSpawnPoint(match.walls));
+    match.players[e.socket.id] = buildPlayer(e.socket.id, e.name, e.characterId, team, randomSpawnPoint(match.walls), e.level);
     match.accounts[e.socket.id] = e.userKey;
   });
 
   // 대결 화면용 참가자 목록: 닉네임, 팀, 캐릭터, 그 캐릭터의 트로피
   const roster = entries.map((e) => {
     const pl = match.players[e.socket.id];
-    return { id: pl.id, name: pl.name, team: pl.team, characterId: pl.characterId, characterName: pl.characterName, trophies: e.trophies || 0, device: e.socket.data.device || 'desktop' };
+    return { id: pl.id, name: pl.name, team: pl.team, characterId: pl.characterId, characterName: pl.characterName, trophies: e.trophies || 0, level: pl.level, device: e.socket.data.device || 'desktop' };
   });
 
   entries.forEach((e) => {
@@ -2136,10 +2268,13 @@ io.on('connection', (socket) => {
     const userKey = socket.data.userKey;
 
     // 대결 화면에 보여줄 트로피는 클라이언트가 보낸 값이 아니라 서버 저장소의 값을 사용
+    // 캐릭터 레벨(체력/공격력 강화)도 서버 저장소의 값만 사용한다
     let trophies = 0;
+    let level = 1;
     try {
       const u = await db.findUser(userKey);
       trophies = (u && u.trophies && u.trophies[characterId]) || 0;
+      level = levelOf(u, characterId);
     } catch (e) {
       console.error('트로피 조회 실패', userKey, e);
     }
@@ -2148,7 +2283,7 @@ io.on('connection', (socket) => {
     if (!socket.connected || socket.data.userKey !== userKey) return;
     if (socketToMatch[socket.id] || isQueued(socket.id)) return;
 
-    queues[mode].push({ socket, name, characterId, userKey, trophies });
+    queues[mode].push({ socket, name, characterId, userKey, trophies, level });
     // 이 모드에서 이미 기다리고 있던 사람들에게도 갱신된 인원수를 함께 알림
     broadcastQueueStatus(mode);
 
