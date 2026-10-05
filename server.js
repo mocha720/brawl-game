@@ -519,6 +519,40 @@ const CHARACTERS = {
       speedMultiplier: 1.25, // 재장전 속도 배율 (1.25 = 25% 빨라짐)
     },
   },
+  mocha: {
+    id: 'mocha',
+    name: '모카',
+    maxHp: 5500,
+    // 찌르기 4번이 한 번에 나가므로, 다른 캐릭터와 같은 충전량을 쓰면 궁극기가 너무 빨리 참.
+    // 그래서 슈처럼 '찌르기 1번 적중당' 충전량을 낮게 따로 설정함 (콤보 4번 전부 적중 = 약 20%)
+    ultimateChargePerHit: 5,
+    basic: {
+      name: '양손 찌르기',
+      type: 'multiStab',     // 양손으로 짧은 간격으로 연달아 찌르는 근접 공격 (한 번 누르면 stabCount번 판정)
+      damage: 500,           // 찌르기 1번당 대미지
+      stabCount: 4,          // 한 번 공격할 때 찌르는 횟수
+      stabInterval: 0.08,    // 찌르기 사이 간격(초)
+      angleDegrees: 70,      // 찌르기 부채꼴 각도 (좁게)
+      range: 75,             // 사거리 (근접 공격 중에서도 짧게)
+      effectLife: 0.18,      // 찌르기 이펙트가 화면에 남는 시간(초)
+      visual: 'stab',
+    },
+    ultimate: {
+      name: '도약 강습',
+      type: 'leap',          // 벽을 무시하고 바라보는 방향으로 멀리 점프, 착지 지점 근처의 적에게 피해
+      damage: 1000,
+      distance: 380,         // 점프 거리(px). 착지 지점이 벽 안이면 가장 가까운 빈 곳까지 되돌아옴
+      duration: 0.4,         // 공중에 떠 있는 시간(초). 이 동안은 조작 불가 + 피격/총알 무시
+      landRadius: 90,        // 착지 지점 주변 피해 반경
+    },
+    gadget: {
+      name: '기합 충전',
+      type: 'ultCharge',     // 조준 불필요, 즉시 발동. duration초에 걸쳐 궁극기 게이지를 amount%만큼 천천히 채움
+      instant: true,
+      amount: 50,            // 채워지는 궁극기 게이지(%)
+      duration: 4,           // 다 채워지는 데 걸리는 시간(초)
+    },
+  },
 };
 
 // ===== 캐릭터 설명(캐릭터 선택 화면용) 자동 생성 =====
@@ -536,6 +570,9 @@ function describeBasic(b) {
   if (b.type === 'dash') {
     damage = b.damage;
     parts.push(`바라보는 방향으로 약 ${fmtNum(Math.round(b.speed * b.duration))}px를 돌진, 적과 부딪히면 ${fmtNum(b.damage)} 피해`);
+  } else if (b.type === 'multiStab') {
+    damage = b.damage;
+    parts.push(`양손으로 ${b.stabCount}번 빠르게 찌름 (한 번당 ${fmtNum(b.damage)} 피해, 전방 ${b.angleDegrees}도, 사거리 ${b.range}로 짧음)`);
   } else if (b.type === 'melee') {
     damage = b.damage;
     parts.push(`전방 ${b.angleDegrees}도 부채꼴 범위(사거리 ${b.range})를 휘둘러 ${fmtNum(b.damage)} 피해를 주고 ${b.knockback}만큼 뒤로 밀쳐냄`);
@@ -605,6 +642,10 @@ function describeUltimate(u) {
       desc = `조준한 방향으로 고추 ${u.bulletCount}개를 연달아 발사 (개당 ${fmtNum(u.damage)} 피해${r ? `, 사거리 약 ${r}` : ''})`;
       break;
     }
+    case 'leap':
+      damage = u.damage;
+      desc = `바라보는 방향으로 벽을 무시하고 약 ${fmtNum(u.distance)}px 점프 (공중에서는 피격 불가), 착지 지점 반경 ${u.landRadius} 안의 적에게 ${fmtNum(u.damage)} 피해`;
+      break;
     case 'summonChicken':
       desc = `조준 불필요, 체력 ${fmtNum(u.hp)}의 닭을 소환. ${u.duration}초 동안 적을 자동으로 추격하다가 사거리 안에 들어오면 적에게 돌격해서 ${fmtNum(u.damage)} 피해 (${u.attackInterval}초마다 돌격 가능)`;
       break;
@@ -637,6 +678,9 @@ function describeGadget(g) {
       break;
     case 'reloadBoost':
       desc = `${g.duration}초 동안 재장전 속도 ${Math.round((g.speedMultiplier - 1) * 100)}% 빨라짐`;
+      break;
+    case 'ultCharge':
+      desc = `${g.duration}초에 걸쳐 궁극기 게이지를 ${g.amount}%만큼 천천히 채움`;
       break;
     case 'powerCharge':
       desc = `${g.chargeTime}초 동안 이동/공격 불가 상태가 되지만, 이후 ${g.boostDuration}초 동안 공격력 ${fmtMult(g.damageMultiplier)}배`;
@@ -773,6 +817,7 @@ const CHARACTER_PRICES = {
   bobae: 250,
   ekhe: 300,
   gwari: 300,
+  mocha: 300,
 };
 CHARACTER_PRICES[DEFAULT_CHARACTER_ID] = 0; // 기본 캐릭터는 항상 무료 (사용 가능한 캐릭터가 하나도 없는 상황 방지)
 function priceOf(id) {
@@ -1848,6 +1893,14 @@ function buildPlayer(socketId, name, characterId, team, spawn, level) {
     ultimateCharge: 0, // 0~100
     gadget: character.gadget || null, // 캐릭터 전용 가젯 (없으면 null)
     gadgetCooldownLeft: 0, // 가젯 재사용까지 남은 시간(초). 0이면 사용 가능
+    leaping: false,        // 모카의 궁극기 점프 중이면 true (공중: 조작 불가, 피격/총알 무시)
+    leapTimeLeft: 0,
+    leapTotal: 0,
+    leapStartX: 0, leapStartY: 0, leapTargetX: 0, leapTargetY: 0,
+    leapEndsAt: 0,         // 점프 중 입력을 막기 위해 걸어둔 기절 시각(착지 때 같은 값이면 해제)
+    leapDamage: 0, leapRadius: 0,
+    ultGadgetLeft: 0,      // 모카의 가젯: 궁극기 게이지가 천천히 채워지는 남은 시간(초)
+    ultGadgetRate: 0,      // 초당 채워지는 게이지(%)
     invincibleUntil: 0,    // 이 시각(ms, Date.now() 기준) 전까지는 무적 상태 (현재 사용하는 캐릭터는 없지만 'invincible' 가젯용으로 남겨둠)
     shieldHp: 0,           // 남은 보호막 수치 (슈의 가젯). 0이면 보호막 없음
     shieldMax: 0,          // 이번에 발동한 보호막의 최대치 (화면 표시용)
@@ -1880,6 +1933,7 @@ function getDamageMultiplier(p) {
 
 function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
   if (!target.alive || match.over) return;
+  if (target.leaping) return; // 점프 중(모카 궁극기)에는 모든 피해 무시
   if (target.invincibleUntil && Date.now() < target.invincibleUntil) return; // 무적 상태(슈의 가젯)면 피해/궁극기 충전 모두 무시
 
   const shooter = match.players[shooterId];
@@ -2001,7 +2055,7 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
 // 근접 공격(변기통의 뚫어뻥 휘두르기 등): 발사체 없이 즉시 판정되는 부채꼴 범위 공격
 // spec.angleDegrees: 바라보는 방향을 중심으로 한 부채꼴의 전체 각도, spec.range: 부채꼴 반경
 // spec.knockback이 있으면 맞은 대상을 공격자 반대 방향(바깥쪽)으로 밀어낸다
-function performMeleeAttack(match, p, spec, isUltimate) {
+function performMeleeAttack(match, p, spec, isUltimate, angle = p.angle, stabIndex = 0) {
   const halfAngle = ((spec.angleDegrees || 90) * Math.PI) / 180 / 2;
   const range = spec.range || 120;
 
@@ -2012,10 +2066,12 @@ function performMeleeAttack(match, p, spec, isUltimate) {
     type: 'melee',
     x: p.x,
     y: p.y,
-    angle: p.angle,
+    angle,
     arcDegrees: spec.angleDegrees || 90,
     radius: range,
-    life: EFFECT_LIFETIME,
+    visual: spec.visual || null,
+    side: stabIndex % 2 === 0 ? -1 : 1, // 양손 찌르기: 왼손/오른손 번갈아 표시
+    life: spec.effectLife || EFFECT_LIFETIME,
   });
 
   for (const pid in match.players) {
@@ -2031,7 +2087,7 @@ function performMeleeAttack(match, p, spec, isUltimate) {
     if (dist > range + PLAYER_RADIUS) continue;
 
     // 목표가 공격자가 바라보는 방향 기준 부채꼴 각도 안에 있는지 확인
-    let diff = Math.atan2(dy, dx) - p.angle;
+    let diff = Math.atan2(dy, dx) - angle;
     while (diff > Math.PI) diff -= Math.PI * 2;
     while (diff < -Math.PI) diff += Math.PI * 2;
     if (Math.abs(diff) > halfAngle) continue;
@@ -2060,7 +2116,7 @@ function performMeleeAttack(match, p, spec, isUltimate) {
     const tdist = Math.sqrt(tdx * tdx + tdy * tdy);
     if (tdist > range + turret.radius) continue;
 
-    let tdiff = Math.atan2(tdy, tdx) - p.angle;
+    let tdiff = Math.atan2(tdy, tdx) - angle;
     while (tdiff > Math.PI) tdiff -= Math.PI * 2;
     while (tdiff < -Math.PI) tdiff += Math.PI * 2;
     if (Math.abs(tdiff) > halfAngle) continue;
@@ -2077,7 +2133,7 @@ function performMeleeAttack(match, p, spec, isUltimate) {
     const cdy = chicken.y - p.y;
     const cdist = Math.sqrt(cdx * cdx + cdy * cdy);
     if (cdist > range + chicken.radius) continue;
-    let cdiff = Math.atan2(cdy, cdx) - p.angle;
+    let cdiff = Math.atan2(cdy, cdx) - angle;
     while (cdiff > Math.PI) cdiff -= Math.PI * 2;
     while (cdiff < -Math.PI) cdiff += Math.PI * 2;
     if (Math.abs(cdiff) > halfAngle) continue;
@@ -2585,6 +2641,23 @@ io.on('connection', (socket) => {
 
     if (p.basic.type === 'melee') {
       performMeleeAttack(match, p, p.basic, false);
+    } else if (p.basic.type === 'multiStab') {
+      // 모카의 양손 찌르기: 발사 순간의 조준 방향으로 짧은 간격으로 stabCount번 연달아 찌른다 (첫 번째는 즉시)
+      const stabAngle = p.angle;
+      const stabberId = p.id;
+      const stabSpec = p.basic;
+      for (let i = 0; i < stabSpec.stabCount; i++) {
+        const stab = () => {
+          const m = matches[match.id];
+          if (!m || m.over) return;
+          const s = m.players[stabberId];
+          if (!s || !s.alive || s.leaping) return;
+          if (s.stunnedUntil && Date.now() < s.stunnedUntil) return; // 기절당하면 남은 찌르기는 끊김
+          performMeleeAttack(m, s, stabSpec, false, stabAngle, i);
+        };
+        if (i === 0) stab();
+        else setTimeout(stab, i * stabSpec.stabInterval * 1000);
+      }
     } else if (p.basic.type === 'dash') {
       // 꽈리의 돌진 박치기: 실제 이동/충돌 판정은 updateMatch의 돌진 처리가 수행
       p.dashing = true;
@@ -2654,6 +2727,10 @@ io.on('connection', (socket) => {
       p.dashDirX = Math.cos(p.angle);
       p.dashDirY = Math.sin(p.angle);
       p.dashTimeLeft = gadget.duration || 0.16;
+    } else if (gadget.type === 'ultCharge') {
+      // 모카의 가젯: duration초에 걸쳐 궁극기 게이지를 amount%만큼 천천히 채움 (재사용 시 새로 갱신, 실제 충전은 updateMatch가 수행)
+      p.ultGadgetLeft = gadget.duration || 4;
+      p.ultGadgetRate = (gadget.amount || 50) / (gadget.duration || 4);
     } else if (gadget.type === 'powerCharge') {
       // 보배의 가젯: chargeTime초 동안 이동/공격 불가(기절과 같은 방식으로 막음) -> 이후 boostDuration초 동안 공격력 증가
       const now = Date.now();
@@ -2756,6 +2833,28 @@ io.on('connection', (socket) => {
     } else if (ult.type === 'timedBomb') {
       // 보배 폭발: 조준 불필요, 자신의 위치에 설치
       spawnBomb(match, p, ult);
+    } else if (ult.type === 'leap') {
+      // 모카의 도약 강습: 바라보는 방향으로 벽을 무시하고 점프. 착지 지점은 즉시 정하고(벽 안이면 가까운 빈 곳으로 되돌림),
+      // 실제 이동/착지 피해는 updateMatch가 처리한다. 점프 시간 동안은 stunnedUntil로 입력을 막는다.
+      let tx = p.x;
+      let ty = p.y;
+      for (let d = ult.distance; d >= 0; d -= 10) {
+        const cx = Math.max(PLAYER_RADIUS, Math.min(ARENA_WIDTH - PLAYER_RADIUS, p.x + Math.cos(p.angle) * d));
+        const cy = Math.max(PLAYER_RADIUS, Math.min(ARENA_HEIGHT - PLAYER_RADIUS, p.y + Math.sin(p.angle) * d));
+        if (!collidesWithWalls(match.walls, cx, cy, PLAYER_RADIUS + 4)) { tx = cx; ty = cy; break; }
+      }
+      const leapMs = (ult.duration || 0.4) * 1000;
+      p.leaping = true;
+      p.leapTotal = ult.duration || 0.4;
+      p.leapTimeLeft = p.leapTotal;
+      p.leapStartX = p.x;
+      p.leapStartY = p.y;
+      p.leapTargetX = tx;
+      p.leapTargetY = ty;
+      p.leapDamage = ult.damage;
+      p.leapRadius = ult.landRadius || 90;
+      p.leapEndsAt = Date.now() + leapMs + 400; // 서버 틱 오차를 감안한 여유
+      p.stunnedUntil = p.leapEndsAt;
     } else if (ult.type === 'summonChicken') {
       // 엑헤의 닭 소환: 조준 불필요, 즉시 닭을 소환
       spawnChicken(match, p, ult);
@@ -2822,6 +2921,54 @@ io.on('connection', (socket) => {
 
 // ===== 매치별 물리 처리 (한 틱 분량) =====
 function updateMatch(match, dt, now) {
+  // 모카의 도약 강습: 벽을 무시하고 시작점 -> 착지점으로 직선 이동하다가, 시간이 다 되면 착지하면서 주변 적에게 피해
+  for (const pid in match.players) {
+    if (match.over) break;
+    const p = match.players[pid];
+    if (!p.leaping) continue;
+    if (!p.alive) { p.leaping = false; continue; }
+
+    p.leapTimeLeft -= dt;
+    const t = Math.min(1, 1 - Math.max(0, p.leapTimeLeft) / (p.leapTotal || 0.4));
+    p.x = p.leapStartX + (p.leapTargetX - p.leapStartX) * t;
+    p.y = p.leapStartY + (p.leapTargetY - p.leapStartY) * t;
+    if (p.leapTimeLeft > 0) continue;
+
+    // 착지
+    p.x = p.leapTargetX;
+    p.y = p.leapTargetY;
+    p.leaping = false;
+    if (p.stunnedUntil === p.leapEndsAt) p.stunnedUntil = 0; // 점프 때문에 걸어둔 입력 차단만 해제 (다른 기절은 유지)
+
+    effectIdCounter += 1;
+    match.effects.push({ id: effectIdCounter, type: 'leapLand', x: p.x, y: p.y, radius: p.leapRadius, life: EFFECT_LIFETIME });
+
+    for (const tid in match.players) {
+      if (tid === pid) continue;
+      const target = match.players[tid];
+      if (!target.alive) continue;
+      if (!FRIENDLY_FIRE && target.team === p.team) continue;
+      if (Math.hypot(target.x - p.x, target.y - p.y) < PLAYER_RADIUS + p.leapRadius) {
+        applyDamage(match, target, p.leapDamage, pid, { chargeShooter: false });
+        if (match.over) break;
+      }
+    }
+    if (match.over) break;
+
+    // 적 터렛/닭도 착지 범위 안에 있으면 피해를 입는다
+    const mult = getDamageMultiplier(p);
+    for (const turret of match.turrets) {
+      if (turret.team === p.team) continue;
+      if (Math.hypot(turret.x - p.x, turret.y - p.y) < turret.radius + p.leapRadius) turret.hp -= p.leapDamage * mult;
+    }
+    match.turrets = match.turrets.filter((t2) => t2.hp > 0);
+    for (const chicken of match.chickens) {
+      if (chicken.team === p.team) continue;
+      if (Math.hypot(chicken.x - p.x, chicken.y - p.y) < chicken.radius + p.leapRadius) chicken.hp -= p.leapDamage * mult;
+    }
+    match.chickens = match.chickens.filter((c2) => c2.hp > 0);
+  }
+
   // 변기통의 돌진 궁극기 처리: 서버가 매 틱마다 위치를 직접 이동시키고, 벽/적과의 충돌을 판정한다
   for (const pid in match.players) {
     if (match.over) break;
@@ -3090,6 +3237,7 @@ function updateMatch(match, dt, now) {
       const target = match.players[pid];
       if (!target.alive) continue;
       if (pid === b.ownerId) continue; // 자기 자신 총알은 무시
+      if (target.leaping) continue; // 점프 중(모카 궁극기)인 대상은 총알이 통과함
       if (!FRIENDLY_FIRE && owner && target.team === owner.team) continue; // 아군 총알은 그대로 통과
 
       const dx = target.x - b.x;
@@ -3297,6 +3445,15 @@ function updateMatch(match, dt, now) {
   for (const pid in match.players) {
     const p = match.players[pid];
     p.inBush = p.alive && isInBush(match.bushes, p.x, p.y);
+  }
+
+  // 모카의 가젯 '기합 충전': 남은 시간 동안 매 틱 궁극기 게이지를 조금씩 채움
+  for (const pid in match.players) {
+    const p = match.players[pid];
+    if (!p.alive || !(p.ultGadgetLeft > 0)) continue;
+    const used = Math.min(dt, p.ultGadgetLeft);
+    p.ultGadgetLeft -= used;
+    p.ultimateCharge = Math.min(100, p.ultimateCharge + p.ultGadgetRate * used);
   }
 
   // 가젯 재사용 대기시간 감소
