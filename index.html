@@ -1153,6 +1153,15 @@ const CHARACTERS = [
     ultimate: { name: '도약 강습', desc: '조준한 방향으로 벽을 무시하고 점프, 거리는 조준으로 100~380px 조절 (PC: 마우스 위치 / 모바일: 스틱을 당긴 정도), 착지 지점 주변 적에게 1,000 피해' },
     gadget: { name: '기합 충전', desc: '4초에 걸쳐 궁극기 게이지를 50%만큼 천천히 채움 (15초마다 사용 가능)' },
   },
+  {
+    id: 'uphal',
+    name: '업할',
+    color: '#e67e22',
+    maxHp: 9000,
+    basic: { name: '망치 지진', damage: 2000, desc: '망치를 내려쳐 조준 방향 전방 40도 부채꼴(사거리 280)에 지진을 일으켜 2,000 피해 + 0.5초 기절' },
+    ultimate: { name: '대지 강타', damage: 3000, desc: '망치를 매우 강하게 내리쳐 조준 방향 전방 100도 부채꼴(사거리 430)의 적에게 3,000 피해 + 2초 기절' },
+    gadget: { name: '방어막', desc: '3,000 피해를 막아주는 보호막을 두름 (다 막으면 사라짐) (15초마다 사용 가능)' },
+  },
 ];
 let selectedCharacterId = CHARACTERS[0].id;
 
@@ -2284,6 +2293,8 @@ socket.on('matchFound', (data) => {
   prevMyHp = null; // 새 매치 시작 시 이전 매치의 체력/점수 기록으로 인한 오작동(사운드 오재생) 방지
   prevMyScore = null;
   prevUltimateReady = false;
+  hpTrack = {};
+  floatTexts = [];
 
   document.getElementById('matchingOverlay').classList.remove('open');
   document.getElementById('matchResultOverlay').classList.remove('open');
@@ -2362,8 +2373,127 @@ let prevMyHp = null;
 let prevMyScore = null;
 let prevUltimateReady = false;
 
+// ===== 체력 숫자 / 데미지·회복 플로팅 숫자 =====
+// 서버는 매 틱마다 각 개체(플레이어/터렛/닭)의 hp만 보내주므로, 직전 상태와 비교해서 변화량을 계산한다.
+let hpTrack = {};      // 개체별 직전 hp/보호막/생존 여부
+let floatTexts = [];   // 화면에 떠오르는 숫자들
+const FLOAT_LIFE_MS = 900;      // 숫자가 화면에 남는 시간
+const HEAL_BATCH_MS = 600;      // 자연회복/웅덩이 회복은 틱마다 조금씩 오르므로 이 간격으로 모아서 표시
+
+function spawnFloatText(x, y, amount, kind) {
+  const sign = kind === 'heal' ? '+' : '-';
+  floatTexts.push({
+    x: x + (Math.random() - 0.5) * 22,
+    y,
+    text: sign + Math.round(amount).toLocaleString(),
+    kind,
+    size: 15 + Math.min(11, amount / 350), // 피해가 클수록 글자가 조금 더 커짐
+    born: Date.now(),
+  });
+  if (floatTexts.length > 80) floatTexts.shift();
+}
+
+function trackHpChanges(state) {
+  const now = Date.now();
+  const next = {};
+
+  const visit = (key, ent, topOffset) => {
+    if (!ent || typeof ent.hp !== 'number') return;
+    const alive = ent.alive !== false;
+    const shield = ent.shieldHp || 0;
+    const prev = hpTrack[key];
+    const rec = { hp: ent.hp, alive, shield, healBuf: 0, healAt: now };
+    next[key] = rec;
+    if (!prev || !prev.alive) return; // 처음 보는 개체 / 리스폰 직후에는 숫자를 띄우지 않음
+
+    // 덤불/은신으로 좌표가 안 오는 적에게는 숫자를 띄우지 않는다 (위치 노출 방지)
+    const canShow = typeof ent.x === 'number' && typeof ent.y === 'number';
+    const fy = canShow ? ent.y - topOffset : 0;
+
+    rec.healBuf = prev.healBuf;
+    rec.healAt = prev.healAt;
+
+    const hpDelta = ent.hp - prev.hp;
+    if (hpDelta < 0) {
+      // 사망으로 hp가 0이 된 경우도 여기서 마지막 피해량으로 표시됨
+      if (canShow) spawnFloatText(ent.x, fy, -hpDelta, 'damage');
+    } else if (hpDelta > 0) {
+      if (rec.healBuf <= 0) rec.healAt = now;
+      rec.healBuf += hpDelta;
+    }
+
+    if (shield < prev.shield && canShow) {
+      spawnFloatText(ent.x, fy, prev.shield - shield, 'shield'); // 보호막이 대신 맞은 피해
+    }
+
+    if (rec.healBuf >= 1 && now - rec.healAt >= HEAL_BATCH_MS) {
+      if (canShow) spawnFloatText(ent.x, fy, rec.healBuf, 'heal');
+      rec.healBuf = 0;
+      rec.healAt = now;
+    }
+  };
+
+  const players = state.players || {};
+  for (const id in players) visit('p' + id, players[id], PLAYER_RADIUS + 30);
+  for (const t of (state.turrets || [])) visit('t' + t.id, t, (t.radius || 22) + 28);
+  for (const c of (state.chickens || [])) visit('c' + c.id, c, (c.radius || 16) + 28);
+
+  hpTrack = next; // 사라진 개체(파괴된 터렛 등)는 자동으로 정리됨
+}
+
+function drawFloatTexts() {
+  const now = Date.now();
+  floatTexts = floatTexts.filter((f) => now - f.born < FLOAT_LIFE_MS);
+  if (!floatTexts.length) return;
+
+  const colors = { damage: '#ff4d4d', heal: '#3dff7a', shield: '#7fd4ff' };
+  ctx.save();
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineJoin = 'round';
+  for (const f of floatTexts) {
+    const t = (now - f.born) / FLOAT_LIFE_MS;
+    const rise = 42 * (1 - (1 - t) * (1 - t)); // 처음엔 빠르게 올라가고 점점 느려짐
+    const pop = t < 0.12 ? 0.6 + 0.4 * (t / 0.12) : 1; // 나타날 때 살짝 커지는 효과
+    ctx.globalAlpha = t < 0.6 ? 1 : 1 - (t - 0.6) / 0.4;
+    ctx.font = `900 ${Math.round(f.size * pop)}px sans-serif`;
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
+    ctx.strokeText(f.text, f.x, f.y - rise);
+    ctx.fillStyle = colors[f.kind] || '#fff';
+    ctx.fillText(f.text, f.x, f.y - rise);
+  }
+  ctx.restore();
+}
+
+// 체력바 + 현재 체력 숫자 (플레이어/터렛/닭 공용)
+function drawHpBar(cx, y, barW, barH, hp, maxHp) {
+  const ratio = Math.max(0, Math.min(1, hp / (maxHp || 1)));
+  ctx.fillStyle = '#555';
+  ctx.fillRect(cx - barW / 2, y, barW, barH);
+  ctx.fillStyle = ratio > 0.5 ? '#2ecc71' : ratio > 0.2 ? '#f1c40f' : '#e74c3c';
+  ctx.fillRect(cx - barW / 2, y, barW * ratio, barH);
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(cx - barW / 2, y, barW, barH);
+
+  ctx.save();
+  ctx.font = `bold ${Math.max(8, barH - 2)}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineJoin = 'round';
+  const txt = Math.ceil(Math.max(0, hp)).toLocaleString();
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
+  ctx.strokeText(txt, cx, y + barH / 2 + 0.5);
+  ctx.fillStyle = '#fff';
+  ctx.fillText(txt, cx, y + barH / 2 + 0.5);
+  ctx.restore();
+}
+
 socket.on('state', (state) => {
   latestState = state;
+  trackHpChanges(state);
   const me = state.players[myId];
   if (me) {
     if (!me.alive) {
@@ -2771,7 +2901,7 @@ function drawPlayer(p, isMe) {
   ctx.font = 'bold 13px sans-serif';
   ctx.textAlign = 'center';
   ctx.fillStyle = '#fff';
-  ctx.fillText(p.name, p.x, p.y - PLAYER_RADIUS - 22);
+  ctx.fillText(p.name, p.x, p.y - PLAYER_RADIUS - 24);
 
   // 보호막 표시 (슈의 가젯): 몸 주변에 푸른 막이 둘러지고, 남은 수치가 줄수록 옅어진다
   if (p.shieldHp > 0) {
@@ -2822,13 +2952,8 @@ function drawPlayer(p, isMe) {
     }
   }
 
-  // HP 바
-  const barW = 44, barH = 6;
-  const hpRatio = Math.max(0, p.hp / (p.maxHp || 100));
-  ctx.fillStyle = '#555';
-  ctx.fillRect(p.x - barW / 2, p.y - PLAYER_RADIUS - 16, barW, barH);
-  ctx.fillStyle = hpRatio > 0.5 ? '#2ecc71' : hpRatio > 0.2 ? '#f1c40f' : '#e74c3c';
-  ctx.fillRect(p.x - barW / 2, p.y - PLAYER_RADIUS - 16, barW * hpRatio, barH);
+  // HP 바 (숫자 포함)
+  drawHpBar(p.x, p.y - PLAYER_RADIUS - 20, 54, 12, p.hp, p.maxHp || 100);
 }
 
 function drawBullet(b) {
@@ -3053,13 +3178,8 @@ function drawTurret(t) {
   ctx.fillText('🎯', 0, 1);
   ctx.restore();
 
-  // HP 바
-  const barW = 48, barH = 6;
-  const hpRatio = Math.max(0, t.hp / (t.maxHp || 1));
-  ctx.fillStyle = '#555';
-  ctx.fillRect(t.x - barW / 2, t.y - t.radius - 14, barW, barH);
-  ctx.fillStyle = hpRatio > 0.5 ? '#2ecc71' : hpRatio > 0.2 ? '#f1c40f' : '#e74c3c';
-  ctx.fillRect(t.x - barW / 2, t.y - t.radius - 14, barW * hpRatio, barH);
+  // HP 바 (숫자 포함)
+  drawHpBar(t.x, t.y - t.radius - 18, 56, 12, t.hp, t.maxHp || 1);
 }
 
 // 보배 폭발 설치물 - 터질 때까지 남은 시간에 맞춰 점점 빠르게 깜빡이는 위험 범위 표시
@@ -3132,12 +3252,7 @@ function drawChicken(c) {
   ctx.fillText('🐔', 0, 1);
   ctx.restore();
 
-  const barW = 40, barH = 5;
-  const hpRatio = Math.max(0, c.hp / (c.maxHp || 1));
-  ctx.fillStyle = '#555';
-  ctx.fillRect(c.x - barW / 2, c.y - c.radius - 14, barW, barH);
-  ctx.fillStyle = hpRatio > 0.5 ? '#2ecc71' : hpRatio > 0.2 ? '#f1c40f' : '#e74c3c';
-  ctx.fillRect(c.x - barW / 2, c.y - c.radius - 14, barW * hpRatio, barH);
+  drawHpBar(c.x, c.y - c.radius - 17, 52, 11, c.hp, c.maxHp || 1);
 }
 
 function drawWaterPool(pool) {
@@ -3225,6 +3340,8 @@ function drawEffect(e) {
     ctx.restore();
   } else if (e.type === 'melee' && e.visual === 'stab') {
     drawStabEffect(e);
+  } else if (e.type === 'melee' && e.visual === 'quake') {
+    drawQuakeEffect(e);
   } else if (e.type === 'melee') {
     // 변기통의 뚫어뻥 휘두르기 - 바라보는 방향을 중심으로 한 부채꼴 스윙
     const alpha = Math.max(0, Math.min(1, e.life / 0.4));
@@ -3246,6 +3363,68 @@ function drawEffect(e) {
     ctx.fillText('🪠', e.x + Math.cos(e.angle) * e.radius * 0.6, e.y + Math.sin(e.angle) * e.radius * 0.6);
     ctx.restore();
   }
+}
+
+// 업할의 망치 지진: 망치를 내려친 자리에서 부채꼴로 지진이 빠르게 퍼져나가며 땅이 갈라진다.
+// 기본공격과 궁극기가 같은 이펙트를 쓰되, 범위(radius)가 큰 궁극기는 균열이 더 많고 굵게 그려진다.
+function drawQuakeEffect(e) {
+  const maxLife = e.maxLife || 0.5;
+  const t = Math.max(0, Math.min(1, 1 - e.life / maxLife)); // 0 -> 1 진행도
+  const reach = 1 - Math.pow(1 - Math.min(1, t / 0.35), 3);  // 앞 35% 동안 빠르게 끝까지 퍼짐 (ease-out)
+  const front = e.radius * reach;                             // 지진 파동의 현재 반경
+  const fade = t < 0.5 ? 1 : Math.max(0, 1 - (t - 0.5) / 0.5);
+  const half = ((e.arcDegrees || 40) * Math.PI) / 180 / 2;
+  const big = e.radius > 350;                                 // 궁극기급 범위
+
+  ctx.save();
+  ctx.translate(e.x, e.y);
+  ctx.rotate(e.angle);
+  ctx.globalAlpha = fade;
+
+  // 갈라진 땅 범위
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.arc(0, 0, front, -half, half);
+  ctx.closePath();
+  ctx.fillStyle = big ? 'rgba(160, 82, 45, 0.40)' : 'rgba(184, 134, 76, 0.32)';
+  ctx.fill();
+
+  // 균열: 부채꼴 안쪽으로 뻗는 지그재그 선 (이펙트마다 모양이 조금씩 달라지도록 id로 흔들림을 줌)
+  const cracks = big ? 8 : 4;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = 'rgba(55, 32, 18, 0.85)';
+  ctx.lineWidth = big ? 3.5 : 2.5;
+  for (let i = 0; i < cracks; i++) {
+    const baseA = -half + (2 * half) * ((i + 0.5) / cracks);
+    const len = front * (0.7 + 0.3 * Math.abs(Math.sin((e.id || 1) * 3.1 + i * 1.7)));
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(baseA) * PLAYER_RADIUS, Math.sin(baseA) * PLAYER_RADIUS);
+    const segs = 5;
+    for (let k = 1; k <= segs; k++) {
+      const d = PLAYER_RADIUS + (len - PLAYER_RADIUS) * (k / segs);
+      const wob = Math.sin((e.id || 1) * 7.7 + i * 5.3 + k * 2.9) * (big ? 0.07 : 0.1);
+      ctx.lineTo(Math.cos(baseA + wob) * d, Math.sin(baseA + wob) * d);
+    }
+    ctx.stroke();
+  }
+
+  // 바깥으로 퍼지는 충격 파동 선
+  ctx.beginPath();
+  ctx.arc(0, 0, front, -half, half);
+  ctx.strokeStyle = 'rgba(255, 232, 190, 0.95)';
+  ctx.lineWidth = big ? 5 : 3.5;
+  ctx.stroke();
+
+  // 내려치는 망치 (앞부분에서만 잠깐 보임)
+  if (t < 0.4) {
+    ctx.globalAlpha = fade * (1 - t / 0.4);
+    ctx.font = `${big ? 44 : 30}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('🔨', PLAYER_RADIUS + (big ? 26 : 18), 0);
+  }
+  ctx.restore();
 }
 
 // 모카의 양손 찌르기: 손(단검)이 앞으로 쭉 뻗었다가 빠르게 회수되는 동작 + 궤적 + 끝에서 튀는 타격 불꽃.
@@ -3428,6 +3607,8 @@ function render() {
     drawChatBubble(p);
   }
 
+  drawFloatTexts(); // 데미지(빨강)/회복(초록)/보호막 흡수(파랑) 숫자
+
   const meForAim = latestState.players[myId];
   if (isLeapUltimateArmed(meForAim)) drawLeapIndicator(meForAim);
   else drawAimRangeIndicator();
@@ -3492,7 +3673,7 @@ function drawAimRangeIndicator() {
     range = me.gadget.speed * me.gadget.lifetime;
     color = 'rgba(52, 152, 219, 0.9)'; // 가젯은 파란색으로 구분
   } else if (ultimateArmed && me.ultimate && me.ultimate.type !== 'lightning') {
-    range = me.ultimate.distance || me.ultimate.speed * me.ultimate.lifetime; // 점프 궁극기는 distance, 발사형은 속도×수명
+    range = me.ultimate.distance || me.ultimate.range || me.ultimate.speed * me.ultimate.lifetime; // 점프 궁극기는 distance, 부채꼴 궁극기는 range, 발사형은 속도×수명
     color = 'rgba(231, 76, 60, 0.85)'; // 궁극기는 빨간색으로 구분
   } else if (me.basic) {
     range = me.basic.range || me.basic.speed * me.basic.lifetime; // 근접 공격(찌르기 등)은 range
