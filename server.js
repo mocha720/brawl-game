@@ -534,7 +534,8 @@ const CHARACTERS = {
       stabInterval: 0.08,    // 찌르기 사이 간격(초)
       angleDegrees: 70,      // 찌르기 부채꼴 각도 (좁게)
       range: 75,             // 사거리 (근접 공격 중에서도 짧게)
-      effectLife: 0.18,      // 찌르기 이펙트가 화면에 남는 시간(초)
+      effectLife: 0.2,       // 찌르기 이펙트(손이 뻗었다가 회수되는 동작)가 화면에 남는 시간(초). 찌르기 간격(0.08)보다 길어서 동작이 자연스럽게 겹침
+      ammoRegenSeconds: AMMO_REGEN_SECONDS / 1.5, // 재장전 속도가 다른 캐릭터보다 50% 빠름 (1.8초 -> 1.2초)
       visual: 'stab',
     },
     ultimate: {
@@ -542,7 +543,7 @@ const CHARACTERS = {
       type: 'leap',          // 벽을 무시하고 바라보는 방향으로 멀리 점프, 착지 지점 근처의 적에게 피해
       damage: 1000,
       distance: 380,         // 점프 거리(px). 착지 지점이 벽 안이면 가장 가까운 빈 곳까지 되돌아옴
-      duration: 0.4,         // 공중에 떠 있는 시간(초). 이 동안은 조작 불가 + 피격/총알 무시
+      duration: 0.55,        // 공중에 떠 있는 시간(초). 이 동안은 조작 불가 + 피격/총알 무시 (길수록 점프가 느리게 보임)
       landRadius: 90,        // 착지 지점 주변 피해 반경
     },
     gadget: {
@@ -600,6 +601,8 @@ function describeBasic(b) {
   if (b.pierceWalls) parts.push('벽(장애물)을 그대로 통과');
   if (b.ammoRegenSeconds && b.ammoRegenSeconds > AMMO_REGEN_SECONDS) {
     parts.push(`재장전 시간 ${Math.round((b.ammoRegenSeconds / AMMO_REGEN_SECONDS - 1) * 100)}% 증가`);
+  } else if (b.ammoRegenSeconds && b.ammoRegenSeconds < AMMO_REGEN_SECONDS) {
+    parts.push(`재장전 속도 ${Math.round((AMMO_REGEN_SECONDS / b.ammoRegenSeconds - 1) * 100)}% 빠름`);
   }
   return { name: b.name, damage, desc: parts.join(', ') };
 }
@@ -2072,6 +2075,7 @@ function performMeleeAttack(match, p, spec, isUltimate, angle = p.angle, stabInd
     visual: spec.visual || null,
     side: stabIndex % 2 === 0 ? -1 : 1, // 양손 찌르기: 왼손/오른손 번갈아 표시
     life: spec.effectLife || EFFECT_LIFETIME,
+    maxLife: spec.effectLife || EFFECT_LIFETIME, // 클라이언트가 동작 진행도(0~1)를 계산하는 기준
   });
 
   for (const pid in match.players) {
