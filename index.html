@@ -357,6 +357,12 @@
   .char-card button { margin-top: auto; width: 100%; }
   .char-card .stat-line:last-of-type { margin-bottom: 14px; }
   .char-card button.locked-btn { --bg: var(--plum); --deep: var(--plum-deep); --fg: #fff; font-size: 15px; }
+  .char-card .lv-badge { display: inline-block; margin-left: 6px; padding: 1px 8px; font-size: 13px; vertical-align: middle; color: var(--ink); background: var(--sun); border-radius: 999px; }
+  .char-card .lv-badge.max { background: var(--mint); }
+  .char-card .bonus-line { margin: 0 0 7px; font-size: 12px; line-height: 1.5; color: var(--sun); text-align: left; }
+  .char-actions { display: flex; flex-direction: column; gap: 8px; margin-top: auto; }
+  .char-actions button { margin-top: 0; }
+  .char-card button.upgrade-btn { --bg: var(--sky); --deep: #1f6fa8; --fg: var(--ink); font-size: 14px; }
 
   /* ----- 매칭 대기 ----- */
   .matching-spinner {
@@ -466,6 +472,8 @@
     .char-card .stat-line { font-size: 11px; }
     .char-card button { min-height: 40px; padding: 6px 8px; font-size: 14px; }
     .char-card button.locked-btn { font-size: 12px; }
+    .char-card button.upgrade-btn { font-size: 12px; }
+    .char-card .bonus-line { font-size: 11px; }
     #matchResultTitle { font-size: 38px; }
   }
   @media (prefers-reduced-motion: reduce) {
@@ -1716,6 +1724,8 @@ function applyServerCharacterInfo() {
   }
 }
 
+function fmtPct(m) { return `+${Math.round((m - 1) * 1000) / 10}%`; } // 배율 1.035 -> '+3.5%'
+
 function renderCharacterList() {
   applyServerCharacterInfo();
   const list = document.getElementById('characterList');
@@ -1729,14 +1739,27 @@ function renderCharacterList() {
     const trophyLine = owned
       ? `<div class="trophy-line">${rk.cur.icon} ${escapeHtml(rk.cur.name)} · 🏆 ${trophies.toLocaleString()}${rk.next ? ` / ${rk.next.min.toLocaleString()}` : ' (최고 등급)'}${streak > 0 ? `<br>🔥 ${streak}연승 중` : ''}</div>`
       : '';
+    // 강화(레벨): 서버가 알려준 레벨/강화표를 그대로 보여준다 (비용과 수치 계산은 모두 서버가 함)
+    const lv = (currentProfile && currentProfile.levels && currentProfile.levels[c.id]) || 1;
+    const table = (currentProfile && currentProfile.levelTable) || [];
+    const maxLv = (currentProfile && currentProfile.maxLevel) || 1;
+    const cur = table[lv - 1];
+    const next = lv < maxLv ? table[lv] : null;
+    const bonusLine = owned && cur && lv > 1 ? `<div class="bonus-line">💪 강화 보너스: 체력 ${fmtPct(cur.hp)} · 공격력 ${fmtPct(cur.atk)}</div>` : '';
+    const upgradeBtn = !owned || !table.length ? ''
+      : next
+        ? `<button class="upgrade-btn" data-upgrade-id="${c.id}" ${currentProfile.coins >= next.cost ? '' : 'disabled'}>⬆ 강화 Lv.${lv} → ${lv + 1} · 🪙 ${next.cost.toLocaleString()}${currentProfile.coins >= next.cost ? '' : ' (코인 부족)'}</button>`
+        : `<button class="upgrade-btn" disabled>★ 최고 레벨</button>`;
+    const lvBadge = owned && table.length ? `<span class="lv-badge${next ? '' : ' max'}">Lv.${lv}</span>` : '';
     const action = owned
-      ? `<button data-char-id="${c.id}">선택</button>`
+      ? `<div class="char-actions"><button data-char-id="${c.id}">선택</button>${upgradeBtn}</div>`
       : `<button class="locked-btn" data-unlock-id="${c.id}" ${canAfford ? '' : 'disabled'}>🔒 🪙 ${price.toLocaleString()} ${canAfford ? '잠금해제' : '(코인 부족)'}</button>`;
     return `
     <div class="char-card${owned ? '' : ' locked'}">
       <div class="char-avatar" style="background:${c.color}">${escapeHtml(c.name.slice(0, 1))}</div>
-      <h3>${escapeHtml(c.name)}</h3>
+      <h3>${escapeHtml(c.name)}${lvBadge}</h3>
       ${trophyLine}
+      ${bonusLine}
       <div class="stat-line">❤️ 체력: ${c.maxHp.toLocaleString()}</div>
       <div class="stat-line">🎯 ${escapeHtml(c.basic.name)}${c.basic.damage ? `: ${c.basic.damage.toLocaleString()}` : ''}${c.basic.desc ? ` (${escapeHtml(c.basic.desc)})` : ''}</div>
       <div class="stat-line">✨ ${escapeHtml(c.ultimate.name)}${c.ultimate.damage ? `: ${c.ultimate.damage.toLocaleString()}` : ''}${c.ultimate.desc ? ` (${escapeHtml(c.ultimate.desc)})` : ''}</div>
@@ -1749,6 +1772,24 @@ function renderCharacterList() {
     btn.addEventListener('click', () => {
       selectedCharacterId = btn.getAttribute('data-char-id');
       doJoin();
+    });
+  });
+
+  list.querySelectorAll('button[data-upgrade-id]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-upgrade-id');
+      const c = CHARACTERS.find((x) => x.id === id);
+      const lv = (currentProfile.levels && currentProfile.levels[id]) || 1;
+      const next = currentProfile.levelTable[lv];
+      if (!next) return;
+      if (!confirm(`${c.name}을(를) Lv.${lv} → Lv.${lv + 1}로 강화할까요?\n체력 ${fmtPct(next.hp)} · 공격력 ${fmtPct(next.atk)}\n비용: 🪙 ${next.cost.toLocaleString()}`)) return;
+      btn.disabled = true;
+      socket.timeout(8000).emit('upgradeCharacter', { characterId: id }, (err, res) => {
+        if (err || !res) { alert('서버 응답이 없습니다. 잠시 후 다시 시도해주세요.'); renderCharacterList(); return; }
+        if (res.profile) { currentProfile = res.profile; updateProfileUI(); }
+        if (!res.ok) alert(res.message || '강화에 실패했습니다.');
+        renderCharacterList();
+      });
     });
   });
 
@@ -1824,7 +1865,7 @@ function vsCardHtml(r, isMe, side) {
     <div class="vs-avatar" style="background:${color}">${escapeHtml((r.characterName || (ch && ch.name) || '?').slice(0, 1))}</div>
     <div class="vs-name">${escapeHtml(r.name)}${isMe ? ' (나)' : ''}</div>
     <div class="vs-char">${escapeHtml(r.characterName || (ch && ch.name) || '')}</div>
-    <div class="vs-trophy">${rk.cur.icon || ''} ${escapeHtml(rk.cur.name || '')} · 🏆 ${(r.trophies || 0).toLocaleString()}</div>
+    <div class="vs-trophy">${rk.cur.icon || ''} ${escapeHtml(rk.cur.name || '')} · 🏆 ${(r.trophies || 0).toLocaleString()} · Lv.${r.level || 1}</div>
     <div class="vs-device ${r.device === 'mobile' ? 'mobile' : 'desktop'}">${DEVICE_LABEL[r.device] || DEVICE_LABEL.desktop}</div>
   </div>`;
 }
