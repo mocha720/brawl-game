@@ -238,7 +238,7 @@
   #joinOverlay > :last-child, #modeOverlay > :last-child { margin-bottom: auto; }
 
   /* ----- 창(모달) 메뉴 (계정 설정 / 랭킹 / 미션 / 코드 입력) 과 대기·결과·대결 화면: 게임 화면 위에 어둡게 깔린다 ----- */
-  #accountOverlay, #rankingOverlay, #missionOverlay, #codeOverlay, #adminOverlay,
+  #accountOverlay, #rankingOverlay, #missionOverlay, #codeOverlay, #adminOverlay, #noticeOverlay,
   #matchingOverlay, #matchResultOverlay, #versusOverlay {
     position: fixed; inset: 0; display: none;
     flex-direction: column; align-items: center; justify-content: flex-start;
@@ -247,13 +247,30 @@
     background: rgba(10, 11, 30, 0.86);
     -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
   }
-  #accountOverlay, #rankingOverlay, #missionOverlay, #codeOverlay, #adminOverlay { z-index: 40; }
+  #accountOverlay, #rankingOverlay, #missionOverlay, #codeOverlay, #adminOverlay, #noticeOverlay { z-index: 40; }
   #matchingOverlay, #matchResultOverlay { z-index: 10; }
   #versusOverlay { z-index: 30; background: rgba(10, 11, 30, 0.92); justify-content: center; }
-  #accountOverlay.open, #rankingOverlay.open, #missionOverlay.open, #codeOverlay.open, #adminOverlay.open,
+  #accountOverlay.open, #rankingOverlay.open, #missionOverlay.open, #codeOverlay.open, #adminOverlay.open, #noticeOverlay.open,
   #matchingOverlay.open, #matchResultOverlay.open, #versusOverlay.open { display: flex; }
-  #accountOverlay > .panel, #rankingOverlay > .panel, #missionOverlay > .panel, #codeOverlay > .panel, #adminOverlay > .panel,
+  #accountOverlay > .panel, #rankingOverlay > .panel, #missionOverlay > .panel, #codeOverlay > .panel, #adminOverlay > .panel, #noticeOverlay > .panel,
   #matchingOverlay > .panel, #matchResultOverlay > .panel { margin: auto; }
+
+  /* ----- 공지사항 ----- */
+  #noticeOverlay > .panel { width: min(480px, 100%); text-align: left; }
+  #noticeOverlay .panel-title { text-align: center; }
+  #noticeList { display: flex; flex-direction: column; gap: 12px; max-height: 58vh; overflow-y: auto; padding: 2px; -webkit-overflow-scrolling: touch; }
+  .notice-item { box-sizing: border-box; padding: 13px 14px; background: var(--dusk); border: 3px solid var(--lift); border-radius: 16px; }
+  .notice-item.latest { border-color: var(--sun); }
+  .notice-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .notice-tag { flex: none; padding: 2px 9px; font-size: 11px; font-weight: 700; color: #fff; background: #5b6094; border-radius: 999px; }
+  .notice-tag.new { background: var(--berry); }
+  .notice-tag.balance { background: var(--plum); }
+  .notice-tag.fix { background: #1f9d6b; }
+  .notice-title { flex: 1; min-width: 0; font-family: var(--font-display); font-size: 17px; line-height: 1.3; }
+  .notice-date { flex: none; font-size: 11px; color: var(--mute); }
+  .notice-items { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.6; color: #d5d7f2; }
+  .notice-items li + li { margin-top: 4px; }
+  .notice-empty { padding: 22px 0; text-align: center; font-size: 14px; color: var(--mute); }
 
   /* ----- 패널(창 본체) ----- */
   .panel {
@@ -769,6 +786,7 @@
   </div>
   <div class="menu-row">
     <button id="openAdminBtn" class="btn btn-ghost" style="display:none">🛠 개발자 모드</button>
+    <button id="openNoticeBtn" class="btn btn-ghost">📢 공지사항</button>
     <button id="openRankingBtn" class="btn btn-ghost">랭킹</button>
     <button id="openMissionBtn" class="btn btn-ghost">미션</button>
     <button id="openCodeBtn" class="btn btn-ghost">코드 입력</button>
@@ -870,6 +888,14 @@
     <div id="missionList"></div>
     <div id="missionMsg" class="panel-msg"></div>
     <button id="missionCloseBtn" class="btn btn-ghost">닫기</button>
+  </div>
+</div>
+
+<div id="noticeOverlay">
+  <div class="panel">
+    <h2 class="panel-title">📢 공지사항</h2>
+    <div id="noticeList"></div>
+    <button id="noticeCloseBtn" class="btn btn-ghost">닫기</button>
   </div>
 </div>
 
@@ -1122,8 +1148,8 @@ const CHARACTERS = [
     id: 'mocha',
     name: '모카',
     color: '#6c5ce7',
-    maxHp: 5500,
-    basic: { name: '양손 찌르기', damage: 500, desc: '양손으로 4번 빠르게 찌름 (한 번당 500 피해, 사거리 짧음, 재장전 속도 50% 빠름)' },
+    maxHp: 4500,
+    basic: { name: '양손 찌르기', damage: 450, desc: '양손으로 4번 빠르게 찌름 (한 번당 450 피해, 사거리 짧음, 재장전 속도 50% 빠름)' },
     ultimate: { name: '도약 강습', desc: '조준한 방향으로 벽을 무시하고 점프, 거리는 조준으로 100~380px 조절 (PC: 마우스 위치 / 모바일: 스틱을 당긴 정도), 착지 지점 주변 적에게 1,000 피해' },
     gadget: { name: '기합 충전', desc: '4초에 걸쳐 궁극기 게이지를 50%만큼 천천히 채움 (15초마다 사용 가능)' },
   },
@@ -1419,6 +1445,7 @@ function updateProfileUI() {
   if (!currentProfile || !currentProfile.isAdmin) closeAdminDialog();
   renderEventCards();
   updateMissionUI();
+  updateNoticeBadge();
 }
 
 // ===== 이벤트 (메인화면 카드) =====
@@ -1495,6 +1522,50 @@ function openMissionDialog() {
 function closeMissionDialog() { document.getElementById('missionOverlay').classList.remove('open'); }
 document.getElementById('openMissionBtn').addEventListener('click', openMissionDialog);
 document.getElementById('missionCloseBtn').addEventListener('click', closeMissionDialog);
+
+// ===== 공지사항 =====
+// 공지 내용은 서버가 profile.announcements 로 내려준다 (서버의 ANNOUNCEMENTS 만 고치면 됨).
+// 가장 최신 공지의 id 를 브라우저에 기억해두고, 아직 안 읽은 공지가 있으면 공지사항 버튼에 빨간 점을 띄운다.
+const NOTICE_TAG_LABEL = { new: '신규', balance: '밸런스', fix: '수정', etc: '공지' };
+function noticeLatestId() {
+  const list = (currentProfile && currentProfile.announcements) || [];
+  return list.length ? list[0].id : null;
+}
+function updateNoticeBadge() {
+  const btn = document.getElementById('openNoticeBtn');
+  if (!btn) return;
+  let seen = null;
+  try { seen = localStorage.getItem('noticeSeenId'); } catch (e) {}
+  const latest = noticeLatestId();
+  btn.classList.toggle('has-claim', !!latest && latest !== seen);
+}
+function renderNoticeList() {
+  const list = (currentProfile && currentProfile.announcements) || [];
+  document.getElementById('noticeList').innerHTML = list.length
+    ? list.map((n, i) => `<div class="notice-item${i === 0 ? ' latest' : ''}">
+        <div class="notice-head">
+          <span class="notice-tag ${escapeHtml(n.tag || 'etc')}">${escapeHtml(NOTICE_TAG_LABEL[n.tag] || NOTICE_TAG_LABEL.etc)}</span>
+          <span class="notice-title">${escapeHtml(n.title)}</span>
+          <span class="notice-date">${escapeHtml(n.date || '')}</span>
+        </div>
+        <ul class="notice-items">${(n.items || []).map((t) => `<li>${escapeHtml(t)}</li>`).join('')}</ul>
+      </div>`).join('')
+    : '<div class="notice-empty">등록된 공지사항이 없습니다.</div>';
+}
+function openNoticeDialog() {
+  renderNoticeList();
+  document.getElementById('noticeList').scrollTop = 0;
+  document.getElementById('noticeOverlay').classList.add('open');
+  const latest = noticeLatestId();
+  if (latest) { try { localStorage.setItem('noticeSeenId', latest); } catch (e) {} }
+  updateNoticeBadge(); // 읽었으니 빨간 점 제거
+}
+function closeNoticeDialog() { document.getElementById('noticeOverlay').classList.remove('open'); }
+document.getElementById('openNoticeBtn').addEventListener('click', openNoticeDialog);
+document.getElementById('noticeCloseBtn').addEventListener('click', closeNoticeDialog);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && document.getElementById('noticeOverlay').classList.contains('open')) closeNoticeDialog();
+});
 
 // ===== 계정 설정: 아이디 / 비밀번호 변경 =====
 function setAccountMsg(text, ok) {
@@ -1900,6 +1971,7 @@ document.getElementById('logoutBtn').addEventListener('click', () => {
     closeMissionDialog();
     closeAccountDialog();
     closeRankingDialog();
+    closeNoticeDialog();
     closeAdminDialog();
     document.getElementById('modeOverlay').style.display = 'none';
     document.getElementById('joinOverlay').style.display = 'flex';
@@ -1918,6 +1990,7 @@ function forceReLogin(message) {
   closeMissionDialog();
   closeAccountDialog();
   closeRankingDialog();
+  closeNoticeDialog();
   closeAdminDialog();
   ['modeOverlay', 'characterOverlay'].forEach((id) => { document.getElementById(id).style.display = 'none'; });
   ['matchingOverlay', 'matchResultOverlay', 'scoreboard'].forEach((id) => { document.getElementById(id).classList.remove('open'); });
