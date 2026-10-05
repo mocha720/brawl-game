@@ -555,6 +555,37 @@ const CHARACTERS = {
       duration: 4,           // 다 채워지는 데 걸리는 시간(초)
     },
   },
+  uphal: {
+    id: 'uphal',
+    name: '업할',
+    maxHp: 9000,
+    basic: {
+      name: '망치 지진',
+      type: 'quake',         // 망치를 내려쳐서 조준 방향으로 즉시 판정되는 지진 (부채꼴 범위 + 기절)
+      damage: 2000,
+      stunDuration: 0.5,     // 맞은 적을 기절시키는 시간(초)
+      angleDegrees: 40,      // 지진이 퍼지는 부채꼴 전체 각도 (조준 방향 기준)
+      range: 280,            // 중거리 (근접 공격보다 길고 발사체보다 짧음)
+      effectLife: 0.5,
+      visual: 'quake',
+    },
+    ultimate: {
+      name: '대지 강타',
+      type: 'quake',         // 기본공격과 같은 방식이지만 범위/사거리가 훨씬 크고 기절 시간이 김
+      damage: 3000,
+      stunDuration: 2,
+      angleDegrees: 100,     // 기본공격보다 훨씬 넓은 범위
+      range: 430,            // 기본공격보다 훨씬 먼 사거리
+      effectLife: 0.7,
+      visual: 'quake',
+    },
+    gadget: {
+      name: '방어막',
+      type: 'shield',        // 조준 불필요, 즉시 발동해서 shieldHp만큼의 피해를 대신 흡수하는 보호막
+      instant: true,
+      shieldHp: 3000,
+    },
+  },
 };
 
 // ===== 캐릭터 설명(캐릭터 선택 화면용) 자동 생성 =====
@@ -575,6 +606,9 @@ function describeBasic(b) {
   } else if (b.type === 'multiStab') {
     damage = b.damage;
     parts.push(`양손으로 ${b.stabCount}번 빠르게 찌름 (한 번당 ${fmtNum(b.damage)} 피해, 전방 ${b.angleDegrees}도, 사거리 ${b.range}로 짧음)`);
+  } else if (b.type === 'quake') {
+    damage = b.damage;
+    parts.push(`망치를 내려쳐 조준 방향 전방 ${b.angleDegrees}도 부채꼴(사거리 ${b.range})에 지진을 일으켜 ${fmtNum(b.damage)} 피해 + ${b.stunDuration}초 기절`);
   } else if (b.type === 'melee') {
     damage = b.damage;
     parts.push(`전방 ${b.angleDegrees}도 부채꼴 범위(사거리 ${b.range})를 휘둘러 ${fmtNum(b.damage)} 피해를 주고 ${b.knockback}만큼 뒤로 밀쳐냄`);
@@ -649,6 +683,10 @@ function describeUltimate(u) {
     case 'leap':
       damage = u.damage;
       desc = `조준한 방향으로 벽을 무시하고 점프, 거리는 조준으로 ${fmtNum(u.minDistance || 0)}~${fmtNum(u.distance)}px 조절 (공중에서는 피격 불가), 착지 지점 반경 ${u.landRadius} 안의 적에게 ${fmtNum(u.damage)} 피해`;
+      break;
+    case 'quake':
+      damage = u.damage;
+      desc = `망치를 매우 강하게 내리쳐 조준 방향 전방 ${u.angleDegrees}도 부채꼴(사거리 ${u.range})의 적에게 ${fmtNum(u.damage)} 피해 + ${u.stunDuration}초 기절`;
       break;
     case 'summonChicken':
       desc = `조준 불필요, 체력 ${fmtNum(u.hp)}의 닭을 소환. ${u.duration}초 동안 적을 자동으로 추격하다가 사거리 안에 들어오면 적에게 돌격해서 ${fmtNum(u.damage)} 피해 (${u.attackInterval}초마다 돌격 가능)`;
@@ -822,6 +860,7 @@ const CHARACTER_PRICES = {
   ekhe: 300,
   gwari: 300,
   mocha: 300,
+  uphal: 300,
 };
 CHARACTER_PRICES[DEFAULT_CHARACTER_ID] = 0; // 기본 캐릭터는 항상 무료 (사용 가능한 캐릭터가 하나도 없는 상황 방지)
 function priceOf(id) {
@@ -911,6 +950,18 @@ function missionsView(u) {
 // id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
+  {
+    id: '2026-10-05-uphal',
+    date: '2026-10-05',
+    tag: 'new',
+    title: '신규 캐릭터 「업할」 출시!',
+    items: [
+      '망치를 휘두르는 탱커 캐릭터 업할이 추가되었어요. 🪙 300 코인으로 잠금해제할 수 있어요. (체력 9,000)',
+      '기본공격 [망치 지진]: 조준 방향으로 중거리 지진을 일으켜 2,000 피해를 주고 0.5초 동안 기절시켜요.',
+      '궁극기 [대지 강타]: 망치를 매우 강하게 내리쳐 더 넓고 먼 범위의 적에게 3,000 피해 + 2초 기절!',
+      '가젯 [방어막]: 3,000 피해를 막아주는 방어막을 즉시 얻어요.',
+    ],
+  },
   {
     id: '2026-10-05-mocha',
     date: '2026-10-05',
@@ -2140,6 +2191,11 @@ function performMeleeAttack(match, p, spec, isUltimate, angle = p.angle, stabInd
     applyDamage(match, target, spec.damage, p.id, { chargeShooter: !isUltimate });
     if (match.over) break;
 
+    // 기절(업할의 지진): 점프 중이거나 무적인 대상은 피해와 마찬가지로 기절도 받지 않는다. 죽은 대상은 리스폰 시 기절이 초기화됨
+    if (spec.stunDuration > 0 && target.alive && !target.leaping && !(target.invincibleUntil && Date.now() < target.invincibleUntil)) {
+      target.stunnedUntil = Math.max(target.stunnedUntil || 0, Date.now() + spec.stunDuration * 1000);
+    }
+
     // 넉백: 즉시 순간이동시키지 않고, 방향/거리만 기록해서 이후 updateMatch 틱마다
     // 점점 감속하며 자연스럽게 날아가도록 처리한다 (실제 이동은 아래 넉백 처리 루프에서 수행)
     if (spec.knockback && dist > 0.001 && !(target.invincibleUntil && Date.now() < target.invincibleUntil)) {
@@ -2684,7 +2740,7 @@ io.on('connection', (socket) => {
     p.ammo -= 1;
     p.lastShotAt = now;
 
-    if (p.basic.type === 'melee') {
+    if (p.basic.type === 'melee' || p.basic.type === 'quake') {
       performMeleeAttack(match, p, p.basic, false);
     } else if (p.basic.type === 'multiStab') {
       // 모카의 양손 찌르기: 발사 순간의 조준 방향으로 짧은 간격으로 stabCount번 연달아 찌른다 (첫 번째는 즉시)
@@ -2911,6 +2967,9 @@ io.on('connection', (socket) => {
     } else if (ult.type === 'summonChicken') {
       // 엑헤의 닭 소환: 조준 불필요, 즉시 닭을 소환
       spawnChicken(match, p, ult);
+    } else if (ult.type === 'quake') {
+      // 업할의 대지 강타: 조준한 방향으로 넓고 먼 부채꼴 지진 (피해 + 기절). 궁극기 게이지는 충전하지 않음
+      performMeleeAttack(match, p, ult, true);
     } else {
       // 조준한 방향으로 날아가는 궁극기 (예: 피에로 발사, 메가 샷건)
       spawnProjectiles(match, p, ult, true);
