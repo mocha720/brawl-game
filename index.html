@@ -1072,7 +1072,7 @@ const CHARACTERS = [
     name: '지기',
     color: '#2ecc71',
     maxHp: 6000,
-    basic: { name: '던지기', damage: 2500 },
+    basic: { name: '던지기', damage: 2000 },
     ultimate: { name: '벼락지기', damage: 3500, desc: '주변 고정된 위치에 번개 5회 낙하 (조준 불필요)' },
     gadget: { name: '탄창 충전', desc: '즉시 탄창을 가득 채움 (15초마다 사용 가능)' },
   },
@@ -1158,7 +1158,7 @@ const CHARACTERS = [
     name: '업할',
     color: '#e67e22',
     maxHp: 9000,
-    basic: { name: '망치 지진', damage: 2000, desc: '망치를 내려쳐 조준 방향 전방 40도 부채꼴(사거리 280)에 지진을 일으켜 2,000 피해 + 0.5초 기절' },
+    basic: { name: '망치 지진', damage: 2000, desc: '망치를 내려쳐 조준 방향 전방 28도 부채꼴(사거리 196)에 지진을 일으켜 2,000 피해 + 0.5초 기절 (공격 후 1초 뒤에 발동, 그동안 이동 불가)' },
     ultimate: { name: '대지 강타', damage: 3000, desc: '망치를 매우 강하게 내리쳐 조준 방향 전방 100도 부채꼴(사거리 430)의 적에게 3,000 피해 + 2초 기절' },
     gadget: { name: '방어막', desc: '3,000 피해를 막아주는 보호막을 두름 (다 막으면 사라짐) (15초마다 사용 가능)' },
   },
@@ -2818,7 +2818,9 @@ function update(dt) {
   }
 
   const len = Math.sqrt(dx * dx + dy * dy);
-  if (len > 0.01) {
+  // 공격 선딜 중(업할의 망치 지진)에는 이동할 수 없고 조준 방향만 돌릴 수 있음
+  const windingUp = !!(me && me.windupUntil && Date.now() < me.windupUntil);
+  if (len > 0.01 && !windingUp) {
     // 조이스틱은 아날로그 값(0~1)이므로 그대로, 키보드(1 또는 √2)는 1로 눌러서 사용
     const magnitude = Math.min(1, len);
     // 보배 폭탄 범위 등에 들어가 있으면 서버가 내려주는 speedMultiplier만큼 이동속도가 느려짐
@@ -2842,6 +2844,32 @@ function update(dt) {
 }
 
 function drawPlayer(p, isMe) {
+  // 공격 선딜 경고 (업할의 망치 지진): 곧 지진이 나갈 부채꼴 범위를 표시하고, 시간이 지날수록 안쪽이 차오른다
+  if (p.alive && p.windupUntil && Date.now() < p.windupUntil && p.basic && p.basic.range) {
+    const total = p.windupTotal || 1000;
+    const prog = Math.max(0, Math.min(1, 1 - (p.windupUntil - Date.now()) / total));
+    const half = (((p.basic.angleDegrees || 40) * Math.PI) / 180) / 2;
+    const aim = isMe ? myAngle : p.angle;
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate(aim);
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.arc(0, 0, p.basic.range, -half, half);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(231, 76, 60, 0.12)';
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(231, 76, 60, 0.75)';
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.arc(0, 0, p.basic.range * prog, -half, half);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(231, 76, 60, 0.30)';
+    ctx.fill();
+    ctx.restore();
+  }
   // 점프 중(모카의 도약 강습): 바닥에 그림자를 남기고 몸통만 포물선을 그리며 떠오른다
   let lift = 0;
   if (p.leaping && p.leapTotal > 0) {
