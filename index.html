@@ -650,6 +650,24 @@
     background: rgba(255,255,255,0.12);
     border-color: rgba(255,255,255,0.25);
   }
+  /* ===== 충전 게이지 (똥파리 전용, 탄창 표시 자리에 대신 표시) ===== */
+  #chargeBar {
+    position: fixed;
+    bottom: calc(40px + env(safe-area-inset-bottom, 0px));
+    left: 50%;
+    transform: translateX(-50%);
+    width: 150px;
+    height: 20px;
+    border-radius: 999px;
+    background: rgba(11, 12, 32, 0.72);
+    border: 2px solid rgba(255, 255, 255, 0.25);
+    overflow: hidden;
+    z-index: 6;
+    display: none;
+  }
+  #chargeBar .charge-fill { position: absolute; top: 0; bottom: 0; left: 0; width: 0; background: linear-gradient(90deg, #ffc928, #ff5470); }
+  #chargeBar .charge-text { position: relative; display: block; text-align: center; font-size: 12px; line-height: 16px; font-weight: 700; text-shadow: 0 1px 2px #000; }
+  @media (max-width: 480px) { #chargeBar { width: 110px; } }
   /* ===== 채팅 (좌측 상단) ===== */
   #chatContainer {
     position: fixed;
@@ -976,6 +994,9 @@
   <div class="ammo-dot" id="ammoDot2"></div>
 </div>
 
+<!-- 충전 게이지: 똥파리처럼 탄창이 없는 충전 공격 캐릭터일 때만 표시 -->
+<div id="chargeBar"><div class="charge-fill"></div><span class="charge-text"></span></div>
+
 <!-- 궁극기 버튼: 게이지가 차면 클릭/탭으로 발동 (PC/모바일 공용) -->
 <div id="ultimateButton"><div class="ult-inner">🤡</div></div>
 
@@ -1180,6 +1201,14 @@ const CHARACTERS = [
     ultimate: { name: '거대 소용돌이', desc: '조준한 방향으로 거대한 소용돌이를 발사 (사거리 약 532), 벽을 통과함. 맞은 적들(관통)은 1.2초 동안 하늘로 떠올라 조작 불가가 되고, 땅에 떨어질 때 1,500 피해' },
     gadget: { name: '긴급 재장전', desc: '즉시 탄창을 가득 채움 (15초마다 사용 가능)' },
   },
+  {
+    id: 'ddongpari',
+    name: '똥파리',
+    color: '#6b8e23',
+    maxHp: 5500,
+    basic: { name: '똥 날리기', desc: '탄창 없는 충전 공격: 누르고 있는 동안 최대 3초까지 충전, 충전할수록 800~3,000 피해, 충전 중 이동속도 30% 감소, 사거리 약 672' },
+    ultimate: { name: '가시 발사', damage: 2500, desc: '조준한 방향으로 발사 (사거리 약 988), 벽을 통과함' },
+  },
 ];
 let selectedCharacterId = CHARACTERS[0].id;
 
@@ -1358,13 +1387,47 @@ function fireAttack() {
     gadgetArmed = false;
     updateGadgetButton();
     SFX.gadget();
-  } else {
+  } else if (!isChargeCharacter(me)) { // 충전 공격 캐릭터(똥파리)는 shoot 대신 아래의 beginCharge/endCharge를 사용
     socket.emit('shoot');
     SFX.shoot();
   }
 }
 
-function setupStick(baseId, nubId, onMove, onEnd) {
+// ===== 충전 공격 (똥파리) =====
+// 공격 입력(마우스 버튼 / 오른쪽 스틱)을 누르는 동안 충전하고, 떼는 순간 발사한다.
+// 충전 시간 계산과 피해량은 모두 서버가 하고, 클라이언트는 누름/뗌 이벤트만 알려준다.
+let chargeLocal = false; // 내가 지금 공격 버튼을 누르고 있어서 충전을 요청한 상태인지
+function isChargeCharacter(me) {
+  return !!(me && me.basic && me.basic.type === 'charge');
+}
+// 충전을 시작했으면 true. 궁극기/가젯이 장전되어 있거나 충전 캐릭터가 아니면 false (이때는 기존처럼 fireAttack이 처리)
+function beginCharge() {
+  if (!joined || inCountdown() || ultimateArmed || gadgetArmed) return false;
+  const me = latestState.players[myId];
+  if (!me || !me.alive || !isChargeCharacter(me)) return false;
+  if (!chargeLocal) {
+    chargeLocal = true;
+    socket.emit('chargeStart');
+  }
+  return true;
+}
+// 충전 중이었으면 발사 요청을 보내고 true
+function endCharge() {
+  if (!chargeLocal) return false;
+  chargeLocal = false;
+  socket.emit('chargeRelease', { angle: myAngle });
+  SFX.shoot();
+  return true;
+}
+function cancelCharge() {
+  if (!chargeLocal) return;
+  chargeLocal = false;
+  socket.emit('chargeCancel');
+}
+window.addEventListener('mouseup', (e) => { if (e.button === 0) endCharge(); });
+window.addEventListener('blur', cancelCharge);
+
+function setupStick(baseId, nubId, onMove, onEnd, onStart) {
   const base = document.getElementById(baseId);
   const nub = document.getElementById(nubId);
   let activeTouchId = null;
@@ -1401,6 +1464,7 @@ function setupStick(baseId, nubId, onMove, onEnd) {
     const t = e.changedTouches[0];
     activeTouchId = t.identifier;
     base.classList.add('dragging');
+    if (onStart) onStart();
     handleMove(t.clientX, t.clientY);
   }, { passive: false });
 
@@ -1451,11 +1515,12 @@ setupStick('rightStick', 'rightNub',
   },
   () => {
     // 손가락을 떼는 순간 마지막으로 조준한 방향으로 발사 (궁극기가 장전되어 있으면 궁극기가 나감)
-    fireAttack();
+    if (!endCharge()) fireAttack(); // 충전 공격 캐릭터는 충전한 만큼 발사
     touchAimActive = false;
     rightStickDragged = false;
     touchAimMag = 1;
-  }
+  },
+  () => { beginCharge(); } // 스틱을 잡는 순간 충전 시작 (충전 공격 캐릭터만)
 );
 
 // ===== 조인 처리: 닉네임 입력 -> 모드 선택 -> 캐릭터 선택 -> 매칭 대기 =====
@@ -2349,6 +2414,8 @@ socket.on('matchOver', (data) => {
   ultimateArmed = false;
   gadgetArmed = false;
 
+  chargeLocal = false;
+  document.getElementById('chargeBar').style.display = 'none';
   const titleEl = document.getElementById('matchResultTitle');
   const descEl = document.getElementById('matchResultDesc');
   const iWon = data.winnerTeam === myTeam;
@@ -2680,7 +2747,7 @@ canvas.addEventListener('mousemove', (e) => {
 canvas.addEventListener('mousedown', (e) => {
   if (isTouchDevice) return; // 모바일은 오른쪽 조이스틱으로만 발사 (캔버스 탭에 의한 오발사 방지)
   if (e.button === 0 && joined) {
-    fireAttack();
+    if (!beginCharge()) fireAttack(); // 충전 공격 캐릭터는 누르는 동안 충전, 그 외에는 즉시 발사
   }
 });
 
@@ -2774,6 +2841,18 @@ function updateUltimateButton() {
 
 function updateAmmoDisplay() {
   const me = latestState.players[myId];
+  // 충전 공격 캐릭터(똥파리)는 탄창 대신 충전 게이지를 보여준다
+  const isCharge = isChargeCharacter(me);
+  document.getElementById('ammoDisplay').style.display = isCharge ? 'none' : 'flex';
+  const bar = document.getElementById('chargeBar');
+  bar.style.display = joined && isCharge ? 'block' : 'none';
+  if (isCharge) {
+    const ratio = Math.max(0, Math.min(1, me.chargeRatio || 0));
+    const dmg = Math.round((me.basic.minDamage + (me.basic.maxDamage - me.basic.minDamage) * ratio) / 5) * 5; // 서버와 같은 계산(5 단위 반올림)
+    bar.querySelector('.charge-fill').style.width = `${Math.round(ratio * 100)}%`;
+    bar.querySelector('.charge-text').textContent = `💩 ${dmg.toLocaleString()}`;
+    return;
+  }
   const ammo = me ? me.ammo : 3;
   const maxAmmo = me ? me.maxAmmo : 3;
   for (let i = 0; i < maxAmmo; i++) {
@@ -2960,6 +3039,25 @@ function drawPlayer(p, isMe) {
   ctx.textAlign = 'center';
   ctx.fillStyle = '#fff';
   ctx.fillText(p.name, p.x, p.y - PLAYER_RADIUS - 24);
+
+  // 충전 표시 (똥파리): 몸 주변에 충전 링이 차오르고, 손에 든 똥이 충전할수록 커진다
+  if (p.chargeRatio > 0) {
+    const cr = Math.min(1, p.chargeRatio);
+    const aim = isMe ? myAngle : p.angle;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, PLAYER_RADIUS + 12, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * cr);
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = cr >= 1 ? '#ff4d4d' : `hsl(${Math.round(50 - 50 * cr)}, 95%, 55%)`;
+    ctx.stroke();
+    const sz = 24;
+    ctx.font = `${Math.round(sz)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('💩', p.x + Math.cos(aim) * (PLAYER_RADIUS + 6 + sz * 0.4), p.y + Math.sin(aim) * (PLAYER_RADIUS + 6 + sz * 0.4));
+    ctx.restore();
+  }
 
   // 보호막 표시 (슈의 가젯): 몸 주변에 푸른 막이 둘러지고, 남은 수치가 줄수록 옅어진다
   if (p.shieldHp > 0) {
@@ -3301,6 +3399,69 @@ function drawBullet(b) {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('💩', b.x, b.y + 1);
+    ctx.restore();
+    return;
+  }
+
+  if (b.visual === 'poopShot') {
+    // 똥파리의 똥 날리기 - 충전할수록 커지는 똥 (반경이 곧 크기) + 짧은 꼬리
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    const ang = Math.atan2(b.vy || 0, b.vx || 1);
+    ctx.rotate(ang);
+    const tl = b.radius * 3;
+    const tg = ctx.createLinearGradient(-tl, 0, 0, 0);
+    tg.addColorStop(0, 'rgba(120, 80, 30, 0)');
+    tg.addColorStop(1, 'rgba(120, 80, 30, 0.5)');
+    ctx.fillStyle = tg;
+    ctx.beginPath();
+    ctx.moveTo(-tl, 0);
+    ctx.lineTo(0, -b.radius * 0.9);
+    ctx.lineTo(0, b.radius * 0.9);
+    ctx.closePath();
+    ctx.fill();
+    ctx.rotate(-ang);
+    ctx.font = `${b.radius * 2.4}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('💩', 0, 1);
+    ctx.restore();
+    return;
+  }
+
+  if (b.visual === 'thorn') {
+    // 똥파리의 가시 발사 - 진행 방향을 향한 뾰족한 가시 (벽을 통과함)
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.rotate(Math.atan2(b.vy || 0, b.vx || 1));
+    const L = b.radius * 4.2;
+    const w = b.radius * 0.75;
+    ctx.shadowColor = 'rgba(130, 255, 90, 0.8)';
+    ctx.shadowBlur = 8;
+    const tg = ctx.createLinearGradient(-L / 2, 0, L / 2, 0);
+    tg.addColorStop(0, '#2d5a1b');
+    tg.addColorStop(1, '#d8ff9a');
+    ctx.fillStyle = tg;
+    ctx.beginPath();
+    ctx.moveTo(L / 2, 0);
+    ctx.lineTo(-L / 2, -w);
+    ctx.lineTo(-L * 0.4, 0);
+    ctx.lineTo(-L / 2, w);
+    ctx.closePath();
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = 'rgba(20, 50, 10, 0.9)';
+    ctx.stroke();
+    ctx.fillStyle = '#3f7a24';
+    for (const sd of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(-L * 0.05, sd * w * 0.55);
+      ctx.lineTo(-L * 0.28, sd * w * 1.6);
+      ctx.lineTo(-L * 0.3, sd * w * 0.7);
+      ctx.closePath();
+      ctx.fill();
+    }
     ctx.restore();
     return;
   }
