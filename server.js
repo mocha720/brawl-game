@@ -212,7 +212,7 @@ const CHARACTERS = {
       speed: 845,      // px/초 (기존 650에서 30% 증가)
       radius: 6,
       lifetime: 1.5,   // 초
-      visual: 'bullet',
+      visual: 'rifleBullet', // 실제 총알 모양 (탄두 + 황동 탄피 + 궤적)
     },
     ultimate: {
       name: '피에로 발사',
@@ -232,7 +232,7 @@ const CHARACTERS = {
       speed: 845,
       radius: 6,
       lifetime: 1.5,
-      visual: 'bullet',
+      visual: 'rifleBullet', // 기본공격과 같은 실제 총알 모양
     },
   },
   jigi: {
@@ -642,6 +642,7 @@ const CHARACTERS = {
       landDamage: 1500,      // 땅에 떨어졌을 때 입는 피해
       launchDuration: 1.2,   // 하늘에 떠 있는 시간(초). 이 동안은 조작 불가 + 피격/총알 무시
       pierceTargets: true,   // 적을 맞혀도 사라지지 않고 계속 날아가 여러 명을 띄울 수 있음
+      pierceWalls: true,     // 벽(장애물)에 닿아도 사라지지 않고 그대로 통과함 (맵 가장자리에서는 사라짐)
       speed: 380,
       radius: 60,
       lifetime: 1.4,         // 사거리 약 530
@@ -730,7 +731,7 @@ function describeUltimate(u) {
     case 'projectile': {
       const r = rangeOf(u);
       if (u.launchDuration > 0) {
-        desc = `조준한 방향으로 거대한 소용돌이를 발사${r ? ` (사거리 약 ${r})` : ''}. 맞은 적들(관통)은 ${u.launchDuration}초 동안 하늘로 떠올라 조작 불가가 되고, 땅에 떨어질 때 ${fmtNum(u.landDamage)} 피해`;
+        desc = `조준한 방향으로 거대한 소용돌이를 발사${r ? ` (사거리 약 ${r})` : ''}${u.pierceWalls ? ', 벽을 통과함' : ''}. 맞은 적들(관통)은 ${u.launchDuration}초 동안 하늘로 떠올라 조작 불가가 되고, 땅에 떨어질 때 ${fmtNum(u.landDamage)} 피해`;
       } else if (u.pelletCount > 1) {
         desc = `조준한 방향으로 큰 총알 ${u.pelletCount}발 발사 (발당 ${fmtNum(u.damage)} 피해${r ? `, 사거리 약 ${r}` : ''})`;
       } else {
@@ -1040,6 +1041,15 @@ function missionsView(u) {
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
   {
+    id: '2026-10-07-system-ult-wall',
+    date: '2026-10-07',
+    tag: 'balance',
+    title: '시스템 궁극기 변경',
+    items: [
+      '시스템 궁극기 [거대 소용돌이]가 이제 벽(장애물)에 닿아도 사라지지 않고 그대로 통과해요. (맵 가장자리에서는 사라져요)',
+    ],
+  },
+  {
     id: '2026-10-07-system-nerf',
     date: '2026-10-07',
     tag: 'balance',
@@ -1088,7 +1098,7 @@ const ANNOUNCEMENTS = [
       '기본공격 [시스템 콤보]: 탄창 3개가 각각 다른 공격이에요. 1번 탄창은 원거리 구슬(1,000 피해), 2번 탄창은 중거리로 던지는 구슬(1,500 피해), 3번 탄창은 중심각 90도 범위로 소용돌이 3개를 날려요(개당 3,000 피해, 사거리 약 150).',
       '탄창 3개를 모두 사용해야 3초 뒤에 한꺼번에 재장전돼요.',
       '공격할 때마다 지금 이동 중인 방향으로 짧게 돌진해요. (가만히 서 있을 땐 돌진하지 않아요)',
-      '궁극기 [거대 소용돌이]: 거대한 소용돌이를 날려 맞은 적들을 하늘로 띄워요. 떠 있는 동안은 움직일 수 없고, 땅에 떨어질 때 1,500 피해를 입어요.',
+      '궁극기 [거대 소용돌이]: 거대한 소용돌이를 날려 맞은 적들을 하늘로 띄워요. 벽에 닿아도 사라지지 않고 통과해요. 떠 있는 동안은 움직일 수 없고, 땅에 떨어질 때 1,500 피해를 입어요.',
       '가젯 [긴급 재장전]: 탄창을 즉시 가득 채워요.',
     ],
   },
