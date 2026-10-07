@@ -665,6 +665,7 @@ const CHARACTERS = {
       maxDamage: 3000,         // 완전히 충전했을 때 피해 (1레벨 기준)
       chargeTime: 3,           // 완전 충전까지 걸리는 시간(초)
       chargeSpeedMultiplier: 0.7, // 충전하는 동안 이동속도 배율 (0.7 = 30% 감소)
+      fireCooldown: 0.5,       // 똥을 발사한 뒤 다음 똥을 발사할 수 있기까지 걸리는 시간(초)
       speed: 560,
       radius: 10,              // 충전 없이 쐈을 때 똥 크기
       lifetime: 1.2,           // 사거리 ≈ 672px
@@ -708,6 +709,7 @@ function describeBasic(b) {
     // 똥파리: 탄창 없이 누르고 있는 동안 충전하는 공격
     parts.push(`탄창 없는 충전 공격: 누르고 있는 동안 최대 ${b.chargeTime}초까지 충전, 충전할수록 ${fmtNum(b.minDamage)}~${fmtNum(b.maxDamage)} 피해`);
     parts.push(`충전 중 이동속도 ${Math.round((1 - b.chargeSpeedMultiplier) * 100)}% 감소`);
+    if (b.fireCooldown > 0) parts.push(`발사 후 ${b.fireCooldown}초 동안 다음 발사 불가`);
     const r = rangeOf(b);
     if (r) parts.push(`사거리 약 ${r}`);
   } else if (b.type === 'dash') {
@@ -1082,6 +1084,7 @@ const ANNOUNCEMENTS = [
     items: [
       '탄창 없이 충전해서 쏘는 캐릭터 똥파리가 추가되었어요. 🪙 300 코인으로 잠금해제할 수 있어요. (체력 5,500)',
       '기본공격 [똥 날리기]: 공격 버튼을 누르고 있는 동안 충전해요. 오래 충전할수록 피해가 800 ~ 3,000(1레벨 기준)까지 세져요. 최대 3초 충전, 손을 떼면 발사!',
+      '똥을 발사하면 0.5초 동안은 다음 똥을 발사할 수 없어요.',
       '충전하는 동안에는 이동속도가 30% 느려져요. 기절하거나 쓰러지면 충전이 취소돼요.',
       '궁극기 [가시 발사]: 벽(장애물)을 통과하는 가시를 조준한 방향으로 발사해 2,500 피해(1레벨 기준)를 줘요.',
     ],
@@ -3200,8 +3203,9 @@ io.on('connection', (socket) => {
     if (p.chargeStartAt) return; // 이미 충전 중
     const now = Date.now();
     if (isChargeBlocked(p, now)) return;
-    if (now - p.lastShotAt < FIRE_COOLDOWN_MS) return; // 연사 방지
-    p.chargeStartAt = now;
+    // 발사 후 fireCooldown초 동안은 다음 발사 불가: 쿨다운 중에 눌러도 충전은 쿨다운이 끝난 시점부터 시작됨
+    const cdEnd = p.lastShotAt + (p.basic.fireCooldown || 0) * 1000;
+    p.chargeStartAt = Math.max(now, cdEnd);
     p.chargeRatio = 0;
   });
 
@@ -3216,6 +3220,7 @@ io.on('connection', (socket) => {
     p.chargeStartAt = 0;
     p.chargeRatio = 0;
     if (isChargeBlocked(p, now)) return; // 충전 중 기절 등으로 조작 불가가 되면 발사되지 않음
+    if (now - p.lastShotAt < (spec.fireCooldown || 0) * 1000) return; // 발사 후 쿨다운 중에는 발사 불가
     if (data && typeof data.angle === 'number' && Number.isFinite(data.angle)) p.angle = data.angle;
 
     const ratio = Math.max(0, Math.min(1, heldSec / (spec.chargeTime || 3)));
@@ -4063,7 +4068,7 @@ function updateMatch(match, dt, now) {
         p.chargeStartAt = 0;
         p.chargeRatio = 0;
       } else {
-        p.chargeRatio = Math.min(1, (now - p.chargeStartAt) / 1000 / (p.basic.chargeTime || 3));
+        p.chargeRatio = Math.max(0, Math.min(1, (now - p.chargeStartAt) / 1000 / (p.basic.chargeTime || 3)));
         p.speedMultiplier *= p.basic.chargeSpeedMultiplier || 1;
       }
     }
