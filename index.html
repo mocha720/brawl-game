@@ -472,6 +472,10 @@
   .admin-row > * { flex: 1; min-width: 0; }
   .panel select { width: 100%; box-sizing: border-box; padding: 12px 10px; font-size: 15px; color: var(--paper); background: #13152f; border: 3px solid #343a86; border-radius: 12px; }
   .panel select:focus { outline: none; border-color: var(--sun); }
+  .panel textarea { width: 100%; box-sizing: border-box; min-height: 96px; padding: 12px 14px; font-family: var(--font-body); font-size: 14px; line-height: 1.5; color: var(--paper); background: #13152f; border: 3px solid #343a86; border-radius: 12px; resize: vertical; }
+  .panel textarea::placeholder { color: #7378ad; }
+  .panel textarea:focus { outline: none; border-color: var(--sun); }
+  #adminNoticeList { display: flex; flex-direction: column; gap: 6px; max-height: 180px; overflow-y: auto; }
   .panel input[type="checkbox"] { width: auto; margin-right: 8px; accent-color: var(--sun); }
   .admin-check { display: flex; align-items: center; font-size: 13px; color: var(--paper); text-align: left; }
   #adminBannedList { display: flex; flex-direction: column; gap: 6px; max-height: 180px; overflow-y: auto; }
@@ -875,6 +879,20 @@
       <input id="adminBanReason" maxlength="60" placeholder="사유 (선택, 정지된 유저에게 보여요)" autocomplete="off" />
       <button id="adminBanBtn" class="btn btn-danger">정지하기</button>
       <div id="adminBannedList"></div>
+    </div>
+    <div class="admin-section">
+      <h3>📢 공지사항 올리기</h3>
+      <p class="panel-sub" style="margin:0">올리면 접속 중인 모두에게 바로 공지사항 버튼에 빨간 점이 뜨고, 서버를 다시 켜도 남아 있어요.</p>
+      <select id="adminNoticeTag" aria-label="공지 종류">
+        <option value="new">신규</option>
+        <option value="balance">밸런스</option>
+        <option value="fix">수정</option>
+        <option value="etc" selected>공지</option>
+      </select>
+      <input id="adminNoticeTitle" maxlength="40" placeholder="제목 (최대 40자)" autocomplete="off" />
+      <textarea id="adminNoticeText" maxlength="1500" placeholder="내용 (한 줄이 항목 하나, 최대 10줄)"></textarea>
+      <button id="adminNoticeBtn" class="btn">📢 공지 올리기</button>
+      <div id="adminNoticeList"></div>
     </div>
     <div id="adminMsg" class="panel-msg"></div>
     <div class="panel-actions">
@@ -1794,12 +1812,14 @@ function adminCall(event, payload, after) {
   socket.timeout(8000).emit(event, payload || {}, (err, res) => {
     if (err || !res) { setAdminMsg('서버 응답이 없습니다.'); return; }
     if (res.status) renderAdminStatus(res.status);
+    if (res.announcements) applyAnnouncements(res.announcements);
     if (event !== 'adminStatus' || !res.ok) setAdminMsg(res.message || (res.ok ? '완료!' : '실패했습니다.'), res.ok);
     if (res.ok && after) after();
   });
 }
 function openAdminDialog() {
   setAdminMsg('');
+  renderAdminNotices();
   document.getElementById('adminOverlay').classList.add('open');
   adminCall('adminStatus');
   clearInterval(adminTimer);
@@ -1847,6 +1867,42 @@ document.getElementById('adminBanBtn').addEventListener('click', () => {
 });
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && document.getElementById('adminOverlay').classList.contains('open')) closeAdminDialog();
+});
+
+// ===== 개발자 모드: 공지사항 올리기 / 삭제 =====
+// 공지 목록이 바뀌면(내가 올렸거나, 다른 곳에서 바뀌었거나) 서버가 전체 목록을 보내준다
+function applyAnnouncements(list) {
+  if (!Array.isArray(list)) return;
+  if (currentProfile) currentProfile.announcements = list;
+  updateNoticeBadge();
+  if (document.getElementById('noticeOverlay').classList.contains('open')) renderNoticeList();
+  renderAdminNotices();
+}
+function renderAdminNotices() {
+  const box = document.getElementById('adminNoticeList');
+  if (!box) return;
+  const mine = ((currentProfile && currentProfile.announcements) || []).filter((n) => n.custom);
+  box.innerHTML = mine.length
+    ? mine.map((n) => `<div class="admin-banned-row"><span class="who">${escapeHtml(n.title)}<span class="until">${escapeHtml(NOTICE_TAG_LABEL[n.tag] || '공지')} · ${escapeHtml(n.date || '')}</span></span><button class="btn btn-ghost" data-del-notice="${escapeHtml(n.id)}">삭제</button></div>`).join('')
+    : '<div class="presence-empty">개발자 모드로 올린 공지가 없습니다.</div>';
+  box.querySelectorAll('button[data-del-notice]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (!confirm('이 공지를 삭제할까요? 모든 유저에게서 사라집니다.')) return;
+      adminCall('adminDeleteNotice', { id: btn.getAttribute('data-del-notice') });
+    });
+  });
+}
+socket.on('announcementsUpdate', (data) => { if (data) applyAnnouncements(data.announcements); });
+document.getElementById('adminNoticeBtn').addEventListener('click', () => {
+  const title = document.getElementById('adminNoticeTitle').value.trim();
+  const text = document.getElementById('adminNoticeText').value;
+  if (!title) { setAdminMsg('공지 제목을 입력하세요.'); return; }
+  if (!text.trim()) { setAdminMsg('공지 내용을 입력하세요.'); return; }
+  if (!confirm(`"${title}" 공지를 올릴까요?\n접속 중인 모든 유저에게 바로 보입니다.`)) return;
+  adminCall('adminPostNotice', { tag: document.getElementById('adminNoticeTag').value, title, text }, () => {
+    document.getElementById('adminNoticeTitle').value = '';
+    document.getElementById('adminNoticeText').value = '';
+  });
 });
 
 // ===== 유저 현황 (메인화면) =====
