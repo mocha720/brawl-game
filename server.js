@@ -621,6 +621,40 @@ const CHARACTERS = {
       healAmount: 2000,
     },
   },
+  system: {
+    id: 'system',
+    name: '시스템',
+    maxHp: 6500,
+    basic: {
+      name: '시스템 콤보',
+      type: 'combo',         // 탄창 3개가 각각 다른 공격: 1번 원거리 구슬 -> 2번 던지는 구슬 -> 3번 소용돌이 3개
+      reloadAllAtOnce: true, // 탄창 3개를 모두 쓴 뒤에야 재장전이 시작되고, ammoRegenSeconds 뒤에 한꺼번에 가득 참
+      ammoRegenSeconds: 3,   // 3개를 모두 사용한 뒤 탄창이 리셋되기까지의 시간(초)
+      dash: { speed: 800, duration: 0.12 }, // 공격할 때마다 '현재 이동 중인 방향'으로 이만큼 돌진 (약 96px). 가만히 서 있으면 돌진하지 않음
+      combo: [
+        { name: '원거리 구슬', damage: 1000, speed: 800, radius: 9, lifetime: 1.0, visual: 'sysOrb' },   // 사거리 약 800 (원거리)
+        { name: '던지는 구슬', damage: 1500, speed: 480, radius: 14, lifetime: 1.0, visual: 'sysThrow' }, // 사거리 약 480 (중거리)
+        { name: '소용돌이', damage: 3000, pelletCount: 3, spreadDegrees: 90, speed: 300, radius: 18, lifetime: 0.5, visual: 'vortex' }, // 중심각 90도 범위로 3개, 개당 3000, 사거리 약 150
+      ],
+    },
+    ultimate: {
+      name: '거대 소용돌이',
+      type: 'projectile',    // 조준한 방향으로 날아가는 거대한 소용돌이: 맞은 적(여러 명 관통)을 하늘로 띄웠다가 땅에 떨어질 때 landDamage 피해
+      damage: 0,             // 적중 즉시 주는 피해는 없음 (착지 피해만 있음)
+      landDamage: 1500,      // 땅에 떨어졌을 때 입는 피해
+      launchDuration: 1.2,   // 하늘에 떠 있는 시간(초). 이 동안은 조작 불가 + 피격/총알 무시
+      pierceTargets: true,   // 적을 맞혀도 사라지지 않고 계속 날아가 여러 명을 띄울 수 있음
+      speed: 380,
+      radius: 60,
+      lifetime: 1.4,         // 사거리 약 530
+      visual: 'bigVortex',
+    },
+    gadget: {
+      name: '긴급 재장전',
+      type: 'reloadAmmo',    // 조준 불필요, 즉시 탄창을 가득 채움 (3개를 다 쓰기 전에도 바로 처음 구슬부터 다시 시작)
+      instant: true,
+    },
+  },
 };
 
 // ===== 캐릭터 설명(캐릭터 선택 화면용) 자동 생성 =====
@@ -635,7 +669,16 @@ function describeBasic(b) {
   let damage = null;
   const poolLabel = b.type === 'skullwater' ? '물웅덩이' : b.type === 'poopgas' ? '똥가루 구름' : b.type === 'eggthrow' ? '흰자' : '웅덩이';
 
-  if (b.type === 'dash') {
+  if (b.type === 'combo') {
+    // 시스템: 탄창 3개가 각각 다른 공격 + 공격마다 이동 방향으로 돌진
+    b.combo.forEach((c, i) => {
+      const r = rangeOf(c);
+      if (c.pelletCount > 1) parts.push(`${i + 1}번째 탄창: ${c.name} ${c.pelletCount}개를 중심각 ${c.spreadDegrees}도 범위로 발사 (개당 ${fmtNum(c.damage)} 피해, 사거리 약 ${r})`);
+      else parts.push(`${i + 1}번째 탄창: ${c.name} (${fmtNum(c.damage)} 피해, 사거리 약 ${r})`);
+    });
+    if (b.dash) parts.push(`공격할 때마다 이동 중인 방향으로 약 ${fmtNum(Math.round(b.dash.speed * b.dash.duration))}px 돌진`);
+    if (b.reloadAllAtOnce) parts.push(`탄창 ${MAX_AMMO}개를 모두 사용하면 ${b.ammoRegenSeconds}초 뒤에 한꺼번에 재장전`);
+  } else if (b.type === 'dash') {
     damage = b.damage;
     parts.push(`바라보는 방향으로 약 ${fmtNum(Math.round(b.speed * b.duration))}px를 돌진, 적과 부딪히면 ${fmtNum(b.damage)} 피해`);
   } else if (b.type === 'multiStab') {
@@ -688,7 +731,9 @@ function describeUltimate(u) {
   switch (u.type) {
     case 'projectile': {
       const r = rangeOf(u);
-      if (u.pelletCount > 1) {
+      if (u.launchDuration > 0) {
+        desc = `조준한 방향으로 거대한 소용돌이를 발사${r ? ` (사거리 약 ${r})` : ''}. 맞은 적들(관통)은 ${u.launchDuration}초 동안 하늘로 떠올라 조작 불가가 되고, 땅에 떨어질 때 ${fmtNum(u.landDamage)} 피해`;
+      } else if (u.pelletCount > 1) {
         desc = `조준한 방향으로 큰 총알 ${u.pelletCount}발 발사 (발당 ${fmtNum(u.damage)} 피해${r ? `, 사거리 약 ${r}` : ''})`;
       } else {
         damage = u.damage;
@@ -797,7 +842,7 @@ const LEVEL_TABLE = [
   { hp: 1.350, atk: 1.30, cost: 700 },
 ];
 const LEVEL_TABLE_PUBLIC = LEVEL_TABLE.slice(1).map((t, i) => ({ level: i + 1, hp: t.hp, atk: t.atk, cost: t.cost }));
-const DAMAGE_KEYS = new Set(['damage', 'directDamage', 'poolDamage', 'tickDamage', 'explodeDamage']); // 공격력 배율을 적용할 수치 이름
+const DAMAGE_KEYS = new Set(['damage', 'directDamage', 'poolDamage', 'tickDamage', 'explodeDamage', 'landDamage']); // 공격력 배율을 적용할 수치 이름
 function clampLevel(v) {
   const n = Math.floor(Number(v));
   if (!Number.isFinite(n) || n < 1) return 1;
@@ -906,6 +951,7 @@ const CHARACTER_PRICES = {
   mocha: 300,
   uphal: 300,
   jinwoopark: 300,
+  system: 300,
 };
 CHARACTER_PRICES[DEFAULT_CHARACTER_ID] = 0; // 기본 캐릭터는 항상 무료 (사용 가능한 캐릭터가 하나도 없는 상황 방지)
 function priceOf(id) {
@@ -995,6 +1041,20 @@ function missionsView(u) {
 // id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
+  {
+    id: '2026-10-06-system',
+    date: '2026-10-06',
+    tag: 'new',
+    title: '신규 캐릭터 「시스템」 출시!',
+    items: [
+      '탄창이 특별한 캐릭터 시스템이 추가되었어요. 🪙 300 코인으로 잠금해제할 수 있어요. (체력 6,500)',
+      '기본공격 [시스템 콤보]: 탄창 3개가 각각 다른 공격이에요. 1번 탄창은 원거리 구슬(1,000 피해), 2번 탄창은 중거리로 던지는 구슬(1,500 피해), 3번 탄창은 중심각 90도 범위로 소용돌이 3개를 날려요(개당 3,000 피해, 사거리 약 150).',
+      '탄창 3개를 모두 사용해야 3초 뒤에 한꺼번에 재장전돼요.',
+      '공격할 때마다 지금 이동 중인 방향으로 짧게 돌진해요. (가만히 서 있을 땐 돌진하지 않아요)',
+      '궁극기 [거대 소용돌이]: 거대한 소용돌이를 날려 맞은 적들을 하늘로 띄워요. 떠 있는 동안은 움직일 수 없고, 땅에 떨어질 때 1,500 피해를 입어요.',
+      '가젯 [긴급 재장전]: 탄창을 즉시 가득 채워요.',
+    ],
+  },
   {
     id: '2026-10-05-jinwoopark-uphal-balance',
     date: '2026-10-05',
@@ -2123,6 +2183,15 @@ function buildPlayer(socketId, name, characterId, team, spawn, level) {
     damageBoostFrom: 0,      // damageBoostFrom ~ damageBoostUntil (ms) 동안 공격력 증가
     damageBoostUntil: 0,
     damageBoostMultiplier: 1,
+    reloadAllAtOnce: !!character.basic.reloadAllAtOnce, // true면 탄창을 모두 쓴 뒤에야 재장전이 시작되고 한꺼번에 가득 참 (시스템)
+    moveDirX: 0,           // 마지막으로 실제로 이동한 방향(단위벡터) - 시스템의 공격 돌진 방향
+    moveDirY: 0,
+    lastMoveAt: 0,         // 마지막으로 실제로 이동한 시각(ms)
+    airborneTimeLeft: 0,   // 시스템의 궁극기에 맞아 하늘에 떠 있는 남은 시간(초). 0보다 크면 조작 불가 + 피격/총알 무시
+    airborneTotal: 0,
+    airborneLandDamage: 0,
+    airborneBy: null,
+    airborneStunUntil: 0,
     ammo: MAX_AMMO,
     maxAmmo: MAX_AMMO,
     ammoRegenSeconds: character.basic.ammoRegenSeconds || AMMO_REGEN_SECONDS, // 캐릭터별 기본공격 재장전 시간
@@ -2151,9 +2220,27 @@ function bulletDamageFor(b, target) {
   return b.damage;
 }
 
+// 시스템의 궁극기: 대상을 duration초 동안 하늘로 띄운다. 이 동안은 기절과 같이 조작 불가 + 모든 피해/총알 무시이고,
+// 시간이 끝나(땅에 떨어지)면 updateMatch가 landDamage 피해를 준다.
+function launchTarget(match, target, b) {
+  if (!target.alive || target.leaping || target.airborneTimeLeft > 0) return;
+  if (target.invincibleUntil && Date.now() < target.invincibleUntil) return; // 무적이면 띄워지지 않음
+  const total = b.launchDuration;
+  target.airborneTotal = total;
+  target.airborneTimeLeft = total;
+  target.airborneLandDamage = b.landDamage;
+  target.airborneBy = b.ownerId;
+  target.airborneStunUntil = Date.now() + total * 1000;
+  target.stunnedUntil = target.airborneStunUntil;
+  target.dashing = false; // 돌진/선딜 중이었다면 끊김
+  target.windupUntil = 0;
+  target.windupId = (target.windupId || 0) + 1;
+}
+
 function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
   if (!target.alive || match.over) return;
   if (target.leaping) return; // 점프 중(모카 궁극기)에는 모든 피해 무시
+  if (target.airborneTimeLeft > 0) return; // 하늘에 떠 있는 동안(시스템 궁극기)에도 모든 피해 무시 (착지 피해는 airborneTimeLeft를 0으로 만든 뒤 적용)
   if (target.invincibleUntil && Date.now() < target.invincibleUntil) return; // 무적 상태(슈의 가젯)면 피해/궁극기 충전 모두 무시
 
   const shooter = match.players[shooterId];
@@ -2215,6 +2302,7 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
       respawned.dashing = false;
       respawned.dashTimeLeft = 0;
       respawned.stunnedUntil = 0;
+      respawned.airborneTimeLeft = 0; // 하늘에 떠 있던 상태도 초기화
       respawned.windupUntil = 0; // 진행 중이던 공격 선딜도 취소
       respawned.windupId = (respawned.windupId || 0) + 1;
       respawned.invincibleUntil = 0; // 리스폰 시 이전 무적 상태는 초기화
@@ -2261,6 +2349,10 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
       radius: spec.radius,
       isUltimate,
       visual: spec.visual,
+      launchDuration: spec.launchDuration || 0, // 0보다 크면 맞은 적을 이 시간(초) 동안 하늘로 띄움 (시스템의 궁극기)
+      landDamage: spec.landDamage || 0,         // 띄워진 적이 땅에 떨어질 때 받는 피해
+      pierceTargets: !!spec.pierceTargets,      // true면 적을 맞혀도 사라지지 않고 계속 날아가 여러 명을 맞힘
+      hitIds: spec.pierceTargets ? [] : null,   // 관통 발사체가 이미 맞힌 대상 (같은 대상을 두 번 띄우지 않기 위함. 배열이어야 클라이언트로 전송 가능)
       pierceWalls: !!spec.pierceWalls, // 성스럽다의 칼 던지기처럼 벽(장애물)을 무시하고 통과하는 발사체
       // 원효대사의 해골물 뿌리기처럼 벽/적에 닿으면 물웅덩이를 생성하는 발사체를 위한 부가 정보
       poolOnImpact: !!spec.poolOnImpact,
@@ -2855,6 +2947,8 @@ io.on('connection', (socket) => {
 
     const newX = Math.max(PLAYER_RADIUS, Math.min(ARENA_WIDTH - PLAYER_RADIUS, data.x));
     const newY = Math.max(PLAYER_RADIUS, Math.min(ARENA_HEIGHT - PLAYER_RADIUS, data.y));
+    const prevX = p.x;
+    const prevY = p.y;
 
     // 벽 충돌: 축별로 따로 검사해서 벽에 닿아도 옆으로는 미끄러지듯 이동 가능
     if (!collidesWithWalls(match.walls, newX, p.y, PLAYER_RADIUS)) {
@@ -2862,6 +2956,16 @@ io.on('connection', (socket) => {
     }
     if (!collidesWithWalls(match.walls, p.x, newY, PLAYER_RADIUS)) {
       p.y = newY;
+    }
+
+    // 실제로 움직인 방향 기록 (시스템의 공격 돌진이 '현재 이동 중인 방향'을 알기 위해 사용)
+    const mvx = p.x - prevX;
+    const mvy = p.y - prevY;
+    const mvLen = Math.hypot(mvx, mvy);
+    if (mvLen > 0.3) {
+      p.moveDirX = mvx / mvLen;
+      p.moveDirY = mvy / mvLen;
+      p.lastMoveAt = Date.now();
     }
 
     if (typeof data.angle === 'number') p.angle = data.angle;
@@ -2880,10 +2984,25 @@ io.on('connection', (socket) => {
     if (now - p.lastShotAt < FIRE_COOLDOWN_MS) return; // 연사 방지 (최소 발사 간격)
     if (p.ammo <= 0) return; // 탄창이 비어있으면 발사 불가
 
+    const ammoBeforeShot = p.ammo;
     p.ammo -= 1;
     p.lastShotAt = now;
 
-    if ((p.basic.type === 'melee' || p.basic.type === 'quake') && p.basic.windup > 0) {
+    if (p.basic.type === 'combo') {
+      // 시스템: 남은 탄창에 따라 1번(원거리 구슬) -> 2번(던지는 구슬) -> 3번(소용돌이 3개) 순서로 공격.
+      // 가젯으로 탄창을 다시 채우면 다시 1번부터 시작한다.
+      const phase = Math.max(0, Math.min(p.basic.combo.length - 1, p.maxAmmo - ammoBeforeShot));
+      spawnProjectiles(match, p, p.basic.combo[phase], false);
+      // 공격할 때마다 '지금 이동 중인 방향'으로 돌진 (최근 0.15초 안에 실제로 움직였을 때만. 서 있으면 제자리에서 공격)
+      if (p.basic.dash && p.lastMoveAt && now - p.lastMoveAt <= 150) {
+        p.dashing = true;
+        p.dashHarmless = true; // 피해/기절 없이 이동만 하는 돌진
+        p.dashSpeed = p.basic.dash.speed;
+        p.dashDirX = p.moveDirX;
+        p.dashDirY = p.moveDirY;
+        p.dashTimeLeft = p.basic.dash.duration;
+      }
+    } else if ((p.basic.type === 'melee' || p.basic.type === 'quake') && p.basic.windup > 0) {
       // 업할의 망치 지진: 버튼을 누르면 windup초 동안 이동 불가 상태로 망치를 치켜들고, 시간이 지나면 그때의 조준 방향으로 지진 발동
       const windupMs = p.basic.windup * 1000;
       p.windupId = (p.windupId || 0) + 1;
@@ -3528,13 +3647,22 @@ function updateMatch(match, dt, now) {
       if (!target.alive) continue;
       if (pid === b.ownerId) continue; // 자기 자신 총알은 무시
       if (target.leaping) continue; // 점프 중(모카 궁극기)인 대상은 총알이 통과함
+      if (target.airborneTimeLeft > 0) continue; // 하늘에 떠 있는 대상(시스템 궁극기)도 총알이 통과함
       if (!FRIENDLY_FIRE && owner && target.team === owner.team) continue; // 아군 총알은 그대로 통과
+      if (b.hitIds && b.hitIds.includes(pid)) continue; // 관통 발사체가 이미 맞힌 대상은 다시 맞히지 않음
 
       const dx = target.x - b.x;
       const dy = target.y - b.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
 
       if (dist < PLAYER_RADIUS + b.radius) {
+        if (b.launchDuration > 0) {
+          // 시스템의 거대 소용돌이: 적중 즉시 피해는 없고 하늘로 띄움. 관통형이면 사라지지 않고 계속 날아감
+          launchTarget(match, target, b);
+          if (b.pierceTargets && b.hitIds) { b.hitIds.push(pid); continue; }
+          hitBulletIds.add(b.id);
+          break;
+        }
         hitBulletIds.add(b.id);
         if (b.poolOnImpact) {
           // 해골물 뿌리기: 적중 시 직접 대미지 대신 물웅덩이를 생성 (궁극기 게이지는 적중으로 충전됨)
@@ -3560,6 +3688,7 @@ function updateMatch(match, dt, now) {
   for (const b of match.bullets) {
     if (match.over) break;
     if (hitBulletIds.has(b.id)) continue;
+    if (b.launchDuration > 0) continue; // 띄우기 소용돌이는 터렛/닭에 영향 없이 통과
 
     for (const turret of match.turrets) {
       if (!FRIENDLY_FIRE && turret.team === b.team) continue; // 아군 총알은 자신의 터렛을 통과함
@@ -3586,6 +3715,7 @@ function updateMatch(match, dt, now) {
   for (const b of match.bullets) {
     if (match.over) break;
     if (hitBulletIds.has(b.id)) continue;
+    if (b.launchDuration > 0) continue;
     for (const chicken of match.chickens) {
       if (chicken.hp <= 0) continue;
       if (!FRIENDLY_FIRE && chicken.team === b.team) continue;
@@ -3757,8 +3887,33 @@ function updateMatch(match, dt, now) {
     const p = match.players[pid];
     if (!p.alive) continue;
 
-    // 탄창이 가득 차지 않았으면 시간이 지날 때마다 한 발씩 채워짐
-    if (p.ammo < p.maxAmmo) {
+    // 하늘에 떠 있던 대상(시스템 궁극기)이 땅에 떨어지는 순간: 기절을 풀고 착지 피해를 준다
+    if (p.airborneTimeLeft > 0) {
+      p.airborneTimeLeft -= dt;
+      if (p.airborneTimeLeft <= 0) {
+        p.airborneTimeLeft = 0; // 먼저 0으로 만들어야 아래 applyDamage가 피해를 무시하지 않음
+        if (p.stunnedUntil === p.airborneStunUntil) p.stunnedUntil = 0;
+        effectIdCounter += 1;
+        match.effects.push({ id: effectIdCounter, type: 'airLanding', x: p.x, y: p.y, radius: PLAYER_RADIUS * 2.2, life: 0.4, maxLife: 0.4 });
+        applyDamage(match, p, p.airborneLandDamage, p.airborneBy, { chargeShooter: false });
+        if (match.over) break;
+        if (!p.alive) continue;
+      }
+    }
+
+    if (p.reloadAllAtOnce) {
+      // 시스템: 탄창을 전부 쓴 뒤에야 재장전이 시작되고, 시간이 다 차면 한꺼번에 가득 참 (중간에는 한 발씩 차지 않음)
+      if (p.ammo <= 0) {
+        p.ammoRegenElapsed += dt * (p.reloadBoostUntil && now < p.reloadBoostUntil ? p.reloadBoostMultiplier || 1 : 1);
+        if (p.ammoRegenElapsed >= (p.ammoRegenSeconds || AMMO_REGEN_SECONDS)) {
+          p.ammo = p.maxAmmo;
+          p.ammoRegenElapsed = 0;
+        }
+      } else {
+        p.ammoRegenElapsed = 0;
+      }
+    } else if (p.ammo < p.maxAmmo) {
+      // 탄창이 가득 차지 않았으면 시간이 지날 때마다 한 발씩 채워짐
       p.ammoRegenElapsed += dt * (p.reloadBoostUntil && now < p.reloadBoostUntil ? p.reloadBoostMultiplier || 1 : 1);
       if (p.ammoRegenElapsed >= (p.ammoRegenSeconds || AMMO_REGEN_SECONDS)) {
         p.ammo = Math.min(p.maxAmmo, p.ammo + 1);
