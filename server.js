@@ -597,7 +597,7 @@ const CHARACTERS = {
       name: '하트 발사하기',
       // 맞은 대상의 '현재 체력'의 일정 비율만큼 피해를 주는 하트 (보호막이 있으면 보호막 + 체력을 합친 값의 비율).
       // 고정 피해(damage)가 없으므로 레벨 강화의 공격력 배율은 이 비율에는 적용되지 않는다 (체력 강화만 적용).
-      currentHpRatio: 0.25,
+      currentHpRatio: 0.3,   // 기존 0.25(25%)에서 버프
       executeBelowHp: 750,  // 맞은 적의 현재 체력이 이 값 이하이면 보호막과 상관없이 즉사 (무적/점프 중인 대상은 기존처럼 피해를 받지 않음)
       speed: 500,           // 중거리: 속도 x 수명 = 사거리 약 500px
       radius: 11,
@@ -1042,6 +1042,15 @@ function missionsView(u) {
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
   {
+    id: '2026-10-07-jinwoopark-buff',
+    date: '2026-10-07',
+    tag: 'balance',
+    title: '진우Park 버프',
+    items: [
+      '진우Park 기본공격(하트 발사하기) 피해: 적 현재 체력의 25% → 30% (보호막이 있으면 보호막까지 합친 체력 기준)',
+    ],
+  },
+  {
     id: '2026-10-07-dash-pierce',
     date: '2026-10-07',
     tag: 'balance',
@@ -1049,6 +1058,7 @@ const ANNOUNCEMENTS = [
     items: [
       '피해를 주는 모든 돌진 공격(꽈리의 돌진 박치기, 변기통의 변기 돌진)이 이제 적을 관통해요. 닿는 순간 멈추지 않고 그대로 지나가며, 지나간 적마다 한 번씩 피해와 기절을 줘요.',
       '돌진이 더 자연스럽게 보이도록 움직임을 부드럽게 다듬었어요. 처음엔 빠르다가 점점 느려지며 멈춰요.',
+      '돌진 중 벽에 닿으면 튕겨나가거나 벽을 따라 미끄러지지 않고, 닿은 자리에서 그대로 멈춰요.',
       '시스템의 돌진은 총알을 쏜 0.2초 뒤에 시작돼요.',
     ],
   },
@@ -1084,7 +1094,7 @@ const ANNOUNCEMENTS = [
     title: '신규 캐릭터 「진우Park」 출시!',
     items: [
       '하트를 쏘는 캐릭터 진우Park이 추가되었어요. 🪙 300 코인으로 잠금해제할 수 있어요. (체력 6,500)',
-      '기본공격 [하트 발사하기]: 중거리로 하트를 발사해 맞은 적의 현재 체력의 25% 피해를 줘요. 보호막이 있으면 보호막까지 합친 체력의 25%예요.',
+      '기본공격 [하트 발사하기]: 중거리로 하트를 발사해 맞은 적의 현재 체력의 30% 피해를 줘요. 보호막이 있으면 보호막까지 합친 체력의 30%예요.',
       '하트에 맞은 적의 체력이 750 이하라면 즉사해요!',
       '궁극기 [소다Bang]: 벽을 무시하고 조준한 방향으로 중거리(100~180)를 점프해, 착지 지점 주변 적에게 2,000 피해를 주고 바깥으로 밀쳐내요. 점프 중에는 공격을 받지 않아요.',
       '가젯 [소다 마시기]: 체력을 즉시 2,000 회복해요.',
@@ -2950,7 +2960,10 @@ io.on('connection', (socket) => {
     if (!match || match.over || Date.now() < match.startsAt) return; // 대결 화면(카운트다운) 중에는 입력 무시
     const p = match.players[socket.id];
     if (!p || !p.alive) return;
-    if (p.dashing || p.knockbackTimeLeft > 0 || (p.stunnedUntil && Date.now() < p.stunnedUntil)) return; // 돌진/기절 중에는 서버가 위치를 제어하므로 클라이언트 입력을 무시
+    if (p.dashing || p.knockbackTimeLeft > 0 || (p.stunnedUntil && Date.now() < p.stunnedUntil)) {
+      p.lastServerControlAt = Date.now(); // 서버가 위치를 제어한 마지막 시각 (아래 '낡은 위치' 거르기에 사용)
+      return; // 돌진/기절 중에는 서버가 위치를 제어하므로 클라이언트 입력을 무시
+    }
     if (typeof data.x !== 'number' || typeof data.y !== 'number') return;
 
     // 공격 선딜 중(업할)에는 위치를 바꿀 수 없고 조준 방향만 돌릴 수 있다
@@ -2963,6 +2976,14 @@ io.on('connection', (socket) => {
     const newY = Math.max(PLAYER_RADIUS, Math.min(ARENA_HEIGHT - PLAYER_RADIUS, data.y));
     const prevX = p.x;
     const prevY = p.y;
+
+    // 돌진/넉백/기절이 막 끝난 직후에는, 서버가 위치를 제어하던 동안 클라이언트가 보내 둔 '낡은(뒤쪽) 위치'가
+    // 네트워크 지연 때문에 뒤늦게 도착한다. 이걸 그대로 받으면 벽 앞에서 멈춘 캐릭터가 뒤로 튕겨나가 보이므로,
+    // 끝난 직후 0.5초 동안은 서버 위치에서 크게 벗어난 좌표는 무시한다 (클라이언트가 최신 위치로 맞추면 곧바로 정상 처리)
+    if (p.lastServerControlAt && Date.now() - p.lastServerControlAt < 500 && Math.hypot(newX - prevX, newY - prevY) > 40) {
+      if (typeof data.angle === 'number') p.angle = data.angle;
+      return;
+    }
 
     // 벽 충돌: 축별로 따로 검사해서 벽에 닿아도 옆으로는 미끄러지듯 이동 가능
     if (!collidesWithWalls(match.walls, newX, p.y, PLAYER_RADIUS)) {
@@ -3463,14 +3484,17 @@ function updateMatch(match, dt, now) {
           }
         }
       }
+
+      // 벽에 닿으면 벽을 따라 미끄러지거나 튕겨나가지 않고, 닿은 그 자리에서 그대로 멈춘다
+      if (blockedByWall) break;
     }
 
     p.dashTimeLeft -= dt;
 
-    // 가젯 돌진(질주): 피해/기절 없이 이동만 한다. 적과 부딪혀도 통과하고, 벽을 따라 미끄러지며 계속 가다가
-    // 두 방향 모두 막혀 더 이상 못 움직이거나 시간이 끝나면 종료
+    // 가젯 돌진(질주) / 시스템 돌진: 피해/기절 없이 이동만 한다. 적과 부딪혀도 통과하고,
+    // 벽에 막히거나 시간이 끝나면 종료
     if (p.dashHarmless) {
-      if (!moved || p.dashTimeLeft <= 0) p.dashing = false;
+      if (blockedByWall || !moved || p.dashTimeLeft <= 0) p.dashing = false; // 벽에 닿으면 즉시 멈춤 (미끄러지지 않음)
       continue;
     }
 
