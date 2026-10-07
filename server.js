@@ -348,11 +348,11 @@ const CHARACTERS = {
     },
     ultimate: {
       name: '변기 돌진',
-      type: 'dash',         // 조준 방향으로 매우 빠르게 돌진하다가 적과 충돌하면 대미지+기절
+      type: 'dash',         // 조준 방향으로 매우 빠르게 돌진하며 적을 관통해 지나간 모든 적에게 대미지+기절
       damage: 2500,
       speed: 1400,          // px/초 (돌진 속도)
-      duration: 0.4,        // 최대 돌진 지속 시간(초). 이 시간 동안 적과 충돌하지 않으면 그냥 종료됨
-      stunDuration: 1.5,    // 충돌한 적을 기절시키는 시간(초)
+      duration: 0.4,        // 돌진 지속 시간(초). 적을 관통하므로 벽에 막히지 않는 한 이 시간 동안 끝까지 돌진함
+      stunDuration: 1.5,    // 지나가며 맞힌 적을 기절시키는 시간(초)
     },
     gadget: {
       name: '질주',
@@ -493,7 +493,7 @@ const CHARACTERS = {
     maxHp: 5500,
     basic: {
       name: '돌진 박치기',
-      type: 'dash',          // 발사체 없이 바라보는 방향으로 짧게 돌진, 적과 부딪히면 피해를 주고 멈춤
+      type: 'dash',          // 발사체 없이 바라보는 방향으로 짧게 돌진, 적을 관통하며 지나간 모든 적에게 피해
       damage: 2000,
       speed: 860,            // 돌진 속도(px/초)
       duration: 0.15,        // 돌진 시간(초) -> 이동 거리 ≈ speed * duration ≈ 129px (서버 틱이 0.05초라 3틱 = 129px 이동). 기존 약 198px에서 35% 감소
@@ -630,7 +630,7 @@ const CHARACTERS = {
       type: 'combo',         // 탄창 3개가 각각 다른 공격: 1번 원거리 구슬 -> 2번 던지는 구슬 -> 3번 소용돌이 3개
       reloadAllAtOnce: true, // 탄창 3개를 모두 쓴 뒤에야 재장전이 시작되고, ammoRegenSeconds 뒤에 한꺼번에 가득 참
       ammoRegenSeconds: 3,   // 3개를 모두 사용한 뒤 탄창이 리셋되기까지의 시간(초)
-      dash: { speed: 800, duration: 0.12 }, // 공격할 때마다 '현재 이동 중인 방향'으로 이만큼 돌진 (약 96px). 가만히 서 있으면 돌진하지 않음
+      dash: { speed: 800, duration: 0.12, delay: 0.2 }, // 총알을 쏜 0.2초 뒤에, 쏘던 순간 이동 중이던 방향으로 이만큼 돌진 (약 96px). 가만히 서 있으면 돌진하지 않음
       combo: [
         { name: '원거리 구슬', damage: 1000, speed: 800, radius: 9, lifetime: 1.0, visual: 'sysOrb' },   // 사거리 약 800 (원거리)
         { name: '던지는 구슬', damage: 1500, speed: 480, radius: 14, lifetime: 1.0, visual: 'sysThrow' }, // 사거리 약 480 (중거리)
@@ -676,11 +676,11 @@ function describeBasic(b) {
       if (c.pelletCount > 1) parts.push(`${i + 1}번째 탄창: ${c.name} ${c.pelletCount}개를 중심각 ${c.spreadDegrees}도 범위로 발사 (개당 ${fmtNum(c.damage)} 피해, 사거리 약 ${r})`);
       else parts.push(`${i + 1}번째 탄창: ${c.name} (${fmtNum(c.damage)} 피해, 사거리 약 ${r})`);
     });
-    if (b.dash) parts.push(`공격할 때마다 이동 중인 방향으로 약 ${fmtNum(Math.round(b.dash.speed * b.dash.duration))}px 돌진`);
+    if (b.dash) parts.push(`공격할 때마다${b.dash.delay ? ` ${b.dash.delay}초 뒤에` : ''} 이동 중인 방향으로 약 ${fmtNum(Math.round(b.dash.speed * b.dash.duration))}px 돌진`);
     if (b.reloadAllAtOnce) parts.push(`탄창 ${MAX_AMMO}개를 모두 사용하면 ${b.ammoRegenSeconds}초 뒤에 한꺼번에 재장전`);
   } else if (b.type === 'dash') {
     damage = b.damage;
-    parts.push(`바라보는 방향으로 약 ${fmtNum(Math.round(b.speed * b.duration))}px를 돌진, 적과 부딪히면 ${fmtNum(b.damage)} 피해`);
+    parts.push(`바라보는 방향으로 약 ${fmtNum(Math.round(b.speed * b.duration))}px를 돌진, 적을 관통하며 지나간 모든 적에게 ${fmtNum(b.damage)} 피해`);
   } else if (b.type === 'multiStab') {
     damage = b.damage;
     parts.push(`양손으로 ${b.stabCount}번 빠르게 찌름 (한 번당 ${fmtNum(b.damage)} 피해, 전방 ${b.angleDegrees}도, 사거리 ${b.range}로 짧음)`);
@@ -749,7 +749,7 @@ function describeUltimate(u) {
       desc = `${u.duration}초 동안 적에게 보이지 않음`;
       break;
     case 'dash':
-      desc = `바라보는 방향으로 매우 빠르게 돌진, 적과 충돌 시 ${fmtNum(u.damage)} 피해 + ${u.stunDuration}초 기절`;
+      desc = `바라보는 방향으로 매우 빠르게 돌진, 적을 관통하며 지나간 모든 적에게 ${fmtNum(u.damage)} 피해 + ${u.stunDuration}초 기절`;
       break;
     case 'turret':
       desc = `조준 불필요, 체력 ${fmtNum(u.hp)}의 자동 사격 터렛을 설치 (사거리 ${u.range}, ${u.fireInterval}초마다 ${fmtNum(u.damage)} 피해 저격탄 발사)`;
@@ -1041,6 +1041,17 @@ function missionsView(u) {
 // id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
+  {
+    id: '2026-10-07-dash-pierce',
+    date: '2026-10-07',
+    tag: 'balance',
+    title: '돌진 공격 개선',
+    items: [
+      '피해를 주는 모든 돌진 공격(꽈리의 돌진 박치기, 변기통의 변기 돌진)이 이제 적을 관통해요. 닿는 순간 멈추지 않고 그대로 지나가며, 지나간 적마다 한 번씩 피해와 기절을 줘요.',
+      '돌진이 더 자연스럽게 보이도록 움직임을 부드럽게 다듬었어요. 처음엔 빠르다가 점점 느려지며 멈춰요.',
+      '시스템의 돌진은 총알을 쏜 0.2초 뒤에 시작돼요.',
+    ],
+  },
   {
     id: '2026-10-06-system',
     date: '2026-10-06',
@@ -2142,6 +2153,7 @@ function buildPlayer(socketId, name, characterId, team, spawn, level) {
     dashHarmless: false, // true면 피해/기절 없이 이동만 하는 돌진 (변기통의 가젯 '질주'). 적과 부딪혀도 멈추지 않고 통과함
     dashDamage: 0,       // 이번 돌진이 적에게 주는 피해 (궁극기 돌진 / 꽈리의 기본공격 돌진이 서로 다름)
     dashStun: 0,         // 이번 돌진이 주는 기절 시간(초)
+    dashHitIds: [],      // 이번 돌진(관통)에서 이미 피해를 준 대상 id 목록
     dashCharge: false,   // true면 이 돌진의 적중이 궁극기 게이지를 채움 (기본공격 돌진)
     reloadBoostUntil: 0,       // 이 시각(ms) 전까지 재장전 속도 증가 (꽈리의 가젯 '재장전 가속')
     reloadBoostMultiplier: 1,
@@ -2301,8 +2313,10 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
       respawned.stealthId = (respawned.stealthId || 0) + 1; // 진행 중이던 은신 타이머를 무효화
       respawned.dashing = false;
       respawned.dashTimeLeft = 0;
+      respawned.dashHitIds = [];
       respawned.stunnedUntil = 0;
       respawned.airborneTimeLeft = 0; // 하늘에 떠 있던 상태도 초기화
+      respawned.comboDashId = (respawned.comboDashId || 0) + 1; // 예약돼 있던 시스템의 돌진도 취소
       respawned.windupUntil = 0; // 진행 중이던 공격 선딜도 취소
       respawned.windupId = (respawned.windupId || 0) + 1;
       respawned.invincibleUntil = 0; // 리스폰 시 이전 무적 상태는 초기화
@@ -2993,14 +3007,30 @@ io.on('connection', (socket) => {
       // 가젯으로 탄창을 다시 채우면 다시 1번부터 시작한다.
       const phase = Math.max(0, Math.min(p.basic.combo.length - 1, p.maxAmmo - ammoBeforeShot));
       spawnProjectiles(match, p, p.basic.combo[phase], false);
-      // 공격할 때마다 '지금 이동 중인 방향'으로 돌진 (최근 0.15초 안에 실제로 움직였을 때만. 서 있으면 제자리에서 공격)
+      // 공격할 때마다 '발사하는 순간 이동 중이던 방향'으로 돌진하되, 총알을 쏜 뒤 dash.delay초 뒤에 시작한다.
+      // (최근 0.15초 안에 실제로 움직였을 때만. 서 있으면 돌진 없이 제자리에서 공격)
       if (p.basic.dash && p.lastMoveAt && now - p.lastMoveAt <= 150) {
-        p.dashing = true;
-        p.dashHarmless = true; // 피해/기절 없이 이동만 하는 돌진
-        p.dashSpeed = p.basic.dash.speed;
-        p.dashDirX = p.moveDirX;
-        p.dashDirY = p.moveDirY;
-        p.dashTimeLeft = p.basic.dash.duration;
+        const dashSpec = p.basic.dash;
+        const dirX = p.moveDirX;
+        const dirY = p.moveDirY;
+        const dasherId = p.id;
+        p.comboDashId = (p.comboDashId || 0) + 1;
+        const myComboDashId = p.comboDashId;
+        const matchId2 = match.id;
+        setTimeout(() => {
+          const m = matches[matchId2];
+          if (!m || m.over) return;
+          const s2 = m.players[dasherId];
+          if (!s2 || !s2.alive || s2.comboDashId !== myComboDashId) return; // 죽었거나 새 공격으로 대체됨
+          if (s2.leaping || s2.dashing || s2.airborneTimeLeft > 0 || s2.knockbackTimeLeft > 0 || (s2.stunnedUntil && Date.now() < s2.stunnedUntil)) return; // 그 사이 기절/넉백/띄워짐이면 돌진 취소
+          s2.dashing = true;
+          s2.dashHarmless = true; // 피해/기절 없이 이동만 하는 돌진
+          s2.dashSpeed = dashSpec.speed;
+          s2.dashDirX = dirX;
+          s2.dashDirY = dirY;
+          s2.dashTimeLeft = dashSpec.duration;
+          s2.dashTotal = dashSpec.duration;
+        }, (dashSpec.delay || 0) * 1000);
       }
     } else if ((p.basic.type === 'melee' || p.basic.type === 'quake') && p.basic.windup > 0) {
       // 업할의 망치 지진: 버튼을 누르면 windup초 동안 이동 불가 상태로 망치를 치켜들고, 시간이 지나면 그때의 조준 방향으로 지진 발동
@@ -3051,6 +3081,8 @@ io.on('connection', (socket) => {
       p.dashDirX = Math.cos(p.angle);
       p.dashDirY = Math.sin(p.angle);
       p.dashTimeLeft = p.basic.duration;
+      p.dashTotal = p.dashTimeLeft; // 돌진 속도 곡선(처음 빠르고 점점 느려짐)을 계산하기 위한 전체 시간
+      p.dashHitIds = []; // 이번 돌진에서 이미 맞힌 대상 (관통 돌진이 같은 적을 두 번 때리지 않도록)
     } else {
       spawnProjectiles(match, p, p.basic, false);
     }
@@ -3112,6 +3144,8 @@ io.on('connection', (socket) => {
       p.dashDirX = Math.cos(p.angle);
       p.dashDirY = Math.sin(p.angle);
       p.dashTimeLeft = gadget.duration || 0.16;
+      p.dashTotal = p.dashTimeLeft; // 돌진 속도 곡선(처음 빠르고 점점 느려짐)을 계산하기 위한 전체 시간
+      p.dashHitIds = []; // 이번 돌진에서 이미 맞힌 대상 (관통 돌진이 같은 적을 두 번 때리지 않도록)
     } else if (gadget.type === 'ultCharge') {
       // 모카의 가젯: duration초에 걸쳐 궁극기 게이지를 amount%만큼 천천히 채움 (재사용 시 새로 갱신, 실제 충전은 updateMatch가 수행)
       p.ultGadgetLeft = gadget.duration || 4;
@@ -3184,7 +3218,7 @@ io.on('connection', (socket) => {
       }, (ult.duration || 5) * 1000);
     } else if (ult.type === 'dash') {
       // 변기통의 돌진: 바라보는 방향으로 매우 빠르게 이동하며, 이후 updateMatch 틱에서
-      // 실제 이동/벽 충돌/적 충돌(대미지+기절) 판정을 수행한다
+      // 실제 이동/벽 충돌/적 관통(대미지+기절) 판정을 수행한다
       p.dashing = true;
       p.dashHarmless = false;
       p.dashSpeed = ult.speed || 0;
@@ -3194,6 +3228,8 @@ io.on('connection', (socket) => {
       p.dashDirX = Math.cos(p.angle);
       p.dashDirY = Math.sin(p.angle);
       p.dashTimeLeft = ult.duration || 0.4;
+      p.dashTotal = p.dashTimeLeft; // 돌진 속도 곡선(처음 빠르고 점점 느려짐)을 계산하기 위한 전체 시간
+      p.dashHitIds = []; // 이번 돌진에서 이미 맞힌 대상 (관통 돌진이 같은 적을 두 번 때리지 않도록)
     } else if (ult.type === 'burst') {
       // 꽈리의 고추 발사: 발사 순간의 조준 방향으로 고추를 짧은 간격으로 연달아 발사 (첫 발은 즉시)
       const fireAngle = p.angle;
@@ -3386,7 +3422,14 @@ function updateMatch(match, dt, now) {
     if (!p.alive) { p.dashing = false; continue; }
 
     const ult = p.ultimate;
-    const step = (p.dashSpeed || ult.speed || 0) * dt;
+    // 자연스러운 돌진: 일정한 속도로 갑자기 멈추지 않고, 처음엔 빠르다가 점점 느려지며 멈춘다(ease-out).
+    // 속도 곡선 v(t)=v0*(1.636*남은비율+0.182)의 평균이 v0라서 총 이동 거리(속도x시간)는 기존과 같다.
+    // 또 마지막 틱이 한 틱 분량 전체를 가버려 목표보다 더 가는 일이 없도록, 마지막 틱은 남은 시간만큼만 이동한다.
+    const dashTotalTime = p.dashTotal > 0 ? p.dashTotal : Math.max(0.001, p.dashTimeLeft);
+    const dashFrac = Math.max(0, Math.min(1, p.dashTimeLeft / dashTotalTime));
+    const dashEase = 1.636 * dashFrac + 0.182;
+    const stepDt = Math.min(dt, Math.max(0, p.dashTimeLeft));
+    const step = (p.dashSpeed || ult.speed || 0) * dashEase * stepDt;
     // 한 틱 이동량이 크므로(빠른 돌진) 5px 이하의 작은 걸음으로 나눠서 이동한다.
     // 그래야 벽 앞에서 한 걸음 분량이 막혀도 벽에 닿기 직전까지는 가고, 벽을 통과하지도 않는다.
     const subSteps = Math.max(1, Math.ceil(step / 5));
@@ -3399,6 +3442,27 @@ function updateMatch(match, dt, now) {
       const ny = Math.max(PLAYER_RADIUS, Math.min(ARENA_HEIGHT - PLAYER_RADIUS, p.y + subY));
       if (!collidesWithWalls(match.walls, nx, p.y, PLAYER_RADIUS)) { if (nx !== p.x) moved = true; p.x = nx; } else blockedByWall = true;
       if (!collidesWithWalls(match.walls, p.x, ny, PLAYER_RADIUS)) { if (ny !== p.y) moved = true; p.y = ny; } else blockedByWall = true;
+
+      // 관통 돌진: 적과 닿아도 멈추지 않고 그대로 지나가며, 지나가는 길에 닿은 적마다 한 번씩 피해(+기절)를 준다.
+      // 한 틱 동안 꽤 멀리 가기 때문에 틱 끝 위치만 보면 적을 건너뛸 수 있어서, 조금씩 이동할 때마다 판정한다.
+      if (!p.dashHarmless) {
+        if (!p.dashHitIds) p.dashHitIds = [];
+        for (const tid in match.players) {
+          if (match.over) break;
+          const target = match.players[tid];
+          if (tid === pid || !target.alive) continue;
+          if (!FRIENDLY_FIRE && target.team === p.team) continue;
+          if (target.leaping || target.airborneTimeLeft > 0) continue; // 공중에 있는 대상은 지나쳐도 맞지 않음
+          if (p.dashHitIds.includes(tid)) continue; // 이번 돌진에서 이미 맞힌 대상
+          const ddx = target.x - p.x;
+          const ddy = target.y - p.y;
+          if (Math.sqrt(ddx * ddx + ddy * ddy) < PLAYER_RADIUS * 2) {
+            p.dashHitIds.push(tid);
+            applyDamage(match, target, p.dashDamage, pid, { chargeShooter: !!p.dashCharge });
+            if (!match.over && p.dashStun > 0 && !(target.invincibleUntil && now < target.invincibleUntil)) target.stunnedUntil = now + p.dashStun * 1000;
+          }
+        }
+      }
     }
 
     p.dashTimeLeft -= dt;
@@ -3410,24 +3474,8 @@ function updateMatch(match, dt, now) {
       continue;
     }
 
-    // 돌진 중 적과 충돌하면 대미지 + 기절을 주고 돌진을 즉시 종료 (벽에 막혀도 종료)
-    let hitSomeone = false;
-    for (const tid in match.players) {
-      const target = match.players[tid];
-      if (tid === pid || !target.alive) continue;
-      if (!FRIENDLY_FIRE && target.team === p.team) continue;
-
-      const ddx = target.x - p.x;
-      const ddy = target.y - p.y;
-      if (Math.sqrt(ddx * ddx + ddy * ddy) < PLAYER_RADIUS * 2) {
-        applyDamage(match, target, p.dashDamage, pid, { chargeShooter: !!p.dashCharge });
-        hitSomeone = true;
-        if (!match.over && p.dashStun > 0 && !(target.invincibleUntil && now < target.invincibleUntil)) target.stunnedUntil = now + p.dashStun * 1000;
-        break;
-      }
-    }
-
-    if (hitSomeone || blockedByWall || p.dashTimeLeft <= 0) p.dashing = false;
+    // 관통 돌진은 적에게 닿아도 멈추지 않는다. 벽에 막히거나 돌진 시간이 끝나면 종료
+    if (blockedByWall || p.dashTimeLeft <= 0) p.dashing = false;
   }
 
   // 넉백(밀쳐냄) 처리: 등감속 운동으로 처음엔 빠르게 날아가다가 점점 느려지며 목표 거리만큼 이동 후 멈춘다
