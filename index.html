@@ -1226,6 +1226,7 @@ const CHARACTERS = [
     maxHp: 5500,
     basic: { name: '똥 날리기', desc: '탄창 없는 충전 공격: 누르고 있는 동안 최대 3초까지 충전, 충전할수록 800~3,000 피해, 충전 중 이동속도 30% 감소, 발사 후 1.5초 동안 다음 발사 불가, 사거리 약 672' },
     ultimate: { name: '가시 발사', damage: 2500, desc: '조준한 방향으로 발사 (사거리 약 988), 벽을 통과함' },
+    gadget: { name: '폭탄 똥', desc: '조준한 방향으로 폭발하는 똥을 발사 (사거리 약 572). 적이나 벽에 닿으면 폭발해서 반경 130 안의 적에게 1,500 피해 (15초마다 사용 가능)' },
   },
 ];
 let selectedCharacterId = CHARACTERS[0].id;
@@ -3459,6 +3460,22 @@ function drawBullet(b) {
     return;
   }
 
+  if (b.visual === 'poopBomb') {
+    // 똥파리의 가젯 '폭탄 똥' - 붉게 깜빡이는 폭탄 똥
+    ctx.save();
+    const blink = 0.5 + 0.5 * Math.sin(performance.now() / 60);
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.radius * 1.35, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255, 90, 40, ${0.18 + 0.25 * blink})`;
+    ctx.fill();
+    ctx.font = `${b.radius * 2.4}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('💩', b.x, b.y + 1);
+    ctx.restore();
+    return;
+  }
+
   if (b.visual === 'poopShot') {
     // 똥파리의 똥 날리기 - 충전할수록 커지는 똥 (반경이 곧 크기) + 짧은 꼬리
     ctx.save();
@@ -3785,10 +3802,11 @@ function drawEffect(e) {
     ctx.globalAlpha = alpha;
     ctx.beginPath();
     ctx.arc(e.x, e.y, e.radius, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255, 77, 109, 0.35)';
+    const isPoopBomb = e.visual === 'poopBomb'; // 똥파리의 폭탄 똥은 갈색/주황 폭발
+    ctx.fillStyle = isPoopBomb ? 'rgba(160, 100, 40, 0.38)' : 'rgba(255, 77, 109, 0.35)';
     ctx.fill();
     ctx.lineWidth = 3;
-    ctx.strokeStyle = 'rgba(255, 77, 109, 0.95)';
+    ctx.strokeStyle = isPoopBomb ? 'rgba(210, 130, 40, 0.95)' : 'rgba(255, 77, 109, 0.95)';
     ctx.stroke();
     ctx.font = `${Math.min(40, e.radius * 0.5)}px sans-serif`;
     ctx.textAlign = 'center';
