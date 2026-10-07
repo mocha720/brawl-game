@@ -1171,6 +1171,15 @@ const CHARACTERS = [
     ultimate: { name: '소다Bang', damage: 2000, desc: '조준한 방향으로 벽을 무시하고 점프, 거리는 조준으로 100~180px 조절 (공중에서는 피격 불가), 착지 지점 주변 적에게 2,000 피해 + 220만큼 밀쳐냄' },
     gadget: { name: '소다 마시기', desc: '체력을 즉시 2,000 회복 (최대 체력까지) (15초마다 사용 가능)' },
   },
+  {
+    id: 'system',
+    name: '시스템',
+    color: '#5b7cff',
+    maxHp: 6500,
+    basic: { name: '시스템 콤보', desc: '1번째 탄창: 원거리 구슬 (1,000 피해, 사거리 약 800) / 2번째 탄창: 던지는 구슬 (1,500 피해, 사거리 약 480) / 3번째 탄창: 소용돌이 3개를 중심각 90도 범위로 발사 (개당 3,000 피해, 사거리 약 150). 공격할 때마다 이동 중인 방향으로 약 96px 돌진. 탄창 3개를 모두 사용하면 3초 뒤에 한꺼번에 재장전' },
+    ultimate: { name: '거대 소용돌이', desc: '조준한 방향으로 거대한 소용돌이를 발사 (사거리 약 532). 맞은 적들(관통)은 1.2초 동안 하늘로 떠올라 조작 불가가 되고, 땅에 떨어질 때 1,500 피해' },
+    gadget: { name: '긴급 재장전', desc: '즉시 탄창을 가득 채움 (15초마다 사용 가능)' },
+  },
 ];
 let selectedCharacterId = CHARACTERS[0].id;
 
@@ -2892,6 +2901,18 @@ function drawPlayer(p, isMe) {
     ctx.fill();
     ctx.restore();
   }
+  // 하늘로 띄워진 상태(시스템의 거대 소용돌이): 땅에 그림자가 남고 몸통이 높이 떠 있다가 떨어진다
+  if (p.alive && p.airborneTimeLeft > 0 && p.airborneTotal > 0) {
+    const ap = Math.max(0, Math.min(1, 1 - p.airborneTimeLeft / p.airborneTotal));
+    lift = Math.sin(ap * Math.PI) * 90;
+    ctx.save();
+    ctx.globalAlpha = 0.35;
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.ellipse(p.x, p.y + PLAYER_RADIUS * 0.6, PLAYER_RADIUS * (1 - lift / 220), PLAYER_RADIUS * 0.45, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
   // 몸통
   ctx.save();
   ctx.translate(p.x, p.y - lift);
@@ -2972,7 +2993,7 @@ function drawPlayer(p, isMe) {
   if (p.chargingUntil && Date.now() < p.chargingUntil) {
     ctx.font = `${PLAYER_RADIUS}px sans-serif`;
     ctx.fillText('🔋', p.x, p.y - PLAYER_RADIUS - 34);
-  } else if (!p.leaping && p.stunnedUntil && Date.now() < p.stunnedUntil) {
+  } else if (!p.leaping && !(p.airborneTimeLeft > 0) && p.stunnedUntil && Date.now() < p.stunnedUntil) {
     ctx.font = `${PLAYER_RADIUS}px sans-serif`;
     ctx.fillText('💫', p.x, p.y - PLAYER_RADIUS - 34);
   }
@@ -2993,7 +3014,80 @@ function drawPlayer(p, isMe) {
   drawHpBar(p.x, p.y - PLAYER_RADIUS - 20, 54, 12, p.hp, p.maxHp || 100);
 }
 
+function drawVortexShape(x, y, r, spin, color, arms) {
+  // 소용돌이 모양: 회전하는 나선 팔 여러 개 + 가운데 핵
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(spin);
+  ctx.lineCap = 'round';
+  for (let a = 0; a < arms; a++) {
+    ctx.save();
+    ctx.rotate((Math.PI * 2 * a) / arms);
+    ctx.beginPath();
+    for (let t = 0; t <= 1.001; t += 0.1) {
+      const ang = t * Math.PI * 1.5;
+      const rr = r * (0.15 + 0.85 * t);
+      const px = Math.cos(ang) * rr;
+      const py = Math.sin(ang) * rr;
+      if (t === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(2, r * 0.18);
+    ctx.stroke();
+    ctx.restore();
+  }
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 0.22, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.fill();
+  ctx.restore();
+}
+
 function drawBullet(b) {
+  if (b.visual === 'sysOrb' || b.visual === 'sysThrow') {
+    // 시스템의 구슬: 원거리 구슬은 푸른 빛, 던지는 구슬은 더 크고 보라색 + 회전하는 고리
+    const thrown = b.visual === 'sysThrow';
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    const g = ctx.createRadialGradient(-b.radius * 0.3, -b.radius * 0.3, 1, 0, 0, b.radius);
+    g.addColorStop(0, '#ffffff');
+    g.addColorStop(0.4, thrown ? '#c9a2ff' : '#9fe3ff');
+    g.addColorStop(1, thrown ? '#7b3fe4' : '#2f7bff');
+    ctx.shadowColor = thrown ? 'rgba(160, 100, 255, 0.8)' : 'rgba(80, 170, 255, 0.8)';
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.arc(0, 0, b.radius, 0, Math.PI * 2);
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    if (thrown) {
+      ctx.rotate(Date.now() / 120);
+      ctx.beginPath();
+      ctx.ellipse(0, 0, b.radius * 1.35, b.radius * 0.5, 0, 0, Math.PI * 2);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+      ctx.stroke();
+    }
+    ctx.restore();
+    return;
+  }
+  if (b.visual === 'vortex' || b.visual === 'bigVortex') {
+    const big = b.visual === 'bigVortex';
+    const spin = Date.now() / (big ? 160 : 90);
+    if (big) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(120, 170, 255, 0.18)';
+      ctx.fill();
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = 'rgba(170, 210, 255, 0.7)';
+      ctx.stroke();
+      ctx.restore();
+    }
+    drawVortexShape(b.x, b.y, b.radius, spin, big ? 'rgba(190, 225, 255, 0.95)' : 'rgba(130, 200, 255, 0.95)', big ? 4 : 3);
+    return;
+  }
   if (b.visual === 'clown') {
     // 피에로 발사 궁극기 - 크고 화려한 총알
     ctx.save();
@@ -3357,7 +3451,22 @@ function drawWaterPool(pool) {
 }
 
 function drawEffect(e) {
-  if (e.type === 'lightning') {
+  if (e.type === 'airLanding') {
+    // 하늘에서 떨어져 땅에 닿은 충격파
+    const prog = 1 - Math.max(0, Math.min(1, e.life / (e.maxLife || 0.4)));
+    ctx.save();
+    ctx.globalAlpha = 1 - prog;
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, e.radius * (0.4 + 0.9 * prog), 0, Math.PI * 2);
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = 'rgba(170, 210, 255, 0.95)';
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, e.radius * 0.5 * (0.4 + 0.9 * prog), 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(150, 190, 255, 0.35)';
+    ctx.fill();
+    ctx.restore();
+  } else if (e.type === 'lightning') {
     const alpha = Math.max(0, Math.min(1, e.life / 0.4));
     ctx.save();
     ctx.globalAlpha = alpha;
@@ -3746,7 +3855,14 @@ function drawAimRangeIndicator() {
     range = me.ultimate.distance || me.ultimate.range || me.ultimate.speed * me.ultimate.lifetime; // 점프 궁극기는 distance, 부채꼴 궁극기는 range, 발사형은 속도×수명
     color = 'rgba(231, 76, 60, 0.85)'; // 궁극기는 빨간색으로 구분
   } else if (me.basic) {
-    range = me.basic.range || me.basic.speed * me.basic.lifetime; // 근접 공격(찌르기 등)은 range
+    if (me.basic.combo) {
+      // 시스템: 지금 나갈 차례의 공격(남은 탄창 기준)의 사거리를 보여준다
+      const ph = Math.max(0, Math.min(me.basic.combo.length - 1, (me.maxAmmo || 3) - me.ammo));
+      const c = me.basic.combo[ph];
+      range = c.speed * c.lifetime;
+    } else {
+      range = me.basic.range || me.basic.speed * me.basic.lifetime; // 근접 공격(찌르기 등)은 range
+    }
     color = 'rgba(255, 255, 255, 0.6)';
   } else {
     return;
