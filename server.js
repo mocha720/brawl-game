@@ -122,7 +122,7 @@ const MAP_LAYOUTS = [
     walls: [
       ...mirrorAcrossCenter([
         { x: 112, y: 98, width: 112, height: 18 }, // 사분면 상단 가로 벽
-        { x: 238, y: 133, width: 18, height: 91 }, // 사분면 세로 벽
+        // (사분면 세로 벽 { x: 238, y: 133, width: 18, height: 91 } 은 벽 수를 줄이기 위해 제거)
       ]),
       // 맵 중앙 구조물
       { x: ARENA_WIDTH / 2 - 11, y: ARENA_HEIGHT / 2 - 49, width: 21, height: 98 },  // 중앙 세로 기둥
@@ -143,13 +143,11 @@ const MAP_LAYOUTS = [
     walls: [
       ...mirrorAcrossCenter([
         { x: 60, y: 250, width: 130, height: 20 }, // 좌/상단 쪽 가로 벽 (중앙 통로를 감싸는 형태)
-        { x: 330, y: 60, width: 20, height: 130 }, // 좌/상단 쪽 세로 벽
+        // (세로 벽 { x: 330, y: 60, width: 20, height: 130 } 은 벽 수를 줄이기 위해 제거)
       ]),
-      // 중앙에 마름모 형태로 배치한 작은 엄폐 기둥 4개 (사이 통로는 넉넉히 비워둠)
+      // 중앙의 작은 엄폐 기둥 2개 (좌우 대칭 유지. 위/아래 기둥은 벽 수를 줄이기 위해 제거)
       { x: ARENA_WIDTH / 2 - 60, y: ARENA_HEIGHT / 2 - 10, width: 20, height: 20 },
       { x: ARENA_WIDTH / 2 + 40, y: ARENA_HEIGHT / 2 - 10, width: 20, height: 20 },
-      { x: ARENA_WIDTH / 2 - 10, y: ARENA_HEIGHT / 2 - 60, width: 20, height: 20 },
-      { x: ARENA_WIDTH / 2 - 10, y: ARENA_HEIGHT / 2 + 40, width: 20, height: 20 },
     ],
     bushes: [
       ...mirrorAcrossCenter([
@@ -1041,6 +1039,15 @@ function missionsView(u) {
 // id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
+  {
+    id: '2026-10-07-fewer-walls',
+    date: '2026-10-07',
+    tag: 'etc',
+    title: '맵 벽 줄이기',
+    items: [
+      '모든 맵의 벽 수를 줄여서 시야와 이동이 더 시원해졌어요. (고전 사원: 벽 9개 → 5개, 사거리: 벽 12개 → 6개)',
+    ],
+  },
   {
     id: '2026-10-07-jinwoopark-buff',
     date: '2026-10-07',
