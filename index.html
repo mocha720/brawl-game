@@ -1100,7 +1100,7 @@ const CHARACTERS = [
     color: '#7f8c8d',
     maxHp: 8000,
     basic: { name: '뚫어뻥 휘두르기', damage: 2000, desc: '전방 120도 부채꼴 범위를 뚫어뻥으로 휘둘러 2000 피해를 주고 뒤로 밀쳐냄' },
-    ultimate: { name: '변기 돌진', desc: '바라보는 방향으로 매우 빠르게 돌진, 적과 충돌 시 2500 피해 + 1.5초 기절' },
+    ultimate: { name: '변기 돌진', desc: '바라보는 방향으로 매우 빠르게 돌진, 적을 관통하며 지나간 모든 적에게 2500 피해 + 1.5초 기절' },
   },
   {
     id: 'seongseureopda',
@@ -1140,7 +1140,7 @@ const CHARACTERS = [
     name: '꽈리',
     color: '#e74c3c',
     maxHp: 5500,
-    basic: { name: '돌진 박치기', damage: 2000, desc: '바라보는 방향으로 약 198px를 돌진, 적과 부딪히면 2,000 피해, 재장전 시간 30% 증가' },
+    basic: { name: '돌진 박치기', damage: 2000, desc: '바라보는 방향으로 약 198px를 돌진, 적을 관통하며 지나간 모든 적에게 2,000 피해, 재장전 시간 30% 증가' },
     ultimate: { name: '고추 발사', desc: '조준한 방향으로 고추 3개를 연달아 발사 (개당 1,500 피해, 사거리 약 960)' },
     gadget: { name: '재장전 가속', desc: '3초 동안 재장전 속도 25% 빨라짐 (15초마다 사용 가능)' },
   },
@@ -3724,7 +3724,34 @@ function drawBushes() {
   ctx.restore();
 }
 
+// ===== 플레이어 위치 부드럽게 보이기 =====
+// 서버는 1초에 20번(50ms마다)만 위치를 보내므로 그대로 그리면 빠르게 움직이는 순간(돌진, 점프, 넉백)에
+// 캐릭터가 뚝뚝 끊겨 순간이동하는 것처럼 보인다. 그려지는 위치가 서버 위치를 매 프레임 부드럽게 따라가게 해서
+// 돌진이 하나의 연속된 움직임으로 보이게 한다. (실제 판정 위치는 그대로 서버 위치)
+const renderPos = {};
+let lastRenderPosT = performance.now();
+function updateRenderPositions() {
+  const nowT = performance.now();
+  const dtR = Math.min(0.1, Math.max(0, (nowT - lastRenderPosT) / 1000));
+  lastRenderPosT = nowT;
+  const k = 1 - Math.exp(-dtR * 30); // 값이 클수록 서버 위치에 빨리 붙음 (30이면 지연 약 30ms)
+  const playersNow = latestState.players || {};
+  for (const pid in playersNow) {
+    const p = playersNow[pid];
+    if (typeof p.x !== 'number' || typeof p.y !== 'number') { delete renderPos[pid]; continue; }
+    const r = renderPos[pid];
+    if (!r || !p.alive || Math.hypot(p.x - r.x, p.y - r.y) > 450) {
+      renderPos[pid] = { x: p.x, y: p.y }; // 처음 보이거나 리스폰/먼 거리 순간이동이면 바로 맞춤
+    } else {
+      r.x += (p.x - r.x) * k;
+      r.y += (p.y - r.y) * k;
+    }
+  }
+  for (const pid in renderPos) if (!(pid in playersNow)) delete renderPos[pid];
+}
+
 function render() {
+  updateRenderPositions();
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   updateCamera();
 
@@ -3782,8 +3809,10 @@ function render() {
     const p = playersObj[pid];
     // 덤불/은신으로 숨어있는 적은 서버가 좌표(x, y) 자체를 보내지 않으므로 그릴 수 없음(=화면에 안 보임)
     if (typeof p.x !== 'number' || typeof p.y !== 'number') continue;
-    drawPlayer(p, pid === myId);
-    drawChatBubble(p);
+    const rp = renderPos[pid];
+    const pv = rp ? Object.assign({}, p, { x: rp.x, y: rp.y }) : p; // 부드럽게 보정된 위치로 그림
+    drawPlayer(pv, pid === myId);
+    drawChatBubble(pv);
   }
 
   drawFloatTexts(); // 데미지(빨강)/회복(초록)/보호막 흡수(파랑) 숫자
