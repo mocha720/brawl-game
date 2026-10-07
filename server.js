@@ -654,6 +654,33 @@ const CHARACTERS = {
       instant: true,
     },
   },
+  ddongpari: {
+    id: 'ddongpari',
+    name: '똥파리',
+    maxHp: 5500,
+    basic: {
+      name: '똥 날리기',
+      type: 'charge',          // 탄창 없음. 공격 버튼을 누르는 동안 충전하고, 떼는 순간 충전 시간에 비례한 똥을 발사
+      minDamage: 800,          // 충전 없이 바로 쐈을 때 피해 (1레벨 기준)
+      maxDamage: 3000,         // 완전히 충전했을 때 피해 (1레벨 기준)
+      chargeTime: 3,           // 완전 충전까지 걸리는 시간(초)
+      chargeSpeedMultiplier: 0.7, // 충전하는 동안 이동속도 배율 (0.7 = 30% 감소)
+      speed: 560,
+      radius: 10,              // 충전 없이 쐈을 때 똥 크기
+      lifetime: 1.2,           // 사거리 ≈ 672px
+      visual: 'poopShot',
+    },
+    ultimate: {
+      name: '가시 발사',
+      type: 'projectile',      // 조준한 방향으로 날아가는 궁극기
+      damage: 2500,            // 1레벨 기준
+      speed: 760,
+      radius: 9,
+      lifetime: 1.3,           // 사거리 ≈ 988px
+      pierceWalls: true,       // 벽(장애물)을 그대로 통과
+      visual: 'thorn',
+    },
+  },
 };
 
 // ===== 캐릭터 설명(캐릭터 선택 화면용) 자동 생성 =====
@@ -677,6 +704,12 @@ function describeBasic(b) {
     });
     if (b.dash) parts.push(`공격할 때마다${b.dash.delay ? ` ${b.dash.delay}초 뒤에` : ''} 이동 중인 방향으로 약 ${fmtNum(Math.round(b.dash.speed * b.dash.duration))}px 돌진`);
     if (b.reloadAllAtOnce) parts.push(`탄창 ${MAX_AMMO}개를 모두 사용하면 ${b.ammoRegenSeconds}초 뒤에 한꺼번에 재장전`);
+  } else if (b.type === 'charge') {
+    // 똥파리: 탄창 없이 누르고 있는 동안 충전하는 공격
+    parts.push(`탄창 없는 충전 공격: 누르고 있는 동안 최대 ${b.chargeTime}초까지 충전, 충전할수록 ${fmtNum(b.minDamage)}~${fmtNum(b.maxDamage)} 피해`);
+    parts.push(`충전 중 이동속도 ${Math.round((1 - b.chargeSpeedMultiplier) * 100)}% 감소`);
+    const r = rangeOf(b);
+    if (r) parts.push(`사거리 약 ${r}`);
   } else if (b.type === 'dash') {
     damage = b.damage;
     parts.push(`바라보는 방향으로 약 ${fmtNum(Math.round(b.speed * b.duration))}px를 돌진, 적을 관통하며 지나간 모든 적에게 ${fmtNum(b.damage)} 피해`);
@@ -736,7 +769,7 @@ function describeUltimate(u) {
         desc = `조준한 방향으로 큰 총알 ${u.pelletCount}발 발사 (발당 ${fmtNum(u.damage)} 피해${r ? `, 사거리 약 ${r}` : ''})`;
       } else {
         damage = u.damage;
-        desc = `조준한 방향으로 발사${r ? ` (사거리 약 ${r})` : ''}`;
+        desc = `조준한 방향으로 발사${r ? ` (사거리 약 ${r})` : ''}${u.pierceWalls ? ', 벽을 통과함' : ''}`;
       }
       break;
     }
@@ -841,7 +874,7 @@ const LEVEL_TABLE = [
   { hp: 1.350, atk: 1.30, cost: 700 },
 ];
 const LEVEL_TABLE_PUBLIC = LEVEL_TABLE.slice(1).map((t, i) => ({ level: i + 1, hp: t.hp, atk: t.atk, cost: t.cost }));
-const DAMAGE_KEYS = new Set(['damage', 'directDamage', 'poolDamage', 'tickDamage', 'explodeDamage', 'landDamage']); // 공격력 배율을 적용할 수치 이름
+const DAMAGE_KEYS = new Set(['damage', 'minDamage', 'maxDamage', 'directDamage', 'poolDamage', 'tickDamage', 'explodeDamage', 'landDamage']); // 공격력 배율을 적용할 수치 이름
 function clampLevel(v) {
   const n = Math.floor(Number(v));
   if (!Number.isFinite(n) || n < 1) return 1;
@@ -951,6 +984,7 @@ const CHARACTER_PRICES = {
   uphal: 300,
   jinwoopark: 300,
   system: 300,
+  ddongpari: 300,
 };
 CHARACTER_PRICES[DEFAULT_CHARACTER_ID] = 0; // 기본 캐릭터는 항상 무료 (사용 가능한 캐릭터가 하나도 없는 상황 방지)
 function priceOf(id) {
@@ -1040,6 +1074,18 @@ function missionsView(u) {
 // id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
+  {
+    id: '2026-10-07-ddongpari',
+    date: '2026-10-07',
+    tag: 'new',
+    title: '신규 캐릭터 「똥파리」 출시!',
+    items: [
+      '탄창 없이 충전해서 쏘는 캐릭터 똥파리가 추가되었어요. 🪙 300 코인으로 잠금해제할 수 있어요. (체력 5,500)',
+      '기본공격 [똥 날리기]: 공격 버튼을 누르고 있는 동안 충전해요. 오래 충전할수록 피해가 800 ~ 3,000(1레벨 기준)까지 세져요. 최대 3초 충전, 손을 떼면 발사!',
+      '충전하는 동안에는 이동속도가 30% 느려져요. 기절하거나 쓰러지면 충전이 취소돼요.',
+      '궁극기 [가시 발사]: 벽(장애물)을 통과하는 가시를 조준한 방향으로 발사해 2,500 피해(1레벨 기준)를 줘요.',
+    ],
+  },
   {
     id: '2026-10-07-system-ult-wall',
     date: '2026-10-07',
@@ -2242,6 +2288,8 @@ function buildPlayer(socketId, name, characterId, team, spawn, level) {
     airborneStunUntil: 0,
     ammo: MAX_AMMO,
     maxAmmo: MAX_AMMO,
+    chargeStartAt: 0,      // 똥파리: 공격 버튼을 누르기 시작한 시각(ms). 0이면 충전 중이 아님 (충전 시간은 서버가 직접 잼)
+    chargeRatio: 0,        // 똥파리: 현재 충전 진행도(0~1) - 클라이언트가 충전 게이지를 그릴 때 사용
     ammoRegenSeconds: character.basic.ammoRegenSeconds || AMMO_REGEN_SECONDS, // 캐릭터별 기본공격 재장전 시간
     ammoRegenElapsed: 0,
     lastShotAt: 0,
@@ -2364,6 +2412,8 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
       respawned.damageBoostFrom = 0;
       respawned.damageBoostUntil = 0;
       respawned.knockbackTimeLeft = 0;
+      respawned.chargeStartAt = 0; // 충전 중이던 공격도 초기화
+      respawned.chargeRatio = 0;
       // 궁극기 게이지는 사망/리스폰 시에도 초기화하지 않고 그대로 유지함
       respawned.ammo = MAX_AMMO;
       respawned.ammoRegenElapsed = 0;
@@ -3041,6 +3091,7 @@ io.on('connection', (socket) => {
     if (p.dashing || p.knockbackTimeLeft > 0 || (p.stunnedUntil && Date.now() < p.stunnedUntil)) return; // 돌진/기절 중에는 공격 불가
 
     const now = Date.now();
+    if (p.basic.type === 'charge') return; // 똥파리는 shoot이 아니라 chargeStart/chargeRelease로 공격함
     if (p.windupUntil && now < p.windupUntil) return; // 공격 선딜 중에는 다시 공격할 수 없음
     if (now - p.lastShotAt < FIRE_COOLDOWN_MS) return; // 연사 방지 (최소 발사 간격)
     if (p.ammo <= 0) return; // 탄창이 비어있으면 발사 불가
@@ -3133,6 +3184,54 @@ io.on('connection', (socket) => {
     } else {
       spawnProjectiles(match, p, p.basic, false);
     }
+  });
+
+  // 똥파리의 충전 공격: 공격 버튼을 누르는 동안(chargeStart ~ chargeRelease) 충전하고, 떼는 순간 충전 시간에 비례한 피해/크기의 똥을 발사한다.
+  // 충전 시간은 클라이언트가 보낸 값이 아니라 서버가 직접 잰다 (연사 방지 쿨다운은 다른 캐릭터와 동일하게 적용).
+  function isChargeBlocked(p, now) {
+    return !p.alive || p.dashing || p.leaping || p.airborneTimeLeft > 0 || p.knockbackTimeLeft > 0 || (p.stunnedUntil && now < p.stunnedUntil);
+  }
+
+  socket.on('chargeStart', () => {
+    const match = matches[socketToMatch[socket.id]];
+    if (!match || match.over || Date.now() < match.startsAt) return; // 대결 화면(카운트다운) 중에는 입력 무시
+    const p = match.players[socket.id];
+    if (!p || p.basic.type !== 'charge') return;
+    if (p.chargeStartAt) return; // 이미 충전 중
+    const now = Date.now();
+    if (isChargeBlocked(p, now)) return;
+    if (now - p.lastShotAt < FIRE_COOLDOWN_MS) return; // 연사 방지
+    p.chargeStartAt = now;
+    p.chargeRatio = 0;
+  });
+
+  socket.on('chargeRelease', (data) => {
+    const match = matches[socketToMatch[socket.id]];
+    if (!match || match.over) return;
+    const p = match.players[socket.id];
+    if (!p || !p.chargeStartAt) return;
+    const now = Date.now();
+    const spec = p.basic;
+    const heldSec = (now - p.chargeStartAt) / 1000;
+    p.chargeStartAt = 0;
+    p.chargeRatio = 0;
+    if (isChargeBlocked(p, now)) return; // 충전 중 기절 등으로 조작 불가가 되면 발사되지 않음
+    if (data && typeof data.angle === 'number' && Number.isFinite(data.angle)) p.angle = data.angle;
+
+    const ratio = Math.max(0, Math.min(1, heldSec / (spec.chargeTime || 3)));
+    const damage = roundTo(spec.minDamage + (spec.maxDamage - spec.minDamage) * ratio, 5);
+    p.lastShotAt = now;
+    spawnProjectiles(match, p, { ...spec, damage }, false);
+  });
+
+  // 충전 취소(창 포커스를 잃었을 때 등): 발사하지 않고 충전만 끝냄
+  socket.on('chargeCancel', () => {
+    const match = matches[socketToMatch[socket.id]];
+    if (!match) return;
+    const p = match.players[socket.id];
+    if (!p) return;
+    p.chargeStartAt = 0;
+    p.chargeRatio = 0;
   });
 
   // 가젯 사용 요청 (재사용 대기시간이 끝났을 때만 발동, 탄약/궁극기 게이지는 소모하지 않음)
@@ -3956,6 +4055,18 @@ function updateMatch(match, dt, now) {
   for (const pid in match.players) {
     const p = match.players[pid];
     if (p.speedBoostUntil && now < p.speedBoostUntil) p.speedMultiplier *= p.speedBoostMultiplier || 1;
+
+    // 똥파리 충전: 사망/기절/돌진 등으로 조작 불가가 되면 충전 취소. 충전 중에는 이동속도 감소 + 충전 진행도(0~1)를 갱신
+    if (p.chargeStartAt) {
+      const blocked = !p.alive || p.dashing || p.leaping || p.airborneTimeLeft > 0 || p.knockbackTimeLeft > 0 || (p.stunnedUntil && now < p.stunnedUntil);
+      if (blocked) {
+        p.chargeStartAt = 0;
+        p.chargeRatio = 0;
+      } else {
+        p.chargeRatio = Math.min(1, (now - p.chargeStartAt) / 1000 / (p.basic.chargeTime || 3));
+        p.speedMultiplier *= p.basic.chargeSpeedMultiplier || 1;
+      }
+    }
   }
 
 
