@@ -681,6 +681,16 @@ const CHARACTERS = {
       pierceWalls: true,       // 벽(장애물)을 그대로 통과
       visual: 'thorn',
     },
+    gadget: {
+      name: '폭탄 똥',
+      type: 'poopBomb',        // 조준한 방향으로 똥을 발사: 적/터렛/닭이나 벽에 닿으면(또는 사거리 끝에서) 폭발해서 범위 안의 적에게 피해
+      explodeDamage: 1500,     // 폭발 피해 (1레벨 기준)
+      explodeRadius: 130,      // 폭발 범위(px)
+      speed: 520,
+      radius: 14,
+      lifetime: 1.1,           // 사거리 ≈ 572px
+      visual: 'poopBomb',
+    },
   },
 };
 
@@ -849,6 +859,11 @@ function describeGadget(g) {
     case 'powerCharge':
       desc = `${g.chargeTime}초 동안 이동/공격 불가 상태가 되지만, 이후 ${g.boostDuration}초 동안 공격력 ${fmtMult(g.damageMultiplier)}배`;
       break;
+    case 'poopBomb': {
+      const r = rangeOf(g);
+      desc = `조준한 방향으로 폭발하는 똥을 발사${r ? ` (사거리 약 ${r})` : ''}. 적이나 벽에 닿으면 폭발해서 반경 ${g.explodeRadius} 안의 적에게 ${fmtNum(g.explodeDamage)} 피해`;
+      break;
+    }
     default:
       break;
   }
@@ -1076,6 +1091,17 @@ function missionsView(u) {
 // id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
+  {
+    id: '2026-10-07-ddongpari-gadget',
+    date: '2026-10-07',
+    tag: 'new',
+    title: '똥파리 가젯 추가!',
+    items: [
+      '똥파리에게 가젯 [폭탄 똥]이 생겼어요.',
+      '조준한 방향으로 똥을 발사해요. 적이나 벽에 닿으면 폭발해서 반경 130 안의 적에게 1,500 피해(1레벨 기준)를 줘요.',
+      '아무것도 맞히지 못해도 사거리 끝에서 폭발해요. 사용 후 15초 뒤에 다시 쓸 수 있어요.',
+    ],
+  },
   {
     id: '2026-10-07-ddongpari',
     date: '2026-10-07',
@@ -2464,6 +2490,42 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
 
 // 총알(들)을 생성한다. spec.pelletCount가 있으면 spec.spreadDegrees 각도 안에 고르게 퍼뜨려서 여러 발을 동시에 발사한다.
 // (예: 슈의 샷건 - 탄창/쿨다운은 소비 1회로 취급되고, 여기서는 실제 총알 개체만 만든다)
+// 폭발하는 똥(똥파리의 가젯 '폭탄 똥'): 총알 위치에서 폭발해 범위 안의 적(플레이어/터렛/닭)에게 explodeDamage 피해를 준다.
+// 아군에게는 피해가 없고, 폭발 이펙트는 클라이언트가 그리도록 effects 에 넣는다.
+function explodePoopBomb(match, b) {
+  effectIdCounter += 1;
+  match.effects.push({ id: effectIdCounter, type: 'explosion', visual: 'poopBomb', x: b.x, y: b.y, radius: b.explodeRadius, life: EFFECT_LIFETIME });
+
+  for (const pid in match.players) {
+    if (match.over) return;
+    const target = match.players[pid];
+    if (!target.alive) continue;
+    if (!FRIENDLY_FIRE && target.team === b.team) continue;
+    const dx = target.x - b.x;
+    const dy = target.y - b.y;
+    if (Math.sqrt(dx * dx + dy * dy) >= PLAYER_RADIUS + b.explodeRadius) continue;
+    applyDamage(match, target, b.explodeDamage, b.ownerId, { chargeShooter: false }); // 궁극기 게이지는 충전하지 않음 (가젯이므로)
+  }
+  if (match.over) return;
+
+  const mult = getDamageMultiplier(match.players[b.ownerId]);
+  for (const turret of match.turrets) {
+    if (!FRIENDLY_FIRE && turret.team === b.team) continue;
+    const dx = turret.x - b.x;
+    const dy = turret.y - b.y;
+    if (Math.sqrt(dx * dx + dy * dy) < turret.radius + b.explodeRadius) turret.hp -= b.explodeDamage * mult;
+  }
+  match.turrets = match.turrets.filter((t) => t.hp > 0);
+  for (const chicken of match.chickens) {
+    if (chicken.hp <= 0) continue;
+    if (!FRIENDLY_FIRE && chicken.team === b.team) continue;
+    const dx = chicken.x - b.x;
+    const dy = chicken.y - b.y;
+    if (Math.sqrt(dx * dx + dy * dy) < chicken.radius + b.explodeRadius) chicken.hp -= b.explodeDamage * mult;
+  }
+  match.chickens = match.chickens.filter((c) => c.hp > 0);
+}
+
 function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
   const pelletCount = spec.pelletCount || 1;
   const spreadRad = ((spec.spreadDegrees || 0) * Math.PI) / 180;
@@ -2504,6 +2566,8 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
       poolVisual: spec.poolVisual,       // 웅덩이 모양(예: 계란 흰자)
       poolOnExpire: !!spec.poolOnExpire, // 사거리 끝에서도 깨져서 웅덩이를 남기는 발사체(계란)
       directDamage: spec.directDamage || 0, // 물웅덩이 생성 전 적에게 직접 적중 시 주는 대미지
+      explodeDamage: spec.explodeDamage || 0, // 0보다 크면 적/벽에 닿거나 사거리 끝에서 폭발 (똥파리의 가젯 '폭탄 똥')
+      explodeRadius: spec.explodeRadius || 0, // 폭발 범위(px)
     });
   }
 }
@@ -3344,6 +3408,9 @@ io.on('connection', (socket) => {
         if (i === 0) fire();
         else setTimeout(fire, i * gadget.interval * 1000);
       }
+    } else if (gadget.type === 'poopBomb') {
+      // 똥파리의 가젯: 조준한 방향으로 폭발하는 똥을 발사 (폭발은 updateMatch 의 총알 처리에서 일어남)
+      spawnProjectiles(match, p, gadget, false);
     } else if (gadget.type === 'heal') {
       // 진우Park의 소다 마시기: 체력을 즉시 healAmount만큼 회복 (최대 체력 초과 불가)
       p.hp = Math.min(p.maxHp, p.hp + (gadget.healAmount || 0));
@@ -3897,9 +3964,14 @@ function updateMatch(match, dt, now) {
   match.bullets = match.bullets.filter((b) => {
     if (b.life <= 0) {
       if (b.poolOnImpact && b.poolOnExpire) spawnWaterPool(match, b); // 계란: 사거리 끝에서 깨짐
+      if (b.explodeDamage > 0) explodePoopBomb(match, b); // 폭탄 똥: 사거리 끝에서도 폭발
       return false;
     }
     if (b.x < 0 || b.x > ARENA_WIDTH || b.y < 0 || b.y > ARENA_HEIGHT) {
+      if (b.explodeDamage > 0) {
+        // 폭탄 똥: 맵 끝 벽에 닿은 지점(경계선 위)에서 폭발
+        explodePoopBomb(match, { ...b, x: Math.max(0, Math.min(ARENA_WIDTH, b.x)), y: Math.max(0, Math.min(ARENA_HEIGHT, b.y)) });
+      }
       if (b.poolOnImpact) {
         // 맵 끝 벽에 닿은 지점(경계선 위)으로 좌표를 고정해서 물웅덩이를 생성
         const clampedX = Math.max(0, Math.min(ARENA_WIDTH, b.x));
@@ -3910,6 +3982,7 @@ function updateMatch(match, dt, now) {
     }
     if (!b.pierceWalls && collidesWithWalls(match.walls, b.x, b.y, b.radius)) {
       if (b.poolOnImpact) spawnWaterPool(match, b);
+      if (b.explodeDamage > 0) explodePoopBomb(match, b); // 폭탄 똥: 벽에 닿으면 폭발
       return false; // 벽에 막힘 (pierceWalls 발사체는 벽을 그대로 통과함)
     }
     return true;
@@ -3945,6 +4018,11 @@ function updateMatch(match, dt, now) {
           break;
         }
         hitBulletIds.add(b.id);
+        if (b.explodeDamage > 0) {
+          // 폭탄 똥: 적에게 닿으면 그 자리에서 폭발 (직접 적중 피해는 따로 없고 폭발 피해만 줌)
+          explodePoopBomb(match, b);
+          break;
+        }
         if (b.poolOnImpact) {
           // 해골물 뿌리기: 적중 시 직접 대미지 대신 물웅덩이를 생성 (궁극기 게이지는 적중으로 충전됨)
           spawnWaterPool(match, b);
@@ -3978,6 +4056,10 @@ function updateMatch(match, dt, now) {
       const dy = turret.y - b.y;
       if (Math.sqrt(dx * dx + dy * dy) < turret.radius + b.radius) {
         hitBulletIds.add(b.id);
+        if (b.explodeDamage > 0) {
+          explodePoopBomb(match, b); // 폭탄 똥: 터렛에 닿으면 폭발
+          break;
+        }
         if (b.poolOnImpact) {
           // 해골물/똥가루 뿌리기: 터렛에 적중하면 직접 대미지 대신 물웅덩이/똥가루 구름을 남겨
           // 이후 지속 대미지 판정(아래 물웅덩이 루프)으로 터렛에 피해를 준다
@@ -4004,6 +4086,10 @@ function updateMatch(match, dt, now) {
       const cdy = chicken.y - b.y;
       if (Math.sqrt(cdx * cdx + cdy * cdy) < chicken.radius + b.radius) {
         hitBulletIds.add(b.id);
+        if (b.explodeDamage > 0) {
+          explodePoopBomb(match, b); // 폭탄 똥: 닭에 닿으면 폭발
+          break;
+        }
         const mult = getDamageMultiplier(match.players[b.ownerId]);
         if (b.poolOnImpact) {
           spawnWaterPool(match, b);
