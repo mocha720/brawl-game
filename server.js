@@ -1266,6 +1266,14 @@ const ANNOUNCEMENTS = [
   },
 ];
 
+// 개발자 모드에서 올린 공지(저장소에 보관) + 코드에 적힌 공지(ANNOUNCEMENTS)를 합친 전체 목록. 개발자 공지가 항상 위(최신)에 온다.
+let customAnnouncements = []; // 최신순
+const MAX_CUSTOM_ANNOUNCEMENTS = 100;
+const NOTICE_TAGS = ['new', 'balance', 'fix', 'etc'];
+function allAnnouncements() {
+  return [...customAnnouncements.map(({ createdAt, ...a }) => ({ ...a, custom: true })), ...ANNOUNCEMENTS];
+}
+
 function publicProfile(u) {
   const trophies = {};
   for (const id in CHARACTERS) trophies[id] = (u.trophies && u.trophies[id]) || 0;
@@ -1273,7 +1281,7 @@ function publicProfile(u) {
   for (const id in CHARACTERS) streaks[id] = (u.streaks && u.streaks[id]) || 0;
   const levels = {};
   for (const id in CHARACTERS) levels[id] = levelOf(u, id);
-  return { username: u.name, coins: u.coins, wins: u.wins || 0, losses: u.losses || 0, unlocked: effectiveUnlocked(u), prices: allPrices(), trophies, streaks, missions: missionsView(u), ranks: TROPHY_RANKS, characters: buildCharacterInfo(levels), levels, levelTable: LEVEL_TABLE_PUBLIC, maxLevel: MAX_CHARACTER_LEVEL, isAdmin: u.key === ADMIN_KEY, announcements: ANNOUNCEMENTS,
+  return { username: u.name, coins: u.coins, wins: u.wins || 0, losses: u.losses || 0, unlocked: effectiveUnlocked(u), prices: allPrices(), trophies, streaks, missions: missionsView(u), ranks: TROPHY_RANKS, characters: buildCharacterInfo(levels), levels, levelTable: LEVEL_TABLE_PUBLIC, maxLevel: MAX_CHARACTER_LEVEL, isAdmin: u.key === ADMIN_KEY, announcements: allAnnouncements(),
     events: activeEvents().map((e) => ({ id: e.id, name: e.name, coins: e.coins, desc: e.desc, endsAt: e.endsAt || null, claimed: (u.redeemed || []).includes(eventClaimCode(e)) })) };
 }
 
@@ -1282,6 +1290,7 @@ function publicProfile(u) {
 // 주의: Render는 재시작/재배포 때 서버 파일이 초기화되므로, 실제 서비스에서는 반드시 MONGODB_URI를 설정할 것.
 // (정적 파일 서빙 폴더 밖인 임시 폴더를 기본값으로 써서, 계정 파일이 브라우저로 내려받아지지 않게 함)
 const USERS_FILE = process.env.USERS_FILE || path.join(os.tmpdir(), 'brawl-users.json');
+const ANNOUNCE_FILE = process.env.ANNOUNCE_FILE || path.join(os.tmpdir(), 'brawl-announcements.json'); // 개발자 모드로 올린 공지 (MongoDB를 쓰면 DB에 저장됨)
 
 function cloneUser(u) {
   return u ? { ...u, unlocked: [...(u.unlocked || [])], trophies: { ...(u.trophies || {}) }, streaks: { ...(u.streaks || {}) }, levels: { ...(u.levels || {}) }, redeemed: [...(u.redeemed || [])], missions: u.missions ? { day: u.missions.day, progress: { ...(u.missions.progress || {}) }, claimed: [...(u.missions.claimed || [])] } : undefined } : null;
@@ -1289,6 +1298,7 @@ function cloneUser(u) {
 
 function createFileDb() {
   let users = {};
+  let announcements = [];
   let saveTimer = null;
   function scheduleSave() {
     if (saveTimer) return;
@@ -1431,6 +1441,22 @@ function createFileDb() {
         .sort((a, b) => b.lastSeenAt - a.lastSeenAt || String(a.name).localeCompare(String(b.name)))
         .slice(0, limit);
     },
+    // 개발자 모드로 올린 공지 저장/삭제
+    async loadAnnouncements() {
+      try { announcements = JSON.parse(fs.readFileSync(ANNOUNCE_FILE, 'utf8')); } catch (e) { announcements = []; }
+      return announcements.map((a) => ({ ...a }));
+    },
+    async addAnnouncement(a) {
+      announcements.unshift({ ...a });
+      fs.writeFile(ANNOUNCE_FILE, JSON.stringify(announcements), (err) => err && console.error('공지 파일 저장 실패', err));
+    },
+    async deleteAnnouncement(id) {
+      const before = announcements.length;
+      announcements = announcements.filter((a) => a.id !== id);
+      if (announcements.length === before) return false;
+      fs.writeFile(ANNOUNCE_FILE, JSON.stringify(announcements), (err) => err && console.error('공지 파일 저장 실패', err));
+      return true;
+    },
     async countUsers() { return Object.keys(users).length; },
     // 정지 / 정지 해제 / 현재 정지 중인 계정 목록 (개발자 모드)
     async setBan(key, until, reason) {
@@ -1460,6 +1486,7 @@ function createFileDb() {
 
 function createMongoDb(uri) {
   let col = null;
+  let annCol = null;
   const projection = { _id: 0 };
   return {
     kind: 'mongo',
@@ -1468,6 +1495,8 @@ function createMongoDb(uri) {
       const client = new MongoClient(uri);
       await client.connect();
       col = client.db(process.env.MONGODB_DB || 'brawl').collection('users');
+      annCol = client.db(process.env.MONGODB_DB || 'brawl').collection('announcements');
+      await annCol.createIndex({ id: 1 }, { unique: true });
       await col.createIndex({ key: 1 }, { unique: true });
       await col.createIndex({ lastSeenAt: -1 }); // 유저 현황(최근 접속 순) 조회용
       console.log('[계정] MongoDB 연결 완료');
@@ -1617,6 +1646,14 @@ function createMongoDb(uri) {
       const rows = await col.find({}, { projection: { _id: 0, key: 1, name: 1, lastSeenAt: 1 } })
         .sort({ lastSeenAt: -1, name: 1 }).limit(limit).toArray();
       return rows.map((r) => ({ key: r.key, name: r.name, lastSeenAt: r.lastSeenAt || 0 }));
+    },
+    async loadAnnouncements() {
+      return annCol.find({}, { projection: { _id: 0 } }).sort({ createdAt: -1 }).limit(200).toArray();
+    },
+    async addAnnouncement(a) { await annCol.insertOne({ ...a }); },
+    async deleteAnnouncement(id) {
+      const r = await annCol.deleteOne({ id });
+      return r.deletedCount > 0;
     },
     async countUsers() { return col.estimatedDocumentCount(); },
     async setBan(key, until, reason) {
@@ -2896,7 +2933,7 @@ function registerAdminHandlers(socket) {
     return true;
   }
   async function reply(ack, message) {
-    ack({ ok: true, message, status: await buildAdminStatus() });
+    ack({ ok: true, message, status: await buildAdminStatus(), announcements: allAnnouncements() });
   }
 
   socket.on('adminStatus', async (data, ack) => {
@@ -2953,6 +2990,48 @@ function registerAdminHandlers(socket) {
       await reply(ack, `${updated.name} 님의 정지를 해제했습니다.`);
     } catch (e) {
       console.error('adminUnban 오류', e);
+      ack({ ok: false, message: '서버 오류가 발생했습니다.' });
+    }
+  });
+
+  // 공지사항 올리기: 서버가 모든 값을 다시 검증하고, 저장한 뒤 접속 중인 모두에게 바로 알린다
+  socket.on('adminPostNotice', async (data, ack) => {
+    if (!guard(ack)) return;
+    try {
+      const d = data || {};
+      const tag = NOTICE_TAGS.includes(d.tag) ? d.tag : 'etc';
+      const title = (typeof d.title === 'string' ? d.title : '').replace(/\s+/g, ' ').trim().slice(0, 40);
+      if (!title) return ack({ ok: false, message: '제목을 입력하세요.' });
+      const items = (typeof d.text === 'string' ? d.text : '').split(/\r?\n/)
+        .map((l) => l.replace(/\s+/g, ' ').trim().slice(0, 200)).filter(Boolean).slice(0, 10);
+      if (!items.length) return ack({ ok: false, message: '내용을 입력하세요. (한 줄이 항목 하나가 됩니다)' });
+      if (customAnnouncements.length >= MAX_CUSTOM_ANNOUNCEMENTS) return ack({ ok: false, message: '공지가 너무 많습니다. 오래된 공지를 삭제해주세요.' });
+
+      const notice = { id: `custom-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`, date: missionDay(), tag, title, items, createdAt: Date.now() };
+      await db.addAnnouncement(notice);
+      customAnnouncements.unshift(notice);
+      io.emit('announcementsUpdate', { announcements: allAnnouncements() });
+      console.log(`[관리자] 공지 등록: ${title}`);
+      await reply(ack, '📢 공지사항을 올렸습니다.');
+    } catch (e) {
+      console.error('adminPostNotice 오류', e);
+      ack({ ok: false, message: '서버 오류가 발생했습니다.' });
+    }
+  });
+
+  // 개발자 모드로 올린 공지 삭제 (코드에 적힌 기본 공지는 삭제할 수 없음)
+  socket.on('adminDeleteNotice', async (data, ack) => {
+    if (!guard(ack)) return;
+    try {
+      const id = data && typeof data.id === 'string' ? data.id : '';
+      if (!id.startsWith('custom-') || !customAnnouncements.some((a) => a.id === id)) return ack({ ok: false, message: '삭제할 수 없는 공지입니다.' });
+      await db.deleteAnnouncement(id);
+      customAnnouncements = customAnnouncements.filter((a) => a.id !== id);
+      io.emit('announcementsUpdate', { announcements: allAnnouncements() });
+      console.log(`[관리자] 공지 삭제: ${id}`);
+      await reply(ack, '공지사항을 삭제했습니다.');
+    } catch (e) {
+      console.error('adminDeleteNotice 오류', e);
       ack({ ok: false, message: '서버 오류가 발생했습니다.' });
     }
   });
@@ -4198,7 +4277,12 @@ setInterval(gameLoop, TICK_MS);
 
 // 저장소(DB) 연결이 끝난 뒤에 서버를 시작한다
 db.init()
-  .then(() => {
+  .then(async () => {
+    try {
+      customAnnouncements = (await db.loadAnnouncements()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    } catch (e) {
+      console.error('공지 불러오기 실패', e);
+    }
     server.listen(PORT, () => {
       console.log(`서버가 포트 ${PORT}에서 실행 중입니다.`);
     });
