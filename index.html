@@ -3198,6 +3198,316 @@ function drawVortexShape(x, y, r, spin, color, arms) {
   ctx.restore();
 }
 
+// ===== 똥파리 가젯 '폭탄 똥' 연출 =====
+// 같은 시드(총알/이펙트 id)면 항상 같은 값이 나오는 의사 난수 (상태 저장 없이 입자 위치를 정하기 위함)
+function prand(seed, i) {
+  const x = Math.sin(seed * 127.1 + i * 311.7) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+// 날아가는 폭탄 똥: 불꽃 꼬리 + 연기 + 불씨 + 빙글빙글 도는 3단 똥(얼굴, 반짝이는 도화선). 터질 때가 가까워질수록 더 빠르게 깜빡임
+function drawPoopBombBullet(b) {
+  const now = performance.now() / 1000;
+  const r = b.radius;
+  const ang = Math.atan2(b.vy || 0, b.vx || 1);
+  const cs = Math.cos(ang), sn = Math.sin(ang);
+  const lifeMax = b.maxLife || 1.1;
+  const urgency = 1 - Math.max(0, Math.min(1, b.life / lifeMax)); // 0(발사 직후) -> 1(터지기 직전)
+  const pulse = 0.5 + 0.5 * Math.sin(now * (10 + urgency * 32) + b.id);
+
+  ctx.save();
+
+  // 바닥 그림자
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.25)';
+  ctx.beginPath();
+  ctx.ellipse(b.x, b.y + r * 1.25, r * 0.95, r * 0.35, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 연기 (뒤쪽으로 퍼지며 사라짐)
+  for (let i = 0; i < 5; i++) {
+    const t = (now * 1.8 + prand(b.id, i)) % 1;
+    const back = t * r * 6;
+    const side = (prand(b.id, i + 10) - 0.5) * r * 1.2 * t;
+    ctx.fillStyle = `rgba(70, 45, 25, ${0.28 * (1 - t)})`;
+    ctx.beginPath();
+    ctx.arc(b.x - cs * back - sn * side, b.y - sn * back + cs * side, r * (0.35 + 0.55 * t), 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // 불꽃 꼬리 (바깥 주황 + 안쪽 노랑)
+  ctx.save();
+  ctx.translate(b.x, b.y);
+  ctx.rotate(ang);
+  const tl = r * 6.5;
+  const tg = ctx.createLinearGradient(-tl, 0, 0, 0);
+  tg.addColorStop(0, 'rgba(120, 60, 20, 0)');
+  tg.addColorStop(0.6, 'rgba(255, 120, 30, 0.35)');
+  tg.addColorStop(1, 'rgba(255, 170, 50, 0.7)');
+  ctx.fillStyle = tg;
+  ctx.beginPath();
+  ctx.moveTo(-tl, 0);
+  ctx.quadraticCurveTo(-tl * 0.4, -r * 1.05, 0, -r * 0.95);
+  ctx.lineTo(0, r * 0.95);
+  ctx.quadraticCurveTo(-tl * 0.4, r * 1.05, -tl, 0);
+  ctx.fill();
+  const tl2 = tl * 0.55;
+  const tg2 = ctx.createLinearGradient(-tl2, 0, 0, 0);
+  tg2.addColorStop(0, 'rgba(255, 230, 120, 0)');
+  tg2.addColorStop(1, 'rgba(255, 245, 190, 0.75)');
+  ctx.fillStyle = tg2;
+  ctx.beginPath();
+  ctx.moveTo(-tl2, 0);
+  ctx.lineTo(0, -r * 0.5);
+  ctx.lineTo(0, r * 0.5);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+
+  // 흩날리는 불씨
+  for (let i = 0; i < 8; i++) {
+    const t = (now * 2.4 + prand(b.id, i + 30)) % 1;
+    const back = t * r * 7.5;
+    const side = (prand(b.id, i + 50) - 0.5) * r * 2.2 * (0.3 + t);
+    ctx.fillStyle = `rgba(255, ${Math.round(210 - 110 * t)}, 60, ${1 - t})`;
+    ctx.beginPath();
+    ctx.arc(b.x - cs * back - sn * side, b.y - sn * back + cs * side, Math.max(0.6, r * 0.2 * (1 - t)), 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // 주변을 물들이는 붉은 오라 (터지기 직전일수록 강해짐)
+  const aura = ctx.createRadialGradient(b.x, b.y, r * 0.5, b.x, b.y, r * 2.4);
+  aura.addColorStop(0, `rgba(255, 120, 40, ${0.28 + 0.3 * pulse + 0.2 * urgency})`);
+  aura.addColorStop(1, 'rgba(255, 80, 20, 0)');
+  ctx.fillStyle = aura;
+  ctx.beginPath();
+  ctx.arc(b.x, b.y, r * 2.4, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 본체: 빙글빙글 돌면서 날아가는 3단 똥
+  ctx.translate(b.x, b.y);
+  ctx.rotate(now * 7 + b.id);
+  const tiers = [
+    { y: r * 0.45, rx: r * 1.05, ry: r * 0.62 },
+    { y: -r * 0.08, rx: r * 0.8, ry: r * 0.5 },
+    { y: -r * 0.58, rx: r * 0.52, ry: r * 0.38 },
+  ];
+  ctx.lineWidth = Math.max(1.2, r * 0.1);
+  ctx.strokeStyle = '#2f1a0a';
+  for (const tr of tiers) {
+    const g = ctx.createLinearGradient(0, tr.y - tr.ry, 0, tr.y + tr.ry);
+    g.addColorStop(0, '#b27a42');
+    g.addColorStop(0.55, '#7a4a22');
+    g.addColorStop(1, '#4a2a12');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.ellipse(0, tr.y, tr.rx, tr.ry, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(255, 235, 200, 0.28)';
+    ctx.beginPath();
+    ctx.ellipse(-tr.rx * 0.35, tr.y - tr.ry * 0.38, tr.rx * 0.28, tr.ry * 0.2, -0.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // 꼭대기 꼬불한 끝
+  ctx.fillStyle = '#7a4a22';
+  ctx.beginPath();
+  ctx.moveTo(-r * 0.2, -r * 0.8);
+  ctx.quadraticCurveTo(r * 0.05, -r * 1.35, r * 0.25, -r * 1.2);
+  ctx.quadraticCurveTo(r * 0.12, -r * 1.0, r * 0.2, -r * 0.8);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // 얼굴: 화난 눈 + 이를 드러낸 입
+  for (const sx of [-1, 1]) {
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(sx * r * 0.32, r * 0.3, r * 0.22, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#111';
+    ctx.beginPath();
+    ctx.arc(sx * r * 0.35, r * 0.33, r * 0.1, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#2f1a0a';
+    ctx.lineWidth = Math.max(1.2, r * 0.12);
+    ctx.beginPath();
+    ctx.moveTo(sx * r * 0.58, r * 0.02);
+    ctx.lineTo(sx * r * 0.12, r * 0.2);
+    ctx.stroke();
+  }
+  ctx.fillStyle = '#2a0f06';
+  ctx.beginPath();
+  ctx.ellipse(0, r * 0.72, r * 0.3, r * 0.15, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 도화선 + 타들어가는 불꽃
+  ctx.strokeStyle = '#d9c9a0';
+  ctx.lineWidth = Math.max(1.5, r * 0.12);
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(r * 0.2, -r * 1.15);
+  ctx.quadraticCurveTo(r * 0.55, -r * 1.55, r * 0.35, -r * 1.85);
+  ctx.stroke();
+  const sparkR = r * (0.38 + 0.3 * pulse);
+  const sg = ctx.createRadialGradient(r * 0.35, -r * 1.85, 0, r * 0.35, -r * 1.85, sparkR * 1.6);
+  sg.addColorStop(0, 'rgba(255, 255, 230, 1)');
+  sg.addColorStop(0.35, 'rgba(255, 220, 90, 0.95)');
+  sg.addColorStop(1, 'rgba(255, 120, 30, 0)');
+  ctx.fillStyle = sg;
+  ctx.beginPath();
+  ctx.arc(r * 0.35, -r * 1.85, sparkR * 1.6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255, 240, 160, 0.9)';
+  ctx.lineWidth = 1.3;
+  for (let i = 0; i < 4; i++) {
+    const a = now * 12 + i * (Math.PI / 2) + prand(b.id, i) * 3;
+    ctx.beginPath();
+    ctx.moveTo(r * 0.35 + Math.cos(a) * sparkR * 0.8, -r * 1.85 + Math.sin(a) * sparkR * 0.8);
+    ctx.lineTo(r * 0.35 + Math.cos(a) * sparkR * 1.7, -r * 1.85 + Math.sin(a) * sparkR * 1.7);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+// 폭탄 똥 폭발: 섬광 -> 불덩이 -> 충격파(실제 피해 범위까지 퍼짐) -> 사방으로 튀는 똥 덩어리/조각 -> 연기와 바닥 얼룩
+function drawPoopBombExplosion(e) {
+  const maxLife = e.maxLife || 0.75;
+  const t = Math.max(0, Math.min(1, 1 - e.life / maxLife)); // 0 -> 1
+  const ease = 1 - Math.pow(1 - t, 3);
+  const R = e.radius;
+  const seed = e.id || 1;
+
+  ctx.save();
+
+  // 바닥에 남는 얼룩
+  const stainA = 0.34 * Math.min(1, t * 8) * (1 - t * t);
+  if (stainA > 0.01) {
+    ctx.fillStyle = `rgba(70, 40, 18, ${stainA})`;
+    for (let i = 0; i < 10; i++) {
+      const a = prand(seed, i + 200) * Math.PI * 2;
+      const d = R * 0.5 * prand(seed, i + 220);
+      ctx.beginPath();
+      ctx.arc(e.x + Math.cos(a) * d, e.y + Math.sin(a) * d, R * (0.1 + 0.14 * prand(seed, i + 240)), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // 충격파가 닿는 범위 (피해 범위를 직관적으로 보여줌)
+  ctx.fillStyle = `rgba(160, 100, 40, ${0.16 * (1 - t)})`;
+  ctx.beginPath();
+  ctx.arc(e.x, e.y, R * ease, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 불덩이
+  const fa = Math.pow(1 - t, 1.4);
+  const fr = Math.max(1, R * (0.25 + 0.6 * ease));
+  const fg = ctx.createRadialGradient(e.x, e.y, 0, e.x, e.y, fr);
+  fg.addColorStop(0, `rgba(255, 252, 215, ${fa})`);
+  fg.addColorStop(0.35, `rgba(255, 195, 70, ${fa * 0.9})`);
+  fg.addColorStop(0.7, `rgba(190, 100, 30, ${fa * 0.7})`);
+  fg.addColorStop(1, 'rgba(90, 50, 20, 0)');
+  ctx.fillStyle = fg;
+  ctx.beginPath();
+  ctx.arc(e.x, e.y, fr, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 초반 섬광
+  if (t < 0.22) {
+    const fl = 1 - t / 0.22;
+    ctx.fillStyle = `rgba(255, 255, 235, ${0.85 * fl})`;
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, R * (0.35 + 0.5 * t * 4), 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // 충격파 고리
+  ctx.lineWidth = 2 + 10 * (1 - t);
+  ctx.strokeStyle = `rgba(235, 150, 55, ${1 - t})`;
+  ctx.beginPath();
+  ctx.arc(e.x, e.y, R * ease, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = `rgba(255, 235, 170, ${0.8 * (1 - t)})`;
+  ctx.beginPath();
+  ctx.arc(e.x, e.y, R * ease * 0.92, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // 사방으로 튀는 똥 덩어리
+  const colors = ['#7a4a22', '#5b3417', '#9a6430', '#43260f'];
+  for (let i = 0; i < 18; i++) {
+    const a = prand(seed, i) * Math.PI * 2;
+    const sp = 0.5 + 0.6 * prand(seed, i + 40);
+    const d = R * sp * ease * 1.05;
+    const rise = Math.sin(t * Math.PI) * R * 0.14 * prand(seed, i + 60);
+    const sz = Math.max(0.5, R * 0.07 * (0.6 + prand(seed, i + 80)) * (1 - t * 0.6));
+    ctx.fillStyle = colors[i % colors.length];
+    ctx.beginPath();
+    ctx.arc(e.x + Math.cos(a) * d, e.y + Math.sin(a) * d - rise, sz, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // 빙글빙글 날아가는 💩 조각
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (let i = 0; i < 6; i++) {
+    const a = prand(seed, i + 120) * Math.PI * 2;
+    const d = R * (0.55 + 0.5 * prand(seed, i + 140)) * ease;
+    const rise = Math.sin(t * Math.PI) * R * 0.18;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, 1 - t * t * 1.2);
+    ctx.translate(e.x + Math.cos(a) * d, e.y + Math.sin(a) * d - rise);
+    ctx.rotate(t * (4 + 6 * prand(seed, i + 160)) * (i % 2 ? 1 : -1));
+    ctx.font = `${Math.max(8, R * 0.2 * (1 - t * 0.4))}px sans-serif`;
+    ctx.fillText('💩', 0, 0);
+    ctx.restore();
+  }
+
+  // 후반 연기
+  const sm = Math.max(0, (t - 0.25) / 0.75);
+  if (sm > 0) {
+    for (let i = 0; i < 7; i++) {
+      const a = prand(seed, i + 300) * Math.PI * 2;
+      const d = R * 0.55 * prand(seed, i + 320);
+      ctx.fillStyle = `rgba(75, 50, 30, ${0.26 * (1 - sm)})`;
+      ctx.beginPath();
+      ctx.arc(e.x + Math.cos(a) * d, e.y + Math.sin(a) * d - sm * R * 0.15, R * (0.16 + 0.22 * sm), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // 중앙 💥 (터지는 순간에만 크게)
+  if (t < 0.5) {
+    ctx.globalAlpha = 1 - t * 2;
+    ctx.font = `${R * (0.45 + 0.3 * t)}px sans-serif`;
+    ctx.fillText('💥', e.x, e.y);
+  }
+
+  ctx.restore();
+}
+
+// 발사 순간: 손(입) 앞에서 퍽 하고 터지는 갈색 연기
+function drawPoopLaunch(e) {
+  const maxLife = e.maxLife || 0.3;
+  const t = Math.max(0, Math.min(1, 1 - e.life / maxLife));
+  const ease = 1 - Math.pow(1 - t, 2);
+  ctx.save();
+  for (let i = 0; i < 7; i++) {
+    const a = e.angle + (prand(e.id || 1, i) - 0.5) * 1.5;
+    const d = 8 + 42 * ease * (0.5 + prand(e.id || 1, i + 10));
+    ctx.fillStyle = `rgba(140, 90, 40, ${0.5 * (1 - t)})`;
+    ctx.beginPath();
+    ctx.arc(e.x + Math.cos(a) * d, e.y + Math.sin(a) * d, 4 + 8 * t, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.lineWidth = 3 * (1 - t) + 0.5;
+  ctx.strokeStyle = `rgba(255, 190, 90, ${0.8 * (1 - t)})`;
+  ctx.beginPath();
+  ctx.arc(e.x, e.y, 10 + 26 * ease, e.angle - 1.1, e.angle + 1.1);
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawBullet(b) {
   if (b.visual === 'sysOrb' || b.visual === 'sysThrow') {
     // 시스템의 구슬: 원거리 구슬은 푸른 빛, 던지는 구슬은 더 크고 보라색 + 회전하는 고리
@@ -3461,18 +3771,7 @@ function drawBullet(b) {
   }
 
   if (b.visual === 'poopBomb') {
-    // 똥파리의 가젯 '폭탄 똥' - 붉게 깜빡이는 폭탄 똥
-    ctx.save();
-    const blink = 0.5 + 0.5 * Math.sin(performance.now() / 60);
-    ctx.beginPath();
-    ctx.arc(b.x, b.y, b.radius * 1.35, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(255, 90, 40, ${0.18 + 0.25 * blink})`;
-    ctx.fill();
-    ctx.font = `${b.radius * 2.4}px sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('💩', b.x, b.y + 1);
-    ctx.restore();
+    drawPoopBombBullet(b); // 똥파리의 가젯 '폭탄 똥'
     return;
   }
 
@@ -3795,6 +4094,10 @@ function drawEffect(e) {
     ctx.fillStyle = '#fff';
     ctx.fillText('⚡', e.x, e.y);
     ctx.restore();
+  } else if (e.type === 'explosion' && e.visual === 'poopBomb') {
+    drawPoopBombExplosion(e);
+  } else if (e.type === 'poopLaunch') {
+    drawPoopLaunch(e);
   } else if (e.type === 'explosion') {
     // 보배 폭발 - 크고 화려하게 터지는 폭발 이펙트
     const alpha = Math.max(0, Math.min(1, e.life / 0.4));
@@ -3802,11 +4105,10 @@ function drawEffect(e) {
     ctx.globalAlpha = alpha;
     ctx.beginPath();
     ctx.arc(e.x, e.y, e.radius, 0, Math.PI * 2);
-    const isPoopBomb = e.visual === 'poopBomb'; // 똥파리의 폭탄 똥은 갈색/주황 폭발
-    ctx.fillStyle = isPoopBomb ? 'rgba(160, 100, 40, 0.38)' : 'rgba(255, 77, 109, 0.35)';
+    ctx.fillStyle = 'rgba(255, 77, 109, 0.35)';
     ctx.fill();
     ctx.lineWidth = 3;
-    ctx.strokeStyle = isPoopBomb ? 'rgba(210, 130, 40, 0.95)' : 'rgba(255, 77, 109, 0.95)';
+    ctx.strokeStyle = 'rgba(255, 77, 109, 0.95)';
     ctx.stroke();
     ctx.font = `${Math.min(40, e.radius * 0.5)}px sans-serif`;
     ctx.textAlign = 'center';
