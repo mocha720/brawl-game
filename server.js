@@ -2490,11 +2490,12 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
 
 // 총알(들)을 생성한다. spec.pelletCount가 있으면 spec.spreadDegrees 각도 안에 고르게 퍼뜨려서 여러 발을 동시에 발사한다.
 // (예: 슈의 샷건 - 탄창/쿨다운은 소비 1회로 취급되고, 여기서는 실제 총알 개체만 만든다)
+const POOP_BOMB_EXPLOSION_LIFE = 0.75; // 폭탄 똥 폭발 이펙트가 화면에 남는 시간(초) - 피해 판정은 폭발 즉시 끝나고, 이 시간은 연출용
 // 폭발하는 똥(똥파리의 가젯 '폭탄 똥'): 총알 위치에서 폭발해 범위 안의 적(플레이어/터렛/닭)에게 explodeDamage 피해를 준다.
 // 아군에게는 피해가 없고, 폭발 이펙트는 클라이언트가 그리도록 effects 에 넣는다.
 function explodePoopBomb(match, b) {
   effectIdCounter += 1;
-  match.effects.push({ id: effectIdCounter, type: 'explosion', visual: 'poopBomb', x: b.x, y: b.y, radius: b.explodeRadius, life: EFFECT_LIFETIME });
+  match.effects.push({ id: effectIdCounter, type: 'explosion', visual: 'poopBomb', x: b.x, y: b.y, radius: b.explodeRadius, life: POOP_BOMB_EXPLOSION_LIFE, maxLife: POOP_BOMB_EXPLOSION_LIFE });
 
   for (const pid in match.players) {
     if (match.over) return;
@@ -2545,6 +2546,7 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
       ownerId: p.id,
       team: p.team,
       life: spec.lifetime,
+      maxLife: spec.lifetime, // 처음 수명 (폭탄 똥이 터지기 직전에 더 빠르게 깜빡이는 연출용)
       damage: spec.damage,
       executeBelowHp: spec.executeBelowHp || 0, // 0보다 크면 맞은 대상의 현재 체력이 이 값 이하일 때 즉사 (진우Park의 하트)
       currentHpRatio: spec.currentHpRatio || 0, // 0보다 크면 고정 피해 대신 대상 현재 체력(+보호막)의 비율만큼 피해 (진우Park의 하트)
@@ -3411,6 +3413,8 @@ io.on('connection', (socket) => {
     } else if (gadget.type === 'poopBomb') {
       // 똥파리의 가젯: 조준한 방향으로 폭발하는 똥을 발사 (폭발은 updateMatch 의 총알 처리에서 일어남)
       spawnProjectiles(match, p, gadget, false);
+      effectIdCounter += 1;
+      match.effects.push({ id: effectIdCounter, type: 'poopLaunch', x: p.x + Math.cos(p.angle) * (PLAYER_RADIUS + 5), y: p.y + Math.sin(p.angle) * (PLAYER_RADIUS + 5), angle: p.angle, life: 0.3, maxLife: 0.3 }); // 발사 연기 연출
     } else if (gadget.type === 'heal') {
       // 진우Park의 소다 마시기: 체력을 즉시 healAmount만큼 회복 (최대 체력 초과 불가)
       p.hp = Math.min(p.maxHp, p.hp + (gadget.healAmount || 0));
