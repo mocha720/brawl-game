@@ -692,6 +692,33 @@ const CHARACTERS = {
       visual: 'poopBomb',
     },
   },
+  nai: {
+    id: 'nai',
+    name: '나이',
+    maxHp: 6000, // 1레벨 기준 (투척수)
+    basic: {
+      name: '실내화 던지기',
+      type: 'lob',            // 포물선을 그리며 날아가 땅에 착지하면 폭발하는 투척. 비행 중에는 벽/적에 막히지 않음(벽을 넘음)
+      explodeDamage: 2000,    // 폭발 피해 (1레벨 기준)
+      explodeRadius: 100,     // 폭발 범위(px)
+      distance: 520,          // 최대 투척 거리(px)
+      minDistance: 100,       // 최소 투척 거리(px). 조준(PC 마우스 위치 / 모바일 스틱 당김)에 따라 minDistance ~ distance 사이로 조절됨
+      speed: 520,             // 지면 기준 비행 속도(px/초). 거리가 멀수록 오래 날아감 (최소 비행 시간 0.35초)
+      radius: 12,
+      arcHeight: 110,         // 포물선 최고 높이(px) - 화면 연출용 (판정에는 영향 없음)
+      visual: 'slipper',
+    },
+    ultimate: {
+      name: '슛',
+      type: 'leap',           // 벽을 무시하고 바라보는 방향으로 점프, 착지 지점 주변 적에게 피해 + 기절
+      damage: 1500,           // 1레벨 기준
+      distance: 320,          // 최대 점프 거리(px). 착지 지점이 벽 안이면 가장 가까운 빈 곳까지 되돌아옴
+      minDistance: 100,       // 최소 점프 거리(px). 조준에 따라 minDistance ~ distance 사이로 조절됨
+      duration: 0.6,          // 공중에 떠 있는 시간(초). 이 동안은 조작 불가 + 피격/총알 무시
+      landRadius: 100,        // 착지 지점 주변 피해 반경
+      stunDuration: 1,        // 맞은 적을 기절시키는 시간(초)
+    },
+  },
 };
 
 // ===== 캐릭터 설명(캐릭터 선택 화면용) 자동 생성 =====
@@ -722,6 +749,10 @@ function describeBasic(b) {
     if (b.fireCooldown > 0) parts.push(`발사 후 ${b.fireCooldown}초 동안 다음 발사 불가`);
     const r = rangeOf(b);
     if (r) parts.push(`사거리 약 ${r}`);
+  } else if (b.type === 'lob') {
+    // 나이: 포물선으로 던져 착지하면 폭발하는 실내화
+    damage = b.explodeDamage;
+    parts.push(`실내화를 포물선으로 던져 땅에 착지하면 폭발 (벽을 넘어감), 던지는 거리는 조준으로 ${fmtNum(b.minDistance || 0)}~${fmtNum(b.distance)}px 조절, 폭발 반경 ${b.explodeRadius} 안의 적에게 ${fmtNum(b.explodeDamage)} 피해`);
   } else if (b.type === 'dash') {
     damage = b.damage;
     parts.push(`바라보는 방향으로 약 ${fmtNum(Math.round(b.speed * b.duration))}px를 돌진, 적을 관통하며 지나간 모든 적에게 ${fmtNum(b.damage)} 피해`);
@@ -811,7 +842,7 @@ function describeUltimate(u) {
     }
     case 'leap':
       damage = u.damage;
-      desc = `조준한 방향으로 벽을 무시하고 점프, 거리는 조준으로 ${fmtNum(u.minDistance || 0)}~${fmtNum(u.distance)}px 조절 (공중에서는 피격 불가), 착지 지점 반경 ${u.landRadius} 안의 적에게 ${fmtNum(u.damage)} 피해${u.knockback ? ` + ${fmtNum(u.knockback)}만큼 밀쳐냄` : ''}`;
+      desc = `조준한 방향으로 벽을 무시하고 점프, 거리는 조준으로 ${fmtNum(u.minDistance || 0)}~${fmtNum(u.distance)}px 조절 (공중에서는 피격 불가), 착지 지점 반경 ${u.landRadius} 안의 적에게 ${fmtNum(u.damage)} 피해${u.knockback ? ` + ${fmtNum(u.knockback)}만큼 밀쳐냄` : ''}${u.stunDuration ? ` + ${u.stunDuration}초 기절` : ''}`;
       break;
     case 'quake':
       damage = u.damage;
@@ -1002,6 +1033,7 @@ const CHARACTER_PRICES = {
   jinwoopark: 300,
   system: 300,
   ddongpari: 300,
+  nai: 300,
 };
 CHARACTER_PRICES[DEFAULT_CHARACTER_ID] = 0; // 기본 캐릭터는 항상 무료 (사용 가능한 캐릭터가 하나도 없는 상황 방지)
 function priceOf(id) {
@@ -1091,6 +1123,17 @@ function missionsView(u) {
 // id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
+  {
+    id: '2026-10-09-nai',
+    date: '2026-10-09',
+    tag: 'new',
+    title: '새 캐릭터 [나이] 등장!',
+    items: [
+      '투척수 [나이]가 추가됐어요. 체력은 1레벨 기준 6,000이에요.',
+      '기본 공격 [실내화 던지기]: 실내화를 포물선으로 던져요. 벽을 넘어 날아가서 땅에 착지하면 폭발하고, 폭발 범위의 적에게 2,000 피해(1레벨 기준)를 줘요. 던지는 거리는 조준으로 조절할 수 있어요.',
+      '궁극기 [슛]: 조준한 곳으로 점프해서 착지 지점의 적에게 1,500 피해(1레벨 기준)를 주고 1초 동안 기절시켜요.',
+    ],
+  },
   {
     id: '2026-10-07-ddongpari-gadget',
     date: '2026-10-07',
@@ -2331,6 +2374,7 @@ function buildPlayer(socketId, name, characterId, team, spawn, level) {
     leapEndsAt: 0,         // 점프 중 입력을 막기 위해 걸어둔 기절 시각(착지 때 같은 값이면 해제)
     leapDamage: 0, leapRadius: 0,
     leapKnockback: 0,      // 점프 착지 때 적을 밀쳐내는 거리(px) (진우Park의 소다Bang). 0이면 밀치지 않음
+    leapStun: 0,           // 점프 착지 때 적을 기절시키는 시간(초) (나이의 슛). 0이면 기절시키지 않음
     ultGadgetLeft: 0,      // 모카의 가젯: 궁극기 게이지가 천천히 채워지는 남은 시간(초)
     ultGadgetRate: 0,      // 초당 채워지는 게이지(%)
     invincibleUntil: 0,    // 이 시각(ms, Date.now() 기준) 전까지는 무적 상태 (현재 사용하는 캐릭터는 없지만 'invincible' 가젯용으로 남겨둠)
@@ -2490,12 +2534,15 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
 
 // 총알(들)을 생성한다. spec.pelletCount가 있으면 spec.spreadDegrees 각도 안에 고르게 퍼뜨려서 여러 발을 동시에 발사한다.
 // (예: 슈의 샷건 - 탄창/쿨다운은 소비 1회로 취급되고, 여기서는 실제 총알 개체만 만든다)
+const SLIPPER_EXPLOSION_LIFE = 0.7;   // 실내화 폭발 이펙트가 화면에 남는 시간(초)
 const POOP_BOMB_EXPLOSION_LIFE = 0.75; // 폭탄 똥 폭발 이펙트가 화면에 남는 시간(초) - 피해 판정은 폭발 즉시 끝나고, 이 시간은 연출용
 // 폭발하는 똥(똥파리의 가젯 '폭탄 똥'): 총알 위치에서 폭발해 범위 안의 적(플레이어/터렛/닭)에게 explodeDamage 피해를 준다.
 // 아군에게는 피해가 없고, 폭발 이펙트는 클라이언트가 그리도록 effects 에 넣는다.
 function explodePoopBomb(match, b) {
+  const exVisual = b.explodeVisual || 'poopBomb'; // 폭발 모양: 폭탄 똥(기본) / 나이의 실내화('slipper')
+  const exLife = exVisual === 'slipper' ? SLIPPER_EXPLOSION_LIFE : POOP_BOMB_EXPLOSION_LIFE;
   effectIdCounter += 1;
-  match.effects.push({ id: effectIdCounter, type: 'explosion', visual: 'poopBomb', x: b.x, y: b.y, radius: b.explodeRadius, life: POOP_BOMB_EXPLOSION_LIFE, maxLife: POOP_BOMB_EXPLOSION_LIFE });
+  match.effects.push({ id: effectIdCounter, type: 'explosion', visual: exVisual, x: b.x, y: b.y, radius: b.explodeRadius, life: exLife, maxLife: exLife });
 
   for (const pid in match.players) {
     if (match.over) return;
@@ -2505,7 +2552,7 @@ function explodePoopBomb(match, b) {
     const dx = target.x - b.x;
     const dy = target.y - b.y;
     if (Math.sqrt(dx * dx + dy * dy) >= PLAYER_RADIUS + b.explodeRadius) continue;
-    applyDamage(match, target, b.explodeDamage, b.ownerId, { chargeShooter: false }); // 궁극기 게이지는 충전하지 않음 (가젯이므로)
+    applyDamage(match, target, b.explodeDamage, b.ownerId, { chargeShooter: !!b.explodeChargesUlt }); // 가젯(폭탄 똥)은 궁극기 게이지를 충전하지 않고, 기본공격(실내화)은 충전함
   }
   if (match.over) return;
 
@@ -2525,6 +2572,40 @@ function explodePoopBomb(match, b) {
     if (Math.sqrt(dx * dx + dy * dy) < chicken.radius + b.explodeRadius) chicken.hp -= b.explodeDamage * mult;
   }
   match.chickens = match.chickens.filter((c) => c.hp > 0);
+}
+
+// 나이의 실내화: 조준한 방향/거리의 한 지점으로 포물선을 그리며 날아가 착지하면 폭발한다.
+// 날아가는 동안에는 벽/적/터렛/닭에 전혀 막히지 않고(벽을 넘음), 착지 지점은 던지는 순간 정해진다.
+// 거리는 클라이언트가 보낸 값(PC: 마우스까지의 거리 / 모바일: 스틱을 당긴 정도)을 minDistance ~ distance 로 제한해서 사용한다.
+function spawnLob(match, p, spec, sentDistance) {
+  const maxD = spec.distance;
+  const minD = Math.min(maxD, spec.minDistance || 0);
+  const sent = typeof sentDistance === 'number' && Number.isFinite(sentDistance) ? sentDistance : maxD;
+  const dist = Math.max(minD, Math.min(maxD, sent));
+  const tx = Math.max(0, Math.min(ARENA_WIDTH, p.x + Math.cos(p.angle) * dist));
+  const ty = Math.max(0, Math.min(ARENA_HEIGHT, p.y + Math.sin(p.angle) * dist));
+  const travel = Math.max(0.35, Math.hypot(tx - p.x, ty - p.y) / spec.speed);
+  bulletIdCounter += 1;
+  match.bullets.push({
+    id: bulletIdCounter,
+    x: p.x, y: p.y,
+    vx: 0, vy: 0, // 위치는 updateMatch 가 시작점~착지점 사이를 직접 보간한다
+    startX: p.x, startY: p.y, targetX: tx, targetY: ty,
+    ownerId: p.id,
+    team: p.team,
+    life: travel,
+    maxLife: travel,
+    damage: 0,
+    radius: spec.radius,
+    isUltimate: false,
+    visual: spec.visual,
+    lob: true,                       // 포물선 투척: 비행 중 충돌 판정 없음, 수명이 끝나면(착지) 폭발
+    arcHeight: spec.arcHeight || 100, // 화면 연출용 최고 높이
+    explodeDamage: spec.explodeDamage,
+    explodeRadius: spec.explodeRadius,
+    explodeVisual: 'slipper',
+    explodeChargesUlt: true,         // 기본공격이므로 적중 시 궁극기 게이지 충전
+  });
 }
 
 function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
@@ -3231,7 +3312,7 @@ io.on('connection', (socket) => {
   });
 
   // 기본 공격 발사 요청
-  socket.on('shoot', () => {
+  socket.on('shoot', (data) => {
     const match = matches[socketToMatch[socket.id]];
     if (!match || match.over || Date.now() < match.startsAt) return; // 대결 화면(카운트다운) 중에는 입력 무시
     const p = match.players[socket.id];
@@ -3329,6 +3410,9 @@ io.on('connection', (socket) => {
       p.dashTimeLeft = p.basic.duration;
       p.dashTotal = p.dashTimeLeft; // 돌진 속도 곡선(처음 빠르고 점점 느려짐)을 계산하기 위한 전체 시간
       p.dashHitIds = []; // 이번 돌진에서 이미 맞힌 대상 (관통 돌진이 같은 적을 두 번 때리지 않도록)
+    } else if (p.basic.type === 'lob') {
+      // 나이의 실내화 던지기: 조준한 거리(클라이언트가 보낸 distance, 서버가 범위 제한)만큼 포물선으로 던짐
+      spawnLob(match, p, p.basic, data && data.distance);
     } else {
       spawnProjectiles(match, p, p.basic, false);
     }
@@ -3584,6 +3668,7 @@ io.on('connection', (socket) => {
       p.leapDamage = ult.damage;
       p.leapRadius = ult.landRadius || 90;
       p.leapKnockback = ult.knockback || 0;
+      p.leapStun = ult.stunDuration || 0;
       p.leapEndsAt = Date.now() + leapMs + 400; // 서버 틱 오차를 감안한 여유
       p.stunnedUntil = p.leapEndsAt;
     } else if (ult.type === 'summonChicken') {
@@ -3675,7 +3760,7 @@ function updateMatch(match, dt, now) {
     if (p.stunnedUntil === p.leapEndsAt) p.stunnedUntil = 0; // 점프 때문에 걸어둔 입력 차단만 해제 (다른 기절은 유지)
 
     effectIdCounter += 1;
-    match.effects.push({ id: effectIdCounter, type: 'leapLand', x: p.x, y: p.y, radius: p.leapRadius, life: EFFECT_LIFETIME });
+    match.effects.push({ id: effectIdCounter, type: 'leapLand', visual: p.leapStun > 0 ? 'shoot' : undefined, x: p.x, y: p.y, radius: p.leapRadius, life: p.leapStun > 0 ? 0.6 : EFFECT_LIFETIME, maxLife: p.leapStun > 0 ? 0.6 : undefined });
 
     for (const tid in match.players) {
       if (tid === pid) continue;
@@ -3685,6 +3770,10 @@ function updateMatch(match, dt, now) {
       if (Math.hypot(target.x - p.x, target.y - p.y) < PLAYER_RADIUS + p.leapRadius) {
         applyDamage(match, target, p.leapDamage, pid, { chargeShooter: false });
         if (match.over) break;
+        // 기절 (나이의 슛): 무적/공중에 있는 대상은 제외. 기절 시간은 기존 기절과 겹치면 더 긴 쪽을 유지
+        if (p.leapStun > 0 && target.alive && !target.leaping && !(target.invincibleUntil && Date.now() < target.invincibleUntil)) {
+          target.stunnedUntil = Math.max(target.stunnedUntil || 0, Date.now() + p.leapStun * 1000);
+        }
         // 밀쳐내기(진우Park): 착지 지점 바깥쪽으로 날려보냄 (무적이면 밀리지 않음). 실제 이동은 넉백 처리 루프가 수행
         if (p.leapKnockback > 0 && target.alive && !(target.invincibleUntil && Date.now() < target.invincibleUntil)) {
           let kx = target.x - p.x;
@@ -3962,10 +4051,24 @@ function updateMatch(match, dt, now) {
     b.x += b.vx * dt;
     b.y += b.vy * dt;
     b.life -= dt;
+    if (b.lob) {
+      // 포물선 투척(나이의 실내화): 지면 위치를 시작점에서 착지점까지 직선 보간 (높이는 클라이언트가 그림)
+      const t = 1 - Math.max(0, b.life) / b.maxLife;
+      b.x = b.startX + (b.targetX - b.startX) * t;
+      b.y = b.startY + (b.targetY - b.startY) * t;
+    }
   }
 
   // 화면 밖, 수명 종료, 벽 충돌한 총알 제거 (poolOnImpact 발사체는 벽/맵 경계에 닿으면 물웅덩이를 남김)
   match.bullets = match.bullets.filter((b) => {
+    if (b.lob) {
+      // 포물선 투척은 벽/맵 경계/적에 막히지 않고 날다가, 착지(수명 종료)하는 순간 그 자리에서 폭발
+      if (b.life <= 0) {
+        explodePoopBomb(match, { ...b, x: b.targetX, y: b.targetY });
+        return false;
+      }
+      return true;
+    }
     if (b.life <= 0) {
       if (b.poolOnImpact && b.poolOnExpire) spawnWaterPool(match, b); // 계란: 사거리 끝에서 깨짐
       if (b.explodeDamage > 0) explodePoopBomb(match, b); // 폭탄 똥: 사거리 끝에서도 폭발
@@ -3997,6 +4100,7 @@ function updateMatch(match, dt, now) {
   for (const b of match.bullets) {
     if (match.over) break;
     if (hitBulletIds.has(b.id)) continue;
+    if (b.lob) continue; // 포물선 투척은 날아가는 중에는 아무것도 맞히지 않음 (착지할 때 폭발)
 
     const owner = match.players[b.ownerId];
 
@@ -4052,6 +4156,7 @@ function updateMatch(match, dt, now) {
     if (match.over) break;
     if (hitBulletIds.has(b.id)) continue;
     if (b.launchDuration > 0) continue; // 띄우기 소용돌이는 터렛/닭에 영향 없이 통과
+    if (b.lob) continue;
 
     for (const turret of match.turrets) {
       if (!FRIENDLY_FIRE && turret.team === b.team) continue; // 아군 총알은 자신의 터렛을 통과함
@@ -4083,6 +4188,7 @@ function updateMatch(match, dt, now) {
     if (match.over) break;
     if (hitBulletIds.has(b.id)) continue;
     if (b.launchDuration > 0) continue;
+    if (b.lob) continue;
     for (const chicken of match.chickens) {
       if (chicken.hp <= 0) continue;
       if (!FRIENDLY_FIRE && chicken.team === b.team) continue;
