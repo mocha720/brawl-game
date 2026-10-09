@@ -703,6 +703,7 @@ const CHARACTERS = {
       explodeRadius: 70,      // 폭발 범위(px) - 기존 100에서 30% 감소
       distance: 364,          // 최대 투척 거리(px) - 기존 520에서 30% 감소
       minDistance: 100,       // 최소 투척 거리(px). 조준(PC 마우스 위치 / 모바일 스틱 당김)에 따라 minDistance ~ distance 사이로 조절됨
+      selfKnockback: 220,     // 폭발 범위 안에 자신(나이)이 있으면 폭발 중심 바깥쪽으로 이만큼(px) 날아감. 자신에게는 피해 없음
       flightTime: 2,          // 던진 뒤 땅에 떨어져 폭발할 때까지 걸리는 시간(초). 던지는 거리와 상관없이 항상 같음 (가까울수록 느리게, 멀수록 빠르게 날아감)
       radius: 12,
       arcHeight: 110,         // 포물선 최고 높이(px) - 화면 연출용 (판정에는 영향 없음)
@@ -752,7 +753,7 @@ function describeBasic(b) {
   } else if (b.type === 'lob') {
     // 나이: 포물선으로 던져 착지하면 폭발하는 실내화
     damage = b.explodeDamage;
-    parts.push(`실내화를 포물선으로 던져 땅에 착지하면 폭발 (벽을 넘어감), 던지는 거리는 조준으로 ${fmtNum(b.minDistance || 0)}~${fmtNum(b.distance)}px 조절 (거리와 상관없이 ${b.flightTime || 2}초 뒤에 착지), 폭발 반경 ${b.explodeRadius} 안의 적에게 ${fmtNum(b.explodeDamage)} 피해`);
+    parts.push(`실내화를 포물선으로 던져 땅에 착지하면 폭발 (벽을 넘어감), 던지는 거리는 조준으로 ${fmtNum(b.minDistance || 0)}~${fmtNum(b.distance)}px 조절 (거리와 상관없이 ${b.flightTime || 2}초 뒤에 착지), 폭발 반경 ${b.explodeRadius} 안의 적에게 ${fmtNum(b.explodeDamage)} 피해${b.selfKnockback ? ' (폭발 범위 안에 자신이 있으면 피해 없이 날아감)' : ''}`);
   } else if (b.type === 'dash') {
     damage = b.damage;
     parts.push(`바라보는 방향으로 약 ${fmtNum(Math.round(b.speed * b.duration))}px를 돌진, 적을 관통하며 지나간 모든 적에게 ${fmtNum(b.damage)} 피해`);
@@ -2556,6 +2557,23 @@ function explodePoopBomb(match, b) {
   }
   if (match.over) return;
 
+  // 자기 폭발에 날아가기 (나이의 실내화): 던진 본인이 폭발 범위 안에 있으면 폭발 중심 바깥쪽으로 밀려남. 피해는 없음.
+  // 점프 중/하늘에 떠 있는 상태이거나 무적이면 밀리지 않는다.
+  const thrower = match.players[b.ownerId];
+  if (b.selfKnockback > 0 && thrower && thrower.alive && !thrower.leaping && !(thrower.airborneTimeLeft > 0) && !(thrower.invincibleUntil && Date.now() < thrower.invincibleUntil)) {
+    let kx = thrower.x - b.x;
+    let ky = thrower.y - b.y;
+    const kd = Math.hypot(kx, ky);
+    if (kd < PLAYER_RADIUS + b.explodeRadius) {
+      if (kd > 0.001) { kx /= kd; ky /= kd; } else { kx = -Math.cos(thrower.angle); ky = -Math.sin(thrower.angle); } // 정확히 중심에 있으면 바라보는 반대 방향
+      thrower.knockbackDirX = kx;
+      thrower.knockbackDirY = ky;
+      thrower.knockbackDistance = b.selfKnockback;
+      thrower.knockbackTimeLeft = KNOCKBACK_DURATION;
+      thrower.knockbackTotalTime = KNOCKBACK_DURATION;
+    }
+  }
+
   const mult = getDamageMultiplier(match.players[b.ownerId]);
   for (const turret of match.turrets) {
     if (!FRIENDLY_FIRE && turret.team === b.team) continue;
@@ -2605,6 +2623,7 @@ function spawnLob(match, p, spec, sentDistance) {
     explodeRadius: spec.explodeRadius,
     explodeVisual: 'slipper',
     explodeChargesUlt: true,         // 기본공격이므로 적중 시 궁극기 게이지 충전
+    selfKnockback: spec.selfKnockback || 0, // 폭발 범위 안의 던진 본인을 밀쳐내는 거리(px)
   });
 }
 
