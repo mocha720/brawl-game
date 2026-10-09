@@ -3549,29 +3549,36 @@ function drawSlipperBullet(b) {
   const r = b.radius;
   const R = b.explodeRadius || 100;
   const sx = b.startX, sy = b.startY, tx = b.targetX, ty = b.targetY;
+  const hasTarget = typeof tx === 'number' && typeof ty === 'number'; // 적에게는 서버가 착지 지점을 보내지 않음 -> 착지 경고 원 없음
+  // 지나온 위치는 (시작점 ~ 현재 위치) 사이의 직선 위에 있으므로 착지 지점을 몰라도 잔상을 그릴 수 있다
+  const gx = (tt) => sx + (b.x - sx) * (t > 0.001 ? tt / t : 0);
+  const gy = (tt) => sy + (b.y - sy) * (t > 0.001 ? tt / t : 0);
 
   ctx.save();
 
-  // 착지 지점 경고: 폭발 범위가 점점 차오름
-  ctx.beginPath();
-  ctx.arc(tx, ty, R, 0, Math.PI * 2);
-  ctx.fillStyle = `rgba(255, 90, 130, ${0.05 + 0.1 * t})`;
-  ctx.fill();
-  ctx.setLineDash([7, 7]);
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = `rgba(255, 110, 145, ${0.35 + 0.45 * t})`;
-  ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.beginPath();
-  ctx.arc(tx, ty, R * t, 0, Math.PI * 2);
-  ctx.fillStyle = `rgba(255, 120, 150, ${0.1 + 0.12 * t})`;
-  ctx.fill();
-  ctx.strokeStyle = `rgba(255, 245, 250, ${0.4 + 0.5 * t})`;
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(tx - 9, ty); ctx.lineTo(tx + 9, ty);
-  ctx.moveTo(tx, ty - 9); ctx.lineTo(tx, ty + 9);
-  ctx.stroke();
+  if (hasTarget) {
+    // 착지 지점 경고: 폭발 범위가 점점 차오름
+    ctx.beginPath();
+    ctx.arc(tx, ty, R, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255, 90, 130, ${0.05 + 0.1 * t})`;
+    ctx.fill();
+    ctx.setLineDash([7, 7]);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = `rgba(255, 110, 145, ${0.35 + 0.45 * t})`;
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.arc(tx, ty, R * t, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(255, 120, 150, ${0.1 + 0.12 * t})`;
+    ctx.fill();
+    ctx.strokeStyle = `rgba(255, 245, 250, ${0.4 + 0.5 * t})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(tx - 9, ty); ctx.lineTo(tx + 9, ty);
+    ctx.moveTo(tx, ty - 9); ctx.lineTo(tx, ty + 9);
+    ctx.stroke();
+
+  }
 
   // 지면 그림자 (높이 올라갈수록 작고 옅어짐)
   const shrink = 1 - Math.min(1, h / (arcH * 1.5));
@@ -3588,8 +3595,8 @@ function drawSlipperBullet(b) {
     ctx.strokeStyle = `rgba(255, 190, 215, ${0.5 * (1 - k / 7)})`;
     ctx.lineWidth = Math.max(1, r * 0.9 * (1 - k / 8));
     ctx.beginPath();
-    ctx.moveTo(sx + (tx - sx) * t0, sy + (ty - sy) * t0 - arc(t0));
-    ctx.lineTo(sx + (tx - sx) * t1, sy + (ty - sy) * t1 - arc(t1));
+    ctx.moveTo(gx(t0), gy(t0) - arc(t0));
+    ctx.lineTo(gx(t1), gy(t1) - arc(t1));
     ctx.stroke();
   }
 
