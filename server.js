@@ -4441,6 +4441,20 @@ function buildVisiblePlayers(match, viewerId) {
   return result;
 }
 
+// 특정 시청자(viewerId) 기준으로 보내도 되는 총알 목록을 반환한다.
+// 나이의 포물선 투척(lob)은 착지 지점(targetX/targetY)을 적에게 알려주지 않기 위해, 적 시청자에게는 그 좌표를 빼고 보낸다.
+// (아군/본인에게는 그대로 보내서 착지 경고 원이 보이고, 적에게는 날아가는 실내화만 보인다. 클라이언트 코드에 의존하지 않도록 서버에서 제거한다)
+function buildVisibleBullets(match, viewerId) {
+  const bullets = match.bullets;
+  if (!bullets.some((b) => b.lob)) return bullets;
+  const viewer = match.players[viewerId];
+  return bullets.map((b) => {
+    if (!b.lob || !viewer || b.team === viewer.team) return b;
+    const { targetX, targetY, ...rest } = b;
+    return rest;
+  });
+}
+
 // ===== 서버 게임 루프 =====
 // 진행 중인 모든 매치를 독립적으로 갱신하고, 각 매치의 상태는 그 매치에 속한 플레이어들에게만 전송한다
 // (덤불/은신 은닉을 위해 방 전체 브로드캐스트 대신 플레이어별로 필터링해서 개별 전송한다.
@@ -4458,7 +4472,7 @@ function gameLoop() {
     for (const pid in match.players) {
       io.to(pid).emit('state', {
         players: buildVisiblePlayers(match, pid),
-        bullets: match.bullets,
+        bullets: buildVisibleBullets(match, pid),
         effects: match.effects,
         waterPools: match.waterPools,
         turrets: match.turrets,
