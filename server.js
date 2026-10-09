@@ -703,7 +703,7 @@ const CHARACTERS = {
       explodeRadius: 70,      // 폭발 범위(px) - 기존 100에서 30% 감소
       distance: 364,          // 최대 투척 거리(px) - 기존 520에서 30% 감소
       minDistance: 100,       // 최소 투척 거리(px). 조준(PC 마우스 위치 / 모바일 스틱 당김)에 따라 minDistance ~ distance 사이로 조절됨
-      speed: 260,             // 지면 기준 비행 속도(px/초) - 기존 520에서 50% 감소. 거리가 멀수록 오래 날아감 (최소 비행 시간 0.35초)
+      flightTime: 2,          // 던진 뒤 땅에 떨어져 폭발할 때까지 걸리는 시간(초). 던지는 거리와 상관없이 항상 같음 (가까울수록 느리게, 멀수록 빠르게 날아감)
       radius: 12,
       arcHeight: 110,         // 포물선 최고 높이(px) - 화면 연출용 (판정에는 영향 없음)
       visual: 'slipper',
@@ -752,7 +752,7 @@ function describeBasic(b) {
   } else if (b.type === 'lob') {
     // 나이: 포물선으로 던져 착지하면 폭발하는 실내화
     damage = b.explodeDamage;
-    parts.push(`실내화를 포물선으로 던져 땅에 착지하면 폭발 (벽을 넘어감), 던지는 거리는 조준으로 ${fmtNum(b.minDistance || 0)}~${fmtNum(b.distance)}px 조절, 폭발 반경 ${b.explodeRadius} 안의 적에게 ${fmtNum(b.explodeDamage)} 피해`);
+    parts.push(`실내화를 포물선으로 던져 땅에 착지하면 폭발 (벽을 넘어감), 던지는 거리는 조준으로 ${fmtNum(b.minDistance || 0)}~${fmtNum(b.distance)}px 조절 (거리와 상관없이 ${b.flightTime || 2}초 뒤에 착지), 폭발 반경 ${b.explodeRadius} 안의 적에게 ${fmtNum(b.explodeDamage)} 피해`);
   } else if (b.type === 'dash') {
     damage = b.damage;
     parts.push(`바라보는 방향으로 약 ${fmtNum(Math.round(b.speed * b.duration))}px를 돌진, 적을 관통하며 지나간 모든 적에게 ${fmtNum(b.damage)} 피해`);
@@ -2575,7 +2575,7 @@ function explodePoopBomb(match, b) {
 }
 
 // 나이의 실내화: 조준한 방향/거리의 한 지점으로 포물선을 그리며 날아가 착지하면 폭발한다.
-// 날아가는 동안에는 벽/적/터렛/닭에 전혀 막히지 않고(벽을 넘음), 착지 지점은 던지는 순간 정해진다.
+// 날아가는 동안에는 벽/적/터렛/닭에 전혀 막히지 않고(벽을 넘음), 착지 지점은 던지는 순간 정해진다. 착지까지 걸리는 시간은 거리와 무관하게 spec.flightTime 으로 고정.
 // 거리는 클라이언트가 보낸 값(PC: 마우스까지의 거리 / 모바일: 스틱을 당긴 정도)을 minDistance ~ distance 로 제한해서 사용한다.
 function spawnLob(match, p, spec, sentDistance) {
   const maxD = spec.distance;
@@ -2584,7 +2584,7 @@ function spawnLob(match, p, spec, sentDistance) {
   const dist = Math.max(minD, Math.min(maxD, sent));
   const tx = Math.max(0, Math.min(ARENA_WIDTH, p.x + Math.cos(p.angle) * dist));
   const ty = Math.max(0, Math.min(ARENA_HEIGHT, p.y + Math.sin(p.angle) * dist));
-  const travel = Math.max(0.35, Math.hypot(tx - p.x, ty - p.y) / spec.speed);
+  const travel = spec.flightTime || 2; // 거리와 상관없이 고정된 비행 시간
   bulletIdCounter += 1;
   match.bullets.push({
     id: bulletIdCounter,
