@@ -1228,6 +1228,14 @@ const CHARACTERS = [
     ultimate: { name: '가시 발사', damage: 2500, desc: '조준한 방향으로 발사 (사거리 약 988), 벽을 통과함' },
     gadget: { name: '폭탄 똥', desc: '조준한 방향으로 폭발하는 똥을 발사 (사거리 약 572). 적이나 벽에 닿으면 폭발해서 반경 130 안의 적에게 1,500 피해 (15초마다 사용 가능)' },
   },
+  {
+    id: 'nai',
+    name: '나이',
+    color: '#fd79a8',
+    maxHp: 6000,
+    basic: { name: '실내화 던지기', damage: 2000, desc: '실내화를 포물선으로 던져 땅에 착지하면 폭발 (벽을 넘어감), 던지는 거리는 조준으로 100~520px 조절, 폭발 반경 100 안의 적에게 2,000 피해' },
+    ultimate: { name: '슛', damage: 1500, desc: '조준한 방향으로 벽을 무시하고 점프, 거리는 조준으로 100~320px 조절 (공중에서는 피격 불가), 착지 지점 반경 100 안의 적에게 1,500 피해 + 1초 기절' },
+  },
 ];
 let selectedCharacterId = CHARACTERS[0].id;
 
@@ -1379,7 +1387,10 @@ const GADGET_COOLDOWN_SEC = 15; // server.js의 GADGET_COOLDOWN_SEC와 동일하
 // - PC: 내 캐릭터에서 마우스 커서까지의 거리 (최소~최대로 제한)
 // 서버도 같은 범위로 다시 제한하므로, 여기 값은 '조준한 의도'를 전달하는 용도다.
 function getLeapAimDistance(me) {
-  const u = me.ultimate;
+  return getAimDistanceFor(me, me.ultimate);
+}
+// 거리를 조절하는 공격(점프 궁극기, 나이의 실내화 던지기)의 현재 조준 거리 - spec.minDistance ~ spec.distance 사이
+function getAimDistanceFor(me, u) {
   const maxD = u.distance;
   const minD = Math.min(maxD, u.minDistance || 0);
   if (touchAimActive) return minD + Math.max(0, Math.min(1, touchAimMag)) * (maxD - minD);
@@ -1387,6 +1398,9 @@ function getLeapAimDistance(me) {
   const worldMouseY = mouseY / cameraScale + camera.y;
   const d = Math.hypot(worldMouseX - me.x, worldMouseY - me.y);
   return Math.max(minD, Math.min(maxD, d));
+}
+function isLobBasic(me) {
+  return !!(me && me.basic && me.basic.type === 'lob');
 }
 function isLeapUltimateArmed(me) {
   return !!(ultimateArmed && me && me.alive && me.ultimate && me.ultimate.type === 'leap');
@@ -1407,7 +1421,8 @@ function fireAttack() {
     updateGadgetButton();
     SFX.gadget();
   } else if (!isChargeCharacter(me)) { // 충전 공격 캐릭터(똥파리)는 shoot 대신 아래의 beginCharge/endCharge를 사용
-    socket.emit('shoot');
+    if (isLobBasic(me)) socket.emit('shoot', { distance: Math.round(getAimDistanceFor(me, me.basic)) }); // 나이: 조준한 거리만큼 던짐 (서버가 범위를 다시 제한)
+    else socket.emit('shoot');
     SFX.shoot();
   }
 }
@@ -3508,7 +3523,333 @@ function drawPoopLaunch(e) {
   ctx.restore();
 }
 
+// ===== 나이: 실내화(포물선 투척) / 실내화 폭발 / 슛 착지 연출 =====
+function drawSparkle(x, y, s, color) {
+  // 4갈래 반짝이 별
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  for (let i = 0; i < 8; i++) {
+    const a = (Math.PI / 4) * i;
+    const rr = i % 2 === 0 ? s : s * 0.3;
+    const px = x + Math.cos(a) * rr;
+    const py = y + Math.sin(a) * rr;
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fill();
+}
+
+// 날아가는 실내화: 착지 지점 표시(점점 차오르는 폭발 범위) + 지면 그림자 + 포물선 잔상 + 빙글빙글 도는 실내화
+function drawSlipperBullet(b) {
+  const now = performance.now() / 1000;
+  const t = Math.max(0, Math.min(1, 1 - b.life / (b.maxLife || 1)));
+  const arcH = b.arcHeight || 100;
+  const arc = (tt) => arcH * 4 * tt * (1 - tt);
+  const h = arc(t);
+  const r = b.radius;
+  const R = b.explodeRadius || 100;
+  const sx = b.startX, sy = b.startY, tx = b.targetX, ty = b.targetY;
+
+  ctx.save();
+
+  // 착지 지점 경고: 폭발 범위가 점점 차오름
+  ctx.beginPath();
+  ctx.arc(tx, ty, R, 0, Math.PI * 2);
+  ctx.fillStyle = `rgba(255, 90, 130, ${0.05 + 0.1 * t})`;
+  ctx.fill();
+  ctx.setLineDash([7, 7]);
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = `rgba(255, 110, 145, ${0.35 + 0.45 * t})`;
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.arc(tx, ty, R * t, 0, Math.PI * 2);
+  ctx.fillStyle = `rgba(255, 120, 150, ${0.1 + 0.12 * t})`;
+  ctx.fill();
+  ctx.strokeStyle = `rgba(255, 245, 250, ${0.4 + 0.5 * t})`;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(tx - 9, ty); ctx.lineTo(tx + 9, ty);
+  ctx.moveTo(tx, ty - 9); ctx.lineTo(tx, ty + 9);
+  ctx.stroke();
+
+  // 지면 그림자 (높이 올라갈수록 작고 옅어짐)
+  const shrink = 1 - Math.min(1, h / (arcH * 1.5));
+  ctx.fillStyle = `rgba(0, 0, 0, ${0.12 + 0.2 * shrink})`;
+  ctx.beginPath();
+  ctx.ellipse(b.x, b.y + r * 0.6, r * 1.9 * (0.5 + 0.5 * shrink), r * 0.7 * (0.5 + 0.5 * shrink), 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 포물선 잔상 (지나온 궤적이 바람결처럼 옅게 이어짐)
+  ctx.lineCap = 'round';
+  for (let k = 1; k <= 6; k++) {
+    const t0 = Math.max(0, t - 0.035 * k);
+    const t1 = Math.max(0, t - 0.035 * (k - 1));
+    ctx.strokeStyle = `rgba(255, 190, 215, ${0.5 * (1 - k / 7)})`;
+    ctx.lineWidth = Math.max(1, r * 0.9 * (1 - k / 8));
+    ctx.beginPath();
+    ctx.moveTo(sx + (tx - sx) * t0, sy + (ty - sy) * t0 - arc(t0));
+    ctx.lineTo(sx + (tx - sx) * t1, sy + (ty - sy) * t1 - arc(t1));
+    ctx.stroke();
+  }
+
+  // 본체: 빙글빙글 도는 실내화 (아래로 떨어질수록 약간 커 보임)
+  const L = r * 3.3;
+  const W = r * 1.7;
+  ctx.translate(b.x, b.y - h);
+  ctx.scale(1 + 0.12 * (h / arcH), 1 + 0.12 * (h / arcH));
+  ctx.rotate(now * 11 + b.id);
+  ctx.lineJoin = 'round';
+  // 밑창
+  ctx.fillStyle = '#f6f2e9';
+  ctx.strokeStyle = '#3b2f3a';
+  ctx.lineWidth = Math.max(1.3, r * 0.14);
+  ctx.beginPath();
+  ctx.ellipse(0, 0, L / 2, W / 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  // 앞코(분홍 덮개)
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(0, 0, L / 2 - 1, W / 2 - 1, 0, 0, Math.PI * 2);
+  ctx.clip();
+  const cg = ctx.createLinearGradient(0, -W / 2, 0, W / 2);
+  cg.addColorStop(0, '#ff8fb3');
+  cg.addColorStop(1, '#e8457c');
+  ctx.fillStyle = cg;
+  ctx.beginPath();
+  ctx.moveTo(L * 0.02, -W);
+  ctx.quadraticCurveTo(L * 0.2, 0, L * 0.02, W);
+  ctx.lineTo(L, W);
+  ctx.lineTo(L, -W);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+  ctx.strokeStyle = '#a8244f';
+  ctx.lineWidth = Math.max(1, r * 0.12);
+  ctx.beginPath();
+  ctx.moveTo(L * 0.02, -W * 0.5);
+  ctx.quadraticCurveTo(L * 0.2, 0, L * 0.02, W * 0.5);
+  ctx.stroke();
+  // 하이라이트 + 뒤꿈치 고무 테두리
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.55)';
+  ctx.beginPath();
+  ctx.ellipse(L * 0.26, -W * 0.18, L * 0.1, W * 0.1, -0.3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(120, 100, 115, 0.55)';
+  ctx.lineWidth = Math.max(1, r * 0.1);
+  ctx.beginPath();
+  ctx.ellipse(-L * 0.12, 0, L * 0.3, W * 0.32, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  // 곧 터질 것 같은 깜빡이는 불빛
+  const blink = 0.5 + 0.5 * Math.sin(now * (14 + 26 * t));
+  ctx.fillStyle = `rgba(255, 70, 50, ${0.45 + 0.5 * blink})`;
+  ctx.beginPath();
+  ctx.arc(-L * 0.36, 0, r * (0.18 + 0.12 * blink), 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+// 실내화 폭발: 섬광 -> 만화 같은 별 모양 폭발 -> 충격파(실제 피해 범위까지) -> 반짝이/실내화 조각 -> 먼지, 가운데에 '펑!'
+function drawSlipperExplosion(e) {
+  const maxLife = e.maxLife || 0.7;
+  const t = Math.max(0, Math.min(1, 1 - e.life / maxLife));
+  const ease = 1 - Math.pow(1 - t, 3);
+  const R = e.radius;
+  const seed = e.id || 1;
+
+  ctx.save();
+
+  // 바닥 그을음
+  const sootA = 0.28 * Math.min(1, t * 8) * (1 - t * t);
+  if (sootA > 0.01) {
+    ctx.fillStyle = `rgba(45, 35, 45, ${sootA})`;
+    for (let i = 0; i < 8; i++) {
+      const a = prand(seed, i + 200) * Math.PI * 2;
+      const d = R * 0.45 * prand(seed, i + 220);
+      ctx.beginPath();
+      ctx.arc(e.x + Math.cos(a) * d, e.y + Math.sin(a) * d, R * (0.12 + 0.14 * prand(seed, i + 240)), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // 충격파가 닿는 범위
+  ctx.fillStyle = `rgba(255, 120, 160, ${0.16 * (1 - t)})`;
+  ctx.beginPath();
+  ctx.arc(e.x, e.y, R * ease, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 별 모양 폭발 (만화식)
+  const sr = Math.max(2, R * (0.3 + 0.62 * ease));
+  const spikes = 12;
+  const sa = Math.pow(1 - t, 1.2);
+  const rot = prand(seed, 7) * Math.PI + t * 0.5;
+  const sg = ctx.createRadialGradient(e.x, e.y, 0, e.x, e.y, sr);
+  sg.addColorStop(0, `rgba(255, 255, 240, ${sa})`);
+  sg.addColorStop(0.45, `rgba(255, 226, 90, ${sa * 0.95})`);
+  sg.addColorStop(1, `rgba(255, 90, 140, ${sa * 0.85})`);
+  ctx.fillStyle = sg;
+  ctx.strokeStyle = `rgba(255, 255, 255, ${sa})`;
+  ctx.lineWidth = 3;
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  for (let i = 0; i < spikes * 2; i++) {
+    const a = rot + (Math.PI / spikes) * i;
+    const rr = i % 2 === 0 ? sr : sr * (0.58 + 0.1 * prand(seed, i + 400));
+    const px = e.x + Math.cos(a) * rr;
+    const py = e.y + Math.sin(a) * rr;
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // 초반 섬광
+  if (t < 0.2) {
+    const fl = 1 - t / 0.2;
+    ctx.fillStyle = `rgba(255, 255, 245, ${0.9 * fl})`;
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, R * (0.3 + 0.5 * t * 4), 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // 충격파 고리
+  ctx.lineWidth = 2 + 9 * (1 - t);
+  ctx.strokeStyle = `rgba(255, 105, 150, ${1 - t})`;
+  ctx.beginPath();
+  ctx.arc(e.x, e.y, R * ease, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = `rgba(255, 245, 190, ${0.85 * (1 - t)})`;
+  ctx.beginPath();
+  ctx.arc(e.x, e.y, R * ease * 0.92, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // 사방으로 튀는 반짝이
+  const sparkColors = ['#fff6a8', '#ff9fc0', '#ffffff', '#ffd23f'];
+  for (let i = 0; i < 12; i++) {
+    const a = prand(seed, i) * Math.PI * 2;
+    const d = R * (0.5 + 0.6 * prand(seed, i + 40)) * ease * 1.05;
+    const rise = Math.sin(t * Math.PI) * R * 0.14 * prand(seed, i + 60);
+    drawSparkle(e.x + Math.cos(a) * d, e.y + Math.sin(a) * d - rise, Math.max(1.5, R * 0.09 * (1 - t * 0.6)), sparkColors[i % sparkColors.length]);
+  }
+
+  // 빙글빙글 날아가는 실내화 조각
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (let i = 0; i < 5; i++) {
+    const a = prand(seed, i + 120) * Math.PI * 2;
+    const d = R * (0.55 + 0.5 * prand(seed, i + 140)) * ease;
+    const rise = Math.sin(t * Math.PI) * R * 0.2;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, 1 - t * t * 1.2);
+    ctx.translate(e.x + Math.cos(a) * d, e.y + Math.sin(a) * d - rise);
+    ctx.rotate(t * (5 + 6 * prand(seed, i + 160)) * (i % 2 ? 1 : -1));
+    ctx.font = `${Math.max(8, R * 0.2 * (1 - t * 0.4))}px sans-serif`;
+    ctx.fillText('🩴', 0, 0);
+    ctx.restore();
+  }
+
+  // 후반 먼지
+  const sm = Math.max(0, (t - 0.25) / 0.75);
+  if (sm > 0) {
+    for (let i = 0; i < 7; i++) {
+      const a = prand(seed, i + 300) * Math.PI * 2;
+      const d = R * 0.55 * prand(seed, i + 320);
+      ctx.fillStyle = `rgba(210, 200, 215, ${0.3 * (1 - sm)})`;
+      ctx.beginPath();
+      ctx.arc(e.x + Math.cos(a) * d, e.y + Math.sin(a) * d - sm * R * 0.15, R * (0.15 + 0.22 * sm), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // 중앙 '펑!' 글자
+  if (t < 0.6) {
+    const pop = 1 + 0.45 * (1 - t / 0.6);
+    ctx.save();
+    ctx.globalAlpha = 1 - Math.pow(t / 0.6, 2);
+    ctx.translate(e.x, e.y);
+    ctx.rotate(-0.12);
+    ctx.font = `bold ${Math.round(R * 0.42 * pop)}px Jua, sans-serif`;
+    ctx.lineWidth = Math.max(3, R * 0.08);
+    ctx.strokeStyle = '#fff';
+    ctx.strokeText('펑!', 0, 0);
+    ctx.fillStyle = '#e8457c';
+    ctx.fillText('펑!', 0, 0);
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+// 나이의 궁극기 '슛' 착지: 노란 충격파 + 별이 빙글빙글 도는 기절 표시 + '슛!' 글자
+function drawShootLand(e) {
+  const maxLife = e.maxLife || 0.6;
+  const t = Math.max(0, Math.min(1, 1 - e.life / maxLife));
+  const ease = 1 - Math.pow(1 - t, 3);
+  const R = e.radius;
+  const seed = e.id || 1;
+
+  ctx.save();
+  ctx.fillStyle = `rgba(255, 215, 70, ${0.26 * (1 - t)})`;
+  ctx.beginPath();
+  ctx.arc(e.x, e.y, R * ease, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.lineWidth = 3 + 9 * (1 - t);
+  ctx.strokeStyle = `rgba(255, 140, 40, ${1 - t})`;
+  ctx.beginPath();
+  ctx.arc(e.x, e.y, R * ease, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = `rgba(255, 250, 200, ${0.9 * (1 - t)})`;
+  ctx.beginPath();
+  ctx.arc(e.x, e.y, R * ease * 0.9, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // 방사형 속도선
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 14; i++) {
+    const a = (Math.PI * 2 * i) / 14 + prand(seed, i) * 0.2;
+    const r0 = R * (0.25 + 0.45 * ease);
+    const r1 = r0 + R * 0.28 * (1 - t);
+    ctx.strokeStyle = `rgba(255, 245, 170, ${0.85 * (1 - t)})`;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(e.x + Math.cos(a) * r0, e.y + Math.sin(a) * r0);
+    ctx.lineTo(e.x + Math.cos(a) * r1, e.y + Math.sin(a) * r1);
+    ctx.stroke();
+  }
+
+  // 맞은 적을 기절시켰다는 느낌의 회전하는 별
+  const now = performance.now() / 1000;
+  for (let i = 0; i < 6; i++) {
+    const a = now * 5 + (Math.PI * 2 * i) / 6;
+    const d = R * (0.35 + 0.35 * ease);
+    drawSparkle(e.x + Math.cos(a) * d, e.y + Math.sin(a) * d * 0.55, Math.max(3, R * 0.1 * (1 - t * 0.5)), `rgba(255, 230, 80, ${1 - t * t})`);
+  }
+
+  // '슛!' 글자
+  if (t < 0.65) {
+    const pop = 1 + 0.4 * (1 - t / 0.65);
+    ctx.save();
+    ctx.globalAlpha = 1 - Math.pow(t / 0.65, 2);
+    ctx.translate(e.x, e.y);
+    ctx.rotate(-0.1);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `bold ${Math.round(R * 0.5 * pop)}px Jua, sans-serif`;
+    ctx.lineWidth = Math.max(3, R * 0.09);
+    ctx.strokeStyle = '#fff';
+    ctx.strokeText('슛!', 0, 0);
+    ctx.fillStyle = '#ff7a1a';
+    ctx.fillText('슛!', 0, 0);
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
 function drawBullet(b) {
+  if (b.lob) { drawSlipperBullet(b); return; } // 나이의 실내화 (포물선 투척)
   if (b.visual === 'sysOrb' || b.visual === 'sysThrow') {
     // 시스템의 구슬: 원거리 구슬은 푸른 빛, 던지는 구슬은 더 크고 보라색 + 회전하는 고리
     const thrown = b.visual === 'sysThrow';
@@ -4094,6 +4435,10 @@ function drawEffect(e) {
     ctx.fillStyle = '#fff';
     ctx.fillText('⚡', e.x, e.y);
     ctx.restore();
+  } else if (e.type === 'explosion' && e.visual === 'slipper') {
+    drawSlipperExplosion(e);
+  } else if (e.type === 'leapLand' && e.visual === 'shoot') {
+    drawShootLand(e);
   } else if (e.type === 'explosion' && e.visual === 'poopBomb') {
     drawPoopBombExplosion(e);
   } else if (e.type === 'poopLaunch') {
@@ -4434,6 +4779,7 @@ function render() {
 
   const meForAim = latestState.players[myId];
   if (isLeapUltimateArmed(meForAim)) drawLeapIndicator(meForAim);
+  else if (isLobAiming(meForAim)) drawLobIndicator(meForAim);
   else drawAimRangeIndicator();
 
   ctx.restore();
@@ -4441,6 +4787,60 @@ function render() {
 
 // 모카의 점프 궁극기를 장전한 동안(PC/모바일 공통): 조준 방향/거리에 따른 착지 지점과 피해 범위를 보여준다.
 // PC는 마우스 위치, 모바일은 오른쪽 스틱을 당긴 정도로 거리가 정해진다. (벽 안에 떨어지면 서버가 가까운 빈 곳으로 조정)
+// 나이의 실내화 던지기: 궁극기/가젯을 장전하지 않았을 때 PC는 항상, 모바일은 오른쪽 스틱을 당기는 동안 착지 지점을 보여준다.
+function isLobAiming(me) {
+  if (!isLobBasic(me) || !me.alive || ultimateArmed || gadgetArmed) return false;
+  return touchAimActive || !isTouchDevice;
+}
+function drawLobIndicator(me) {
+  const spec = me.basic;
+  const angle = touchAimActive
+    ? touchAimAngle
+    : Math.atan2((mouseY / cameraScale + camera.y) - me.y, (mouseX / cameraScale + camera.x) - me.x);
+  const dist = getAimDistanceFor(me, spec);
+  const lx = Math.max(0, Math.min(ARENA_WIDTH, me.x + Math.cos(angle) * dist));
+  const ly = Math.max(0, Math.min(ARENA_HEIGHT, me.y + Math.sin(angle) * dist));
+  const R = spec.explodeRadius || 100;
+
+  ctx.save();
+  // 던질 수 있는 최대 거리 (연한 점선 원)
+  ctx.setLineDash([4, 10]);
+  ctx.strokeStyle = 'rgba(253, 121, 168, 0.3)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(me.x, me.y, spec.distance, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // 포물선 궤적 (높이는 위로 솟는 곡선으로 표현)
+  ctx.setLineDash([6, 7]);
+  ctx.strokeStyle = 'rgba(255, 170, 200, 0.9)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  const arcH = spec.arcHeight || 100;
+  for (let i = 0; i <= 20; i++) {
+    const tt = i / 20;
+    const px = me.x + (lx - me.x) * tt;
+    const py = me.y + (ly - me.y) * tt - arcH * 4 * tt * (1 - tt);
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+
+  // 착지 지점과 폭발 범위
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.arc(lx, ly, R, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255, 90, 130, 0.2)';
+  ctx.fill();
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'rgba(255, 130, 165, 0.95)';
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(lx, ly, 4, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(255, 245, 250, 0.95)';
+  ctx.fill();
+  ctx.restore();
+}
+
 function drawLeapIndicator(me) {
   const u = me.ultimate;
   const angle = touchAimActive
@@ -4505,7 +4905,7 @@ function drawAimRangeIndicator() {
       const c = me.basic.combo[ph];
       range = c.speed * c.lifetime;
     } else {
-      range = me.basic.range || me.basic.speed * me.basic.lifetime; // 근접 공격(찌르기 등)은 range
+      range = me.basic.range || me.basic.distance || me.basic.speed * me.basic.lifetime; // 근접 공격(찌르기 등)은 range, 투척(나이)은 distance
     }
     color = 'rgba(255, 255, 255, 0.6)';
   } else {
