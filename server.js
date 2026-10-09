@@ -704,6 +704,7 @@ const CHARACTERS = {
       distance: 364,          // 최대 투척 거리(px) - 기존 520에서 30% 감소
       minDistance: 100,       // 최소 투척 거리(px). 조준(PC 마우스 위치 / 모바일 스틱 당김)에 따라 minDistance ~ distance 사이로 조절됨
       selfKnockback: 220,     // 폭발 범위 안에 자신(나이)이 있으면 폭발 중심 바깥쪽으로 이만큼(px) 날아감. 자신에게는 피해 없음
+      ammoRegenSeconds: AMMO_REGEN_SECONDS * 1.4, // 기본공격 재장전 시간이 다른 캐릭터보다 40% 느림 (1.8초 -> 2.52초)
       flightTime: 2,          // 던진 뒤 땅에 떨어져 폭발할 때까지 걸리는 시간(초). 던지는 거리와 상관없이 항상 같음 (가까울수록 느리게, 멀수록 빠르게 날아감)
       radius: 12,
       arcHeight: 110,         // 포물선 최고 높이(px) - 화면 연출용 (판정에는 영향 없음)
