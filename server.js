@@ -701,7 +701,7 @@ const CHARACTERS = {
     basic: {
       name: '실내화 던지기',
       type: 'lob',            // 포물선을 그리며 날아가 땅에 착지하면 폭발하는 투척. 비행 중에는 벽/적에 막히지 않음(벽을 넘음)
-      explodeDamage: 2000,    // 폭발 피해 (1레벨 기준)
+      explodeDamage: 2500,    // 폭발 피해 (1레벨 기준) - 기존 2000에서 버프
       explodeRadius: 91,      // 폭발 범위(px) - 기존 70에서 30% 증가
       distance: 364,          // 최대 투척 거리(px) - 기존 520에서 30% 감소
       minDistance: 100,       // 최소 투척 거리(px). 조준(PC 마우스 위치 / 모바일 스틱 당김)에 따라 minDistance ~ distance 사이로 조절됨
