@@ -1153,6 +1153,26 @@ const TROPHY_REWARDS = [
   { id: 'tr_1500', trophies: 1500, coins: 1000 },
   { id: 'tr_2000', trophies: 2000, coins: 1500 },
   { id: 'tr_3000', trophies: 3000, coins: 2000 },
+  // ---- 3000 이후 확장 구간 (50000까지) ----
+  { id: 'tr_3500',  trophies: 3500,  coins: 2200 },
+  { id: 'tr_4000',  trophies: 4000,  coins: 2400 },
+  { id: 'tr_5000',  trophies: 5000,  coins: 2800 },
+  { id: 'tr_6000',  trophies: 6000,  coins: 3200 },
+  { id: 'tr_7000',  trophies: 7000,  coins: 3600 },
+  { id: 'tr_8000',  trophies: 8000,  coins: 4000 },
+  { id: 'tr_9000',  trophies: 9000,  coins: 4400 },
+  { id: 'tr_10000', trophies: 10000, coins: 4800 },
+  { id: 'tr_12000', trophies: 12000, coins: 5400 },
+  { id: 'tr_14000', trophies: 14000, coins: 6000 },
+  { id: 'tr_16000', trophies: 16000, coins: 6600 },
+  { id: 'tr_18000', trophies: 18000, coins: 7200 },
+  { id: 'tr_20000', trophies: 20000, coins: 7800 },
+  { id: 'tr_25000', trophies: 25000, coins: 8400 },
+  { id: 'tr_30000', trophies: 30000, coins: 8800 },
+  { id: 'tr_35000', trophies: 35000, coins: 9200 },
+  { id: 'tr_40000', trophies: 40000, coins: 9600 },
+  { id: 'tr_45000', trophies: 45000, coins: 9800 },
+  { id: 'tr_50000', trophies: 50000, coins: 10000 },
 ];
 function trophyRewardCode(r) { return `TROPHYROAD:${r.id}`; }
 function trophyRoadView(u) {
