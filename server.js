@@ -1110,6 +1110,15 @@ const SKINS = {
     // 슈의 샷건은 원래 기본공격 펠릿 10개(bullet), 궁극기 큰 총알 10개(slug)가 나간다. 개수/피해/탄퍼짐은 그대로 두고 모양만 주먹으로 바꿈
     visuals: { bullet: 'smallFist', slug: 'bigFist' },
   },
+  wonhyo_fire: {
+    id: 'wonhyo_fire',
+    characterId: 'wonhyo',
+    name: '불',
+    price: SKIN_PRICE,
+    desc: '기본공격은 해골물 대신 화염구가 나가고, 터지면 물웅덩이 대신 불이 활활 타올라요. 붉은 승복의 불꽃 스님으로 변신! (외형만 바뀌고 성능은 그대로예요. 궁극기 은신도 똑같아요)',
+    // 발사체 모양(skull)과 터진 뒤 남는 웅덩이 모양(skullWater)을 불로 바꿈. 피해/회복/범위/지속시간은 그대로
+    visuals: { skull: 'fireball', skullWater: 'firePool' },
+  },
 };
 function getSkin(id) {
   return typeof id === 'string' && Object.prototype.hasOwnProperty.call(SKINS, id) ? SKINS[id] : null;
@@ -2975,6 +2984,9 @@ function spawnLob(match, p, spec, sentDistance) {
 }
 
 function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
+  // 해골물(원효대사) 스킨: 터진 뒤 남는 웅덩이 모양도 스킨에 따라 바뀜 (스킨이 없으면 spec 그대로)
+  const skinPoolVisual = spec.type === 'skullwater' ? skinVisual(p, 'skullWater') : null;
+  const poolVisual = skinPoolVisual && skinPoolVisual !== 'skullWater' ? skinPoolVisual : spec.poolVisual;
   const pelletCount = spec.pelletCount || 1;
   const spreadRad = ((spec.spreadDegrees || 0) * Math.PI) / 180;
   const halfSpread = spreadRad / 2;
@@ -3012,7 +3024,7 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
       poolTickInterval: spec.poolTickInterval,
       poolDamage: spec.poolDamage,
       poolHeal: spec.poolHeal,
-      poolVisual: spec.poolVisual,       // 웅덩이 모양(예: 계란 흰자)
+      poolVisual,                         // 웅덩이 모양(예: 계란 흰자, 불 스킨의 불꽃)
       poolOnExpire: !!spec.poolOnExpire, // 사거리 끝에서도 깨져서 웅덩이를 남기는 발사체(계란)
       directDamage: spec.directDamage || 0, // 물웅덩이 생성 전 적에게 직접 적중 시 주는 대미지
       explodeDamage: spec.explodeDamage || 0, // 0보다 크면 적/벽에 닿거나 사거리 끝에서 폭발 (똥파리의 가젯 '폭탄 똥')
@@ -3208,6 +3220,7 @@ function spawnWaterPool(match, b) {
     ownerId: b.ownerId,
     team: b.team,
     life: b.poolLifetime,       // 남은 지속 시간(초)
+    maxLife: b.poolLifetime,    // 처음 지속 시간(초) - 터지는 순간 연출용
     tickTimer: 0,                 // 다음 대미지/회복 틱까지 누적된 시간
     tickInterval: b.poolTickInterval,
     damage: b.poolDamage,
