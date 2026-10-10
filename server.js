@@ -344,6 +344,7 @@ const CHARACTERS = {
       range: 90,            // 부채꼴 반경(사거리) - 근접 공격답게 130에서 축소
       knockback: 85,       // 맞은 대상이 밀려나는 거리(px) - 기존 170에서 50% 감소
       visual: 'plunger',
+      effectLife: 0.45,     // 뚫어뻥을 젖혔다가 휘두르고 "퍽!" 하는 연출이 화면에 남는 시간(초)
     },
     ultimate: {
       name: '변기 돌진',
