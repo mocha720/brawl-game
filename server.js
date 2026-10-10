@@ -4873,12 +4873,8 @@ function pickHideBush(match, p, fromX, fromY) {
 function setAiMode(match, p, ai, mode, now, fromX, fromY) {
   if (ai.mode === mode) return;
   ai.mode = mode;
-  if (mode === 'flee' || mode === 'hide') {
-    if (!ai.hideBush) ai.hideBush = pickHideBush(match, p, fromX, fromY); // 도망 -> 은신으로 넘어갈 때는 같은 덤불을 유지
-    if (mode === 'hide') ai.hideSince = now;
-  } else {
-    ai.hideBush = null;
-  }
+  ai.hideBush = null; // AI는 덤불에 숨지 않고 계속 움직이며 도망친다 (덤불 은신 없음)
+  if (mode === 'hide') ai.hideSince = now;
   if (mode === 'desperate') ai.modeUntil = now + 2800;
 }
 
@@ -4946,13 +4942,10 @@ function runAiBot(match, botId, ai, dt, now) {
     case 'flee':
       if (myR >= 0.62) setAiMode(match, p, ai, 'fight', now);
       else if (cornered) setAiMode(match, p, ai, 'desperate', now);
-      else if (p.inBush && (!target || !sharedBush(match.bushes, p, target))) setAiMode(match, p, ai, 'hide', now, fromX, fromY); // 덤불에 숨었으면 가만히 회복
-      else if (!target && now - ai.seenAt > 1500) setAiMode(match, p, ai, 'hide', now, fromX, fromY); // 적을 따돌렸으면 숨어서 회복
+      // (덤불에 숨는 'hide' 모드로는 넘어가지 않음: 체력이 회복될 때까지 계속 이동하며 공격을 피함)
       break;
-    case 'hide':
-      if (myR >= 0.7 || now - ai.hideSince > 12000) setAiMode(match, p, ai, 'fight', now);
-      else if (target && dist < 190) setAiMode(match, p, ai, 'desperate', now); // 숨은 곳까지 쫓아오면 기습 반격
-      else if (target && !p.inBush && dist < range * 1.3) setAiMode(match, p, ai, 'flee', now, fromX, fromY); // 들켰으면 다시 도망
+    case 'hide': // 더 이상 진입하지 않는 모드 (혹시 남아 있으면 바로 도망 모드로 전환)
+      setAiMode(match, p, ai, 'flee', now, fromX, fromY);
       break;
     case 'desperate':
       if (myR >= 0.62) setAiMode(match, p, ai, 'fight', now);
@@ -4996,13 +4989,8 @@ function runAiBot(match, botId, ai, dt, now) {
       const M = 90;
       if (p.x < M) ex += (M - p.x) / M; else if (p.x > ARENA_WIDTH - M) ex -= (p.x - (ARENA_WIDTH - M)) / M;
       if (p.y < M) ey += (M - p.y) / M; else if (p.y > ARENA_HEIGHT - M) ey -= (p.y - (ARENA_HEIGHT - M)) / M;
-      moveX = -ux + ex * 1.5 + sx * 0.3;
-      moveY = -uy + ey * 1.5 + sy * 0.3;
-      if (ai.hideBush) {
-        const bx = ai.hideBush.x - p.x, by = ai.hideBush.y - p.y;
-        const bd = Math.hypot(bx, by) || 1;
-        moveX = -ux * 0.5 + (bx / bd) * 1.0 + ex; moveY = -uy * 0.5 + (by / bd) * 1.0 + ey;
-      }
+      moveX = -ux + ex * 1.5 + sx * 0.7; // 좌우로 지그재그 움직이며 공격을 피함
+      moveY = -uy + ey * 1.5 + sy * 0.7;
     } else if (mode === 'hide') {
       // 숨은 곳에서는 움직이지 않고 기다림 (아직 덤불에 도착하지 못했으면 덤불로 이동)
       if (ai.hideBush && !p.inBush) {
@@ -5045,19 +5033,17 @@ function runAiBot(match, botId, ai, dt, now) {
         moveX = sx; moveY = sy;
       }
     }
-  } else if (mode === 'flee' || mode === 'hide') {
-    // 적이 안 보이는 동안: 덤불로 이동해서 숨거나, 마지막으로 본 적의 반대쪽으로 계속 이동
-    if (ai.hideBush && !p.inBush) {
-      const bx = ai.hideBush.x - p.x, by = ai.hideBush.y - p.y;
-      const bd = Math.hypot(bx, by) || 1;
-      moveX = bx / bd; moveY = by / bd; aimAngle = Math.atan2(by, bx);
-    } else if (!p.inBush && mode === 'flee' && ai.lastSeen) {
-      const ax = p.x - ai.lastSeen.x, ay = p.y - ai.lastSeen.y;
-      const ad = Math.hypot(ax, ay) || 1;
-      moveX = ax / ad; moveY = ay / ad;
-    }
-    if (ai.lastSeen && p.inBush) aimAngle = Math.atan2(ai.lastSeen.y - p.y, ai.lastSeen.x - p.x); // 덤불 안에서는 적이 있던 쪽을 바라봄
-  } else if (ai.lastSeen && now - ai.seenAt < 4000) {
+  } else if ((mode === 'flee' || mode === 'hide') && ai.lastSeen && now - ai.seenAt < 2500) {
+    // 적이 안 보여도 가만히 있지 않고, 마지막으로 본 적의 반대쪽으로 계속 이동 (가장자리에 몰리지 않게 중앙 쪽으로 보정)
+    const M = 90;
+    let ex = 0, ey = 0;
+    if (p.x < M) ex += (M - p.x) / M; else if (p.x > ARENA_WIDTH - M) ex -= (p.x - (ARENA_WIDTH - M)) / M;
+    if (p.y < M) ey += (M - p.y) / M; else if (p.y > ARENA_HEIGHT - M) ey -= (p.y - (ARENA_HEIGHT - M)) / M;
+    const ax = p.x - ai.lastSeen.x, ay = p.y - ai.lastSeen.y;
+    const ad = Math.hypot(ax, ay) || 1;
+    moveX = ax / ad + ex * 1.5; moveY = ay / ad + ey * 1.5;
+    aimAngle = Math.atan2(ai.lastSeen.y - p.y, ai.lastSeen.x - p.x); // 적이 있던 쪽을 바라봄
+  } else if (mode !== 'flee' && mode !== 'hide' && ai.lastSeen && now - ai.seenAt < 4000) {
     // 놓친 적의 마지막 위치로 이동
     const dx = ai.lastSeen.x - p.x, dy = ai.lastSeen.y - p.y;
     const d = Math.hypot(dx, dy);
