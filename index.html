@@ -238,7 +238,7 @@
   #joinOverlay > :last-child, #modeOverlay > :last-child { margin-bottom: auto; }
 
   /* ----- 창(모달) 메뉴 (계정 설정 / 랭킹 / 미션 / 코드 입력) 과 대기·결과·대결 화면: 게임 화면 위에 어둡게 깔린다 ----- */
-  #accountOverlay, #rankingOverlay, #missionOverlay, #codeOverlay, #adminOverlay, #noticeOverlay,
+  #accountOverlay, #rankingOverlay, #missionOverlay, #trophyRoadOverlay, #codeOverlay, #adminOverlay, #noticeOverlay,
   #matchingOverlay, #matchResultOverlay, #versusOverlay {
     position: fixed; inset: 0; display: none;
     flex-direction: column; align-items: center; justify-content: flex-start;
@@ -247,12 +247,12 @@
     background: rgba(10, 11, 30, 0.86);
     -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
   }
-  #accountOverlay, #rankingOverlay, #missionOverlay, #codeOverlay, #adminOverlay, #noticeOverlay { z-index: 40; }
+  #accountOverlay, #rankingOverlay, #missionOverlay, #trophyRoadOverlay, #codeOverlay, #adminOverlay, #noticeOverlay { z-index: 40; }
   #matchingOverlay, #matchResultOverlay { z-index: 10; }
   #versusOverlay { z-index: 30; background: rgba(10, 11, 30, 0.92); justify-content: center; }
-  #accountOverlay.open, #rankingOverlay.open, #missionOverlay.open, #codeOverlay.open, #adminOverlay.open, #noticeOverlay.open,
+  #accountOverlay.open, #rankingOverlay.open, #missionOverlay.open, #trophyRoadOverlay.open, #codeOverlay.open, #adminOverlay.open, #noticeOverlay.open,
   #matchingOverlay.open, #matchResultOverlay.open, #versusOverlay.open { display: flex; }
-  #accountOverlay > .panel, #rankingOverlay > .panel, #missionOverlay > .panel, #codeOverlay > .panel, #adminOverlay > .panel, #noticeOverlay > .panel,
+  #accountOverlay > .panel, #rankingOverlay > .panel, #missionOverlay > .panel, #trophyRoadOverlay > .panel, #codeOverlay > .panel, #adminOverlay > .panel, #noticeOverlay > .panel,
   #matchingOverlay > .panel, #matchResultOverlay > .panel { margin: auto; }
 
   /* ----- 공지사항 ----- */
@@ -437,6 +437,12 @@
   .mission-bar > div { height: 100%; background: var(--sun); border-radius: 999px; }
   .mission-foot { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--mute); }
   .mission-item button { min-height: 34px; padding: 4px 14px; font-size: 14px; border-radius: 11px; }
+
+  /* ----- 트로피 로드 ----- */
+  #trophyRoadOverlay > .panel { width: min(420px, 100%); }
+  #trophyRoadSummary { margin: 0 0 12px; font-size: 14px; line-height: 1.6; color: #d5d7f2; }
+  #trophyRoadSummary b { color: var(--sun); font-family: var(--font-display); font-weight: 400; font-size: 20px; }
+  #trophyRoadList { display: flex; flex-direction: column; gap: 10px; max-height: 50vh; overflow-y: auto; padding: 2px; -webkit-overflow-scrolling: touch; }
 
   /* ----- 랭킹 ----- */
   #rankingList { max-height: 50vh; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; padding: 2px; }
@@ -889,6 +895,7 @@
     <button id="openDrawBtn" class="btn btn-ghost">🎁 일일 뽑기</button>
     <button id="openRankingBtn" class="btn btn-ghost">랭킹</button>
     <button id="openMissionBtn" class="btn btn-ghost">미션</button>
+    <button id="openTrophyRoadBtn" class="btn btn-ghost">🏆 트로피 로드</button>
     <button id="openCodeBtn" class="btn btn-ghost">코드 입력</button>
     <button id="openAccountBtn" class="btn btn-ghost">계정 설정</button>
     <button id="logoutBtn" class="btn btn-ghost">로그아웃</button>
@@ -1002,6 +1009,18 @@
     <div id="missionList"></div>
     <div id="missionMsg" class="panel-msg"></div>
     <button id="missionCloseBtn" class="btn btn-ghost">닫기</button>
+  </div>
+</div>
+
+<div id="trophyRoadOverlay">
+  <div class="panel">
+    <h2 class="panel-title">🏆 트로피 로드</h2>
+    <p class="panel-sub">모든 캐릭터의 트로피 총합이 목표에 닿으면 코인 보상을 한 번 받을 수 있어요. 받은 보상은 트로피가 줄어도 유지돼요.</p>
+    <div class="profile-line"></div>
+    <div id="trophyRoadSummary"></div>
+    <div id="trophyRoadList"></div>
+    <div id="trophyRoadMsg" class="panel-msg"></div>
+    <button id="trophyRoadCloseBtn" class="btn btn-ghost">닫기</button>
   </div>
 </div>
 
@@ -1679,6 +1698,7 @@ function updateProfileUI() {
   updateDrawBadge();
   renderEventCards();
   updateMissionUI();
+  updateTrophyRoadUI();
   updateNoticeBadge();
 }
 
@@ -1756,6 +1776,58 @@ function openMissionDialog() {
 function closeMissionDialog() { document.getElementById('missionOverlay').classList.remove('open'); }
 document.getElementById('openMissionBtn').addEventListener('click', openMissionDialog);
 document.getElementById('missionCloseBtn').addEventListener('click', closeMissionDialog);
+
+// ===== 트로피 로드 =====
+// 트로피 총합/달성/수령 여부는 전부 서버가 판단하고, 클라이언트는 profile.trophyRoad 를 그대로 보여주기만 한다
+function updateTrophyRoadUI() {
+  const road = (currentProfile && currentProfile.trophyRoad) || { total: 0, rewards: [] };
+  const claimable = road.rewards.some((r) => !r.claimed && road.total >= r.trophies);
+  const openBtn = document.getElementById('openTrophyRoadBtn');
+  if (openBtn) openBtn.classList.toggle('has-claim', claimable); // 받을 보상이 있으면 버튼 모서리에 빨간 점
+
+  const sumEl = document.getElementById('trophyRoadSummary');
+  const listEl = document.getElementById('trophyRoadList');
+  if (!sumEl || !listEl) return;
+  const next = road.rewards.find((r) => road.total < r.trophies);
+  sumEl.innerHTML = `내 트로피 총합 <b>🏆 ${road.total.toLocaleString()}</b>`
+    + (next ? `<br>다음 목표까지 🏆 ${(next.trophies - road.total).toLocaleString()} 남았어요` : '<br>모든 목표를 달성했어요! 🎉');
+  listEl.innerHTML = road.rewards.map((r) => {
+    const reached = road.total >= r.trophies;
+    const pct = Math.round((Math.min(road.total, r.trophies) / r.trophies) * 100);
+    const btn = r.claimed
+      ? '<button disabled>✅ 수령 완료</button>'
+      : `<button data-trophy-reward="${escapeHtml(r.id)}" ${reached ? '' : 'disabled'}>${reached ? '🪙 보상 받기' : '🔒 잠김'}</button>`;
+    return `<div class="mission-item${reached ? ' done' : ''}${r.claimed ? ' claimed' : ''}">
+      <div class="mission-row"><span>🏆 ${r.trophies.toLocaleString()}</span><span class="mission-reward">🪙 ${r.coins.toLocaleString()}</span></div>
+      <div class="mission-bar"><div style="width:${pct}%"></div></div>
+      <div class="mission-foot"><span>${Math.min(road.total, r.trophies).toLocaleString()} / ${r.trophies.toLocaleString()}</span>${btn}</div>
+    </div>`;
+  }).join('');
+
+  listEl.querySelectorAll('button[data-trophy-reward]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      btn.disabled = true;
+      socket.timeout(8000).emit('claimTrophyReward', { rewardId: btn.getAttribute('data-trophy-reward') }, (err, res) => {
+        if (err || !res) { setTrophyRoadMsg('서버 응답이 없습니다. 잠시 후 다시 시도해주세요.'); updateTrophyRoadUI(); return; }
+        if (res.profile) { currentProfile = res.profile; updateProfileUI(); }
+        setTrophyRoadMsg(res.message || (res.ok ? '완료!' : '실패했습니다.'), res.ok);
+      });
+    });
+  });
+}
+function setTrophyRoadMsg(text, ok) {
+  const el = document.getElementById('trophyRoadMsg');
+  el.textContent = text || '';
+  el.classList.toggle('ok', !!ok);
+}
+function openTrophyRoadDialog() {
+  setTrophyRoadMsg('');
+  updateProfileUI();
+  document.getElementById('trophyRoadOverlay').classList.add('open');
+}
+function closeTrophyRoadDialog() { document.getElementById('trophyRoadOverlay').classList.remove('open'); }
+document.getElementById('openTrophyRoadBtn').addEventListener('click', openTrophyRoadDialog);
+document.getElementById('trophyRoadCloseBtn').addEventListener('click', closeTrophyRoadDialog);
 
 // ===== 공지사항 =====
 // 공지 내용은 서버가 profile.announcements 로 내려준다 (서버의 ANNOUNCEMENTS 만 고치면 됨).
@@ -2623,6 +2695,7 @@ document.getElementById('logoutBtn').addEventListener('click', () => {
     updateProfileUI();
     closeCodeDialog();
     closeMissionDialog();
+    closeTrophyRoadDialog();
     closeAccountDialog();
     closeRankingDialog();
     closeNoticeDialog();
@@ -2642,6 +2715,7 @@ function forceReLogin(message) {
   updateProfileUI();
   closeCodeDialog();
   closeMissionDialog();
+  closeTrophyRoadDialog();
   closeAccountDialog();
   closeRankingDialog();
   closeNoticeDialog();
