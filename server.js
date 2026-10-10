@@ -1101,6 +1101,15 @@ const SKINS = {
     // 발사체 모양(orb)과 궁극기 번개 이펙트(lightning)를 치킨으로 바꿈
     visuals: { orb: 'chickenThrow', lightning: 'chickenDrop' },
   },
+  syu_superman: {
+    id: 'syu_superman',
+    characterId: 'syu',
+    name: '슈퍼맨',
+    price: SKIN_PRICE,
+    desc: '기본공격은 작은 주먹 10개, 궁극기는 큰 주먹 10개가 나가요. 슈퍼맨으로 변신! (외형만 바뀌고 성능은 그대로예요)',
+    // 슈의 샷건은 원래 기본공격 펠릿 10개(bullet), 궁극기 큰 총알 10개(slug)가 나간다. 개수/피해/탄퍼짐은 그대로 두고 모양만 주먹으로 바꿈
+    visuals: { bullet: 'smallFist', slug: 'bigFist' },
+  },
 };
 function getSkin(id) {
   return typeof id === 'string' && Object.prototype.hasOwnProperty.call(SKINS, id) ? SKINS[id] : null;
