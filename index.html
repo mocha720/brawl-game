@@ -1273,7 +1273,7 @@ const CHARACTERS = [
     color: '#1abc9c',
     maxHp: 6000,
     basic: { name: '칼 던지기', damage: 2000, desc: '벽(장애물)을 그대로 통과해서 날아감' },
-    ultimate: { name: '저격 터렛 설치', desc: '조준 불필요, 체력 4,000의 자동 사격 터렛을 설치 (사거리 294, 0.5초마다 1,000 피해 저격탄 발사)' },
+    ultimate: { name: '저격 터렛 설치', desc: '조준 불필요, 체력 4,000의 자동 사격 터렛을 설치 (사거리 441, 0.5초마다 1,000 피해 저격탄 발사)' },
     gadget: { name: '저격 사격', desc: '조준한 방향으로 탄속이 매우 빠른 총알 1발을 발사 (사거리 약 846), 2,500 피해 (15초마다 사용 가능)' },
   },
   {
@@ -4179,6 +4179,262 @@ const SKIN_LOOKS = {
       ctx.restore();
     },
   },
+  bobae_jinsoon: {
+    // 진순: 순한맛 라면 컨셉. 노란 라면 봉지색 몸 + 구불구불한 면발 머리 + 반숙 계란 + 송송 썬 파 + 순한 눈웃음 + 볼터치 + 가슴의 '순' 글자 + 김이 모락모락.
+    // 항상 정면으로 똑바로 서 있음
+    body: '#f2c230',
+    avatarRing: '#e8552d',
+    upright: true,
+    draw(R, p) {
+      const t = Date.now() / 500;
+      // 몸통 안쪽만 그리도록 잘라서 봉지 무늬/얼굴을 그림
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(0, 0, R - 0.5, 0, Math.PI * 2);
+      ctx.clip();
+      const pack = ctx.createLinearGradient(0, -R, 0, R);
+      pack.addColorStop(0, '#ffd84a');
+      pack.addColorStop(1, '#f0a81c');
+      ctx.fillStyle = pack;
+      ctx.fillRect(-R, -R, R * 2, R * 2);
+      // 아래쪽 붉은 띠 + 가슴의 '순' 글자
+      ctx.fillStyle = '#e8552d';
+      ctx.fillRect(-R, R * 0.45, R * 2, R * 0.6);
+      ctx.fillStyle = '#fff6df';
+      ctx.font = `bold ${Math.round(R * 0.5)}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('순', 0, R * 0.7);
+      // 얼굴
+      ctx.fillStyle = '#fff1d6';
+      ctx.beginPath();
+      ctx.ellipse(0, -R * 0.12, R * 0.5, R * 0.44, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // 순한 눈웃음 (^ ^)
+      ctx.strokeStyle = '#4a2a12';
+      ctx.lineWidth = 1.8;
+      ctx.lineCap = 'round';
+      for (const side of [-1, 1]) {
+        ctx.beginPath();
+        ctx.arc(side * R * 0.2, -R * 0.14, R * 0.09, 1.1 * Math.PI, 1.9 * Math.PI);
+        ctx.stroke();
+      }
+      ctx.beginPath();
+      ctx.arc(0, -R * 0.02, R * 0.12, 0.15 * Math.PI, 0.85 * Math.PI);
+      ctx.stroke();
+      // 볼터치
+      ctx.fillStyle = 'rgba(255, 130, 120, 0.45)';
+      for (const side of [-1, 1]) {
+        ctx.beginPath();
+        ctx.arc(side * R * 0.36, -R * 0.02, R * 0.08, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // 구불구불한 면발 머리 (위쪽으로 말려 올라간 면 가닥)
+      ctx.strokeStyle = '#f8dc7a';
+      ctx.lineWidth = R * 0.14;
+      for (let i = 0; i < 5; i += 1) {
+        const x0 = -R * 0.46 + i * R * 0.23;
+        ctx.beginPath();
+        ctx.moveTo(x0, -R * 0.42);
+        ctx.bezierCurveTo(x0 - R * 0.2, -R * 0.62, x0 + R * 0.2, -R * 0.78, x0, -R * 0.98);
+        ctx.stroke();
+      }
+      ctx.strokeStyle = '#d9b84a';
+      ctx.lineWidth = 1;
+      for (let i = 0; i < 5; i += 1) {
+        const x0 = -R * 0.46 + i * R * 0.23;
+        ctx.beginPath();
+        ctx.moveTo(x0, -R * 0.42);
+        ctx.bezierCurveTo(x0 - R * 0.2, -R * 0.62, x0 + R * 0.2, -R * 0.78, x0, -R * 0.98);
+        ctx.stroke();
+      }
+      // 반숙 계란 (머리 위 한쪽) + 송송 썬 파
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.ellipse(-R * 0.32, -R * 0.62, R * 0.2, R * 0.15, -0.3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#ffb21c';
+      ctx.beginPath();
+      ctx.arc(-R * 0.32, -R * 0.62, R * 0.08, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#4caf50';
+      for (const [dx, dy] of [[0.12, -0.7], [0.28, -0.58], [0.4, -0.72], [0.02, -0.55]]) {
+        ctx.fillRect(R * dx, R * dy, R * 0.09, R * 0.05);
+      }
+      ctx.restore();
+      // 머리 위로 모락모락 피어오르는 김
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.75)';
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      for (let i = 0; i < 3; i += 1) {
+        const x0 = -R * 0.3 + i * R * 0.3;
+        const w = Math.sin(t + i * 1.7) * R * 0.1;
+        ctx.beginPath();
+        ctx.moveTo(x0, -R * 1.05);
+        ctx.quadraticCurveTo(x0 + w, -R * 1.3, x0 - w, -R * 1.55);
+        ctx.stroke();
+      }
+    },
+  },
+  yeoddongi_gigachanne: {
+    // 기가차네: 얼음을 다루는 용사. 서리 낀 푸른 몸 + 은빛 얼음 흉갑(눈꽃 문장) + 어깨 얼음 견갑 + 하늘색 투구(뾰족한 얼음 결정 장식)
+    // + 하얀 앞머리 + 빛나는 하늘색 눈 + 등 뒤로 솟은 얼음 검 + 몸 주위를 도는 눈꽃. 항상 정면으로 똑바로 서 있음
+    body: '#4aa8e0',
+    avatarRing: '#d6f1ff',
+    upright: true,
+    draw(R, p) {
+      const t = Date.now() / 600;
+      // 등 뒤의 얼음 검: 오른쪽 어깨 위로 칼자루가 삐죽 솟음
+      ctx.save();
+      ctx.translate(R * 0.5, -R * 0.45);
+      ctx.rotate(0.55);
+      ctx.fillStyle = '#bfeaff';
+      ctx.fillRect(-R * 0.09, -R * 0.1, R * 0.18, R * 1.3);
+      ctx.fillStyle = '#2f6fa8';
+      ctx.fillRect(-R * 0.07, -R * 0.62, R * 0.14, R * 0.52);
+      ctx.fillStyle = '#e8f8ff';
+      ctx.fillRect(-R * 0.27, -R * 0.14, R * 0.54, R * 0.1);
+      ctx.beginPath();
+      ctx.moveTo(0, -R * 0.84);
+      ctx.lineTo(R * 0.1, -R * 0.66);
+      ctx.lineTo(0, -R * 0.56);
+      ctx.lineTo(-R * 0.1, -R * 0.66);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+      // 몸통 안쪽만 그리도록 잘라서 튜닉/갑옷/얼굴을 그림
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(0, 0, R - 0.5, 0, Math.PI * 2);
+      ctx.clip();
+      const tunic = ctx.createLinearGradient(0, -R, 0, R);
+      tunic.addColorStop(0, '#6cc4f2');
+      tunic.addColorStop(1, '#2a74b8');
+      ctx.fillStyle = tunic;
+      ctx.fillRect(-R, -R, R * 2, R * 2);
+      // 얼음 흉갑 + 눈꽃 문장
+      const plate = ctx.createLinearGradient(-R * 0.5, 0, R * 0.5, 0);
+      plate.addColorStop(0, '#a9d9f5');
+      plate.addColorStop(0.45, '#f4fcff');
+      plate.addColorStop(1, '#8cc8ee');
+      ctx.fillStyle = plate;
+      ctx.beginPath();
+      ctx.moveTo(-R * 0.52, R * 0.0);
+      ctx.lineTo(R * 0.52, R * 0.0);
+      ctx.lineTo(R * 0.42, R * 0.6);
+      ctx.quadraticCurveTo(0, R * 0.78, -R * 0.42, R * 0.6);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(30, 80, 130, 0.7)';
+      ctx.lineWidth = 1.3;
+      ctx.stroke();
+      ctx.strokeStyle = '#3a8fd0';
+      ctx.lineWidth = 1.4;
+      ctx.lineCap = 'round';
+      for (let i = 0; i < 3; i += 1) {
+        const a = (i * Math.PI) / 3;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(a) * R * 0.2, R * 0.32 + Math.sin(a) * R * 0.2);
+        ctx.lineTo(-Math.cos(a) * R * 0.2, R * 0.32 - Math.sin(a) * R * 0.2);
+        ctx.stroke();
+      }
+      // 어깨 얼음 견갑 (뾰족한 결정)
+      for (const side of [-1, 1]) {
+        ctx.fillStyle = '#d6f1ff';
+        ctx.beginPath();
+        ctx.moveTo(side * R * 0.55, -R * 0.05);
+        ctx.lineTo(side * R * 0.95, -R * 0.2);
+        ctx.lineTo(side * R * 1.05, R * 0.2);
+        ctx.lineTo(side * R * 0.7, R * 0.3);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(30, 80, 130, 0.7)';
+        ctx.stroke();
+      }
+      // 푸른 가죽 벨트 + 얼음 버클
+      ctx.fillStyle = '#1f4e80';
+      ctx.fillRect(-R, R * 0.6, R * 2, R * 0.16);
+      ctx.fillStyle = '#e8f8ff';
+      ctx.fillRect(-R * 0.1, R * 0.58, R * 0.2, R * 0.2);
+      // 하얀 털 목도리
+      ctx.strokeStyle = '#f2fbff';
+      ctx.lineWidth = R * 0.17;
+      ctx.beginPath();
+      ctx.arc(0, -R * 0.1, R * 0.42, 0.12 * Math.PI, 0.88 * Math.PI);
+      ctx.stroke();
+      // 얼굴
+      ctx.fillStyle = '#fbe3cf';
+      ctx.beginPath();
+      ctx.ellipse(0, -R * 0.45, R * 0.38, R * 0.4, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // 하얀 앞머리
+      ctx.fillStyle = '#eef8ff';
+      ctx.beginPath();
+      ctx.moveTo(-R * 0.42, -R * 0.45);
+      ctx.quadraticCurveTo(-R * 0.45, -R * 0.9, 0, -R * 0.9);
+      ctx.quadraticCurveTo(R * 0.45, -R * 0.9, R * 0.42, -R * 0.45);
+      ctx.lineTo(R * 0.3, -R * 0.6);
+      ctx.lineTo(R * 0.15, -R * 0.5);
+      ctx.lineTo(0, -R * 0.62);
+      ctx.lineTo(-R * 0.15, -R * 0.5);
+      ctx.lineTo(-R * 0.3, -R * 0.6);
+      ctx.closePath();
+      ctx.fill();
+      // 하늘색 투구 띠 + 이마 얼음 보석
+      ctx.fillStyle = '#4aa8e0';
+      ctx.fillRect(-R * 0.43, -R * 0.74, R * 0.86, R * 0.1);
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.moveTo(0, -R * 0.86);
+      ctx.lineTo(R * 0.08, -R * 0.69);
+      ctx.lineTo(0, -R * 0.6);
+      ctx.lineTo(-R * 0.08, -R * 0.69);
+      ctx.closePath();
+      ctx.fill();
+      // 눈 (빛나는 하늘색) + 야무진 입
+      ctx.fillStyle = '#18a8ff';
+      for (const side of [-1, 1]) {
+        ctx.beginPath();
+        ctx.arc(side * R * 0.16, -R * 0.42, R * 0.06, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.strokeStyle = '#2a4a6a';
+      ctx.lineWidth = 1.5;
+      for (const side of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(side * R * 0.07, -R * 0.51);
+        ctx.lineTo(side * R * 0.27, -R * 0.55);
+        ctx.stroke();
+      }
+      ctx.strokeStyle = '#a65a4a';
+      ctx.lineWidth = 1.3;
+      ctx.beginPath();
+      ctx.arc(0, -R * 0.33, R * 0.09, 0.2 * Math.PI, 0.8 * Math.PI);
+      ctx.stroke();
+      ctx.restore();
+      // 투구 위로 솟은 얼음 결정 3개 (몸통 바깥으로 삐죽)
+      ctx.fillStyle = '#e8f8ff';
+      ctx.strokeStyle = 'rgba(30, 90, 150, 0.8)';
+      ctx.lineWidth = 1;
+      for (const [dx, h] of [[-0.3, 0.38], [0, 0.55], [0.3, 0.38]]) {
+        ctx.beginPath();
+        ctx.moveTo(R * (dx - 0.1), -R * 0.9);
+        ctx.lineTo(R * dx, -R * (0.9 + h));
+        ctx.lineTo(R * (dx + 0.1), -R * 0.9);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
+      // 몸 주위를 도는 눈꽃
+      ctx.fillStyle = 'rgba(235, 248, 255, 0.9)';
+      for (let i = 0; i < 3; i += 1) {
+        const a = t + i * 2.1;
+        ctx.beginPath();
+        ctx.arc(Math.cos(a) * R * 1.25, Math.sin(a) * R * 1.1, Math.max(1.5, R * 0.07), 0, Math.PI * 2);
+        ctx.fill();
+      }
+    },
+  },
   seongseureopda_poop: {
     // 똥: 몸 전체가 3단으로 똬리를 튼 똥 모양. 가운데 단에 동그란 눈과 미소, 꼭대기에 말린 꼬리, 머리 위로 김이 모락모락, 파리 두 마리가 빙글빙글. 항상 정면으로 똑바로 서 있음
     body: '#5a3716',
@@ -5491,6 +5747,108 @@ function drawBullet(b) {
     return;
   }
 
+  if (b.visual === 'iceShard') {
+    // 여똥이 기가차네 스킨 기본공격: 날아가는 얼음 조각 - 뾰족한 육각 결정 + 뒤로 흩날리는 냉기 꼬리
+    const ang = Math.atan2(b.vy || 0, b.vx || 1);
+    const t = Date.now() / 120;
+    const r = b.radius;
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.rotate(ang);
+    const tl = r * 3.2;
+    const tg = ctx.createLinearGradient(-tl, 0, 0, 0);
+    tg.addColorStop(0, 'rgba(170, 225, 255, 0)');
+    tg.addColorStop(1, 'rgba(170, 225, 255, 0.6)');
+    ctx.fillStyle = tg;
+    ctx.beginPath();
+    ctx.moveTo(-tl, 0);
+    ctx.lineTo(0, -r * 0.8);
+    ctx.lineTo(0, r * 0.8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.shadowColor = 'rgba(120, 210, 255, 0.95)';
+    ctx.shadowBlur = 10;
+    const g = ctx.createLinearGradient(-r, 0, r * 1.7, 0);
+    g.addColorStop(0, '#d6f1ff');
+    g.addColorStop(0.6, '#8fd3ff');
+    g.addColorStop(1, '#3da0e8');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(r * 1.7, 0);
+    ctx.lineTo(r * 0.2, -r * 0.95);
+    ctx.lineTo(-r * 0.9, -r * 0.55);
+    ctx.lineTo(-r * 0.9, r * 0.55);
+    ctx.lineTo(r * 0.2, r * 0.95);
+    ctx.closePath();
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(r * 1.2, 0);
+    ctx.lineTo(-r * 0.6, 0);
+    ctx.moveTo(r * 0.2, -r * 0.7);
+    ctx.lineTo(-r * 0.3, 0);
+    ctx.lineTo(r * 0.2, r * 0.7);
+    ctx.stroke();
+    ctx.fillStyle = '#ffffff';
+    for (let i = 0; i < 3; i += 1) {
+      const a = t + i * 2.1;
+      ctx.beginPath();
+      ctx.arc(-r * 1.2 + Math.cos(a) * r * 0.6, Math.sin(a * 1.3) * r * 1.1, Math.max(1, r * 0.1), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+    return;
+  }
+
+  if (b.visual === 'iceVortex') {
+    // 여똥이 기가차네 스킨 가젯: 얼음 소용돌이 - 빙글빙글 도는 나선형 냉기 + 얼음 결정 조각 (판정 반경은 감자칩과 동일)
+    const spin = (b.maxLife && b.life != null ? (b.maxLife - b.life) : 0) * 12;
+    const r = b.radius;
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.shadowColor = 'rgba(120, 210, 255, 0.95)';
+    ctx.shadowBlur = 14;
+    const core = ctx.createRadialGradient(0, 0, 1, 0, 0, r * 1.6);
+    core.addColorStop(0, 'rgba(255, 255, 255, 0.95)');
+    core.addColorStop(0.5, 'rgba(150, 215, 255, 0.7)');
+    core.addColorStop(1, 'rgba(60, 150, 230, 0)');
+    ctx.fillStyle = core;
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 1.6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.rotate(spin);
+    ctx.lineCap = 'round';
+    for (let arm = 0; arm < 3; arm += 1) {
+      ctx.rotate((Math.PI * 2) / 3);
+      ctx.strokeStyle = arm === 0 ? 'rgba(255, 255, 255, 0.95)' : 'rgba(150, 215, 255, 0.9)';
+      ctx.lineWidth = Math.max(2, r * 0.22);
+      ctx.beginPath();
+      for (let k = 0; k <= 10; k += 1) {
+        const u = k / 10;
+        const ang = u * 2.4;
+        const rad = u * r * 1.6;
+        if (k === 0) ctx.moveTo(Math.cos(ang) * rad, Math.sin(ang) * rad);
+        else ctx.lineTo(Math.cos(ang) * rad, Math.sin(ang) * rad);
+      }
+      ctx.stroke();
+      // 나선 끝의 얼음 결정
+      ctx.fillStyle = '#e8f8ff';
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(2.4) * r * 1.6 + r * 0.35, Math.sin(2.4) * r * 1.6);
+      ctx.lineTo(Math.cos(2.4) * r * 1.6, Math.sin(2.4) * r * 1.6 - r * 0.22);
+      ctx.lineTo(Math.cos(2.4) * r * 1.6 - r * 0.25, Math.sin(2.4) * r * 1.6);
+      ctx.lineTo(Math.cos(2.4) * r * 1.6, Math.sin(2.4) * r * 1.6 + r * 0.22);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+    return;
+  }
+
   if (b.visual === 'pringles') {
     // 여똥이의 가젯 '프링글스': 빙글빙글 돌며 날아가는 큼직한 감자칩 (안장 모양으로 휜 노란 칩 + 갈색 기름 자국)
     const spin = (b.maxLife && b.life != null ? (b.maxLife - b.life) : 0) * 9; // 날아간 시간에 비례해서 회전
@@ -5923,6 +6281,51 @@ function drawBullet(b) {
     return;
   }
 
+  if (b.visual === 'ramenSoup') {
+    // 보배 진순 스킨 기본공격: 날아가는 라면 스프 봉지 - 빙글빙글 돌며 날고, 뒤로 붉은 가루가 흩날림
+    const spin = (b.maxLife && b.life != null ? (b.maxLife - b.life) : 0) * 10;
+    const r = b.radius;
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    // 흩날리는 스프 가루 (진행 반대쪽)
+    const ang = Math.atan2(b.vy || 0, b.vx || 1);
+    ctx.save();
+    ctx.rotate(ang);
+    ctx.fillStyle = 'rgba(214, 70, 40, 0.55)';
+    for (let i = 0; i < 5; i += 1) {
+      const k = i / 5;
+      ctx.beginPath();
+      ctx.arc(-r * (1.2 + k * 2.4), Math.sin(spin + i * 2) * r * (0.3 + k * 0.6), Math.max(1, r * (0.22 - k * 0.12)), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+    ctx.rotate(spin);
+    // 스프 봉지 (톱니 모양 윗/아랫부분이 있는 직사각형)
+    const w = r * 1.5, h = r * 1.1;
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.3)';
+    ctx.shadowBlur = 4;
+    ctx.fillStyle = '#e8552d';
+    ctx.fillRect(-w, -h, w * 2, h * 2);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#ffd84a';
+    ctx.fillRect(-w, -h * 0.25, w * 2, h * 0.5);
+    ctx.fillStyle = '#e8552d';
+    for (let i = -3; i <= 3; i += 1) {
+      ctx.fillRect(i * w * 0.3 - w * 0.08, -h - r * 0.18, w * 0.16, r * 0.18);
+      ctx.fillRect(i * w * 0.3 - w * 0.08, h, w * 0.16, r * 0.18);
+    }
+    ctx.strokeStyle = '#8a2a10';
+    ctx.lineWidth = 1.2;
+    ctx.strokeRect(-w, -h, w * 2, h * 2);
+    ctx.fillStyle = '#7a2a10';
+    ctx.font = `bold ${Math.round(r * 0.9)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('스프', 0, 0);
+    ctx.restore();
+    return;
+  }
+
   if (b.visual === 'bobae') {
     // 보배 던지기 - 반짝이는 보배(구슬) 투척
     ctx.save();
@@ -6040,8 +6443,91 @@ function drawTurret(t) {
   drawHpBar(t.x, t.y - t.radius - 18, 56, 12, t.hp, t.maxHp || 1);
 }
 
+// 보배 진순 스킨 궁극기: 폭탄 대신 보글보글 물이 끓는 냄비. 주변으로 뜨거운 물이 퍼져 있고(피해 범위와 동일), 터질 때까지 점점 더 거세게 끓는다
+function drawRamenPot(bomb) {
+  const t = Date.now() / 1000;
+  const boil = 1 + Math.max(0, 1 - bomb.fuseLeft / 3) * 1.5; // 터질 때가 가까울수록 빠르게 끓음
+  ctx.save();
+  // 뜨거운 물이 퍼진 범위
+  const pulse = 0.5 + 0.5 * Math.sin(t * 6 * boil);
+  const g = ctx.createRadialGradient(bomb.x, bomb.y, 1, bomb.x, bomb.y, bomb.radius);
+  g.addColorStop(0, 'rgba(255, 235, 200, 0.55)');
+  g.addColorStop(0.7, 'rgba(255, 150, 70, 0.4)');
+  g.addColorStop(1, 'rgba(230, 70, 40, 0.3)');
+  ctx.globalAlpha = 0.55 + pulse * 0.25;
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(bomb.x, bomb.y, bomb.radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 0.9;
+  ctx.lineWidth = 2;
+  ctx.setLineDash([6, 6]);
+  ctx.strokeStyle = '#ff7043';
+  ctx.stroke();
+  ctx.setLineDash([]);
+  // 물 위로 올라오는 기포와 김
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+  for (let i = 0; i < 10; i += 1) {
+    const a = i * 2.4 + t * 0.4;
+    const rr = bomb.radius * (0.25 + 0.65 * ((i * 0.31) % 1));
+    const k = (t * boil * 0.8 + i * 0.37) % 1;
+    ctx.globalAlpha = 0.8 * (1 - k);
+    ctx.beginPath();
+    ctx.arc(bomb.x + Math.cos(a) * rr, bomb.y + Math.sin(a) * rr - k * 14, 2 + k * 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  // 냄비: 양쪽 손잡이 + 몸통 + 끓는 물 + 뚜껑 들썩
+  const px = bomb.x, py = bomb.y;
+  const pw = 24, ph = 16;
+  ctx.fillStyle = '#6b6f78';
+  ctx.fillRect(px - pw - 7, py - 4, 8, 5);
+  ctx.fillRect(px + pw - 1, py - 4, 8, 5);
+  const body = ctx.createLinearGradient(0, py - ph, 0, py + ph);
+  body.addColorStop(0, '#c9cdd4');
+  body.addColorStop(1, '#7e848e');
+  ctx.fillStyle = body;
+  ctx.beginPath();
+  ctx.moveTo(px - pw, py - ph);
+  ctx.lineTo(px + pw, py - ph);
+  ctx.lineTo(px + pw - 3, py + ph);
+  ctx.lineTo(px - pw + 3, py + ph);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#3d4048';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  // 끓는 물 (냄비 위쪽 타원) + 둥둥 뜬 면발/기포
+  ctx.fillStyle = '#ffb04a';
+  ctx.beginPath();
+  ctx.ellipse(px, py - ph, pw, 7, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#3d4048';
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+  for (let i = 0; i < 4; i += 1) {
+    const bx = px + Math.sin(t * 3 * boil + i * 1.9) * pw * 0.6;
+    const by = py - ph + Math.cos(t * 4 * boil + i * 2.3) * 3;
+    ctx.beginPath();
+    ctx.arc(bx, by, 2.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // 끓어 넘치는 물방울
+  ctx.fillStyle = 'rgba(255, 176, 74, 0.9)';
+  for (let i = 0; i < 3; i += 1) {
+    const k = (t * 1.5 * boil + i * 0.33) % 1;
+    ctx.globalAlpha = 1 - k;
+    ctx.beginPath();
+    ctx.arc(px + (i - 1) * pw * 0.6, py - ph - 4 - k * 14, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
 // 보배 폭발 설치물 - 터질 때까지 남은 시간에 맞춰 점점 빠르게 깜빡이는 위험 범위 표시
 function drawBomb(bomb) {
+  if (bomb.visual === 'ramenPot') { drawRamenPot(bomb); return; }
   ctx.save();
   const pulse = 0.5 + 0.5 * Math.sin(Date.now() / Math.max(60, bomb.fuseLeft * 120));
   ctx.globalAlpha = 0.18 + pulse * 0.18;
@@ -6175,9 +6661,55 @@ function drawFirePool(pool) {
   ctx.restore();
 }
 
+// 여똥이 기가차네 스킨: 얼음이 터진 자리에 퍼지는 냉기 구름 (피해/범위/지속시간은 똥가루 구름과 동일, 모양만 다름)
+// 아군이 만든 구름은 하늘색, 적이 만든 구름은 붉은 기가 도는 보랏빛 테두리로 구분
+function drawFrostPool(pool) {
+  const isAlly = pool.ownerId === myId || (myTeam && pool.team === myTeam);
+  const t = Date.now() / 500;
+  const alpha = Math.max(0.2, Math.min(0.6, pool.life));
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  const g = ctx.createRadialGradient(pool.x, pool.y, 1, pool.x, pool.y, pool.radius);
+  g.addColorStop(0, 'rgba(240, 252, 255, 0.95)');
+  g.addColorStop(0.6, 'rgba(150, 215, 255, 0.8)');
+  g.addColorStop(1, 'rgba(70, 160, 230, 0.6)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(pool.x, pool.y, pool.radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = Math.min(1, alpha + 0.4);
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = isAlly ? 'rgba(120, 230, 255, 1)' : 'rgba(255, 120, 150, 1)';
+  ctx.stroke();
+  // 바닥에 번지는 눈꽃 결정 무늬
+  ctx.globalAlpha = Math.min(1, alpha + 0.3);
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+  const arm = pool.radius * 0.55;
+  for (let i = 0; i < 3; i += 1) {
+    const a = t * 0.3 + (i * Math.PI) / 3;
+    ctx.beginPath();
+    ctx.moveTo(pool.x + Math.cos(a) * arm, pool.y + Math.sin(a) * arm);
+    ctx.lineTo(pool.x - Math.cos(a) * arm, pool.y - Math.sin(a) * arm);
+    ctx.stroke();
+  }
+  // 떠다니는 서리 알갱이
+  ctx.fillStyle = '#ffffff';
+  for (let i = 0; i < 6; i += 1) {
+    const a = t + i * 1.05;
+    const rr = pool.radius * (0.35 + 0.4 * ((i * 0.37) % 1));
+    ctx.beginPath();
+    ctx.arc(pool.x + Math.cos(a) * rr, pool.y + Math.sin(a * 1.2) * rr, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
 function drawWaterPool(pool) {
   if (pool.visual === 'firePool') { drawFirePool(pool); return; }
   if (pool.visual === 'eggWhite') { drawEggWhite(pool); return; }
+  if (pool.visual === 'frostPool') { drawFrostPool(pool); return; }
   const isPoisonGas = !pool.heal; // heal이 0(또는 없음)이면 회복 효과가 없는 독가스 구름(똥가루)으로 간주
   // 내 팀(자신/아군)이 만든 원은 초록색, 적군이 만든 원은 빨간색으로 구분
   const isAlly = pool.ownerId === myId || (myTeam && pool.team === myTeam);
@@ -6286,6 +6818,35 @@ function drawEffect(e) {
     drawSlipperExplosion(e);
   } else if (e.type === 'leapLand' && e.visual === 'shoot') {
     drawShootLand(e);
+  } else if (e.type === 'explosion' && e.visual === 'ramenSplash') {
+    // 진순 스킨 궁극기 마지막: 끓는 냄비에서 뜨거운 물이 사방으로 확 퍼짐
+    const prog = 1 - Math.max(0, Math.min(1, e.life / 0.4));
+    ctx.save();
+    ctx.globalAlpha = 1 - prog * 0.85;
+    const rg = ctx.createRadialGradient(e.x, e.y, 1, e.x, e.y, e.radius);
+    rg.addColorStop(0, 'rgba(255, 240, 210, 0.7)');
+    rg.addColorStop(1, 'rgba(255, 110, 50, 0.4)');
+    ctx.fillStyle = rg;
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, e.radius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = 'rgba(255, 130, 60, 0.95)';
+    ctx.stroke();
+    // 사방으로 튀는 물방울
+    ctx.fillStyle = 'rgba(255, 190, 110, 0.95)';
+    for (let i = 0; i < 14; i += 1) {
+      const a = (i / 14) * Math.PI * 2 + 0.3;
+      const d = e.radius * (0.3 + 0.7 * prog);
+      ctx.beginPath();
+      ctx.arc(e.x + Math.cos(a) * d, e.y + Math.sin(a) * d, 5 * (1 - prog) + 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.font = `${Math.min(40, e.radius * 0.5)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('♨️', e.x, e.y);
+    ctx.restore();
   } else if (e.type === 'explosion' && e.visual === 'poopBomb') {
     drawPoopBombExplosion(e);
   } else if (e.type === 'poopLaunch') {
