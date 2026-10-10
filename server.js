@@ -1119,6 +1119,15 @@ const SKINS = {
     // 발사체 모양(skull)과 터진 뒤 남는 웅덩이 모양(skullWater)을 불로 바꿈. 피해/회복/범위/지속시간은 그대로
     visuals: { skull: 'fireball', skullWater: 'firePool' },
   },
+  byeongitong_hero: {
+    id: 'byeongitong_hero',
+    characterId: 'byeongitong',
+    name: '용사',
+    price: SKIN_PRICE,
+    desc: '기본공격은 뚫어뻥 대신 멋진 검을 휘둘러 번쩍이는 검기를 그리고, 변기 돌진은 검을 앞세운 푸른 돌진 베기로 바뀌어요. 검사의 모습으로 변신! (외형만 바뀌고 성능은 그대로예요)',
+    // 근접 공격 연출(plunger)을 검 휘두르기로 바꿈. 돌진 연출과 겉모습은 클라이언트의 스킨 외형(SKIN_LOOKS)이 담당. 피해/범위/넉백/돌진 성능은 그대로
+    visuals: { plunger: 'heroSword' },
+  },
 };
 function getSkin(id) {
   return typeof id === 'string' && Object.prototype.hasOwnProperty.call(SKINS, id) ? SKINS[id] : null;
@@ -1258,6 +1267,45 @@ function missionsView(u) {
     progress: Math.min(ms.goal, (m.progress && m.progress[ms.id]) || 0),
     claimed: (m.claimed || []).includes(ms.id),
   }));
+}
+
+// ===== 무한 미션 =====
+// 일일 미션과 별개로, 클리어하고 보상을 받으면 곧바로 다음 미션으로 새로고침되어 계속 도전할 수 있는 미션이다. (날짜가 바뀌어도 초기화되지 않음)
+// 칸(미션 id)마다 tiers 목록을 순서대로 돌려가며(마지막 단계 다음은 다시 처음 단계) 새 목표가 나온다. 각 칸의 몇 번째인지(cleared)와 현재 진행도(progress)만 저장한다.
+// 진행도는 일일 미션과 같은 조건('점수로 승패가 갈린 정상 종료 매치')에서만 오르고, 목표를 넘겨서 쌓인 진행도는 다음 미션으로 이월된다.
+// 보상(reward, 코인)/목표(goal)를 바꾸거나 단계를 늘리려면 아래 tiers 만 고치면 된다. name 의 {g} 는 목표 수치로 바뀐다.
+const REPEAT_MISSIONS = [
+  { id: 'rp_play', metric: 'play', name: '매치 {g}판 플레이', tiers: [{ goal: 2, reward: 15 }, { goal: 4, reward: 35 }, { goal: 6, reward: 60 }] },
+  { id: 'rp_win', metric: 'win', name: '매치 {g}번 승리', tiers: [{ goal: 1, reward: 20 }, { goal: 2, reward: 45 }, { goal: 3, reward: 75 }] },
+  { id: 'rp_kills', metric: 'kills', name: '적 {g}명 처치', tiers: [{ goal: 8, reward: 20 }, { goal: 15, reward: 40 }, { goal: 25, reward: 70 }] },
+  { id: 'rp_win2v2', metric: 'win2v2', name: '2:2 매치 {g}번 승리', tiers: [{ goal: 1, reward: 25 }, { goal: 2, reward: 55 }] },
+];
+// 무한 미션 칸(missionId)의 cleared번째(0부터) 미션 정보. 없는 칸이면 null
+function repeatTierFor(missionId, cleared) {
+  const m = REPEAT_MISSIONS.find((x) => x.id === missionId);
+  if (!m) return null;
+  const t = m.tiers[Math.max(0, cleared | 0) % m.tiers.length];
+  return { id: m.id, goal: t.goal, reward: t.reward, name: m.name.replace('{g}', String(t.goal)) };
+}
+function repeatIncrements(won, mode, kills) {
+  const incs = {};
+  for (const m of REPEAT_MISSIONS) {
+    const v = m.metric === 'play' ? 1
+      : m.metric === 'win' ? (won ? 1 : 0)
+      : m.metric === 'kills' ? kills
+      : m.metric === 'win2v2' ? (won && mode === '2v2' ? 1 : 0)
+      : 0;
+    if (v > 0) incs[m.id] = v;
+  }
+  return incs;
+}
+function repeatMissionsView(u) {
+  return REPEAT_MISSIONS.map((m) => {
+    const r = (u.repeatMissions && u.repeatMissions[m.id]) || {};
+    const cleared = r.cleared || 0;
+    const t = repeatTierFor(m.id, cleared);
+    return { id: m.id, name: t.name, goal: t.goal, reward: t.reward, progress: Math.min(t.goal, r.progress || 0), cleared };
+  });
 }
 
 // ===== 공지사항 =====
@@ -1507,7 +1555,7 @@ function publicProfile(u) {
   const equippedSkins = {};
   for (const id in CHARACTERS) { const sk = equippedSkinOf(u, id); if (sk) equippedSkins[id] = sk; }
   return { username: u.name, coins: u.coins, wins: u.wins || 0, losses: u.losses || 0, unlocked: effectiveUnlocked(u), prices: allPrices(),
-    skinCatalog: skinCatalogPublic(), skins: ownedSkinsOf(u), equippedSkins, trophyRoad: trophyRoadView(u), trophies, streaks, missions: missionsView(u), ranks: TROPHY_RANKS, characters: buildCharacterInfo(levels), levels, levelTable: LEVEL_TABLE_PUBLIC, maxLevel: MAX_CHARACTER_LEVEL, isAdmin: u.key === ADMIN_KEY, announcements: allAnnouncements(), dailyDraw: dailyDrawView(u),
+    skinCatalog: skinCatalogPublic(), skins: ownedSkinsOf(u), equippedSkins, trophyRoad: trophyRoadView(u), trophies, streaks, missions: missionsView(u), repeatMissions: repeatMissionsView(u), ranks: TROPHY_RANKS, characters: buildCharacterInfo(levels), levels, levelTable: LEVEL_TABLE_PUBLIC, maxLevel: MAX_CHARACTER_LEVEL, isAdmin: u.key === ADMIN_KEY, announcements: allAnnouncements(), dailyDraw: dailyDrawView(u),
     events: activeEvents().map((e) => ({ id: e.id, name: e.name, coins: e.coins, desc: e.desc, endsAt: e.endsAt || null, claimed: (u.redeemed || []).includes(eventClaimCode(e)) })) };
 }
 
@@ -1519,7 +1567,7 @@ const USERS_FILE = process.env.USERS_FILE || path.join(os.tmpdir(), 'brawl-users
 const ANNOUNCE_FILE = process.env.ANNOUNCE_FILE || path.join(os.tmpdir(), 'brawl-announcements.json'); // 개발자 모드로 올린 공지 (MongoDB를 쓰면 DB에 저장됨)
 
 function cloneUser(u) {
-  return u ? { ...u, unlocked: [...(u.unlocked || [])], skins: [...(u.skins || [])], equippedSkins: { ...(u.equippedSkins || {}) }, trophies: { ...(u.trophies || {}) }, streaks: { ...(u.streaks || {}) }, levels: { ...(u.levels || {}) }, redeemed: [...(u.redeemed || [])], missions: u.missions ? { day: u.missions.day, progress: { ...(u.missions.progress || {}) }, claimed: [...(u.missions.claimed || [])] } : undefined, dailyDraw: u.dailyDraw ? { ...u.dailyDraw } : undefined } : null;
+  return u ? { ...u, unlocked: [...(u.unlocked || [])], skins: [...(u.skins || [])], equippedSkins: { ...(u.equippedSkins || {}) }, trophies: { ...(u.trophies || {}) }, streaks: { ...(u.streaks || {}) }, levels: { ...(u.levels || {}) }, redeemed: [...(u.redeemed || [])], missions: u.missions ? { day: u.missions.day, progress: { ...(u.missions.progress || {}) }, claimed: [...(u.missions.claimed || [])] } : undefined, repeatMissions: u.repeatMissions ? JSON.parse(JSON.stringify(u.repeatMissions)) : undefined, dailyDraw: u.dailyDraw ? { ...u.dailyDraw } : undefined } : null;
 }
 
 function createFileDb() {
@@ -1657,6 +1705,32 @@ function createFileDb() {
       u.coins += coins;
       scheduleSave();
       return { ok: true, user: cloneUser(u) };
+    },
+    // 무한 미션 진행도 누적. incs: { 미션id: 증가량 }
+    async addRepeatProgress(key, incs) {
+      const u = users[key];
+      if (!u) return;
+      if (!u.repeatMissions) u.repeatMissions = {};
+      for (const id in incs) {
+        if (!(incs[id] > 0)) continue;
+        const r = u.repeatMissions[id] || (u.repeatMissions[id] = { cleared: 0, progress: 0 });
+        r.progress = (r.progress || 0) + incs[id];
+      }
+      scheduleSave();
+    },
+    // 무한 미션 보상 수령: 목표 달성 시 코인 지급 + 다음 미션으로 새로고침 (목표를 넘긴 진행도는 다음 미션으로 이월)
+    async claimRepeatMission(key, missionId) {
+      const u = users[key];
+      if (!u) return { ok: false, reason: 'noUser' };
+      const r = (u.repeatMissions && u.repeatMissions[missionId]) || { cleared: 0, progress: 0 };
+      const tier = repeatTierFor(missionId, r.cleared || 0);
+      if (!tier) return { ok: false, reason: 'noMission', user: cloneUser(u) };
+      if ((r.progress || 0) < tier.goal) return { ok: false, reason: 'notDone', user: cloneUser(u) };
+      if (!u.repeatMissions) u.repeatMissions = {};
+      u.repeatMissions[missionId] = { cleared: (r.cleared || 0) + 1, progress: (r.progress || 0) - tier.goal };
+      u.coins += tier.reward;
+      scheduleSave();
+      return { ok: true, user: cloneUser(u), tier };
     },
     // 계정 정보 변경 (아이디 표시명/키, 비밀번호 해시). changes: { newKey, newName, salt, hash } - 바꿀 항목만 들어옴
     async updateAccount(key, changes) {
@@ -1887,6 +1961,33 @@ function createMongoDb(uri) {
       const user = await col.findOne({ key }, { projection });
       if (!user) return { ok: false, reason: 'noUser' };
       if (user.missions && (user.missions.claimed || []).includes(missionId)) return { ok: false, reason: 'claimed', user };
+      return { ok: false, reason: 'notDone', user };
+    },
+    async addRepeatProgress(key, incs) {
+      const inc = {};
+      for (const id in incs) if (incs[id] > 0) inc[`repeatMissions.${id}.progress`] = incs[id]; // id는 서버가 정의한 미션 id만 들어옴
+      if (!Object.keys(inc).length) return;
+      await col.updateOne({ key }, { $inc: inc });
+    },
+    async claimRepeatMission(key, missionId) {
+      const cur = await col.findOne({ key }, { projection });
+      if (!cur) return { ok: false, reason: 'noUser' };
+      const r = (cur.repeatMissions && cur.repeatMissions[missionId]) || {};
+      const cleared = r.cleared || 0;
+      const tier = repeatTierFor(missionId, cleared);
+      if (!tier) return { ok: false, reason: 'noMission', user: cur };
+      const cKey = `repeatMissions.${missionId}.cleared`;
+      const pKey = `repeatMissions.${missionId}.progress`;
+      // 달성 여부 + 중복 수령 방지(몇 번째 미션인지 확인) + 코인 지급 + 다음 미션으로 새로고침을 한 번의 원자적 연산으로 처리
+      const clearedCond = cleared === 0 ? [{ [cKey]: 0 }, { [cKey]: { $exists: false } }] : [{ [cKey]: cleared }];
+      const updated = await col.findOneAndUpdate(
+        { key, [pKey]: { $gte: tier.goal }, $or: clearedCond },
+        { $inc: { coins: tier.reward, [cKey]: 1, [pKey]: -tier.goal } },
+        { returnDocument: 'after', projection }
+      );
+      if (updated) return { ok: true, user: updated, tier };
+      const user = await col.findOne({ key }, { projection });
+      if (!user) return { ok: false, reason: 'noUser' };
       return { ok: false, reason: 'notDone', user };
     },
     async updateAccount(key, changes) {
@@ -2538,6 +2639,28 @@ function registerAuthHandlers(socket) {
     }
   });
 
+  // 무한 미션 보상 받기: 달성하면 코인을 받고 곧바로 다음 미션으로 새로고침된다 (달성 여부/몇 번째 미션인지는 서버가 판단, 클라이언트가 보낸 값은 미션 id만 사용)
+  socket.on('claimRepeatMission', async (data, ack) => {
+    if (typeof ack !== 'function') return;
+    try {
+      const key = socket.data.userKey;
+      if (!key) return ack({ ok: false, message: '로그인이 필요합니다.' });
+      const missionId = data && data.missionId;
+      if (!REPEAT_MISSIONS.some((m) => m.id === missionId)) return ack({ ok: false, message: '존재하지 않는 미션입니다.' });
+
+      const r = await db.claimRepeatMission(key, missionId);
+      if (r.ok) {
+        const next = repeatMissionsView(r.user).find((m) => m.id === missionId);
+        return ack({ ok: true, message: `🎉 ${r.tier.reward.toLocaleString()} 코인을 받았습니다! 새 미션: ${next.name}`, profile: publicProfile(r.user) });
+      }
+      const message = r.reason === 'notDone' ? '아직 목표를 달성하지 못했습니다.' : '보상 받기에 실패했습니다.';
+      ack({ ok: false, message, profile: r.user ? publicProfile(r.user) : undefined });
+    } catch (e) {
+      console.error('claimRepeatMission 오류', e);
+      ack({ ok: false, message: '서버 오류가 발생했습니다.' });
+    }
+  });
+
   // 미션 보상 받기: 달성 여부/중복 수령은 항상 서버가 판단한다 (클라이언트가 보낸 값은 미션 id만 사용)
   socket.on('claimMission', async (data, ack) => {
     if (typeof ack !== 'function') return;
@@ -2616,6 +2739,7 @@ async function settleMatch(match, winnerTeam, reason, leaverId) {
       // 미션 진행도 누적 (정상 종료된 매치만). addResult보다 먼저 해서 아래 profileUpdate에 최신 진행도가 담기게 함
       if (reason === 'scoreLimit') {
         await db.addMissionProgress(key, missionDay(), missionIncrements(won, match.mode, p.score || 0));
+        await db.addRepeatProgress(key, repeatIncrements(won, match.mode, p.score || 0)); // 무한 미션도 같은 조건으로 누적
       }
       const user = await db.addResult(key, won ? coinReward : 0, won, p.characterId, trophyDelta, newStreak);
       const s = io.sockets.sockets.get(pid);
@@ -3057,7 +3181,7 @@ function performMeleeAttack(match, p, spec, isUltimate, angle = p.angle, stabInd
     angle,
     arcDegrees: spec.angleDegrees || 90,
     radius: range,
-    visual: spec.visual || null,
+    visual: skinVisual(p, spec.visual) || null, // 스킨이 있으면 근접 공격 연출 모양이 바뀜 (예: 변기통 용사의 검)
     side: stabIndex % 2 === 0 ? -1 : 1, // 양손 찌르기: 왼손/오른손 번갈아 표시
     life: spec.effectLife || EFFECT_LIFETIME,
     maxLife: spec.effectLife || EFFECT_LIFETIME, // 클라이언트가 동작 진행도(0~1)를 계산하는 기준
