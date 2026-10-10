@@ -1138,6 +1138,30 @@ const TROPHY_RANKS = [
   { name: '다이아', icon: '💎', min: 600 },
   { name: '마스터', icon: '👑', min: 1000, step: 1000 },
 ];
+// ===== 트로피 로드 (트로피 보상) =====
+// 기준: 모든 캐릭터의 트로피 총합(랭킹과 같은 기준). 총합이 trophies 이상이 되면 보상을 한 번 받을 수 있다.
+// 이미 받은 보상은 트로피가 다시 줄어도 유지되고(다시 받을 수는 없음), 받은 기록은 이벤트처럼 redeemed 에 저장된다.
+// 보상을 바꾸거나 늘리려면 아래 표만 고치면 된다. (id 는 한 번 정하면 바꾸지 말 것: 받은 기록의 기준이 됨)
+const TROPHY_REWARDS = [
+  { id: 'tr_50',   trophies: 50,   coins: 100 },
+  { id: 'tr_100',  trophies: 100,  coins: 150 },
+  { id: 'tr_200',  trophies: 200,  coins: 200 },
+  { id: 'tr_300',  trophies: 300,  coins: 300 },
+  { id: 'tr_500',  trophies: 500,  coins: 400 },
+  { id: 'tr_750',  trophies: 750,  coins: 500 },
+  { id: 'tr_1000', trophies: 1000, coins: 700 },
+  { id: 'tr_1500', trophies: 1500, coins: 1000 },
+  { id: 'tr_2000', trophies: 2000, coins: 1500 },
+  { id: 'tr_3000', trophies: 3000, coins: 2000 },
+];
+function trophyRewardCode(r) { return `TROPHYROAD:${r.id}`; }
+function trophyRoadView(u) {
+  const redeemed = u.redeemed || [];
+  return {
+    total: trophyTotal(u),
+    rewards: TROPHY_REWARDS.map((r) => ({ id: r.id, trophies: r.trophies, coins: r.coins, claimed: redeemed.includes(trophyRewardCode(r)) })),
+  };
+}
 // ===== 랭킹 =====
 // 순위 기준: 모든 캐릭터의 트로피 총합(많을수록 위). 총합이 같으면 승수 > 이름 순으로 정렬하고, 총합이 같은 사람은 같은 순위를 쓴다.
 // 트로피가 0인 계정은 랭킹 목록에 올리지 않는다 (내 순위는 0이어도 계산해서 보여줌).
@@ -1445,7 +1469,7 @@ function publicProfile(u) {
   const equippedSkins = {};
   for (const id in CHARACTERS) { const sk = equippedSkinOf(u, id); if (sk) equippedSkins[id] = sk; }
   return { username: u.name, coins: u.coins, wins: u.wins || 0, losses: u.losses || 0, unlocked: effectiveUnlocked(u), prices: allPrices(),
-    skinCatalog: skinCatalogPublic(), skins: ownedSkinsOf(u), equippedSkins, trophies, streaks, missions: missionsView(u), ranks: TROPHY_RANKS, characters: buildCharacterInfo(levels), levels, levelTable: LEVEL_TABLE_PUBLIC, maxLevel: MAX_CHARACTER_LEVEL, isAdmin: u.key === ADMIN_KEY, announcements: allAnnouncements(), dailyDraw: dailyDrawView(u),
+    skinCatalog: skinCatalogPublic(), skins: ownedSkinsOf(u), equippedSkins, trophyRoad: trophyRoadView(u), trophies, streaks, missions: missionsView(u), ranks: TROPHY_RANKS, characters: buildCharacterInfo(levels), levels, levelTable: LEVEL_TABLE_PUBLIC, maxLevel: MAX_CHARACTER_LEVEL, isAdmin: u.key === ADMIN_KEY, announcements: allAnnouncements(), dailyDraw: dailyDrawView(u),
     events: activeEvents().map((e) => ({ id: e.id, name: e.name, coins: e.coins, desc: e.desc, endsAt: e.endsAt || null, claimed: (u.redeemed || []).includes(eventClaimCode(e)) })) };
 }
 
@@ -2325,6 +2349,33 @@ function registerAuthHandlers(socket) {
   });
 
   // 이벤트 보상 받기: 진행 중인 이벤트인지, 이미 받았는지는 항상 서버가 판단한다 (클라이언트가 보낸 값은 이벤트 id만 사용). 계정당 1회, 중복 클릭에도 한 번만 지급.
+  // 트로피 로드 보상 받기: 트로피 총합/수령 여부는 항상 서버가 판단하고, 지급은 원자적으로 한 번만 된다
+  socket.on('claimTrophyReward', async (data, ack) => {
+    if (typeof ack !== 'function') return;
+    try {
+      const key = socket.data.userKey;
+      if (!key) return ack({ ok: false, message: '로그인이 필요합니다.' });
+      const reward = TROPHY_REWARDS.find((r) => r.id === (data && data.rewardId));
+      if (!reward) return ack({ ok: false, message: '존재하지 않는 보상입니다.' });
+
+      const before = await db.findUser(key);
+      if (!before) return ack({ ok: false, message: '계정을 찾을 수 없습니다.' });
+      if ((before.redeemed || []).includes(trophyRewardCode(reward))) return ack({ ok: false, message: '이미 받은 보상입니다.', profile: publicProfile(before) });
+      if (trophyTotal(before) < reward.trophies) return ack({ ok: false, message: '아직 트로피가 부족합니다.', profile: publicProfile(before) });
+
+      const r = await db.redeemCode(key, trophyRewardCode(reward), reward.coins);
+      if (r.ok) {
+        console.log(`[트로피 로드] ${socket.data.displayName}: 🏆${reward.trophies} 보상 ${reward.coins}코인 수령`);
+        return ack({ ok: true, message: `🎉 트로피 ${reward.trophies.toLocaleString()} 달성 보상! ${reward.coins.toLocaleString()} 코인을 받았습니다!`, profile: publicProfile(r.user) });
+      }
+      const message = r.reason === 'used' ? '이미 받은 보상입니다.' : '보상 받기에 실패했습니다.';
+      ack({ ok: false, message, profile: r.user ? publicProfile(r.user) : undefined });
+    } catch (e) {
+      console.error('claimTrophyReward 오류', e);
+      ack({ ok: false, message: '서버 오류가 발생했습니다.' });
+    }
+  });
+
   socket.on('claimEvent', async (data, ack) => {
     if (typeof ack !== 'function') return;
     try {
