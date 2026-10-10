@@ -2959,6 +2959,7 @@ function startMatch(mode, entries, opts = {}) {
     match.players[e.socket.id] = buildPlayer(e.socket.id, e.name, e.characterId, team, randomSpawnPoint(match.walls), e.level);
     match.accounts[e.socket.id] = e.userKey;
     if (e.isBot) {
+      match.players[e.socket.id].isBot = true; // 클라이언트가 AI 상대의 탄창을 머리 위에 표시하는 데 사용
       registerGameplayHandlers(e.socket); // 봇의 가짜 소켓에도 사람과 같은 입력 핸들러를 등록
       match.aiBots[e.socket.id] = createAiState(e.socket);
     }
@@ -4649,6 +4650,9 @@ function runAiBot(match, botId, ai, dt, now) {
     const sx = -uy * ai.strafeDir, sy = ux * ai.strafeDir;
     if (p.hp < p.maxHp * 0.35 && dist < range * 1.1) {
       moveX = -ux * 0.8 + sx * 0.5; moveY = -uy * 0.8 + sy * 0.5;
+    } else if (p.ammo <= 0 && dist < range * 1.15) {
+      // 탄창이 비었으면 재장전될 때까지 거리를 벌리며 피함 (사람처럼 탄창을 관리)
+      moveX = -ux * 0.7 + sx * 0.6; moveY = -uy * 0.7 + sy * 0.6;
     } else if (dist > far) {
       moveX = ux + sx * 0.25; moveY = uy + sy * 0.25;
     } else if (dist < near) {
@@ -4698,10 +4702,13 @@ function runAiBot(match, botId, ai, dt, now) {
   // 4) 기본 공격
   if (target && dist <= range * 1.02 + 10) {
     if (basic.type === 'charge') {
+      // 충전 공격(똥파리)은 원래 탄창이 없지만, AI 대결에서는 다른 캐릭터처럼 탄창(maxAmmo발)을 쓰고 시간이 지나면 한 발씩 재장전됨
       if (!p.chargeStartAt) {
-        if (now >= ai.nextShotAt) { h.chargeStart(); ai.chargeReleaseAt = now + 600 + Math.random() * 900; }
+        if (now >= ai.nextShotAt && p.ammo > 0) { h.chargeStart(); ai.chargeReleaseAt = now + 600 + Math.random() * 900; }
       } else if (now >= ai.chargeReleaseAt) {
+        const lastShotBefore = p.lastShotAt;
         h.chargeRelease({ angle: aimAngle });
+        if (p.lastShotAt !== lastShotBefore) p.ammo = Math.max(0, p.ammo - 1); // 실제로 발사됐을 때만 탄창 1발 소모
         ai.nextShotAt = now + 500 + Math.random() * 500;
       }
     } else if (now >= ai.nextShotAt && p.ammo > 0) {
@@ -4712,7 +4719,7 @@ function runAiBot(match, botId, ai, dt, now) {
       } else {
         h.shoot();
       }
-      ai.nextShotAt = now + 350 + Math.random() * 550;
+      ai.nextShotAt = now + (p.ammo <= 1 ? 900 + Math.random() * 700 : 350 + Math.random() * 550); // 탄창이 1발 이하로 남으면 아껴서 쏨
     }
   } else if (p.chargeStartAt && !target) {
     h.chargeCancel();
