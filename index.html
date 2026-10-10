@@ -796,6 +796,10 @@
       <div class="mode-title">2 : 2</div>
       <div class="mode-desc">팀원과 함께 2대2 협동전</div>
     </div>
+    <div class="mode-card" data-mode="ai">
+      <div class="mode-title">🤖 AI</div>
+      <div class="mode-desc">접속자가 없어도 AI와 연습 대결<br>(트로피를 얻을 수 없어요)</div>
+    </div>
   </div>
   <div id="eventList"></div>
   <div id="presenceCard" class="presence-card">
@@ -2333,6 +2337,7 @@ let myName = 'Player';
 let myTeam = null;      // 'A' 또는 'B' - matchFound에서 갱신됨
 let matchMode = '1v1';  // 'matchFound'에서 서버가 알려주는 실제 매치 모드로 갱신됨
 let matchWinScore = 5;  // 팀이 승리하는 데 필요한 누적 킬 수. matchFound에서 갱신됨
+let matchIsAi = false;  // AI 연습 대결 여부 (트로피를 얻을 수 없음). matchFound에서 갱신됨
 
 function doJoin() {
   myName = (currentProfile && currentProfile.username) || 'Player';
@@ -2344,9 +2349,10 @@ function doJoin() {
 function requestMatch() {
   document.getElementById('matchResultOverlay').classList.remove('open');
   document.getElementById('matchingStatus').textContent =
-    selectedMode === '2v2' ? '2:2 상대를 찾는 중입니다...' : '1:1 상대를 찾는 중입니다...';
+    selectedMode === 'ai' ? 'AI 상대를 준비하는 중입니다...' : selectedMode === '2v2' ? '2:2 상대를 찾는 중입니다...' : '1:1 상대를 찾는 중입니다...';
   document.getElementById('matchingOverlay').classList.add('open');
-  socket.emit('findMatch', { name: myName, characterId: selectedCharacterId, mode: selectedMode });
+  if (selectedMode === 'ai') socket.emit('findAiMatch', { characterId: selectedCharacterId }); // AI 연습 대결: 대기열 없이 바로 시작, 트로피 없음
+  else socket.emit('findMatch', { name: myName, characterId: selectedCharacterId, mode: selectedMode });
 }
 
 document.getElementById('cancelMatchBtn').addEventListener('click', () => {
@@ -2384,8 +2390,10 @@ function vsCardHtml(r, isMe, side) {
     <div class="vs-avatar" style="background:${color}">${escapeHtml((r.characterName || (ch && ch.name) || '?').slice(0, 1))}</div>
     <div class="vs-name">${escapeHtml(r.name)}${isMe ? ' (나)' : ''}</div>
     <div class="vs-char">${escapeHtml(r.characterName || (ch && ch.name) || '')}</div>
-    <div class="vs-trophy">${rk.cur.icon || ''} ${escapeHtml(rk.cur.name || '')} · 🏆 ${(r.trophies || 0).toLocaleString()} · Lv.${r.level || 1}</div>
-    <div class="vs-device ${r.device === 'mobile' ? 'mobile' : 'desktop'}">${DEVICE_LABEL[r.device] || DEVICE_LABEL.desktop}</div>
+    ${r.ai
+      ? `<div class="vs-trophy">🤖 AI 상대 · Lv.${r.level || 1}</div>`
+      : `<div class="vs-trophy">${rk.cur.icon || ''} ${escapeHtml(rk.cur.name || '')} · 🏆 ${(r.trophies || 0).toLocaleString()} · Lv.${r.level || 1}</div>
+    <div class="vs-device ${r.device === 'mobile' ? 'mobile' : 'desktop'}">${DEVICE_LABEL[r.device] || DEVICE_LABEL.desktop}</div>`}
   </div>`;
 }
 
@@ -2429,6 +2437,7 @@ socket.on('matchFound', (data) => {
   myTeam = data.team;
   matchMode = data.mode || '1v1';
   matchWinScore = data.winScore || 5;
+  matchIsAi = !!data.ai;
   ARENA_WIDTH = data.arena.width;
   ARENA_HEIGHT = data.arena.height;
   PLAYER_RADIUS = data.playerRadius;
@@ -2462,7 +2471,7 @@ socket.on('matchFound', (data) => {
     addChatMessage({ id: 'system', name: '시스템', color: '#f1c40f', text: `팀원: ${teammate} / 상대: ${opponents}` });
   } else {
     const opponent = (data.opponentNames && data.opponentNames[0]) || '??';
-    addChatMessage({ id: 'system', name: '시스템', color: '#f1c40f', text: `상대: ${opponent}` });
+    addChatMessage({ id: 'system', name: '시스템', color: '#f1c40f', text: matchIsAi ? `상대: ${opponent} (AI 연습 대결 - 트로피를 얻을 수 없어요)` : `상대: ${opponent}` });
   }
 
   joined = true;
@@ -2513,6 +2522,7 @@ socket.on('matchOver', (data) => {
   }
 
   if (iWon && data.coinReward) descEl.textContent += `  |  🪙 +${data.coinReward} 코인`;
+  if (data.ai) descEl.textContent += '  |  🤖 AI 대결은 트로피를 얻을 수 없어요';
 
   document.getElementById('matchResultOverlay').classList.add('open');
 
