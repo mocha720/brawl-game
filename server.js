@@ -295,7 +295,7 @@ const CHARACTERS = {
       name: '보호막',
       type: 'shield',      // 조준 불필요, 즉시 발동해서 shieldHp만큼의 피해를 대신 흡수하는 보호막을 두름
       instant: true,        // true면 누르는 즉시 발동
-      shieldHp: 1000,       // 보호막이 막아주는 피해량. 다 소모되면 보호막이 사라지고, 다시 쓰면 1000으로 새로 채워짐
+      shieldHp: 2500,       // 보호막이 막아주는 피해량 (기존 1000에서 변경). 다 소모되면 보호막이 사라지고, 다시 쓰면 2500으로 새로 채워짐
     },
   },
   wonhyo: {
@@ -425,6 +425,18 @@ const CHARACTERS = {
     ultimate: {
       name: '간식 처먹기',
       type: 'heal',       // 조준 불필요, 즉시 체력을 가득 채우는 궁극기
+    },
+    gadget: {
+      name: '프링글스',
+      type: 'burst',       // 조준한 방향으로 투사체를 발사하는 가젯 (여기서는 감자칩 1개)
+      bulletCount: 1,
+      interval: 0,
+      damage: 2000,        // 1레벨 기준 피해
+      knockback: 140,      // 맞은 적이 날아가는 거리(px). 감자칩이 날아온 방향 그대로 뒤로 밀려남
+      speed: 700,
+      radius: 18,          // 크기가 큰 감자칩 (기본공격 똥 14보다 큼)
+      lifetime: 0.85,      // 초 (사거리 ≈ 595px)
+      visual: 'pringles',
     },
   },
   bobae: {
@@ -879,7 +891,11 @@ function describeGadget(g) {
     case 'burst': {
       if (g.bulletCount === 1) {
         const r = rangeOf(g);
-        desc = `조준한 방향으로 탄속이 매우 빠른 총알 1발을 발사${r ? ` (사거리 약 ${r})` : ''}, ${fmtNum(g.damage)} 피해`;
+        if (g.knockback) {
+          desc = `조준한 방향으로 큼직한 감자칩 1개를 던져 ${fmtNum(g.damage)} 피해를 주고, 맞은 적을 ${fmtNum(g.knockback)}px 뒤로 밀쳐냄${r ? ` (사거리 약 ${r})` : ''}`;
+        } else {
+          desc = `조준한 방향으로 탄속이 매우 빠른 총알 1발을 발사${r ? ` (사거리 약 ${r})` : ''}, ${fmtNum(g.damage)} 피해`;
+        }
       } else {
         desc = `조준한 방향으로 총알 ${g.bulletCount}발을 빠르게 연달아 발사, 발당 ${fmtNum(g.damage)} 피해`;
       }
@@ -3188,6 +3204,7 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
       id: bulletIdCounter,
       x: spawnX,
       y: spawnY,
+      knockback: spec.knockback || 0, // 0보다 크면 맞은 적을 날아온 방향으로 이 거리(px)만큼 밀쳐냄 (여똥이의 가젯 '프링글스')
       sweep: !!spec.sweep, // 아주 빠른 발사체(성스럽다의 저격 사격): 이전 위치~현재 위치 선분 전체로 적중/벽 충돌을 판정
       prevX: spawnX,
       prevY: spawnY,
@@ -4765,6 +4782,15 @@ function updateMatch(match, dt, now) {
         } else {
           // 기본 공격만 궁극기 게이지를 충전시킴
           applyDamage(match, target, bulletDamageFor(b, target), b.ownerId, { chargeShooter: !b.isUltimate });
+          // 넉백(여똥이의 프링글스): 총알이 날아온 방향으로 밀쳐냄 (무적이거나 이미 죽었으면 밀리지 않음). 실제 이동은 넉백 처리 루프가 수행
+          if (b.knockback > 0 && target.alive && !(target.invincibleUntil && Date.now() < target.invincibleUntil)) {
+            const bs = Math.hypot(b.vx, b.vy) || 1;
+            target.knockbackDirX = b.vx / bs;
+            target.knockbackDirY = b.vy / bs;
+            target.knockbackDistance = b.knockback;
+            target.knockbackTimeLeft = KNOCKBACK_DURATION;
+            target.knockbackTotalTime = KNOCKBACK_DURATION;
+          }
         }
         break; // 이 총알은 이미 소모됨
       }
