@@ -1248,7 +1248,7 @@ const CHARACTERS = [
     maxHp: 6000,
     basic: { name: '샷건 발사 (펠릿 10발, 사거리 짧음)', damage: 300 },
     ultimate: { name: '메가 샷건', damage: 600, desc: '큰 총알 10발 발사, 사거리 더 짧음' },
-    gadget: { name: '보호막', desc: '1,000 피해를 막아주는 보호막을 두름, 다 막으면 사라짐 (15초마다 사용 가능)' },
+    gadget: { name: '보호막', desc: '2,500 피해를 막아주는 보호막을 두름, 다 막으면 사라짐 (15초마다 사용 가능)' },
   },
   {
     id: 'wonhyo',
@@ -1283,6 +1283,7 @@ const CHARACTERS = [
     maxHp: 5000,
     basic: { name: '똥가루 뿌리기', desc: '똥 3개 동시 발사, 벽/적 적중 시 똥가루 구름 생성 (닿은 적에게 0.2초마다 250 피해, 1초 후 소멸, 적 터렛도 파괴 가능)' },
     ultimate: { name: '간식 처먹기', desc: '조준 불필요, 즉시 체력을 가득 채움' },
+    gadget: { name: '프링글스', desc: '조준한 방향으로 큼직한 감자칩 1개를 던져 2,000 피해를 주고, 맞은 적을 140px 뒤로 밀쳐냄 (사거리 약 595) (15초마다 사용 가능)' },
   },
   {
     id: 'bobae',
@@ -5486,6 +5487,50 @@ function drawBullet(b) {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('💀', b.x, b.y + 1);
+    ctx.restore();
+    return;
+  }
+
+  if (b.visual === 'pringles') {
+    // 여똥이의 가젯 '프링글스': 빙글빙글 돌며 날아가는 큼직한 감자칩 (안장 모양으로 휜 노란 칩 + 갈색 기름 자국)
+    const spin = (b.maxLife && b.life != null ? (b.maxLife - b.life) : 0) * 9; // 날아간 시간에 비례해서 회전
+    const r = b.radius;
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.rotate(spin);
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
+    ctx.shadowBlur = 5;
+    const g = ctx.createLinearGradient(-r * 1.5, -r, r * 1.5, r);
+    g.addColorStop(0, '#ffe08a');
+    g.addColorStop(0.55, '#f2b83c');
+    g.addColorStop(1, '#d68f1c');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, r * 1.5, r * 0.95, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = '#a8690f';
+    ctx.lineWidth = 1.8;
+    ctx.stroke();
+    // 칩이 휜 느낌의 곡선(안장 모양) + 하이라이트
+    ctx.strokeStyle = 'rgba(160, 95, 10, 0.55)';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(-r * 1.25, -r * 0.15);
+    ctx.quadraticCurveTo(0, r * 0.55, r * 1.25, -r * 0.15);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(255, 245, 200, 0.7)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 1.1, 1.15 * Math.PI, 1.55 * Math.PI);
+    ctx.stroke();
+    // 갈색 기름/양념 점
+    ctx.fillStyle = 'rgba(150, 85, 10, 0.6)';
+    for (const [dx, dy] of [[-0.6, -0.35], [0.45, 0.3], [0.1, -0.5], [-0.25, 0.4]]) {
+      ctx.beginPath();
+      ctx.arc(dx * r, dy * r, r * 0.07, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.restore();
     return;
   }
