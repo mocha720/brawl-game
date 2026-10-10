@@ -371,7 +371,7 @@ const CHARACTERS = {
       damage: 1750,
       speed: 600,
       radius: 8,
-      lifetime: 1.4,     // 초 (사거리 ≈ 840px)
+      lifetime: 0.7,     // 초 (사거리 ≈ 420px) - 기존 1.4초(≈ 840px)에서 50% 감소
       visual: 'knife',
       pierceWalls: true, // 벽(장애물)을 그대로 통과해서 날아감
     },
@@ -382,11 +382,23 @@ const CHARACTERS = {
       radius: 22,
       range: 294,             // 이 범위 안의 적만 자동으로 조준/사격 (기존 420에서 30% 감소)
       fireInterval: 0.5,      // 초마다 한 발씩 발사
-      damage: 500,           // 터렛 총알 1발당 대미지
+      damage: 1000,          // 터렛 총알 1발당 대미지 (1레벨 기준) - 기존 500에서 변경
       bulletSpeed: 900,
       bulletRadius: 6,
       bulletLifetime: 1.2,
       visual: 'turret',
+    },
+    gadget: {
+      name: '저격 사격',
+      type: 'burst',       // 조준한 방향으로 총알을 발사하는 가젯 (여기서는 총알 1발)
+      bulletCount: 1,
+      interval: 0,
+      damage: 2500,        // 1레벨 기준 피해
+      speed: 1800,         // 탄속이 매우 빠름 (기본공격 칼 600의 3배, 연발 사격 845의 2배 이상)
+      radius: 8,
+      lifetime: 0.47,      // 초 (사거리 ≈ 846px)
+      visual: 'sniperBullet',
+      sweep: true,         // 한 틱에 90px 가까이 날아가므로, 이동 경로 전체로 적중/벽 충돌을 판정해서 얇은 대상을 건너뛰지 않게 함
     },
   },
   yeoddongi: {
@@ -864,9 +876,15 @@ function describeUltimate(u) {
 function describeGadget(g) {
   let desc = '';
   switch (g.type) {
-    case 'burst':
-      desc = `조준한 방향으로 총알 ${g.bulletCount}발을 빠르게 연달아 발사, 발당 ${fmtNum(g.damage)} 피해`;
+    case 'burst': {
+      if (g.bulletCount === 1) {
+        const r = rangeOf(g);
+        desc = `조준한 방향으로 탄속이 매우 빠른 총알 1발을 발사${r ? ` (사거리 약 ${r})` : ''}, ${fmtNum(g.damage)} 피해`;
+      } else {
+        desc = `조준한 방향으로 총알 ${g.bulletCount}발을 빠르게 연달아 발사, 발당 ${fmtNum(g.damage)} 피해`;
+      }
       break;
+    }
     case 'reloadAmmo':
       desc = '즉시 탄창을 가득 채움';
       break;
@@ -1136,6 +1154,15 @@ const SKINS = {
     desc: '기본공격은 뚫어뻥 대신 멋진 검을 휘둘러 번쩍이는 검기를 그리고, 변기 돌진은 검을 앞세운 푸른 돌진 베기로 바뀌어요. 검사의 모습으로 변신! (외형만 바뀌고 성능은 그대로예요)',
     // 근접 공격 연출(plunger)을 검 휘두르기로 바꿈. 돌진 연출과 겉모습은 클라이언트의 스킨 외형(SKIN_LOOKS)이 담당. 피해/범위/넉백/돌진 성능은 그대로
     visuals: { plunger: 'heroSword' },
+  },
+  seongseureopda_poop: {
+    id: 'seongseureopda_poop',
+    characterId: 'seongseureopda',
+    name: '똥',
+    price: SKIN_PRICE,
+    desc: '겉모습이 똥으로 변해요! 기본공격과 가젯은 칼/총알 대신 화살촉이 똥인 화살이 나가고, 궁극기로 설치하는 터렛은 변기통이 돼요. (외형만 바뀌고 성능은 그대로예요)',
+    // knife(기본공격), sniperBullet(가젯)을 똥 화살로, turret(궁극기 터렛)을 변기통으로 바꿈. 피해/속도/사거리/체력은 그대로
+    visuals: { knife: 'poopArrow', sniperBullet: 'poopArrow', turret: 'toiletTurret' },
   },
 };
 function getSkin(id) {
@@ -3121,6 +3148,27 @@ function spawnLob(match, p, spec, sentDistance) {
   });
 }
 
+// 발사체와 한 점(px, py) 사이의 거리. sweep 발사체는 이번 틱에 지나온 선분(이전 위치~현재 위치)까지의 최단 거리를 돌려줘서,
+// 한 틱에 플레이어 지름보다 멀리 날아가는 아주 빠른 탄이 대상을 건너뛰지 않게 한다. 그 외 발사체는 현재 위치까지의 거리.
+function bulletDistTo(b, px, py) {
+  if (!b.sweep || b.prevX === undefined) return Math.hypot(px - b.x, py - b.y);
+  const dx = b.x - b.prevX, dy = b.y - b.prevY;
+  const len2 = dx * dx + dy * dy;
+  let t = len2 > 0 ? ((px - b.prevX) * dx + (py - b.prevY) * dy) / len2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (b.prevX + dx * t), py - (b.prevY + dy * t));
+}
+// sweep 발사체가 이번 틱에 지나온 경로 중간에 벽이 있었는지 (20px 간격으로 확인해서 얇은 벽을 뚫고 지나가지 않게 함)
+function sweptWallHit(walls, b) {
+  const dx = b.x - b.prevX, dy = b.y - b.prevY;
+  const n = Math.max(1, Math.ceil(Math.hypot(dx, dy) / 20));
+  for (let i = 1; i < n; i++) {
+    const t = i / n;
+    if (collidesWithWalls(walls, b.prevX + dx * t, b.prevY + dy * t, b.radius)) return true;
+  }
+  return false;
+}
+
 function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
   // 해골물(원효대사) 스킨: 터진 뒤 남는 웅덩이 모양도 스킨에 따라 바뀜 (스킨이 없으면 spec 그대로)
   const skinPoolVisual = spec.type === 'skullwater' ? skinVisual(p, 'skullWater') : null;
@@ -3134,10 +3182,15 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
     const angle = baseAngle + angleOffset;
 
     bulletIdCounter += 1;
+    const spawnX = p.x + Math.cos(angle) * (PLAYER_RADIUS + 5);
+    const spawnY = p.y + Math.sin(angle) * (PLAYER_RADIUS + 5);
     match.bullets.push({
       id: bulletIdCounter,
-      x: p.x + Math.cos(angle) * (PLAYER_RADIUS + 5),
-      y: p.y + Math.sin(angle) * (PLAYER_RADIUS + 5),
+      x: spawnX,
+      y: spawnY,
+      sweep: !!spec.sweep, // 아주 빠른 발사체(성스럽다의 저격 사격): 이전 위치~현재 위치 선분 전체로 적중/벽 충돌을 판정
+      prevX: spawnX,
+      prevY: spawnY,
       vx: Math.cos(angle) * spec.speed,
       vy: Math.sin(angle) * spec.speed,
       ownerId: p.id,
@@ -3297,7 +3350,7 @@ function spawnTurret(match, p, spec) {
     bulletSpeed: spec.bulletSpeed || 800,
     bulletRadius: spec.bulletRadius || 6,
     bulletLifetime: spec.bulletLifetime || 1.2,
-    visual: spec.visual || 'turret',
+    visual: skinVisual(p, spec.visual || 'turret'), // 스킨이 있으면 터렛 겉모습만 바뀜 (예: 성스럽다 똥 스킨의 변기통)
   });
 }
 
@@ -4616,6 +4669,7 @@ function updateMatch(match, dt, now) {
 
   // 총알 이동
   for (const b of match.bullets) {
+    if (b.sweep) { b.prevX = b.x; b.prevY = b.y; }
     b.x += b.vx * dt;
     b.y += b.vy * dt;
     b.life -= dt;
@@ -4655,7 +4709,7 @@ function updateMatch(match, dt, now) {
       }
       return false;
     }
-    if (!b.pierceWalls && collidesWithWalls(match.walls, b.x, b.y, b.radius)) {
+    if (!b.pierceWalls && (collidesWithWalls(match.walls, b.x, b.y, b.radius) || (b.sweep && sweptWallHit(match.walls, b)))) {
       if (b.poolOnImpact) spawnWaterPool(match, b);
       if (b.explodeDamage > 0) explodePoopBomb(match, b); // 폭탄 똥: 벽에 닿으면 폭발
       return false; // 벽에 막힘 (pierceWalls 발사체는 벽을 그대로 통과함)
@@ -4681,9 +4735,7 @@ function updateMatch(match, dt, now) {
       if (!FRIENDLY_FIRE && owner && target.team === owner.team) continue; // 아군 총알은 그대로 통과
       if (b.hitIds && b.hitIds.includes(pid)) continue; // 관통 발사체가 이미 맞힌 대상은 다시 맞히지 않음
 
-      const dx = target.x - b.x;
-      const dy = target.y - b.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
+      const dist = bulletDistTo(b, target.x, target.y); // sweep 발사체는 이동 경로(선분)까지의 거리, 아니면 현재 위치까지의 거리
 
       if (dist < PLAYER_RADIUS + b.radius) {
         if (b.launchDuration > 0) {
@@ -4729,9 +4781,7 @@ function updateMatch(match, dt, now) {
     for (const turret of match.turrets) {
       if (!FRIENDLY_FIRE && turret.team === b.team) continue; // 아군 총알은 자신의 터렛을 통과함
 
-      const dx = turret.x - b.x;
-      const dy = turret.y - b.y;
-      if (Math.sqrt(dx * dx + dy * dy) < turret.radius + b.radius) {
+      if (bulletDistTo(b, turret.x, turret.y) < turret.radius + b.radius) {
         hitBulletIds.add(b.id);
         if (b.explodeDamage > 0) {
           explodePoopBomb(match, b); // 폭탄 똥: 터렛에 닿으면 폭발
@@ -4760,9 +4810,7 @@ function updateMatch(match, dt, now) {
     for (const chicken of match.chickens) {
       if (chicken.hp <= 0) continue;
       if (!FRIENDLY_FIRE && chicken.team === b.team) continue;
-      const cdx = chicken.x - b.x;
-      const cdy = chicken.y - b.y;
-      if (Math.sqrt(cdx * cdx + cdy * cdy) < chicken.radius + b.radius) {
+      if (bulletDistTo(b, chicken.x, chicken.y) < chicken.radius + b.radius) {
         hitBulletIds.add(b.id);
         if (b.explodeDamage > 0) {
           explodePoopBomb(match, b); // 폭탄 똥: 닭에 닿으면 폭발
