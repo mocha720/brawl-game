@@ -1078,6 +1078,44 @@ function allPrices() {
   for (const id in CHARACTERS) out[id] = priceOf(id);
   return out;
 }
+// ===== 스킨 =====
+// 스킨은 외형(발사체 모양)만 바꾸고 성능(피해/속도/사거리/체력 등)은 전혀 바꾸지 않는다.
+// visuals: { 원래 발사체 모양: 스킨 적용 시 모양 } - 여기에 적힌 모양만 바뀌고 나머지는 그대로다.
+// 새 스킨은 아래에 한 줄(블록)만 추가하면 상점/장착/구매 처리가 자동으로 따라온다.
+const SKIN_PRICE = 500;
+const SKINS = {
+  minam_ninja: {
+    id: 'minam_ninja',
+    characterId: 'minam',
+    name: '닌자',
+    price: SKIN_PRICE,
+    desc: '기본공격은 표창, 궁극기는 수리검이 나가요. (외형만 바뀌고 성능은 그대로예요)',
+    visuals: { rifleBullet: 'shuriken', clown: 'bigShuriken' },
+  },
+};
+function getSkin(id) {
+  return typeof id === 'string' && Object.prototype.hasOwnProperty.call(SKINS, id) ? SKINS[id] : null;
+}
+function skinCatalogPublic() {
+  return Object.values(SKINS).map((k) => ({ id: k.id, characterId: k.characterId, name: k.name, price: k.price, desc: k.desc }));
+}
+function ownedSkinsOf(u) {
+  return (u && u.skins ? u.skins : []).filter((id) => SKINS[id]);
+}
+// 그 캐릭터에 지금 장착 중인 스킨 id (보유하지 않았거나 다른 캐릭터용이면 null = 기본 스킨)
+function equippedSkinOf(u, charId) {
+  const id = u && u.equippedSkins ? u.equippedSkins[charId] : null;
+  const skin = getSkin(id);
+  if (!skin || skin.characterId !== charId) return null;
+  return (u.skins || []).includes(id) ? id : null;
+}
+// 발사체 모양에 스킨을 적용 (스킨이 없거나 해당 모양을 안 바꾸면 원래 모양 그대로)
+function skinVisual(p, visual) {
+  const skin = p && p.skin ? SKINS[p.skin] : null;
+  if (skin && visual && Object.prototype.hasOwnProperty.call(skin.visuals, visual)) return skin.visuals[visual];
+  return visual;
+}
+
 function effectiveUnlocked(u) {
   return Array.from(new Set([...FREE_CHARACTER_IDS, ...(u.unlocked || [])])).filter((id) => CHARACTERS[id]);
 }
@@ -1395,7 +1433,10 @@ function publicProfile(u) {
   for (const id in CHARACTERS) streaks[id] = (u.streaks && u.streaks[id]) || 0;
   const levels = {};
   for (const id in CHARACTERS) levels[id] = levelOf(u, id);
-  return { username: u.name, coins: u.coins, wins: u.wins || 0, losses: u.losses || 0, unlocked: effectiveUnlocked(u), prices: allPrices(), trophies, streaks, missions: missionsView(u), ranks: TROPHY_RANKS, characters: buildCharacterInfo(levels), levels, levelTable: LEVEL_TABLE_PUBLIC, maxLevel: MAX_CHARACTER_LEVEL, isAdmin: u.key === ADMIN_KEY, announcements: allAnnouncements(), dailyDraw: dailyDrawView(u),
+  const equippedSkins = {};
+  for (const id in CHARACTERS) { const sk = equippedSkinOf(u, id); if (sk) equippedSkins[id] = sk; }
+  return { username: u.name, coins: u.coins, wins: u.wins || 0, losses: u.losses || 0, unlocked: effectiveUnlocked(u), prices: allPrices(),
+    skinCatalog: skinCatalogPublic(), skins: ownedSkinsOf(u), equippedSkins, trophies, streaks, missions: missionsView(u), ranks: TROPHY_RANKS, characters: buildCharacterInfo(levels), levels, levelTable: LEVEL_TABLE_PUBLIC, maxLevel: MAX_CHARACTER_LEVEL, isAdmin: u.key === ADMIN_KEY, announcements: allAnnouncements(), dailyDraw: dailyDrawView(u),
     events: activeEvents().map((e) => ({ id: e.id, name: e.name, coins: e.coins, desc: e.desc, endsAt: e.endsAt || null, claimed: (u.redeemed || []).includes(eventClaimCode(e)) })) };
 }
 
@@ -1407,7 +1448,7 @@ const USERS_FILE = process.env.USERS_FILE || path.join(os.tmpdir(), 'brawl-users
 const ANNOUNCE_FILE = process.env.ANNOUNCE_FILE || path.join(os.tmpdir(), 'brawl-announcements.json'); // 개발자 모드로 올린 공지 (MongoDB를 쓰면 DB에 저장됨)
 
 function cloneUser(u) {
-  return u ? { ...u, unlocked: [...(u.unlocked || [])], trophies: { ...(u.trophies || {}) }, streaks: { ...(u.streaks || {}) }, levels: { ...(u.levels || {}) }, redeemed: [...(u.redeemed || [])], missions: u.missions ? { day: u.missions.day, progress: { ...(u.missions.progress || {}) }, claimed: [...(u.missions.claimed || [])] } : undefined, dailyDraw: u.dailyDraw ? { ...u.dailyDraw } : undefined } : null;
+  return u ? { ...u, unlocked: [...(u.unlocked || [])], skins: [...(u.skins || [])], equippedSkins: { ...(u.equippedSkins || {}) }, trophies: { ...(u.trophies || {}) }, streaks: { ...(u.streaks || {}) }, levels: { ...(u.levels || {}) }, redeemed: [...(u.redeemed || [])], missions: u.missions ? { day: u.missions.day, progress: { ...(u.missions.progress || {}) }, claimed: [...(u.missions.claimed || [])] } : undefined, dailyDraw: u.dailyDraw ? { ...u.dailyDraw } : undefined } : null;
 }
 
 function createFileDb() {
@@ -1462,6 +1503,27 @@ function createFileDb() {
       if (u.coins < price) return { ok: false, reason: 'coins', user: cloneUser(u) };
       u.coins -= price;
       u.unlocked.push(charId);
+      scheduleSave();
+      return { ok: true, user: cloneUser(u) };
+    },
+    async buySkin(key, skinId, price) {
+      const u = users[key];
+      if (!u) return { ok: false, reason: 'noUser' };
+      u.skins = u.skins || [];
+      if (u.skins.includes(skinId)) return { ok: false, reason: 'already', user: cloneUser(u) };
+      if (u.coins < price) return { ok: false, reason: 'coins', user: cloneUser(u) };
+      u.coins -= price;
+      u.skins.push(skinId);
+      scheduleSave();
+      return { ok: true, user: cloneUser(u) };
+    },
+    // 스킨 장착/해제. skinId 가 null 이면 기본 스킨으로 되돌림. 보유한 스킨만 장착 가능
+    async equipSkin(key, charId, skinId) {
+      const u = users[key];
+      if (!u) return { ok: false, reason: 'noUser' };
+      if (skinId && !(u.skins || []).includes(skinId)) return { ok: false, reason: 'notOwned', user: cloneUser(u) };
+      u.equippedSkins = u.equippedSkins || {};
+      if (skinId) u.equippedSkins[charId] = skinId; else delete u.equippedSkins[charId];
       scheduleSave();
       return { ok: true, user: cloneUser(u) };
     },
@@ -1662,6 +1724,30 @@ function createMongoDb(uri) {
       if (!user) return { ok: false, reason: 'noUser' };
       if ((user.unlocked || []).includes(charId)) return { ok: false, reason: 'already', user };
       return { ok: false, reason: 'coins', user };
+    },
+    async buySkin(key, skinId, price) {
+      // 코인 차감과 스킨 지급을 한 번의 원자적 연산으로 처리 (중복 클릭/동시 요청으로 코인이 이중 차감되지 않음)
+      const updated = await col.findOneAndUpdate(
+        { key, coins: { $gte: price }, skins: { $ne: skinId } },
+        { $inc: { coins: -price }, $push: { skins: skinId } },
+        { returnDocument: 'after', projection }
+      );
+      if (updated) return { ok: true, user: updated };
+      const user = await col.findOne({ key }, { projection });
+      if (!user) return { ok: false, reason: 'noUser' };
+      if ((user.skins || []).includes(skinId)) return { ok: false, reason: 'already', user };
+      return { ok: false, reason: 'coins', user };
+    },
+    // 스킨 장착/해제. skinId 가 null 이면 기본 스킨으로 되돌림. 보유한 스킨만 장착 가능
+    async equipSkin(key, charId, skinId) {
+      const path = `equippedSkins.${charId}`; // charId 는 서버가 검증한 캐릭터 id만 들어옴
+      const filter = skinId ? { key, skins: skinId } : { key };
+      const update = skinId ? { $set: { [path]: skinId } } : { $unset: { [path]: '' } };
+      const updated = await col.findOneAndUpdate(filter, update, { returnDocument: 'after', projection });
+      if (updated) return { ok: true, user: updated };
+      const user = await col.findOne({ key }, { projection });
+      if (!user) return { ok: false, reason: 'noUser' };
+      return { ok: false, reason: 'notOwned', user };
     },
     async upgradeCharacter(key, charId, fromLevel, cost) {
       // 코인 차감과 레벨 상승을 한 번의 원자적 연산으로 처리 (중복 클릭/동시 요청으로 코인이 이중 차감되거나 레벨이 두 번 오르지 않음)
@@ -2276,6 +2362,55 @@ function registerAuthHandlers(socket) {
     }
   });
 
+  // 스킨 구매: 가격/보유 여부는 항상 서버 기준. 구매만으로는 적용되지 않고, 장착(equipSkin)해야 적용된다.
+  socket.on('buySkin', async (data, ack) => {
+    if (typeof ack !== 'function') return;
+    try {
+      const key = socket.data.userKey;
+      if (!key) return ack({ ok: false, message: '로그인이 필요합니다.' });
+      if (socketToMatch[socket.id] || isQueued(socket.id)) return ack({ ok: false, message: '매치 중이거나 대기 중에는 스킨을 구매할 수 없습니다.' });
+      const skin = getSkin(data && data.skinId);
+      if (!skin) return ack({ ok: false, message: '존재하지 않는 스킨입니다.' });
+      if (!socket.data.unlocked.has(skin.characterId)) return ack({ ok: false, message: '먼저 캐릭터를 잠금해제해야 합니다.' });
+
+      const r = await db.buySkin(key, skin.id, skin.price);
+      if (r.ok) return ack({ ok: true, message: `${skin.name} 스킨을 구매했어요! 장착하면 적용돼요.`, profile: publicProfile(r.user) });
+
+      const message = r.reason === 'coins' ? '코인이 부족합니다.'
+        : r.reason === 'already' ? '이미 보유한 스킨입니다.'
+        : '스킨 구매에 실패했습니다.';
+      ack({ ok: false, message, profile: r.user ? publicProfile(r.user) : undefined });
+    } catch (e) {
+      console.error('buySkin 오류', e);
+      ack({ ok: false, message: '서버 오류가 발생했습니다.' });
+    }
+  });
+
+  // 스킨 장착/해제: skinId 를 보내면 장착, null 이면 기본 스킨으로 되돌린다. 보유한 스킨만 장착할 수 있다.
+  socket.on('equipSkin', async (data, ack) => {
+    if (typeof ack !== 'function') return;
+    try {
+      const key = socket.data.userKey;
+      if (!key) return ack({ ok: false, message: '로그인이 필요합니다.' });
+      if (socketToMatch[socket.id] || isQueued(socket.id)) return ack({ ok: false, message: '매치 중이거나 대기 중에는 스킨을 바꿀 수 없습니다.' });
+      const charId = data && data.characterId;
+      if (typeof charId !== 'string' || !CHARACTERS[charId]) return ack({ ok: false, message: '존재하지 않는 캐릭터입니다.' });
+      let skinId = null;
+      if (data && data.skinId != null) {
+        const skin = getSkin(data.skinId);
+        if (!skin || skin.characterId !== charId) return ack({ ok: false, message: '이 캐릭터에 쓸 수 없는 스킨입니다.' });
+        skinId = skin.id;
+      }
+      const r = await db.equipSkin(key, charId, skinId);
+      if (r.ok) return ack({ ok: true, profile: publicProfile(r.user) });
+      const message = r.reason === 'notOwned' ? '보유하지 않은 스킨입니다.' : '스킨 장착에 실패했습니다.';
+      ack({ ok: false, message, profile: r.user ? publicProfile(r.user) : undefined });
+    } catch (e) {
+      console.error('equipSkin 오류', e);
+      ack({ ok: false, message: '서버 오류가 발생했습니다.' });
+    }
+  });
+
   // 캐릭터 강화: 코인으로 해당 캐릭터의 레벨을 1 올린다. 현재 레벨/비용/코인은 항상 서버 기준으로 판단한다.
   socket.on('upgradeCharacter', async (data, ack) => {
     if (typeof ack !== 'function') return;
@@ -2442,10 +2577,11 @@ function randomSpawnPoint(walls) {
   return fallbackCandidates[0];
 }
 
-function buildPlayer(socketId, name, characterId, team, spawn, level) {
+function buildPlayer(socketId, name, characterId, team, spawn, level, skinId) {
   const character = getLeveledCharacter(characterId, level); // 레벨에 맞게 체력/대미지가 강화된 스펙 (1레벨은 기본 스펙)
   return {
     level: clampLevel(level),
+    skin: skinId || null, // 장착한 스킨 id (외형만 바꿈. 성능에는 영향 없음)
     id: socketId,
     name,
     team, // 'A' 또는 'B'
@@ -2774,7 +2910,7 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
       currentHpRatio: spec.currentHpRatio || 0, // 0보다 크면 고정 피해 대신 대상 현재 체력(+보호막)의 비율만큼 피해 (진우Park의 하트)
       radius: spec.radius,
       isUltimate,
-      visual: spec.visual,
+      visual: skinVisual(p, spec.visual), // 스킨이 있으면 발사체 모양만 바뀜 (피해/속도/사거리는 spec 그대로)
       launchDuration: spec.launchDuration || 0, // 0보다 크면 맞은 적을 이 시간(초) 동안 하늘로 띄움 (시스템의 궁극기)
       landDamage: spec.landDamage || 0,         // 띄워진 적이 땅에 떨어질 때 받는 피해
       pierceTargets: !!spec.pierceTargets,      // true면 적을 맞혀도 사라지지 않고 계속 날아가 여러 명을 맞힘
@@ -3076,7 +3212,7 @@ function startMatch(mode, entries, opts = {}) {
   // 대기열에 들어온 순서대로 앞쪽 teamSize명은 A팀, 나머지는 B팀으로 배정
   entries.forEach((e, idx) => {
     const team = idx < cfg.teamSize ? 'A' : 'B';
-    match.players[e.socket.id] = buildPlayer(e.socket.id, e.name, e.characterId, team, randomSpawnPoint(match.walls), e.level);
+    match.players[e.socket.id] = buildPlayer(e.socket.id, e.name, e.characterId, team, randomSpawnPoint(match.walls), e.level, e.skin);
     match.accounts[e.socket.id] = e.userKey;
     if (e.isBot) {
       match.players[e.socket.id].isBot = true; // 클라이언트가 AI 상대의 탄창을 머리 위에 표시하는 데 사용
@@ -3385,10 +3521,12 @@ io.on('connection', (socket) => {
     // 캐릭터 레벨(체력/공격력 강화)도 서버 저장소의 값만 사용한다
     let trophies = 0;
     let level = 1;
+    let skin = null; // 장착 중인 스킨 (서버 저장소 기준, 외형만 바뀜)
     try {
       const u = await db.findUser(userKey);
       trophies = (u && u.trophies && u.trophies[characterId]) || 0;
       level = levelOf(u, characterId);
+      skin = equippedSkinOf(u, characterId);
     } catch (e) {
       console.error('트로피 조회 실패', userKey, e);
     }
@@ -3398,7 +3536,7 @@ io.on('connection', (socket) => {
     if (socketToMatch[socket.id] || isQueued(socket.id)) return;
     if (serverPause.on) { socket.emit('findMatchError', { message: serverPause.message }); return; } // 조회하는 사이에 일시정지가 켜진 경우
 
-    queues[mode].push({ socket, name, characterId, userKey, trophies, level });
+    queues[mode].push({ socket, name, characterId, userKey, trophies, level, skin });
     // 이 모드에서 이미 기다리고 있던 사람들에게도 갱신된 인원수를 함께 알림
     broadcastQueueStatus(mode);
 
@@ -3426,17 +3564,19 @@ io.on('connection', (socket) => {
     const userKey = socket.data.userKey;
     let level = 1;
     let trophies = 0; // 대결 화면에 보여주기만 하고, AI 대결로는 절대 변하지 않음
+    let skin = null;
     try {
       const u = await db.findUser(userKey);
       trophies = (u && u.trophies && u.trophies[requestedId]) || 0;
       level = levelOf(u, requestedId);
+      skin = equippedSkinOf(u, requestedId);
     } catch (e) {
       console.error('캐릭터 레벨 조회 실패', userKey, e);
     }
     if (!socket.connected || socket.data.userKey !== userKey) return;
     if (socketToMatch[socket.id] || isQueued(socket.id)) return;
     if (serverPause.on) { socket.emit('findMatchError', { message: serverPause.message }); return; }
-    startAiMatch(socket, requestedId, userKey, level, trophies);
+    startAiMatch(socket, requestedId, userKey, level, trophies, skin);
   });
 
   registerGameplayHandlers(socket); // 이동/공격/충전/가젯/궁극기 입력 처리 (AI 봇도 같은 함수를 써서 사람과 똑같은 규칙으로 행동함)
@@ -5035,13 +5175,13 @@ function runAiBot(match, botId, ai, dt, now) {
 }
 
 // AI 연습 대결 시작: 사람 1명 + 무작위 캐릭터를 쓰는 AI 봇 1명의 1:1 매치. 대기열을 거치지 않고 바로 시작한다.
-function startAiMatch(socket, characterId, userKey, level, trophies) {
+function startAiMatch(socket, characterId, userKey, level, trophies, skin) {
   const ids = Object.keys(CHARACTERS);
   const botCharId = ids[Math.floor(Math.random() * ids.length)];
   aiBotCounter += 1;
   const botSocket = createBotSocket(`ai_${aiBotCounter}`);
   const entries = [
-    { socket, name: socket.data.displayName, characterId, userKey, trophies: trophies || 0, level },
+    { socket, name: socket.data.displayName, characterId, userKey, trophies: trophies || 0, level, skin: skin || null },
     { socket: botSocket, name: `AI ${CHARACTERS[botCharId].name}`, characterId: botCharId, userKey: null, trophies: 0, level, isBot: true },
   ];
   startMatch('1v1', entries, { ai: true });
