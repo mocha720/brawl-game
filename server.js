@@ -48,6 +48,7 @@ const MODES = {
   '2v2': { size: 4, teamSize: 2, winScore: 8, coinReward: 60, trophyReward: 12, trophyLoss: 4 },
 };
 const MATCH_COUNTDOWN_MS = 4000; // 매칭 직후 상대 정보(캐릭터/트로피)를 보여주는 대결 화면 시간. 이 동안은 이동/공격/스킬 입력이 막힘
+const AI_COIN_REWARD = 20; // AI 연습 대결에서 점수로 이겼을 때 받는 코인 (트로피/전적/연승/미션은 기록하지 않음). 일반 1:1 승리 보상(45)보다 적게 설정
 const MATCH_CLEANUP_DELAY_MS = 600; // 승리 판정 후 마지막 상태를 한 번 더 보낸 뒤 방을 정리하기까지의 지연
 
 // ===== 개발자(관리자) 모드 =====
@@ -1009,12 +1010,41 @@ function normalizeCode(raw) {
 // 이벤트를 끝내려면: enabled 를 false 로 바꾸거나, endsAt 에 종료 시각(예: new Date('2026-10-31T23:59:59+09:00').getTime())을 넣고 재배포.
 // 새 이벤트를 추가하려면 id 가 겹치지 않게 항목을 하나 더 적으면 된다. (이미 받은 기록은 id 기준으로 저장되어, id 를 바꾸면 모두 다시 받을 수 있게 됨)
 const EVENTS = [
-  { id: 'anggimochi', enabled: true, name: '앙기모찌', coins: 2000, desc: '모든 유저에게 2,000코인을 무료로 드려요!', endsAt: null },
+  { id: 'anggimochi', enabled: false, name: '앙기모찌', coins: 2000, desc: '모든 유저에게 2,000코인을 무료로 드려요!', endsAt: null },
 ];
 function eventClaimCode(ev) { return `EVENT:${ev.id}`; } // 받은 기록은 쿠폰 사용 기록(redeemed)에 함께 저장 (유저가 코드창에 직접 입력해서 받을 수는 없음)
 function activeEvents() {
   const now = Date.now();
   return EVENTS.filter((e) => e.enabled && (!e.endsAt || now < e.endsAt));
+}
+
+// ===== 일일 뽑기 (스타드롭 스타일) =====
+// 하루에 한 번(한국 시간 0시에 초기화) 뽑을 수 있고, 등급에 따라 50~1,000코인이 나온다.
+// 높은 등급일수록 확률(weight)이 낮다. 등급/확률/코인 범위는 이 표만 고치면 된다. (코인은 min~max 사이에서 10 단위로 뽑힘)
+// 현재 기대값: 하루 평균 약 200코인. 결과는 항상 서버가 정하고, 클라이언트는 연출만 한다.
+const DAILY_DRAW_TIERS = [
+  { id: 'rare',      name: '희귀',   min: 50,  max: 100,  weight: 50 },
+  { id: 'superrare', name: '초희귀', min: 150, max: 250,  weight: 28 },
+  { id: 'epic',      name: '영웅',   min: 300, max: 450,  weight: 14 },
+  { id: 'mythic',    name: '신화',   min: 500, max: 700,  weight: 6 },
+  { id: 'legendary', name: '전설',   min: 800, max: 1000, weight: 2 },
+];
+const DAILY_DRAW_TOTAL_WEIGHT = DAILY_DRAW_TIERS.reduce((s, t) => s + t.weight, 0);
+const DAILY_DRAW_TIERS_PUBLIC = DAILY_DRAW_TIERS.map((t) => ({ id: t.id, name: t.name, min: t.min, max: t.max, chance: Math.round((t.weight / DAILY_DRAW_TOTAL_WEIGHT) * 1000) / 10 }));
+function rollDailyDraw() {
+  let r = crypto.randomInt(DAILY_DRAW_TOTAL_WEIGHT);
+  let tier = DAILY_DRAW_TIERS[DAILY_DRAW_TIERS.length - 1];
+  for (const t of DAILY_DRAW_TIERS) {
+    if (r < t.weight) { tier = t; break; }
+    r -= t.weight;
+  }
+  const steps = Math.floor((tier.max - tier.min) / 10);
+  return { tier: tier.id, coins: tier.min + 10 * crypto.randomInt(steps + 1) };
+}
+function dailyDrawView(u) {
+  const day = missionDay();
+  const done = !!(u.dailyDraw && u.dailyDraw.day === day);
+  return { available: !done, day, today: done ? { tier: u.dailyDraw.tier, coins: u.dailyDraw.coins } : null, tiers: DAILY_DRAW_TIERS_PUBLIC };
 }
 
 // ===== 계정 / 코인 / 캐릭터 잠금해제 시스템 =====
@@ -1125,6 +1155,18 @@ function missionsView(u) {
 // id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
+  {
+    id: '2026-10-10-daily-draw',
+    date: '2026-10-10',
+    tag: 'new',
+    title: '일일 뽑기 추가! · AI 대결 코인 보상',
+    items: [
+      '메인 화면에 [일일 뽑기]가 생겼어요. 하루에 한 번(매일 0시 한국 시간에 초기화) 50 ~ 1,000 코인을 뽑을 수 있어요!',
+      '등급은 희귀 / 초희귀 / 영웅 / 신화 / 전설이 있고, 높은 등급일수록 더 많은 코인이 나와요. 확률은 뽑기 화면에서 확인할 수 있어요.',
+      `AI 대결에서 이기면 이제 ${AI_COIN_REWARD}코인을 받아요. (트로피, 전적, 미션은 여전히 기록되지 않아요.)`,
+      '앙기모찌 이벤트가 종료되었어요. 참여해 주셔서 감사합니다!',
+    ],
+  },
   {
     id: '2026-10-09-nai',
     date: '2026-10-09',
@@ -1352,7 +1394,7 @@ function publicProfile(u) {
   for (const id in CHARACTERS) streaks[id] = (u.streaks && u.streaks[id]) || 0;
   const levels = {};
   for (const id in CHARACTERS) levels[id] = levelOf(u, id);
-  return { username: u.name, coins: u.coins, wins: u.wins || 0, losses: u.losses || 0, unlocked: effectiveUnlocked(u), prices: allPrices(), trophies, streaks, missions: missionsView(u), ranks: TROPHY_RANKS, characters: buildCharacterInfo(levels), levels, levelTable: LEVEL_TABLE_PUBLIC, maxLevel: MAX_CHARACTER_LEVEL, isAdmin: u.key === ADMIN_KEY, announcements: allAnnouncements(),
+  return { username: u.name, coins: u.coins, wins: u.wins || 0, losses: u.losses || 0, unlocked: effectiveUnlocked(u), prices: allPrices(), trophies, streaks, missions: missionsView(u), ranks: TROPHY_RANKS, characters: buildCharacterInfo(levels), levels, levelTable: LEVEL_TABLE_PUBLIC, maxLevel: MAX_CHARACTER_LEVEL, isAdmin: u.key === ADMIN_KEY, announcements: allAnnouncements(), dailyDraw: dailyDrawView(u),
     events: activeEvents().map((e) => ({ id: e.id, name: e.name, coins: e.coins, desc: e.desc, endsAt: e.endsAt || null, claimed: (u.redeemed || []).includes(eventClaimCode(e)) })) };
 }
 
@@ -1364,7 +1406,7 @@ const USERS_FILE = process.env.USERS_FILE || path.join(os.tmpdir(), 'brawl-users
 const ANNOUNCE_FILE = process.env.ANNOUNCE_FILE || path.join(os.tmpdir(), 'brawl-announcements.json'); // 개발자 모드로 올린 공지 (MongoDB를 쓰면 DB에 저장됨)
 
 function cloneUser(u) {
-  return u ? { ...u, unlocked: [...(u.unlocked || [])], trophies: { ...(u.trophies || {}) }, streaks: { ...(u.streaks || {}) }, levels: { ...(u.levels || {}) }, redeemed: [...(u.redeemed || [])], missions: u.missions ? { day: u.missions.day, progress: { ...(u.missions.progress || {}) }, claimed: [...(u.missions.claimed || [])] } : undefined } : null;
+  return u ? { ...u, unlocked: [...(u.unlocked || [])], trophies: { ...(u.trophies || {}) }, streaks: { ...(u.streaks || {}) }, levels: { ...(u.levels || {}) }, redeemed: [...(u.redeemed || [])], missions: u.missions ? { day: u.missions.day, progress: { ...(u.missions.progress || {}) }, claimed: [...(u.missions.claimed || [])] } : undefined, dailyDraw: u.dailyDraw ? { ...u.dailyDraw } : undefined } : null;
 }
 
 function createFileDb() {
@@ -1442,6 +1484,24 @@ function createFileDb() {
       u.coins += coins;
       scheduleSave();
       return { ok: true, user: cloneUser(u) };
+    },
+    // 일일 뽑기: 오늘 아직 안 뽑았을 때만 코인 지급 + 오늘 뽑은 기록 저장
+    async claimDailyDraw(key, day, tier, coins) {
+      const u = users[key];
+      if (!u) return { ok: false, reason: 'noUser' };
+      if (u.dailyDraw && u.dailyDraw.day === day) return { ok: false, reason: 'used', user: cloneUser(u) };
+      u.coins += coins;
+      u.dailyDraw = { day, tier, coins };
+      scheduleSave();
+      return { ok: true, user: cloneUser(u) };
+    },
+    // 코인만 지급 (AI 대결 승리 보상 등)
+    async addCoins(key, coins) {
+      const u = users[key];
+      if (!u) return null;
+      u.coins += coins;
+      scheduleSave();
+      return cloneUser(u);
     },
     // 미션 진행도 누적 (날짜가 바뀌었으면 먼저 초기화). incs: { 미션id: 증가량 }
     async addMissionProgress(key, day, incs) {
@@ -1630,6 +1690,21 @@ function createMongoDb(uri) {
       const user = await col.findOne({ key }, { projection });
       if (!user) return { ok: false, reason: 'noUser' };
       return { ok: false, reason: 'used', user };
+    },
+    async claimDailyDraw(key, day, tier, coins) {
+      // 오늘 뽑았는지 확인 + 코인 지급 + 기록 저장을 한 번의 원자적 연산으로 처리 (동시에 여러 번 눌러도 한 번만 지급됨)
+      const updated = await col.findOneAndUpdate(
+        { key, 'dailyDraw.day': { $ne: day } },
+        { $inc: { coins }, $set: { dailyDraw: { day, tier, coins } } },
+        { returnDocument: 'after', projection }
+      );
+      if (updated) return { ok: true, user: updated };
+      const user = await col.findOne({ key }, { projection });
+      if (!user) return { ok: false, reason: 'noUser' };
+      return { ok: false, reason: 'used', user };
+    },
+    async addCoins(key, coins) {
+      return col.findOneAndUpdate({ key }, { $inc: { coins } }, { returnDocument: 'after', projection });
     },
     // 날짜가 바뀐 계정의 미션 기록을 오늘 것으로 초기화 (이미 오늘 날짜면 아무 일도 하지 않음)
     async resetMissionsIfNewDay(key, day) {
@@ -2133,6 +2208,26 @@ function registerAuthHandlers(socket) {
     }
   });
 
+  // 일일 뽑기: 하루 한 번. 등급/코인은 서버가 정하고, 이미 뽑았는지는 저장소가 원자적으로 판단한다 (중복 클릭/동시 요청에도 한 번만 지급)
+  socket.on('dailyDraw', async (data, ack) => {
+    if (typeof ack !== 'function') return;
+    try {
+      const key = socket.data.userKey;
+      if (!key) return ack({ ok: false, message: '로그인이 필요합니다.' });
+      const roll = rollDailyDraw();
+      const r = await db.claimDailyDraw(key, missionDay(), roll.tier, roll.coins);
+      if (r.ok) {
+        console.log(`[뽑기] ${socket.data.displayName}: ${roll.tier} ${roll.coins}코인`);
+        return ack({ ok: true, tier: roll.tier, coins: roll.coins, profile: publicProfile(r.user) });
+      }
+      const message = r.reason === 'used' ? '오늘의 뽑기는 이미 했어요. 내일 다시 오세요!' : '뽑기에 실패했습니다.';
+      ack({ ok: false, message, profile: r.user ? publicProfile(r.user) : undefined });
+    } catch (e) {
+      console.error('dailyDraw 오류', e);
+      ack({ ok: false, message: '서버 오류가 발생했습니다.' });
+    }
+  });
+
   // 이벤트 보상 받기: 진행 중인 이벤트인지, 이미 받았는지는 항상 서버가 판단한다 (클라이언트가 보낸 값은 이벤트 id만 사용). 계정당 1회, 중복 클릭에도 한 번만 지급.
   socket.on('claimEvent', async (data, ack) => {
     if (typeof ack !== 'function') return;
@@ -2233,7 +2328,31 @@ function registerAuthHandlers(socket) {
 }
 
 // 매치 결과 정산: 승리 팀에는 코인 + 승수, 패배 팀에는 패수를 기록한다 (매치당 한 번만 실행)
+// AI 연습 대결 정산: 사람이 점수로 이겼을 때만 코인을 지급한다 (트로피/전적/연승/미션은 기록하지 않음)
+async function settleAiMatch(match, winnerTeam, reason) {
+  if (reason !== 'scoreLimit') return;
+  for (const pid in match.players) {
+    const p = match.players[pid];
+    if (p.isBot || p.team !== winnerTeam) continue;
+    const key = match.accounts[pid];
+    if (!key) continue;
+    try {
+      const user = await db.addCoins(key, AI_COIN_REWARD);
+      const s = io.sockets.sockets.get(pid);
+      if (s && user) s.emit('profileUpdate', publicProfile(user));
+    } catch (e) {
+      console.error('AI 대결 보상 지급 실패', key, e);
+    }
+  }
+}
+
 async function settleMatch(match, winnerTeam, reason, leaverId) {
+  if (match.ai) {
+    if (match.aiSettled) return;
+    match.aiSettled = true;
+    await settleAiMatch(match, winnerTeam, reason);
+    return;
+  }
   if (match.settled) return;
   match.settled = true;
   const cfg = MODES[match.mode];
@@ -2487,7 +2606,7 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
         reason: 'scoreLimit',
         winnerTeam: shooter.team,
         teamScore: match.teamScore,
-        coinReward: match.ai ? 0 : (MODES[match.mode].coinReward || 0),
+        coinReward: match.ai ? (shooter.isBot ? 0 : AI_COIN_REWARD) : (MODES[match.mode].coinReward || 0),
         ai: !!match.ai,
       });
       settleMatch(match, shooter.team, 'scoreLimit');
@@ -2947,8 +3066,8 @@ function startMatch(mode, entries, opts = {}) {
     settled: false,
   };
   if (opts.ai) {
-    match.ai = true;       // AI 연습 대결: 결과를 기록하지 않음 (트로피/코인/연승/미션 없음)
-    match.settled = true;  // settleMatch 가 아무것도 하지 않게 처음부터 정산 완료로 표시
+    match.ai = true;       // AI 연습 대결: 트로피/전적/연승/미션은 기록하지 않음 (이기면 코인만 지급)
+    match.settled = true;  // 일반 정산(트로피/전적)은 건너뜀. AI 보상은 settleAiMatch 가 따로 처리
     match.aiBots = {};     // botSocketId -> AI 상태
   }
   matches[matchId] = match;
