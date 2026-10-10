@@ -2782,7 +2782,7 @@ function renderCharacterList() {
       : `<button class="locked-btn" data-unlock-id="${c.id}" ${canAfford ? '' : 'disabled'}>🔒 🪙 ${price.toLocaleString()} ${canAfford ? '잠금해제' : '(코인 부족)'}</button>`;
     return `
     <div class="char-card${owned ? '' : ' locked'}">
-      <div class="char-avatar" style="background:${c.color}">${escapeHtml(c.name.slice(0, 1))}</div>
+      <div class="char-avatar" style="background:${equippedSkin ? '#2b2f3a' : c.color};${equippedSkin ? 'box-shadow: inset 0 0 0 4px #d63031;' : ''}">${escapeHtml(c.name.slice(0, 1))}</div>
       <h3>${escapeHtml(c.name)}${lvBadge}</h3>
       ${trophyLine}
       ${bonusLine}
@@ -3557,6 +3557,58 @@ function update(dt) {
   socket.emit('playerUpdate', { x: myX, y: myY, angle: myAngle });
 }
 
+// ===== 캐릭터 스킨 외형 =====
+// 서버가 플레이어 정보에 skin(장착한 스킨 id)을 담아 보내므로, 상대방의 스킨도 모두에게 똑같이 보인다.
+// body: 몸통 색 (없으면 기본 색), draw: 바라보는 방향이 +x 가 되도록 회전된 좌표계에서 추가로 그리는 함수
+const SKIN_LOOKS = {
+  minam_ninja: {
+    body: '#2b2f3a',
+    draw(R, p) {
+      const t = Date.now() / 140;
+      // 붉은 머리띠 끈: 뒤로 휘날리는 두 가닥
+      ctx.save();
+      ctx.strokeStyle = '#d63031';
+      ctx.lineWidth = 3.2;
+      ctx.lineCap = 'round';
+      for (const side of [-1, 1]) {
+        const wave = Math.sin(t + side) * R * 0.18;
+        ctx.beginPath();
+        ctx.moveTo(-R * 0.55, side * R * 0.25);
+        ctx.quadraticCurveTo(-R * 1.05, side * R * 0.25 + wave, -R * 1.55, side * R * 0.55 + wave * 1.6);
+        ctx.stroke();
+      }
+      ctx.restore();
+      // 몸통 안쪽만 그리도록 잘라서 복면/머리띠/눈을 그림
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(0, 0, R - 0.5, 0, Math.PI * 2);
+      ctx.clip();
+      // 머리띠 (바라보는 방향에 수직으로 가로지름)
+      ctx.fillStyle = '#d63031';
+      ctx.fillRect(-R * 0.62, -R, R * 0.34, R * 2);
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.fillRect(-R * 0.62, -R, R * 0.07, R * 2);
+      // 복면 사이로 드러난 눈 부분
+      ctx.fillStyle = '#f3c9a0';
+      ctx.beginPath();
+      ctx.moveTo(R * 0.12, -R * 0.5);
+      ctx.lineTo(R * 0.78, -R * 0.36);
+      ctx.lineTo(R * 0.78, R * 0.36);
+      ctx.lineTo(R * 0.12, R * 0.5);
+      ctx.closePath();
+      ctx.fill();
+      // 눈
+      ctx.fillStyle = '#151820';
+      for (const side of [-1, 1]) {
+        ctx.beginPath();
+        ctx.ellipse(R * 0.5, side * R * 0.2, R * 0.13, R * 0.075, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    },
+  },
+};
+
 function drawPlayer(p, isMe) {
   // 공격 선딜 경고 (업할의 망치 지진): 곧 지진이 나갈 부채꼴 범위를 표시하고, 시간이 지날수록 안쪽이 차오른다
   if (p.alive && p.windupUntil && Date.now() < p.windupUntil && p.basic && p.basic.range) {
@@ -3628,9 +3680,10 @@ function drawPlayer(p, isMe) {
     ctx.stroke();
   }
 
+  const skinLook = p.skin && SKIN_LOOKS[p.skin] ? SKIN_LOOKS[p.skin] : null; // 장착한 스킨의 외형 (없으면 기본 모습)
   ctx.beginPath();
   ctx.arc(0, 0, PLAYER_RADIUS, 0, Math.PI * 2);
-  ctx.fillStyle = p.color || '#3498db';
+  ctx.fillStyle = (skinLook && skinLook.body) || p.color || '#3498db';
   ctx.fill();
   ctx.lineWidth = isMe ? 3 : 1.5;
   ctx.strokeStyle = isMe ? '#fff' : '#222';
@@ -3639,6 +3692,7 @@ function drawPlayer(p, isMe) {
 
   // 바라보는 방향 표시
   ctx.rotate(p.angle);
+  if (skinLook && skinLook.draw) skinLook.draw(PLAYER_RADIUS, p); // 스킨 외형 (닌자: 머리띠/복면/눈)
   ctx.beginPath();
   ctx.moveTo(0, 0);
   ctx.lineTo(PLAYER_RADIUS + 10, 0);
