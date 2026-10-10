@@ -2487,7 +2487,8 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
         reason: 'scoreLimit',
         winnerTeam: shooter.team,
         teamScore: match.teamScore,
-        coinReward: MODES[match.mode].coinReward || 0,
+        coinReward: match.ai ? 0 : (MODES[match.mode].coinReward || 0),
+        ai: !!match.ai,
       });
       settleMatch(match, shooter.team, 'scoreLimit');
       setTimeout(() => endMatch(match.id), MATCH_CLEANUP_DELAY_MS);
@@ -2913,7 +2914,7 @@ function tryMatchmaking(mode) {
   }
 }
 
-function startMatch(mode, entries) {
+function startMatch(mode, entries, opts = {}) {
   const cfg = MODES[mode];
   matchIdCounter += 1;
   const matchId = `match_${matchIdCounter}`;
@@ -2945,6 +2946,11 @@ function startMatch(mode, entries) {
     accounts: {},   // socketId -> 계정 키 (코인 정산용, 클라이언트에는 전송하지 않음)
     settled: false,
   };
+  if (opts.ai) {
+    match.ai = true;       // AI 연습 대결: 결과를 기록하지 않음 (트로피/코인/연승/미션 없음)
+    match.settled = true;  // settleMatch 가 아무것도 하지 않게 처음부터 정산 완료로 표시
+    match.aiBots = {};     // botSocketId -> AI 상태
+  }
   matches[matchId] = match;
 
   // 대기열에 들어온 순서대로 앞쪽 teamSize명은 A팀, 나머지는 B팀으로 배정
@@ -2952,12 +2958,16 @@ function startMatch(mode, entries) {
     const team = idx < cfg.teamSize ? 'A' : 'B';
     match.players[e.socket.id] = buildPlayer(e.socket.id, e.name, e.characterId, team, randomSpawnPoint(match.walls), e.level);
     match.accounts[e.socket.id] = e.userKey;
+    if (e.isBot) {
+      registerGameplayHandlers(e.socket); // 봇의 가짜 소켓에도 사람과 같은 입력 핸들러를 등록
+      match.aiBots[e.socket.id] = createAiState(e.socket);
+    }
   });
 
   // 대결 화면용 참가자 목록: 닉네임, 팀, 캐릭터, 그 캐릭터의 트로피
   const roster = entries.map((e) => {
     const pl = match.players[e.socket.id];
-    return { id: pl.id, name: pl.name, team: pl.team, characterId: pl.characterId, characterName: pl.characterName, trophies: e.trophies || 0, level: pl.level, device: e.socket.data.device || 'desktop' };
+    return { id: pl.id, name: pl.name, team: pl.team, characterId: pl.characterId, characterName: pl.characterName, trophies: e.trophies || 0, level: pl.level, device: e.socket.data.device || 'desktop', ai: !!e.isBot };
   });
 
   entries.forEach((e) => {
@@ -2983,6 +2993,7 @@ function startMatch(mode, entries) {
       teammateNames,
       opponentNames,
       roster,
+      ai: !!opts.ai, // AI 연습 대결 여부 (트로피를 얻을 수 없음)
       startsInMs: MATCH_COUNTDOWN_MS,
     });
   });
@@ -3279,6 +3290,92 @@ io.on('connection', (socket) => {
     if (mode) broadcastQueueStatus(mode); // 남아있는 대기자들에게 줄어든 인원수를 알림
   });
 
+  // AI 연습 대결: 대기열 없이 바로 AI 봇 1명과 1:1 매치를 시작한다.
+  // 트로피/코인/연승/미션 등 어떤 보상이나 기록도 남지 않는다 (match.settled 를 처음부터 true 로 둠).
+  socket.on('findAiMatch', async (data) => {
+    if (socketToMatch[socket.id]) return; // 이미 매치 중이면 무시
+    if (isQueued(socket.id)) return;
+    if (!socket.data.userKey) { socket.emit('findMatchError', { message: '로그인이 필요합니다.' }); return; }
+    if (serverPause.on) { socket.emit('findMatchError', { message: serverPause.message }); return; }
+    const requestedId = data && data.characterId;
+    if (!CHARACTERS[requestedId] || !socket.data.unlocked.has(requestedId)) {
+      socket.emit('findMatchError', { message: '잠금해제되지 않은 캐릭터입니다.' });
+      return;
+    }
+    const userKey = socket.data.userKey;
+    let level = 1;
+    let trophies = 0; // 대결 화면에 보여주기만 하고, AI 대결로는 절대 변하지 않음
+    try {
+      const u = await db.findUser(userKey);
+      trophies = (u && u.trophies && u.trophies[requestedId]) || 0;
+      level = levelOf(u, requestedId);
+    } catch (e) {
+      console.error('캐릭터 레벨 조회 실패', userKey, e);
+    }
+    if (!socket.connected || socket.data.userKey !== userKey) return;
+    if (socketToMatch[socket.id] || isQueued(socket.id)) return;
+    if (serverPause.on) { socket.emit('findMatchError', { message: serverPause.message }); return; }
+    startAiMatch(socket, requestedId, userKey, level, trophies);
+  });
+
+  registerGameplayHandlers(socket); // 이동/공격/충전/가젯/궁극기 입력 처리 (AI 봇도 같은 함수를 써서 사람과 똑같은 규칙으로 행동함)
+
+  // 채팅 메시지 수신 -> 검증 후 같은 매치(같은 방)에만 브로드캐스트
+  socket.on('chatMessage', (data) => {
+    const matchId = socketToMatch[socket.id];
+    const match = matches[matchId];
+    if (!match) return; // 매치 중이 아니면 무시
+    const p = match.players[socket.id];
+    if (!p) return;
+
+    const now = Date.now();
+    if (p.lastChatAt && now - p.lastChatAt < CHAT_COOLDOWN_MS) return; // 도배 방지
+
+    let text = data && data.text ? String(data.text) : '';
+    text = text.replace(/[\r\n\t]+/g, ' ').trim().slice(0, CHAT_MAX_LENGTH);
+    if (!text) return;
+
+    p.lastChatAt = now;
+
+    io.to(matchId).emit('chatMessage', {
+      id: socket.id,
+      name: p.name,
+      color: p.color,
+      text,
+      ts: now,
+    });
+  });
+
+  socket.on('disconnect', () => {
+    console.log(`플레이어 접속 해제: ${socket.id}`);
+    releaseAccount(socket);
+    const queuedMode = Object.keys(queues).find((m) => queues[m].some((q) => q.socket.id === socket.id));
+    leaveQueue(socket.id);
+    if (queuedMode) broadcastQueueStatus(queuedMode); // 남아있는 대기자들에게 줄어든 인원수를 알림
+    broadcastOnlineCount();
+
+    const matchId = socketToMatch[socket.id];
+    if (!matchId) return;
+    const match = matches[matchId];
+    if (!match) {
+      delete socketToMatch[socket.id];
+      return;
+    }
+
+    if (!match.over) {
+      const leaver = match.players[socket.id];
+      const winnerTeam = leaver && leaver.team === 'A' ? 'B' : 'A';
+      match.over = true;
+      io.to(matchId).emit('matchOver', { reason: 'opponentLeft', winnerTeam, teamScore: match.teamScore, coinReward: match.ai ? 0 : Math.floor((MODES[match.mode].coinReward || 0) / 2), ai: !!match.ai });
+      settleMatch(match, winnerTeam, 'opponentLeft', socket.id);
+    }
+    endMatch(matchId);
+  });
+});
+
+// 이동/공격/충전/가젯/궁극기 입력 핸들러 등록. 사람의 소켓뿐 아니라 AI 봇의 가짜 소켓에도 똑같이 등록되므로,
+// 봇은 사람과 완전히 같은 검증(쿨다운/탄약/기절/카운트다운 등)을 거친다. 이 함수 안에서는 socket.on / socket.id 만 사용한다.
+function registerGameplayHandlers(socket) {
   // 클라이언트가 매 프레임 자신의 위치/각도를 전송
   socket.on('playerUpdate', (data) => {
     const match = matches[socketToMatch[socket.id]];
@@ -3704,59 +3801,7 @@ io.on('connection', (socket) => {
 
     if (!match.over) p.ultimateCharge = 0;
   });
-
-  // 채팅 메시지 수신 -> 검증 후 같은 매치(같은 방)에만 브로드캐스트
-  socket.on('chatMessage', (data) => {
-    const matchId = socketToMatch[socket.id];
-    const match = matches[matchId];
-    if (!match) return; // 매치 중이 아니면 무시
-    const p = match.players[socket.id];
-    if (!p) return;
-
-    const now = Date.now();
-    if (p.lastChatAt && now - p.lastChatAt < CHAT_COOLDOWN_MS) return; // 도배 방지
-
-    let text = data && data.text ? String(data.text) : '';
-    text = text.replace(/[\r\n\t]+/g, ' ').trim().slice(0, CHAT_MAX_LENGTH);
-    if (!text) return;
-
-    p.lastChatAt = now;
-
-    io.to(matchId).emit('chatMessage', {
-      id: socket.id,
-      name: p.name,
-      color: p.color,
-      text,
-      ts: now,
-    });
-  });
-
-  socket.on('disconnect', () => {
-    console.log(`플레이어 접속 해제: ${socket.id}`);
-    releaseAccount(socket);
-    const queuedMode = Object.keys(queues).find((m) => queues[m].some((q) => q.socket.id === socket.id));
-    leaveQueue(socket.id);
-    if (queuedMode) broadcastQueueStatus(queuedMode); // 남아있는 대기자들에게 줄어든 인원수를 알림
-    broadcastOnlineCount();
-
-    const matchId = socketToMatch[socket.id];
-    if (!matchId) return;
-    const match = matches[matchId];
-    if (!match) {
-      delete socketToMatch[socket.id];
-      return;
-    }
-
-    if (!match.over) {
-      const leaver = match.players[socket.id];
-      const winnerTeam = leaver && leaver.team === 'A' ? 'B' : 'A';
-      match.over = true;
-      io.to(matchId).emit('matchOver', { reason: 'opponentLeft', winnerTeam, teamScore: match.teamScore, coinReward: Math.floor((MODES[match.mode].coinReward || 0) / 2) });
-      settleMatch(match, winnerTeam, 'opponentLeft', socket.id);
-    }
-    endMatch(matchId);
-  });
-});
+}
 
 // ===== 매치별 물리 처리 (한 틱 분량) =====
 function updateMatch(match, dt, now) {
@@ -4475,6 +4520,251 @@ function buildVisibleBullets(match, viewerId) {
   });
 }
 
+// ===== AI 봇 (연습 대결) =====
+// 봇은 '가짜 소켓'으로 사람과 똑같은 입력 핸들러(playerUpdate/shoot/ultimate/gadget/chargeStart...)를 호출한다.
+// 그래서 쿨다운, 탄약, 기절, 카운트다운, 덤불 은닉 같은 규칙이 사람과 똑같이 적용된다. (봇은 '보이는' 적만 노린다)
+const AI_MOVE_SPEED = 190; // 클라이언트의 MOVE_SPEED 와 같은 값 (px/초)
+let aiBotCounter = 0;
+
+function createBotSocket(id) {
+  const handlers = {};
+  return {
+    id,
+    connected: true,
+    data: { device: 'desktop', isBot: true },
+    handlers,
+    on(event, fn) { handlers[event] = fn; },
+    emit() {}, join() {}, leave() {},
+  };
+}
+
+function createAiState(socket) {
+  return {
+    socket,
+    strafeDir: Math.random() < 0.5 ? 1 : -1,
+    strafeUntil: 0,
+    nextShotAt: 0,
+    nextAbilityAt: 0,
+    aimErr: 0,
+    aimErrUntil: 0,
+    hadTarget: false,
+    lastSeen: null,
+    seenAt: 0,
+    prevTarget: null,
+    vx: 0, vy: 0,          // 추정한 적의 이동 속도 (조준 리드용)
+    lastX: null, lastY: null, intended: false, stuckTicks: 0,
+    unstickUntil: 0, unstickX: 0, unstickY: 0,
+    wanderX: ARENA_WIDTH / 2, wanderY: ARENA_HEIGHT / 2, wanderUntil: 0,
+    chargeReleaseAt: 0,
+  };
+}
+
+// 이 공격이 닿는 거리(px)를 추정
+function aiBasicRange(spec) {
+  if (spec.range) return spec.range;
+  if (spec.distance) return spec.distance;
+  if (spec.speed && spec.lifetime) return spec.speed * spec.lifetime;
+  if (spec.combo && spec.combo[0] && spec.combo[0].speed && spec.combo[0].lifetime) return spec.combo[0].speed * spec.combo[0].lifetime;
+  return 300;
+}
+function aiUltRange(u) {
+  if (u.distance) return u.distance;
+  if (u.range) return u.range;
+  if (u.speed && u.lifetime) return u.speed * u.lifetime;
+  if (u.speed && u.duration) return u.speed * u.duration;
+  return 350;
+}
+
+function updateAiBots(match, dt, now) {
+  for (const botId in match.aiBots) {
+    try {
+      runAiBot(match, botId, match.aiBots[botId], dt, now);
+    } catch (e) {
+      console.error('AI 봇 처리 오류', e); // 봇 하나가 오류를 내도 게임 루프는 계속 돌아야 한다
+    }
+  }
+}
+
+function runAiBot(match, botId, ai, dt, now) {
+  if (match.over || now < match.startsAt) return;
+  const p = match.players[botId];
+  const h = ai.socket.handlers;
+  if (!p || !p.alive) { ai.hadTarget = false; return; }
+
+  // 1) 보이는 가장 가까운 적 찾기 (덤불/은신으로 숨은 적은 위치가 없어서 자동으로 제외됨)
+  const view = buildVisiblePlayers(match, botId);
+  let target = null;
+  let dist = Infinity;
+  for (const pid in view) {
+    const e = view[pid];
+    if (e.team === p.team || !e.alive || typeof e.x !== 'number') continue;
+    const d = Math.hypot(e.x - p.x, e.y - p.y);
+    if (d < dist) { dist = d; target = e; }
+  }
+
+  // 적의 이동 속도 추정 (부드럽게 섞어서 조준 리드에 사용)
+  if (target) {
+    if (ai.prevTarget && ai.prevTarget.id === target.id) {
+      ai.vx = ai.vx * 0.6 + ((target.x - ai.prevTarget.x) / dt) * 0.4;
+      ai.vy = ai.vy * 0.6 + ((target.y - ai.prevTarget.y) / dt) * 0.4;
+    } else { ai.vx = 0; ai.vy = 0; }
+    ai.prevTarget = { id: target.id, x: target.x, y: target.y };
+    ai.lastSeen = { x: target.x, y: target.y };
+    ai.seenAt = now;
+    if (!ai.hadTarget) ai.nextShotAt = Math.max(ai.nextShotAt, now + 450 + Math.random() * 400); // 처음 발견하면 반응 시간
+  } else {
+    ai.prevTarget = null;
+  }
+  ai.hadTarget = !!target;
+
+  if (now >= ai.aimErrUntil) { ai.aimErr = (Math.random() - 0.5) * 0.26; ai.aimErrUntil = now + 350; } // 조준 오차 (약 ±7도)
+
+  const basic = p.basic;
+  const range = aiBasicRange(basic);
+  let moveX = 0, moveY = 0;
+  let aimAngle = p.angle;
+  let aimDist = dist;
+
+  if (target) {
+    const dx = target.x - p.x, dy = target.y - p.y;
+    const d = Math.max(1, dist);
+    const ux = dx / d, uy = dy / d;
+
+    // 조준: 투사체는 날아가는 시간만큼, 포물선 투척은 착지 시간만큼 적의 이동을 예측
+    let leadT = 0;
+    if (basic.type === 'lob') leadT = (basic.flightTime || 2) * 0.6;
+    else if (basic.speed) leadT = Math.min(0.9, dist / basic.speed) * 0.75;
+    const tx = target.x + ai.vx * leadT;
+    const ty = target.y + ai.vy * leadT;
+    aimAngle = Math.atan2(ty - p.y, tx - p.x) + ai.aimErr;
+    aimDist = Math.hypot(tx - p.x, ty - p.y);
+
+    // 이동: 사거리의 중간 거리를 유지하며 좌우로 움직임. 체력이 낮으면 물러남
+    if (now >= ai.strafeUntil) {
+      if (Math.random() < 0.6) ai.strafeDir *= -1;
+      ai.strafeUntil = now + 800 + Math.random() * 1500;
+    }
+    const near = Math.max(60, range * 0.4);
+    const far = Math.max(90, range * 0.75);
+    const sx = -uy * ai.strafeDir, sy = ux * ai.strafeDir;
+    if (p.hp < p.maxHp * 0.35 && dist < range * 1.1) {
+      moveX = -ux * 0.8 + sx * 0.5; moveY = -uy * 0.8 + sy * 0.5;
+    } else if (dist > far) {
+      moveX = ux + sx * 0.25; moveY = uy + sy * 0.25;
+    } else if (dist < near) {
+      moveX = -ux * 0.8 + sx * 0.6; moveY = -uy * 0.8 + sy * 0.6;
+    } else {
+      moveX = sx; moveY = sy;
+    }
+  } else if (ai.lastSeen && now - ai.seenAt < 4000) {
+    // 놓친 적의 마지막 위치로 이동
+    const dx = ai.lastSeen.x - p.x, dy = ai.lastSeen.y - p.y;
+    const d = Math.hypot(dx, dy);
+    if (d > 40) { moveX = dx / d; moveY = dy / d; aimAngle = Math.atan2(dy, dx); }
+  } else {
+    // 아무도 안 보이면 맵을 돌아다님
+    if (now >= ai.wanderUntil || Math.hypot(ai.wanderX - p.x, ai.wanderY - p.y) < 40) {
+      ai.wanderX = PLAYER_RADIUS + Math.random() * (ARENA_WIDTH - PLAYER_RADIUS * 2);
+      ai.wanderY = PLAYER_RADIUS + Math.random() * (ARENA_HEIGHT - PLAYER_RADIUS * 2);
+      ai.wanderUntil = now + 2500;
+    }
+    const dx = ai.wanderX - p.x, dy = ai.wanderY - p.y;
+    const d = Math.hypot(dx, dy) || 1;
+    moveX = dx / d; moveY = dy / d; aimAngle = Math.atan2(dy, dx);
+  }
+
+  // 2) 벽에 끼면 잠시 옆으로 빠져나옴
+  const step = AI_MOVE_SPEED * (p.speedMultiplier || 1) * dt;
+  if (ai.lastX !== null && ai.intended) {
+    const moved = Math.hypot(p.x - ai.lastX, p.y - ai.lastY);
+    ai.stuckTicks = moved < step * 0.3 ? ai.stuckTicks + 1 : 0;
+    if (ai.stuckTicks >= 4) {
+      const rot = (Math.random() < 0.5 ? 1 : -1) * (Math.PI / 2 + (Math.random() - 0.5) * 0.8);
+      const base = Math.atan2(moveY || 0.001, moveX || 0.001) + rot;
+      ai.unstickX = Math.cos(base); ai.unstickY = Math.sin(base);
+      ai.unstickUntil = now + 600 + Math.random() * 600;
+      ai.stuckTicks = 0;
+    }
+  }
+  if (now < ai.unstickUntil) { moveX = ai.unstickX; moveY = ai.unstickY; }
+  const ml = Math.hypot(moveX, moveY);
+  ai.intended = ml > 0.01;
+  ai.lastX = p.x; ai.lastY = p.y;
+  if (ml > 0.01) { moveX /= ml; moveY /= ml; } else { moveX = 0; moveY = 0; }
+
+  // 3) 이동 + 조준 (사람의 playerUpdate 와 같은 핸들러)
+  h.playerUpdate({ x: p.x + moveX * step, y: p.y + moveY * step, angle: aimAngle });
+
+  // 4) 기본 공격
+  if (target && dist <= range * 1.02 + 10) {
+    if (basic.type === 'charge') {
+      if (!p.chargeStartAt) {
+        if (now >= ai.nextShotAt) { h.chargeStart(); ai.chargeReleaseAt = now + 600 + Math.random() * 900; }
+      } else if (now >= ai.chargeReleaseAt) {
+        h.chargeRelease({ angle: aimAngle });
+        ai.nextShotAt = now + 500 + Math.random() * 500;
+      }
+    } else if (now >= ai.nextShotAt && p.ammo > 0) {
+      if (basic.type === 'lob') {
+        const maxD = basic.distance;
+        const minD = Math.min(maxD, basic.minDistance || 0);
+        h.shoot({ distance: Math.max(minD, Math.min(maxD, aimDist + (Math.random() - 0.5) * 50)) });
+      } else {
+        h.shoot();
+      }
+      ai.nextShotAt = now + 350 + Math.random() * 550;
+    }
+  } else if (p.chargeStartAt && !target) {
+    h.chargeCancel();
+  }
+
+  // 5) 궁극기 / 가젯 (0.25초마다 판단)
+  if (now < ai.nextAbilityAt) return;
+  ai.nextAbilityAt = now + 250;
+
+  if (p.ultimateCharge >= 100) {
+    const ult = p.ultimate;
+    const ur = aiUltRange(ult);
+    let use = false;
+    let arg;
+    if (ult.type === 'heal') use = p.hp < p.maxHp * 0.55;
+    else if (ult.type === 'stealth') use = !!target && dist < 500;
+    else if (ult.type === 'leap') {
+      use = !!target && dist <= ult.distance * 0.95 && dist >= Math.min(ult.distance, ult.minDistance || 0);
+      arg = { distance: dist };
+    } else if (ult.type === 'dash' || ult.type === 'burst') use = !!target && dist < ur * 0.9;
+    else use = !!target && dist < Math.min(ur, 350);
+    if (use && Math.random() < 0.6) h.ultimate(arg);
+  }
+
+  const g = p.gadget;
+  if (g && !(p.gadgetCooldownLeft > 0)) {
+    let use = false;
+    if (g.type === 'heal') use = p.hp < p.maxHp * 0.6;
+    else if (g.type === 'reloadAmmo') use = p.ammo === 0;
+    else if (g.type === 'reloadBoost') use = !!target && p.ammo <= 1;
+    else if (g.type === 'ultCharge') use = !!target && p.ultimateCharge < 60;
+    else if (g.type === 'burst' || g.type === 'poopBomb') {
+      const gr = g.speed && g.lifetime ? g.speed * g.lifetime : 350;
+      use = !!target && dist < gr * 0.9;
+    } else use = !!target && dist < 400;
+    if (use && Math.random() < 0.5) h.gadget();
+  }
+}
+
+// AI 연습 대결 시작: 사람 1명 + 무작위 캐릭터를 쓰는 AI 봇 1명의 1:1 매치. 대기열을 거치지 않고 바로 시작한다.
+function startAiMatch(socket, characterId, userKey, level, trophies) {
+  const ids = Object.keys(CHARACTERS);
+  const botCharId = ids[Math.floor(Math.random() * ids.length)];
+  aiBotCounter += 1;
+  const botSocket = createBotSocket(`ai_${aiBotCounter}`);
+  const entries = [
+    { socket, name: socket.data.displayName, characterId, userKey, trophies: trophies || 0, level },
+    { socket: botSocket, name: `AI ${CHARACTERS[botCharId].name}`, characterId: botCharId, userKey: null, trophies: 0, level, isBot: true },
+  ];
+  startMatch('1v1', entries, { ai: true });
+}
+
 // ===== 서버 게임 루프 =====
 // 진행 중인 모든 매치를 독립적으로 갱신하고, 각 매치의 상태는 그 매치에 속한 플레이어들에게만 전송한다
 // (덤불/은신 은닉을 위해 방 전체 브로드캐스트 대신 플레이어별로 필터링해서 개별 전송한다.
@@ -4487,6 +4777,7 @@ function gameLoop() {
     const match = matches[matchId];
     if (match.over) continue;
 
+    if (match.aiBots) updateAiBots(match, dt, now); // AI 연습 대결의 봇 행동
     updateMatch(match, dt, now);
 
     for (const pid in match.players) {
