@@ -371,7 +371,7 @@ const CHARACTERS = {
       damage: 1750,
       speed: 600,
       radius: 8,
-      lifetime: 0.7,     // 초 (사거리 ≈ 420px) - 기존 1.4초(≈ 840px)에서 50% 감소
+      lifetime: 0.49,    // 초 (사거리 ≈ 294px) - 기존 1.4초(≈ 840px)에서 50% 감소 후, 다시 30% 더 감소
       visual: 'knife',
       pierceWalls: true, // 벽(장애물)을 그대로 통과해서 날아감
     },
