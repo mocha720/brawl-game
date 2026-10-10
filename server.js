@@ -4557,6 +4557,14 @@ function createAiState(socket) {
     unstickUntil: 0, unstickX: 0, unstickY: 0,
     wanderX: ARENA_WIDTH / 2, wanderY: ARENA_HEIGHT / 2, wanderUntil: 0,
     chargeReleaseAt: 0,
+    // ----- 심리전 상태 -----
+    mode: 'fight',          // fight(맞서 싸움) / chase(약한 적 추격) / flee(도망) / hide(숨어서 회복) / desperate(몰려서 반격)
+    modeUntil: 0, hideSince: 0,
+    hideBush: null,         // 도망/은신할 덤불의 중심 좌표 {x, y}
+    bravery: 0.85 + Math.random() * 0.3, // 용기: 클수록 체력이 더 낮아져야 도망침 (봇마다 성향이 조금씩 다름)
+    corneredMs: 0,
+    feintUntil: 0, nextFeintAt: 0, // 페인트(물러나는 척)
+    lastHp: null,
   };
 }
 
@@ -4586,11 +4594,44 @@ function updateAiBots(match, dt, now) {
   }
 }
 
+// 도망/은신할 덤불 고르기: 내가 적보다 먼저 도착할 수 있고(적이 더 가까운 덤불은 제외), 적에게서 먼 덤불을 선호
+function pickHideBush(match, p, fromX, fromY) {
+  let best = null;
+  let bestScore = Infinity;
+  for (const bu of match.bushes || []) {
+    const cx = bu.x + bu.width / 2;
+    const cy = bu.y + bu.height / 2;
+    const dMe = Math.hypot(cx - p.x, cy - p.y);
+    const dEn = Math.hypot(cx - fromX, cy - fromY);
+    if (dEn < dMe * 0.8) continue;
+    const score = dMe - dEn * 0.5;
+    if (score < bestScore) { bestScore = score; best = { x: cx, y: cy }; }
+  }
+  return best;
+}
+
+function setAiMode(match, p, ai, mode, now, fromX, fromY) {
+  if (ai.mode === mode) return;
+  ai.mode = mode;
+  if (mode === 'flee' || mode === 'hide') {
+    if (!ai.hideBush) ai.hideBush = pickHideBush(match, p, fromX, fromY); // 도망 -> 은신으로 넘어갈 때는 같은 덤불을 유지
+    if (mode === 'hide') ai.hideSince = now;
+  } else {
+    ai.hideBush = null;
+  }
+  if (mode === 'desperate') ai.modeUntil = now + 2800;
+}
+
 function runAiBot(match, botId, ai, dt, now) {
   if (match.over || now < match.startsAt) return;
   const p = match.players[botId];
   const h = ai.socket.handlers;
-  if (!p || !p.alive) { ai.hadTarget = false; return; }
+  if (!p || !p.alive) {
+    // 죽으면 심리 상태 초기화 (리스폰 후에는 다시 맞서 싸움)
+    ai.hadTarget = false; ai.mode = 'fight'; ai.hideBush = null; ai.corneredMs = 0; ai.lastHp = null;
+    if (p) p.aiMode = 'fight';
+    return;
+  }
 
   // 1) 보이는 가장 가까운 적 찾기 (덤불/은신으로 숨은 적은 위치가 없어서 자동으로 제외됨)
   const view = buildVisiblePlayers(match, botId);
@@ -4622,14 +4663,57 @@ function runAiBot(match, botId, ai, dt, now) {
 
   const basic = p.basic;
   const range = aiBasicRange(basic);
+
+  // ===== 2) 심리전: 체력 상황에 따라 행동 모드 결정 =====
+  const myR = p.hp / (p.maxHp || 1);
+  const enR = target ? target.hp / (target.maxHp || 1) : null;
+  const fleeAt = 0.3 * ai.bravery;                    // 이 비율보다 체력이 낮아지면 도망 (봇마다 약간 다름)
+  const losing = enR === null || enR >= myR * 0.85;   // 적이 나보다 크게 약하지 않음 (적이 훨씬 약하면 끝장을 보려고 계속 싸움)
+  const fromX = target ? target.x : (ai.lastSeen ? ai.lastSeen.x : ARENA_WIDTH / 2);
+  const fromY = target ? target.y : (ai.lastSeen ? ai.lastSeen.y : ARENA_HEIGHT / 2);
+  const nearEdge = p.x < 70 || p.x > ARENA_WIDTH - 70 || p.y < 70 || p.y > ARENA_HEIGHT - 70;
+  if (target && dist < 140 && (nearEdge || ai.stuckTicks >= 3)) ai.corneredMs += dt * 1000;
+  else ai.corneredMs = Math.max(0, ai.corneredMs - dt * 2000);
+  const cornered = ai.corneredMs > 900; // 도망갈 곳이 없이 몰림
+
+  switch (ai.mode) {
+    case 'fight':
+    case 'chase':
+      if (myR < fleeAt && losing) setAiMode(match, p, ai, 'flee', now, fromX, fromY);
+      else if ((target && enR < 0.3 && myR > 0.3) || (ai.mode === 'chase' && !target && now - ai.seenAt < 2500 && myR > 0.3)) ai.mode = 'chase'; // 적이 거의 죽었으면 놓치지 않고 추격 (잠깐 시야에서 사라져도 계속 쫓음)
+      else ai.mode = 'fight';
+      break;
+    case 'flee':
+      if (myR >= 0.62) setAiMode(match, p, ai, 'fight', now);
+      else if (cornered) setAiMode(match, p, ai, 'desperate', now);
+      else if (p.inBush && (!target || !sharedBush(match.bushes, p, target))) setAiMode(match, p, ai, 'hide', now, fromX, fromY); // 덤불에 숨었으면 가만히 회복
+      else if (!target && now - ai.seenAt > 1500) setAiMode(match, p, ai, 'hide', now, fromX, fromY); // 적을 따돌렸으면 숨어서 회복
+      break;
+    case 'hide':
+      if (myR >= 0.7 || now - ai.hideSince > 12000) setAiMode(match, p, ai, 'fight', now);
+      else if (target && dist < 190) setAiMode(match, p, ai, 'desperate', now); // 숨은 곳까지 쫓아오면 기습 반격
+      else if (target && !p.inBush && dist < range * 1.3) setAiMode(match, p, ai, 'flee', now, fromX, fromY); // 들켰으면 다시 도망
+      break;
+    case 'desperate':
+      if (myR >= 0.62) setAiMode(match, p, ai, 'fight', now);
+      else if (now >= ai.modeUntil) setAiMode(match, p, ai, myR < fleeAt && losing ? 'flee' : 'fight', now, fromX, fromY);
+      break;
+    default:
+      ai.mode = 'fight';
+  }
+  const mode = ai.mode;
+  p.aiMode = mode; // 클라이언트가 AI의 상태(도망/추격 등)를 머리 위 이모지로 보여주는 데 사용
+
+  // ===== 3) 이동 / 조준 =====
   let moveX = 0, moveY = 0;
   let aimAngle = p.angle;
   let aimDist = dist;
+  let ux = 0, uy = 0;
 
   if (target) {
     const dx = target.x - p.x, dy = target.y - p.y;
     const d = Math.max(1, dist);
-    const ux = dx / d, uy = dy / d;
+    ux = dx / d; uy = dy / d;
 
     // 조준: 투사체는 날아가는 시간만큼, 포물선 투척은 착지 시간만큼 적의 이동을 예측
     let leadT = 0;
@@ -4640,26 +4724,79 @@ function runAiBot(match, botId, ai, dt, now) {
     aimAngle = Math.atan2(ty - p.y, tx - p.x) + ai.aimErr;
     aimDist = Math.hypot(tx - p.x, ty - p.y);
 
-    // 이동: 사거리의 중간 거리를 유지하며 좌우로 움직임. 체력이 낮으면 물러남
     if (now >= ai.strafeUntil) {
       if (Math.random() < 0.6) ai.strafeDir *= -1;
       ai.strafeUntil = now + 800 + Math.random() * 1500;
     }
-    const near = Math.max(60, range * 0.4);
-    const far = Math.max(90, range * 0.75);
     const sx = -uy * ai.strafeDir, sy = ux * ai.strafeDir;
-    if (p.hp < p.maxHp * 0.35 && dist < range * 1.1) {
-      moveX = -ux * 0.8 + sx * 0.5; moveY = -uy * 0.8 + sy * 0.5;
-    } else if (p.ammo <= 0 && dist < range * 1.15) {
-      // 탄창이 비었으면 재장전될 때까지 거리를 벌리며 피함 (사람처럼 탄창을 관리)
-      moveX = -ux * 0.7 + sx * 0.6; moveY = -uy * 0.7 + sy * 0.6;
-    } else if (dist > far) {
-      moveX = ux + sx * 0.25; moveY = uy + sy * 0.25;
-    } else if (dist < near) {
-      moveX = -ux * 0.8 + sx * 0.6; moveY = -uy * 0.8 + sy * 0.6;
+
+    if (mode === 'flee') {
+      // 적의 반대 방향으로 도망 + (있으면) 덤불로 향함 + 가장자리에 몰리지 않게 중앙 쪽으로 보정
+      let ex = 0, ey = 0;
+      const M = 90;
+      if (p.x < M) ex += (M - p.x) / M; else if (p.x > ARENA_WIDTH - M) ex -= (p.x - (ARENA_WIDTH - M)) / M;
+      if (p.y < M) ey += (M - p.y) / M; else if (p.y > ARENA_HEIGHT - M) ey -= (p.y - (ARENA_HEIGHT - M)) / M;
+      moveX = -ux + ex * 1.5 + sx * 0.3;
+      moveY = -uy + ey * 1.5 + sy * 0.3;
+      if (ai.hideBush) {
+        const bx = ai.hideBush.x - p.x, by = ai.hideBush.y - p.y;
+        const bd = Math.hypot(bx, by) || 1;
+        moveX = -ux * 0.5 + (bx / bd) * 1.0 + ex; moveY = -uy * 0.5 + (by / bd) * 1.0 + ey;
+      }
+    } else if (mode === 'hide') {
+      // 숨은 곳에서는 움직이지 않고 기다림 (아직 덤불에 도착하지 못했으면 덤불로 이동)
+      if (ai.hideBush && !p.inBush) {
+        const bx = ai.hideBush.x - p.x, by = ai.hideBush.y - p.y;
+        const bd = Math.hypot(bx, by) || 1;
+        moveX = bx / bd; moveY = by / bd;
+      } else if (!ai.hideBush && dist < range * 1.2) {
+        moveX = -ux; moveY = -uy; // 덤불이 없는 맵: 시야에서 벗어날 때까지 물러남
+      }
+    } else if (mode === 'chase') {
+      // 거의 죽은 적은 바짝 쫓아가서 마무리
+      const closeIn = Math.max(60, range * 0.55);
+      if (dist > closeIn) { moveX = ux + sx * 0.15; moveY = uy + sy * 0.15; } else { moveX = sx; moveY = sy; }
+    } else if (mode === 'desperate') {
+      // 몰려서 어쩔 수 없이 반격: 물러나지 않고 중간 거리에서 맞섬
+      const far = Math.max(90, range * 0.75);
+      if (dist > far) { moveX = ux + sx * 0.25; moveY = uy + sy * 0.25; } else { moveX = sx; moveY = sy; }
     } else {
-      moveX = sx; moveY = sy;
+      // fight: 사거리의 중간 거리를 유지하며 좌우로 움직임. 체력이 앞서면 더 바짝, 뒤지면 더 멀리서 싸움
+      const edge = Math.max(-1, Math.min(1, myR - (enR === null ? myR : enR)));
+      const bandScale = 1 - 0.25 * edge;
+      const near = Math.max(60, range * 0.4 * bandScale);
+      const far = Math.max(90, range * 0.75 * bandScale);
+
+      // 페인트: 가끔 물러나는 척해서 상대를 끌어들인 뒤 다시 공격
+      if (now >= ai.nextFeintAt) {
+        if (dist < range * 1.1 && myR > 0.5 && Math.random() < 0.5) ai.feintUntil = now + 700 + Math.random() * 600;
+        ai.nextFeintAt = now + 5000 + Math.random() * 4000;
+      }
+      if (now < ai.feintUntil) {
+        moveX = -ux * 0.9 + sx * 0.3; moveY = -uy * 0.9 + sy * 0.3;
+      } else if (p.ammo <= 0 && dist < range * 1.15) {
+        // 탄창이 비었으면 재장전될 때까지 거리를 벌리며 피함 (사람처럼 탄창을 관리)
+        moveX = -ux * 0.7 + sx * 0.6; moveY = -uy * 0.7 + sy * 0.6;
+      } else if (dist > far) {
+        moveX = ux + sx * 0.25; moveY = uy + sy * 0.25;
+      } else if (dist < near) {
+        moveX = -ux * 0.8 + sx * 0.6; moveY = -uy * 0.8 + sy * 0.6;
+      } else {
+        moveX = sx; moveY = sy;
+      }
     }
+  } else if (mode === 'flee' || mode === 'hide') {
+    // 적이 안 보이는 동안: 덤불로 이동해서 숨거나, 마지막으로 본 적의 반대쪽으로 계속 이동
+    if (ai.hideBush && !p.inBush) {
+      const bx = ai.hideBush.x - p.x, by = ai.hideBush.y - p.y;
+      const bd = Math.hypot(bx, by) || 1;
+      moveX = bx / bd; moveY = by / bd; aimAngle = Math.atan2(by, bx);
+    } else if (!p.inBush && mode === 'flee' && ai.lastSeen) {
+      const ax = p.x - ai.lastSeen.x, ay = p.y - ai.lastSeen.y;
+      const ad = Math.hypot(ax, ay) || 1;
+      moveX = ax / ad; moveY = ay / ad;
+    }
+    if (ai.lastSeen && p.inBush) aimAngle = Math.atan2(ai.lastSeen.y - p.y, ai.lastSeen.x - p.x); // 덤불 안에서는 적이 있던 쪽을 바라봄
   } else if (ai.lastSeen && now - ai.seenAt < 4000) {
     // 놓친 적의 마지막 위치로 이동
     const dx = ai.lastSeen.x - p.x, dy = ai.lastSeen.y - p.y;
@@ -4677,7 +4814,7 @@ function runAiBot(match, botId, ai, dt, now) {
     moveX = dx / d; moveY = dy / d; aimAngle = Math.atan2(dy, dx);
   }
 
-  // 2) 벽에 끼면 잠시 옆으로 빠져나옴
+  // 벽에 끼면 잠시 옆으로 빠져나옴
   const step = AI_MOVE_SPEED * (p.speedMultiplier || 1) * dt;
   if (ai.lastX !== null && ai.intended) {
     const moved = Math.hypot(p.x - ai.lastX, p.y - ai.lastY);
@@ -4689,6 +4826,8 @@ function runAiBot(match, botId, ai, dt, now) {
       ai.unstickUntil = now + 600 + Math.random() * 600;
       ai.stuckTicks = 0;
     }
+  } else if (!ai.intended) {
+    ai.stuckTicks = 0;
   }
   if (now < ai.unstickUntil) { moveX = ai.unstickX; moveY = ai.unstickY; }
   const ml = Math.hypot(moveX, moveY);
@@ -4696,11 +4835,17 @@ function runAiBot(match, botId, ai, dt, now) {
   ai.lastX = p.x; ai.lastY = p.y;
   if (ml > 0.01) { moveX /= ml; moveY /= ml; } else { moveX = 0; moveY = 0; }
 
-  // 3) 이동 + 조준 (사람의 playerUpdate 와 같은 핸들러)
+  // 이동 + 조준 (사람의 playerUpdate 와 같은 핸들러)
   h.playerUpdate({ x: p.x + moveX * step, y: p.y + moveY * step, angle: aimAngle });
 
-  // 4) 기본 공격
-  if (target && dist <= range * 1.02 + 10) {
+  // ===== 4) 기본 공격 =====
+  // 모드별 공격 성향: 도망 중에는 가끔 뒤돌아 반격, 숨어 있을 땐 가까이 온 적만 기습, 추격 중에는 더 자주 발사
+  let canAttack = target && dist <= range * 1.02 + 10 && now >= ai.feintUntil;
+  if (mode === 'flee') canAttack = canAttack && basic.type !== 'charge' && Math.random() < 0.5;
+  if (mode === 'hide') canAttack = canAttack && dist < 230;
+  const rateScale = mode === 'chase' ? 0.7 : mode === 'flee' ? 1.4 : 1;
+
+  if (canAttack) {
     if (basic.type === 'charge') {
       // 충전 공격(똥파리)은 원래 탄창이 없지만, AI 대결에서는 다른 캐릭터처럼 탄창(maxAmmo발)을 쓰고 시간이 지나면 한 발씩 재장전됨
       if (!p.chargeStartAt) {
@@ -4709,7 +4854,7 @@ function runAiBot(match, botId, ai, dt, now) {
         const lastShotBefore = p.lastShotAt;
         h.chargeRelease({ angle: aimAngle });
         if (p.lastShotAt !== lastShotBefore) p.ammo = Math.max(0, p.ammo - 1); // 실제로 발사됐을 때만 탄창 1발 소모
-        ai.nextShotAt = now + 500 + Math.random() * 500;
+        ai.nextShotAt = now + (500 + Math.random() * 500) * rateScale;
       }
     } else if (now >= ai.nextShotAt && p.ammo > 0) {
       if (basic.type === 'lob') {
@@ -4719,27 +4864,30 @@ function runAiBot(match, botId, ai, dt, now) {
       } else {
         h.shoot();
       }
-      ai.nextShotAt = now + (p.ammo <= 1 ? 900 + Math.random() * 700 : 350 + Math.random() * 550); // 탄창이 1발 이하로 남으면 아껴서 쏨
+      ai.nextShotAt = now + (p.ammo <= 1 ? 900 + Math.random() * 700 : 350 + Math.random() * 550) * rateScale; // 탄창이 1발 이하로 남으면 아껴서 쏨
     }
-  } else if (p.chargeStartAt && !target) {
+  } else if (p.chargeStartAt && (!target || mode === 'flee')) {
     h.chargeCancel();
   }
 
-  // 5) 궁극기 / 가젯 (0.25초마다 판단)
+  // ===== 5) 궁극기 / 가젯 (0.25초마다 판단) =====
   if (now < ai.nextAbilityAt) return;
   ai.nextAbilityAt = now + 250;
+
+  const offensiveOK = mode === 'fight' || mode === 'chase' || mode === 'desperate' || (mode === 'hide' && target && dist < 230);
 
   if (p.ultimateCharge >= 100) {
     const ult = p.ultimate;
     const ur = aiUltRange(ult);
     let use = false;
     let arg;
-    if (ult.type === 'heal') use = p.hp < p.maxHp * 0.55;
-    else if (ult.type === 'stealth') use = !!target && dist < 500;
+    if (ult.type === 'heal') use = myR < 0.55;
+    else if (ult.type === 'stealth') use = !!target && dist < (mode === 'flee' ? 650 : 500) && mode !== 'hide'; // 도망칠 때 적극적으로 사용
+    else if (!offensiveOK) use = false; // 도망/은신 중에는 공격 궁극기를 아낌
     else if (ult.type === 'leap') {
       use = !!target && dist <= ult.distance * 0.95 && dist >= Math.min(ult.distance, ult.minDistance || 0);
       arg = { distance: dist };
-    } else if (ult.type === 'dash' || ult.type === 'burst') use = !!target && dist < ur * 0.9;
+    } else if (ult.type === 'dash' || ult.type === 'burst') use = !!target && dist < ur * (mode === 'chase' ? 1.0 : 0.9);
     else use = !!target && dist < Math.min(ur, 350);
     if (use && Math.random() < 0.6) h.ultimate(arg);
   }
@@ -4747,13 +4895,20 @@ function runAiBot(match, botId, ai, dt, now) {
   const g = p.gadget;
   if (g && !(p.gadgetCooldownLeft > 0)) {
     let use = false;
-    if (g.type === 'heal') use = p.hp < p.maxHp * 0.6;
+    const escaping = mode === 'flee' || mode === 'desperate';
+    if (g.type === 'heal') use = myR < 0.6;
     else if (g.type === 'reloadAmmo') use = p.ammo === 0;
     else if (g.type === 'reloadBoost') use = !!target && p.ammo <= 1;
     else if (g.type === 'ultCharge') use = !!target && p.ultimateCharge < 60;
     else if (g.type === 'burst' || g.type === 'poopBomb') {
       const gr = g.speed && g.lifetime ? g.speed * g.lifetime : 350;
-      use = !!target && dist < gr * 0.9;
+      use = offensiveOK && !!target && dist < gr * 0.9;
+    } else if (g.type === 'powerCharge') use = (mode === 'fight' || mode === 'chase') && !!target && dist < 400;
+    else if (g.type === 'speedBoost' || g.type === 'sprint' || g.type === 'invincible' || g.type === 'shield') {
+      use = !!target && dist < (escaping ? 600 : 400) && mode !== 'hide'; // 도망칠 때 탈출용으로 사용
+      if (use && g.type === 'sprint' && mode === 'flee' && (moveX || moveY)) {
+        h.playerUpdate({ x: p.x, y: p.y, angle: Math.atan2(moveY, moveX) }); // 돌진은 바라보는 방향으로 나가므로, 도망 방향을 보고 사용
+      }
     } else use = !!target && dist < 400;
     if (use && Math.random() < 0.5) h.gadget();
   }
