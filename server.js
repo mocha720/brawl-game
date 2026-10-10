@@ -312,7 +312,7 @@ const CHARACTERS = {
       visual: 'skull',
       poolOnImpact: true,  // 벽 또는 적과 충돌 시 물웅덩이를 생성
       poolRadius: 90,       // 물웅덩이 반경
-      poolLifetime: 2.5,    // 물웅덩이가 유지되는 시간(초) - 기존 2초에서 증가
+      poolLifetime: 1.5,    // 물웅덩이가 유지되는 시간(초) - 기존 2.5초에서 너프
       poolTickInterval: 0.5, // 대미지/회복이 적용되는 주기(초)
       poolDamage: 700,      // 적이 물에 닿았을 때 주기당 대미지 (기존 1000에서 변경)
       poolHeal: 300,        // 자신/아군이 물에 닿았을 때 주기당 회복량 (기존 500에서 너프)
