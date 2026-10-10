@@ -341,7 +341,7 @@ const CHARACTERS = {
       type: 'melee',        // 발사체가 아니라 즉시 판정되는 근접 공격
       damage: 2000,
       angleDegrees: 120,    // 바라보는 방향을 중심으로 한 부채꼴의 전체 각도
-      range: 90,            // 부채꼴 반경(사거리) - 근접 공격답게 130에서 축소
+      range: 120,           // 부채꼴 반경(사거리) - 90에서 증가 (기존에 130에서 90으로 줄였던 것을 다시 일부 늘림)
       knockback: 85,       // 맞은 대상이 밀려나는 거리(px) - 기존 170에서 50% 감소
       visual: 'plunger',
       effectLife: 0.45,     // 뚫어뻥을 젖혔다가 휘두르고 "퍽!" 하는 연출이 화면에 남는 시간(초)
@@ -1020,9 +1020,10 @@ function activeEvents() {
 }
 
 // ===== 일일 뽑기 (스타드롭 스타일) =====
-// 하루에 한 번(한국 시간 0시에 초기화) 뽑을 수 있고, 등급에 따라 50~1,000코인이 나온다.
+// 마지막으로 뽑은 때부터 2시간(DAILY_DRAW_COOLDOWN_MS)이 지나면 다시 뽑을 수 있고, 등급에 따라 50~1,000코인이 나온다.
 // 높은 등급일수록 확률(weight)이 낮다. 등급/확률/코인 범위는 이 표만 고치면 된다. (코인은 min~max 사이에서 10 단위로 뽑힘)
-// 현재 기대값: 하루 평균 약 200코인. 결과는 항상 서버가 정하고, 클라이언트는 연출만 한다.
+// 현재 기대값: 한 번에 평균 약 200코인. 결과는 항상 서버가 정하고, 클라이언트는 연출만 한다.
+const DAILY_DRAW_COOLDOWN_MS = 2 * 60 * 60 * 1000; // 뽑기 간격 (2시간). 바꾸려면 이 값만 고치면 된다
 const DAILY_DRAW_TIERS = [
   { id: 'rare',      name: '희귀',   min: 50,  max: 100,  weight: 50 },
   { id: 'superrare', name: '초희귀', min: 150, max: 250,  weight: 28 },
@@ -1043,9 +1044,17 @@ function rollDailyDraw() {
   return { tier: tier.id, coins: tier.min + 10 * crypto.randomInt(steps + 1) };
 }
 function dailyDrawView(u) {
-  const day = missionDay();
-  const done = !!(u.dailyDraw && u.dailyDraw.day === day);
-  return { available: !done, day, today: done ? { tier: u.dailyDraw.tier, coins: u.dailyDraw.coins } : null, tiers: DAILY_DRAW_TIERS_PUBLIC };
+  const now = Date.now();
+  // 하루 1회 시절의 옛 기록은 뽑은 시각(at)이 없으므로 바로 뽑을 수 있게 둔다
+  const last = u.dailyDraw && u.dailyDraw.at ? u.dailyDraw : null;
+  const remainingMs = last ? Math.max(0, last.at + DAILY_DRAW_COOLDOWN_MS - now) : 0;
+  return {
+    available: remainingMs <= 0,
+    remainingMs,                    // 다음 뽑기까지 남은 시간(ms). 클라이언트는 받은 시각부터 이 값을 줄여가며 카운트다운한다
+    cooldownMs: DAILY_DRAW_COOLDOWN_MS,
+    last: last ? { tier: last.tier, coins: last.coins } : null, // 마지막으로 뽑은 결과
+    tiers: DAILY_DRAW_TIERS_PUBLIC,
+  };
 }
 
 // ===== 계정 / 코인 / 캐릭터 잠금해제 시스템 =====
@@ -1667,13 +1676,13 @@ function createFileDb() {
       scheduleSave();
       return { ok: true, user: cloneUser(u) };
     },
-    // 일일 뽑기: 오늘 아직 안 뽑았을 때만 코인 지급 + 오늘 뽑은 기록 저장
-    async claimDailyDraw(key, day, tier, coins) {
+    // 일일 뽑기: 마지막으로 뽑은 지 cooldownMs 가 지났을 때만 코인 지급 + 뽑은 시각 기록 저장
+    async claimDailyDraw(key, now, cooldownMs, tier, coins) {
       const u = users[key];
       if (!u) return { ok: false, reason: 'noUser' };
-      if (u.dailyDraw && u.dailyDraw.day === day) return { ok: false, reason: 'used', user: cloneUser(u) };
+      if (u.dailyDraw && u.dailyDraw.at && now < u.dailyDraw.at + cooldownMs) return { ok: false, reason: 'used', user: cloneUser(u) };
       u.coins += coins;
-      u.dailyDraw = { day, tier, coins };
+      u.dailyDraw = { at: now, tier, coins };
       scheduleSave();
       return { ok: true, user: cloneUser(u) };
     },
@@ -1923,11 +1932,12 @@ function createMongoDb(uri) {
       if (!user) return { ok: false, reason: 'noUser' };
       return { ok: false, reason: 'used', user };
     },
-    async claimDailyDraw(key, day, tier, coins) {
-      // 오늘 뽑았는지 확인 + 코인 지급 + 기록 저장을 한 번의 원자적 연산으로 처리 (동시에 여러 번 눌러도 한 번만 지급됨)
+    async claimDailyDraw(key, now, cooldownMs, tier, coins) {
+      // 마지막 뽑기로부터 간격이 지났는지 확인 + 코인 지급 + 기록 저장을 한 번의 원자적 연산으로 처리 (동시에 여러 번 눌러도 한 번만 지급됨)
+      // 옛 기록(하루 1회 시절, 뽑은 시각 at 이 없음)은 바로 뽑을 수 있다
       const updated = await col.findOneAndUpdate(
-        { key, 'dailyDraw.day': { $ne: day } },
-        { $inc: { coins }, $set: { dailyDraw: { day, tier, coins } } },
+        { key, $or: [{ 'dailyDraw.at': { $exists: false } }, { 'dailyDraw.at': { $lte: now - cooldownMs } }] },
+        { $inc: { coins }, $set: { dailyDraw: { at: now, tier, coins } } },
         { returnDocument: 'after', projection }
       );
       if (updated) return { ok: true, user: updated };
@@ -2467,19 +2477,23 @@ function registerAuthHandlers(socket) {
     }
   });
 
-  // 일일 뽑기: 하루 한 번. 등급/코인은 서버가 정하고, 이미 뽑았는지는 저장소가 원자적으로 판단한다 (중복 클릭/동시 요청에도 한 번만 지급)
+  // 일일 뽑기: 2시간마다 한 번. 등급/코인은 서버가 정하고, 아직 뽑을 때가 아닌지는 저장소가 원자적으로 판단한다 (중복 클릭/동시 요청에도 한 번만 지급)
   socket.on('dailyDraw', async (data, ack) => {
     if (typeof ack !== 'function') return;
     try {
       const key = socket.data.userKey;
       if (!key) return ack({ ok: false, message: '로그인이 필요합니다.' });
       const roll = rollDailyDraw();
-      const r = await db.claimDailyDraw(key, missionDay(), roll.tier, roll.coins);
+      const r = await db.claimDailyDraw(key, Date.now(), DAILY_DRAW_COOLDOWN_MS, roll.tier, roll.coins);
       if (r.ok) {
         console.log(`[뽑기] ${socket.data.displayName}: ${roll.tier} ${roll.coins}코인`);
         return ack({ ok: true, tier: roll.tier, coins: roll.coins, profile: publicProfile(r.user) });
       }
-      const message = r.reason === 'used' ? '오늘의 뽑기는 이미 했어요. 내일 다시 오세요!' : '뽑기에 실패했습니다.';
+      let message = '뽑기에 실패했습니다.';
+      if (r.reason === 'used') {
+        const leftMin = Math.max(1, Math.ceil((r.user ? dailyDrawView(r.user).remainingMs : DAILY_DRAW_COOLDOWN_MS) / 60000));
+        message = `아직 뽑기 시간이 안 됐어요. ${leftMin >= 60 ? `${Math.floor(leftMin / 60)}시간 ` : ''}${leftMin % 60 ? `${leftMin % 60}분 ` : ''}뒤에 다시 오세요!`;
+      }
       ack({ ok: false, message, profile: r.user ? publicProfile(r.user) : undefined });
     } catch (e) {
       console.error('dailyDraw 오류', e);
