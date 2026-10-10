@@ -3193,6 +3193,17 @@ function drawPlayer(p, isMe) {
   // HP 바 (숫자 포함)
   drawHpBar(p.x, p.y - PLAYER_RADIUS - 20, 54, 12, p.hp, p.maxHp || 100);
 
+  // AI 연습 대결의 상대는 지금 어떤 마음인지(도망/추격/숨기/몰림)를 머리 위 이모지로 보여줌
+  if (p.isBot && p.aiMode && p.aiMode !== 'fight') {
+    const AI_MODE_EMOJI = { flee: '😰', chase: '😈', hide: '🤫', desperate: '😡' };
+    ctx.save();
+    ctx.font = `${Math.round(PLAYER_RADIUS * 1.1)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(AI_MODE_EMOJI[p.aiMode] || '', p.x, p.y - PLAYER_RADIUS - 50);
+    ctx.restore();
+  }
+
   // AI 연습 대결의 상대는 남은 탄창(총알)을 체력바 아래에 점으로 보여줌 (일반 상대의 탄창은 숨김)
   if (p.isBot) {
     const maxA = p.maxAmmo || 3;
