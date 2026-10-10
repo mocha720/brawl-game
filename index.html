@@ -511,6 +511,75 @@
   .vs-device.mobile { color: var(--sky); border-color: var(--sky); }
   .vs-device.desktop { color: var(--plum); border-color: var(--plum); }
 
+  /* ----- 일일 뽑기 (스타드롭 스타일) ----- */
+  #drawOverlay {
+    position: fixed; inset: 0; z-index: 40; display: none;
+    flex-direction: column; align-items: center; justify-content: flex-start;
+    box-sizing: border-box; text-align: center; color: var(--paper);
+    padding: 16px; overflow-y: auto;
+    background: radial-gradient(ellipse at 50% 38%, rgba(66, 72, 160, 0.92), rgba(10, 11, 30, 0.95));
+    -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+  }
+  #drawOverlay.open { display: flex; }
+  #drawOverlay > .panel { margin: auto; width: min(420px, 100%); }
+  #drawOverlay > .panel.fx-shake { animation: fxShake 0.5s ease-out; }
+  /* 팡팡 터지는 입자 효과를 그리는 전체 화면 캔버스 (클릭은 그대로 통과) */
+  #drawFx { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 45; pointer-events: none; display: none; }
+  #drawFx.on { display: block; }
+  #drawStage { --pod-glow: rgba(142, 107, 255, 0.55); position: relative; height: 260px; display: flex; align-items: center; justify-content: center; }
+  #drawGlow {
+    position: absolute; left: 50%; top: 50%; width: 250px; height: 250px; margin: -125px 0 0 -125px; border-radius: 50%; pointer-events: none;
+    background: radial-gradient(circle, var(--pod-glow) 0%, transparent 68%); animation: drawGlowPulse 2s ease-in-out infinite;
+  }
+  #drawPod {
+    --pod: #8e6bff; position: relative; width: 128px; height: 128px; border-radius: 50%; cursor: pointer; box-sizing: border-box;
+    display: flex; align-items: center; justify-content: center;
+    background: radial-gradient(circle at 32% 26%, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0) 32%), var(--pod);
+    border: 5px solid var(--ink);
+    box-shadow: inset 0 -14px 0 rgba(0, 0, 0, 0.2), inset 0 8px 0 rgba(255, 255, 255, 0.18), 0 8px 0 var(--ink), 0 0 42px var(--pod-glow);
+    transition: background 0.08s;
+  }
+  #drawPod .pod-star { font-size: 64px; line-height: 1; color: #fff; text-shadow: 0 3px 0 rgba(0, 0, 0, 0.3), 0 0 16px rgba(255, 255, 255, 0.75); pointer-events: none; }
+  #drawPod.idle { animation: podFloat 2.4s ease-in-out infinite; }
+  #drawPod.shaking { animation: podShake 1.5s linear forwards; }
+  #drawPod.gone { animation: podGone 0.35s ease-in forwards; pointer-events: none; }
+  #drawPod.hidden { opacity: 0; pointer-events: none; animation: none; }
+  #drawRarity, #drawAmount { position: absolute; left: 0; right: 0; text-align: center; font-family: var(--font-display); opacity: 0; pointer-events: none; }
+  #drawRarity { top: 38px; font-size: 40px; line-height: 1.1; text-shadow: 0 4px 0 var(--ink), 0 0 18px rgba(255, 255, 255, 0.25); }
+  #drawAmount { top: 112px; font-size: 56px; line-height: 1.1; color: var(--sun); text-shadow: 0 5px 0 var(--ink); }
+  #drawRarity.show { animation: rarityPop 0.55s cubic-bezier(0.2, 1.6, 0.4, 1) forwards; }
+  #drawRarity.still, #drawAmount.show, #drawAmount.still { opacity: 1; }
+  #drawAmount.pop { animation: amountPop 0.35s ease-out; }
+  #drawOdds { display: flex; flex-direction: column; gap: 5px; text-align: left; font-size: 12.5px; }
+  .odds-row { display: flex; align-items: center; gap: 8px; padding: 5px 10px; background: var(--dusk); border-radius: 10px; }
+  .odds-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; }
+  .odds-name { flex: 1; font-family: var(--font-display); font-size: 14px; }
+  .odds-range { color: var(--mute); }
+  .odds-chance { width: 46px; text-align: right; }
+  @keyframes podFloat { 0%, 100% { transform: translateY(0) rotate(-4deg); } 50% { transform: translateY(-12px) rotate(4deg); } }
+  @keyframes podShake {
+    0% { transform: translate(0, 0) rotate(0) scale(1); }
+    10% { transform: translate(-2px, 1px) rotate(-3deg) scale(1.01); }
+    20% { transform: translate(3px, -1px) rotate(4deg) scale(1.03); }
+    30% { transform: translate(-4px, 1px) rotate(-6deg) scale(1.06); }
+    40% { transform: translate(5px, -2px) rotate(8deg) scale(1.09); }
+    50% { transform: translate(-6px, 2px) rotate(-10deg) scale(1.12); }
+    60% { transform: translate(7px, -2px) rotate(12deg) scale(1.15); }
+    70% { transform: translate(-8px, 3px) rotate(-14deg) scale(1.19); }
+    80% { transform: translate(9px, -3px) rotate(16deg) scale(1.23); }
+    90% { transform: translate(-10px, 3px) rotate(-18deg) scale(1.28); }
+    100% { transform: translate(0, 0) rotate(0) scale(1.32); }
+  }
+  @keyframes podGone { 0% { transform: scale(1.32); opacity: 1; } 100% { transform: scale(2.4); opacity: 0; } }
+  @keyframes rarityPop { 0% { transform: scale(0.2) rotate(-8deg); opacity: 0; } 70% { transform: scale(1.25) rotate(3deg); opacity: 1; } 100% { transform: scale(1) rotate(0); opacity: 1; } }
+  @keyframes amountPop { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.18); } }
+  @keyframes fxShake { 0%, 100% { transform: translate(0, 0); } 15% { transform: translate(-9px, 4px); } 30% { transform: translate(8px, -5px); } 45% { transform: translate(-7px, -3px); } 60% { transform: translate(6px, 4px); } 75% { transform: translate(-3px, 2px); } }
+  @keyframes drawGlowPulse { 0%, 100% { transform: scale(0.92); opacity: 0.6; } 50% { transform: scale(1.08); opacity: 0.95; } }
+  @media (prefers-reduced-motion: reduce) {
+    #drawPod.idle, #drawGlow { animation: none; }
+    #drawOverlay > .panel.fx-shake { animation: none; }
+  }
+
   /* ----- 안내 문구 / 기타 ----- */
   #hint { position: fixed; bottom: 12px; left: 20px; font-size: 12px; color: var(--mute); }
   @media (max-width: 480px) {
@@ -798,7 +867,7 @@
     </div>
     <div class="mode-card" data-mode="ai">
       <div class="mode-title">🤖 AI</div>
-      <div class="mode-desc">접속자가 없어도 AI와 연습 대결<br>(트로피를 얻을 수 없어요)</div>
+      <div class="mode-desc">접속자가 없어도 AI와 연습 대결<br>(트로피는 없고, 이기면 코인을 얻어요)</div>
     </div>
   </div>
   <div id="eventList"></div>
@@ -813,6 +882,7 @@
   <div class="menu-row">
     <button id="openAdminBtn" class="btn btn-ghost" style="display:none">🛠 개발자 모드</button>
     <button id="openNoticeBtn" class="btn btn-ghost">📢 공지사항</button>
+    <button id="openDrawBtn" class="btn btn-ghost">🎁 일일 뽑기</button>
     <button id="openRankingBtn" class="btn btn-ghost">랭킹</button>
     <button id="openMissionBtn" class="btn btn-ghost">미션</button>
     <button id="openCodeBtn" class="btn btn-ghost">코드 입력</button>
@@ -951,6 +1021,27 @@
     </div>
   </div>
 </div>
+
+<div id="drawOverlay">
+  <div class="panel">
+    <h2 class="panel-title">🎁 일일 뽑기</h2>
+    <p class="panel-sub" id="drawSub"></p>
+    <div id="drawStage">
+      <div id="drawGlow"></div>
+      <div id="drawPod" class="idle"><span class="pod-star">★</span></div>
+      <div id="drawRarity"></div>
+      <div id="drawAmount"></div>
+    </div>
+    <div class="profile-line"></div>
+    <div id="drawMsg" class="panel-msg"></div>
+    <div id="drawOdds"></div>
+    <div class="panel-actions">
+      <button id="drawBtn" class="btn">🎁 뽑기!</button>
+      <button id="drawCloseBtn" class="btn btn-ghost">닫기</button>
+    </div>
+  </div>
+</div>
+<canvas id="drawFx"></canvas>
 
 <div id="characterOverlay">
   <div class="screen-head">
@@ -1310,6 +1401,13 @@ const SFX = (() => {
     win() { [523, 659, 784, 1046].forEach((f, i) => beep({ freq: f, duration: 0.18, type: 'square', volume: 0.18, delay: i * 0.13 })); },
     lose() { [400, 350, 300, 250].forEach((f, i) => beep({ freq: f, duration: 0.22, type: 'sawtooth', volume: 0.18, delay: i * 0.15 })); },
     respawn() { beep({ freq: 300, freqEnd: 700, duration: 0.2, type: 'sine', volume: 0.12 }); },
+    drawTick(i) { beep({ freq: 260 + i * 60, duration: 0.06, type: 'square', volume: 0.09 }); },
+    drawCoin() { beep({ freq: 1320, freqEnd: 1760, duration: 0.07, type: 'triangle', volume: 0.1 }); },
+    drawBurst(level) {
+      noiseBurst({ duration: 0.4, volume: 0.24 });
+      beep({ freq: 180, freqEnd: 800 + level * 250, duration: 0.45, type: 'sawtooth', volume: 0.18 });
+      [523, 659, 784, 1046, 1318].slice(0, 3 + Math.min(2, level)).forEach((f, i) => beep({ freq: f, duration: 0.22, type: 'square', volume: 0.15, delay: 0.1 + i * 0.09 }));
+    },
   };
 })();
 
@@ -1573,6 +1671,8 @@ function updateProfileUI() {
   const adminBtn = document.getElementById('openAdminBtn');
   if (adminBtn) adminBtn.style.display = currentProfile && currentProfile.isAdmin ? '' : 'none'; // 개발자 버튼은 서버가 개발자라고 알려준 계정에만 보인다 (실제 권한 검사는 서버가 함)
   if (!currentProfile || !currentProfile.isAdmin) closeAdminDialog();
+  if (!currentProfile) closeDrawDialog();
+  updateDrawBadge();
   renderEventCards();
   updateMissionUI();
   updateNoticeBadge();
@@ -1983,6 +2083,388 @@ function isMainMenuVisible() {
 }
 setInterval(() => { if (isMainMenuVisible()) fetchPresence(false); }, 1000);
 document.getElementById('presenceRefreshBtn').addEventListener('click', () => fetchPresence(true));
+
+// ===== 일일 뽑기 (스타드롭 스타일) =====
+// 등급/코인은 서버가 정하고(profile.dailyDraw, 'dailyDraw' 이벤트), 클라이언트는 받은 결과를 연출로 보여주기만 한다.
+const DRAW_STYLE = {
+  rare:      { color: '#5bd16b', glow: 'rgba(91, 209, 107, 0.6)',  particles: 70,  bursts: 1, coins: 10 },
+  superrare: { color: '#4cc3ff', glow: 'rgba(76, 195, 255, 0.6)',  particles: 110, bursts: 2, coins: 16 },
+  epic:      { color: '#b05bff', glow: 'rgba(176, 91, 255, 0.65)', particles: 160, bursts: 3, coins: 24 },
+  mythic:    { color: '#ff5470', glow: 'rgba(255, 84, 112, 0.65)', particles: 220, bursts: 4, coins: 34 },
+  legendary: { color: '#ffc928', glow: 'rgba(255, 201, 40, 0.75)', particles: 300, bursts: 6, coins: 48 },
+};
+const DRAW_NEUTRAL = { color: '#8e6bff', glow: 'rgba(142, 107, 255, 0.55)' };
+const DRAW_ORDER = ['rare', 'superrare', 'epic', 'mythic', 'legendary'];
+const DRAW_SHAKE_MS = 1500;
+
+// 팡팡 터지는 입자 효과 (색종이 / 별 / 불꽃 / 충격파 고리 / 떨어지는 코인 / 화면 번쩍임)
+const drawFx = (() => {
+  const cv = document.getElementById('drawFx');
+  const c = cv.getContext('2d');
+  let parts = [];
+  let raf = 0;
+  let last = 0;
+  let flashA = 0;
+  let flashColor = '#ffffff';
+  const rnd = (a, b) => a + Math.random() * (b - a);
+
+  function resize() {
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    cv.width = Math.floor(window.innerWidth * dpr);
+    cv.height = Math.floor(window.innerHeight * dpr);
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener('resize', () => { if (raf) resize(); });
+  function start() {
+    cv.classList.add('on');
+    if (!raf) { resize(); last = performance.now(); raf = requestAnimationFrame(frame); }
+  }
+  function add(p) { if (parts.length < 900) { p.max = p.life; parts.push(p); } }
+
+  function burst(x, y, color, count) {
+    const palette = [color, color, '#ffffff', '#ffc928', '#ff7ac8', '#7affd9'];
+    for (let i = 0; i < Math.round(count * 0.5); i++) {
+      const a = rnd(0, Math.PI * 2), s = rnd(160, 640);
+      add({ type: 'confetti', x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 260, g: 780, drag: 1.2, life: rnd(1.1, 1.9), size: rnd(6, 12), rot: rnd(0, 6.28), vr: rnd(-12, 12), color: palette[Math.floor(Math.random() * palette.length)] });
+    }
+    for (let i = 0; i < Math.round(count * 0.18); i++) {
+      const a = rnd(0, Math.PI * 2), s = rnd(140, 480);
+      add({ type: 'star', x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 120, g: 260, drag: 1.0, life: rnd(0.9, 1.5), size: rnd(10, 22), rot: rnd(0, 6.28), vr: rnd(-6, 6), color: [color, '#ffffff', '#ffe066'][i % 3] });
+    }
+    for (let i = 0; i < Math.round(count * 0.35); i++) {
+      const a = rnd(0, Math.PI * 2), s = rnd(380, 980);
+      add({ type: 'spark', x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, g: 120, drag: 2.4, life: rnd(0.35, 0.7), color: i % 2 ? color : '#ffffff' });
+    }
+    add({ type: 'ring', x, y, rad: 250, life: 0.65, color });
+    add({ type: 'ring', x, y, rad: 170, life: 0.5, color: '#ffffff' });
+    flashA = Math.max(flashA, 0.55);
+    flashColor = color;
+    start();
+  }
+
+  // 흔들리는 동안 상자 주변에서 튀는 작은 불꽃
+  function sparkle(x, y, color, n) {
+    for (let i = 0; i < n; i++) {
+      const a = rnd(0, Math.PI * 2), s = rnd(120, 360);
+      add({ type: 'spark', x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, g: 60, drag: 2.2, life: rnd(0.25, 0.45), color: i % 2 ? color : '#ffffff' });
+    }
+    start();
+  }
+
+  // 위에서 쏟아지는 코인 (바닥에 한 번 튕김)
+  function coinShower(n) {
+    for (let i = 0; i < n; i++) {
+      add({ type: 'coin', x: rnd(20, window.innerWidth - 20), y: rnd(-window.innerHeight * 0.6, -20), vx: rnd(-40, 40), vy: rnd(120, 360), g: 900, life: 4, size: rnd(11, 17), rot: rnd(0, 6.28), vr: rnd(6, 14), bounces: 0 });
+    }
+    start();
+  }
+
+  function starPath(r) {
+    c.beginPath();
+    for (let i = 0; i < 10; i++) {
+      const a = -Math.PI / 2 + (i * Math.PI) / 5;
+      const rr = i % 2 ? r * 0.45 : r;
+      if (i) c.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); else c.moveTo(Math.cos(a) * rr, Math.sin(a) * rr);
+    }
+    c.closePath();
+  }
+
+  function frame(t) {
+    const dt = Math.min(0.05, (t - last) / 1000);
+    last = t;
+    const W = window.innerWidth, H = window.innerHeight;
+    c.globalCompositeOperation = 'source-over';
+    c.globalAlpha = 1;
+    c.clearRect(0, 0, W, H);
+
+    const alive = [];
+    for (const p of parts) {
+      p.life -= dt;
+      if (p.life <= 0) continue;
+      if (p.type !== 'ring') {
+        p.vy += (p.g || 0) * dt;
+        const k = Math.exp(-(p.drag || 0) * dt);
+        p.vx *= k;
+        p.vy *= k;
+        p.x += p.vx * dt;
+        p.y += p.vy * dt;
+        p.rot = (p.rot || 0) + (p.vr || 0) * dt;
+        if (p.type === 'coin' && p.vy > 0 && p.y > H - 14) {
+          if (p.bounces >= 1) continue;
+          p.bounces += 1;
+          p.y = H - 14;
+          p.vy *= -0.5;
+        }
+      }
+      const fade = Math.min(1, p.life / 0.4);
+      if (p.type === 'confetti') {
+        c.save(); c.translate(p.x, p.y); c.rotate(p.rot); c.globalAlpha = fade;
+        c.fillStyle = p.color; c.fillRect(-p.size / 2, -p.size * 0.3, p.size, p.size * 0.6);
+        c.restore();
+      } else if (p.type === 'star') {
+        c.save(); c.translate(p.x, p.y); c.rotate(p.rot); c.globalAlpha = fade;
+        starPath(p.size); c.fillStyle = p.color; c.fill();
+        c.restore();
+      } else if (p.type === 'spark') {
+        c.save(); c.globalCompositeOperation = 'lighter'; c.globalAlpha = fade;
+        c.strokeStyle = p.color; c.lineWidth = 3; c.lineCap = 'round';
+        c.beginPath(); c.moveTo(p.x, p.y); c.lineTo(p.x - p.vx * 0.04, p.y - p.vy * 0.04); c.stroke();
+        c.restore();
+      } else if (p.type === 'coin') {
+        const w = Math.max(1.5, Math.abs(Math.cos(p.rot)) * p.size);
+        c.save(); c.translate(p.x, p.y);
+        c.fillStyle = '#ffc928'; c.strokeStyle = '#b98700'; c.lineWidth = 2;
+        c.beginPath(); c.ellipse(0, 0, w, p.size, 0, 0, Math.PI * 2); c.fill(); c.stroke();
+        c.fillStyle = 'rgba(255,255,255,0.5)';
+        c.beginPath(); c.ellipse(-w * 0.2, -p.size * 0.25, w * 0.3, p.size * 0.22, 0, 0, Math.PI * 2); c.fill();
+        c.restore();
+      } else if (p.type === 'ring') {
+        const q = 1 - p.life / p.max;
+        const r = 12 + (p.rad - 12) * (1 - Math.pow(1 - q, 3));
+        c.save(); c.globalAlpha = 1 - q; c.strokeStyle = p.color; c.lineWidth = 12 * (1 - q) + 1;
+        c.beginPath(); c.arc(p.x, p.y, r, 0, Math.PI * 2); c.stroke();
+        c.restore();
+      }
+      alive.push(p);
+    }
+    parts = alive;
+
+    if (flashA > 0) {
+      c.globalAlpha = Math.min(1, flashA) * 0.8;
+      c.fillStyle = flashColor;
+      c.fillRect(0, 0, W, H);
+      c.globalAlpha = 1;
+      flashA -= dt * 1.8;
+    }
+
+    if (parts.length || flashA > 0) raf = requestAnimationFrame(frame);
+    else { raf = 0; cv.classList.remove('on'); }
+  }
+
+  function clear() { parts = []; flashA = 0; }
+  return { burst, sparkle, coinShower, clear };
+})();
+
+let drawOpen = false;
+let drawBusy = false;            // 뽑는 중(흔들림 ~ 결과 공개)
+let drawPendingProfile = null;   // 서버가 보내준 뽑기 후 프로필. 코인이 미리 보이지 않게 연출이 끝난 뒤에 반영한다
+let drawTimers = [];
+let drawCycle = 0;
+let drawCountdownTimer = 0;
+const dEl = (id) => document.getElementById(id);
+function drawLater(fn, ms) { drawTimers.push(setTimeout(fn, ms)); }
+function clearDrawTimers() { drawTimers.forEach(clearTimeout); drawTimers = []; }
+
+function kstDay() { return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10); }
+function msUntilKstMidnight() { return 86400000 - ((Date.now() + 9 * 3600 * 1000) % 86400000); }
+// 서버가 알려준 뽑기 정보. 날짜가 바뀌었는데 화면을 안 갱신한 경우에도 '뽑을 수 있음'으로 보여준다 (실제 판단은 서버가 함)
+function drawInfo() {
+  const dd = currentProfile && currentProfile.dailyDraw;
+  if (!dd) return null;
+  const available = dd.available || dd.day !== kstDay();
+  return { ...dd, available, today: available ? null : dd.today };
+}
+function updateDrawBadge() {
+  const b = dEl('openDrawBtn');
+  const info = drawInfo();
+  if (b) b.classList.toggle('has-claim', !!(info && info.available));
+}
+setInterval(updateDrawBadge, 30000);
+
+function setDrawMsg(text, ok) {
+  const el = dEl('drawMsg');
+  el.textContent = text || '';
+  el.classList.toggle('ok', !!ok);
+}
+function setDrawColor(st) {
+  dEl('drawPod').style.setProperty('--pod', st.color);
+  dEl('drawStage').style.setProperty('--pod-glow', st.glow);
+}
+function fmtHMS(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const p = (n) => String(n).padStart(2, '0');
+  return `${p(Math.floor(s / 3600))}:${p(Math.floor((s % 3600) / 60))}:${p(s % 60)}`;
+}
+
+function renderDrawDialog() {
+  const info = drawInfo();
+  if (!info) return;
+  dEl('drawOdds').innerHTML = info.tiers.map((t) => {
+    const st = DRAW_STYLE[t.id] || DRAW_NEUTRAL;
+    return `<div class="odds-row"><span class="odds-dot" style="background:${st.color}"></span><span class="odds-name" style="color:${st.color}">${escapeHtml(t.name)}</span><span class="odds-range">🪙 ${t.min.toLocaleString()} ~ ${t.max.toLocaleString()}</span><span class="odds-chance">${t.chance}%</span></div>`;
+  }).join('');
+  if (drawBusy) return; // 연출 중에는 화면을 건드리지 않는다
+  clearInterval(drawCountdownTimer);
+  const pod = dEl('drawPod'), btn = dEl('drawBtn'), rarity = dEl('drawRarity'), amount = dEl('drawAmount');
+  if (info.available) {
+    pod.className = 'idle';
+    setDrawColor(DRAW_NEUTRAL);
+    rarity.className = ''; rarity.textContent = '';
+    amount.className = ''; amount.textContent = '';
+    btn.disabled = false;
+    btn.textContent = '🎁 뽑기!';
+    dEl('drawSub').textContent = '하루에 한 번! 50 ~ 1,000 코인이 나와요. 상자를 눌러도 열려요.';
+  } else {
+    const today = info.today;
+    const st = (today && DRAW_STYLE[today.tier]) || DRAW_NEUTRAL;
+    const tier = today && info.tiers.find((t) => t.id === today.tier);
+    pod.className = 'hidden';
+    setDrawColor(st);
+    if (today) {
+      rarity.textContent = tier ? tier.name : '';
+      rarity.style.color = st.color;
+      rarity.className = 'still';
+      amount.textContent = `🪙 +${today.coins.toLocaleString()}`;
+      amount.className = 'still';
+    }
+    btn.disabled = true;
+    btn.textContent = '오늘은 완료';
+    const tick = () => {
+      const dd = currentProfile && currentProfile.dailyDraw;
+      if (dd && kstDay() !== dd.day) { updateDrawBadge(); renderDrawDialog(); return; } // 자정이 지났으면 새 뽑기 준비
+      dEl('drawSub').textContent = `오늘의 뽑기 완료! 다음 뽑기까지 ${fmtHMS(msUntilKstMidnight())}`;
+    };
+    tick();
+    drawCountdownTimer = setInterval(tick, 1000);
+  }
+}
+
+function openDrawDialog() {
+  drawOpen = true;
+  drawBusy = false;
+  setDrawMsg('');
+  updateProfileUI();
+  dEl('drawOverlay').classList.add('open');
+  renderDrawDialog();
+}
+function closeDrawDialog() {
+  const ov = dEl('drawOverlay');
+  if (!ov) return;
+  ov.classList.remove('open');
+  drawOpen = false;
+  clearDrawTimers();
+  clearInterval(drawCycle);
+  clearInterval(drawCountdownTimer);
+  drawFx.clear();
+  drawBusy = false;
+  if (drawPendingProfile) { currentProfile = drawPendingProfile; drawPendingProfile = null; updateProfileUI(); }
+}
+
+function podCenter() {
+  const r = dEl('drawPod').getBoundingClientRect();
+  return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+}
+
+function doDraw() {
+  if (drawBusy) return;
+  const info = drawInfo();
+  if (!info || !info.available) return;
+  drawBusy = true;
+  dEl('drawBtn').disabled = true;
+  setDrawMsg('');
+
+  // 흔들림 시작: 상자 색이 등급 색으로 빠르게 바뀌면서 점점 세게 흔들리고 불꽃이 튄다
+  const pod = dEl('drawPod');
+  pod.className = '';
+  void pod.offsetWidth; // 애니메이션 재시작
+  pod.className = 'shaking';
+  let n = 0;
+  clearInterval(drawCycle);
+  drawCycle = setInterval(() => {
+    n += 1;
+    const st = DRAW_STYLE[DRAW_ORDER[n % DRAW_ORDER.length]];
+    setDrawColor(st);
+    SFX.drawTick(n % 12);
+    const p = podCenter();
+    drawFx.sparkle(p.x, p.y, st.color, 2 + Math.floor(n / 3));
+  }, 120);
+
+  const startedAt = Date.now();
+  socket.timeout(8000).emit('dailyDraw', {}, (err, res) => {
+    if (err || !res || !res.ok) {
+      clearInterval(drawCycle);
+      clearDrawTimers();
+      drawBusy = false;
+      if (res && res.profile) { currentProfile = res.profile; updateProfileUI(); }
+      if (drawOpen) {
+        setDrawMsg(err || !res ? '서버 응답이 없습니다. 잠시 후 다시 시도해주세요.' : (res.message || '뽑기에 실패했습니다.'));
+        renderDrawDialog();
+      }
+      return;
+    }
+    drawPendingProfile = res.profile;
+    if (!drawOpen) { currentProfile = res.profile; drawPendingProfile = null; updateProfileUI(); return; }
+    drawLater(() => revealDraw(res), Math.max(0, DRAW_SHAKE_MS - (Date.now() - startedAt)));
+  });
+}
+
+function revealDraw(res) {
+  clearInterval(drawCycle);
+  const info = drawInfo();
+  const st = DRAW_STYLE[res.tier] || DRAW_STYLE.rare;
+  const tier = info && info.tiers.find((t) => t.id === res.tier);
+  const level = Math.max(0, DRAW_ORDER.indexOf(res.tier));
+  const pod = dEl('drawPod');
+  const { x: cx, y: cy } = podCenter();
+
+  // 펑! 상자가 터지면서 등급 색으로 번쩍이고 입자가 사방으로 튄다
+  setDrawColor(st);
+  SFX.drawBurst(level);
+  drawFx.burst(cx, cy, st.color, st.particles);
+  pod.className = 'gone';
+  const panel = dEl('drawOverlay').querySelector('.panel');
+  panel.classList.remove('fx-shake');
+  void panel.offsetWidth;
+  panel.classList.add('fx-shake');
+
+  // 높은 등급일수록 폭죽이 더 많이 연달아 터진다
+  for (let b = 1; b < st.bursts; b++) {
+    drawLater(() => {
+      const x = cx + (Math.random() - 0.5) * Math.min(window.innerWidth * 0.8, 440);
+      const y = cy + (Math.random() - 0.5) * 280;
+      drawFx.burst(x, y, st.color, Math.round(st.particles * 0.55));
+      SFX.drawCoin();
+    }, 280 * b);
+  }
+
+  // 등급 이름이 팡 튀어나오고, 코인 액수가 올라가며 코인이 쏟아진다
+  const rarity = dEl('drawRarity');
+  drawLater(() => {
+    rarity.textContent = tier ? tier.name : '';
+    rarity.style.color = st.color;
+    rarity.className = 'show';
+  }, 220);
+
+  const amount = dEl('drawAmount');
+  drawLater(() => {
+    drawFx.coinShower(st.coins);
+    amount.className = 'show';
+    const t0 = performance.now();
+    const step = (now) => {
+      if (!drawOpen) return;
+      const q = Math.min(1, (now - t0) / 1000);
+      amount.textContent = `🪙 +${Math.round(res.coins * (1 - Math.pow(1 - q, 3))).toLocaleString()}`;
+      if (q < 1) requestAnimationFrame(step); else amount.classList.add('pop');
+    };
+    requestAnimationFrame(step);
+  }, 450);
+  for (let i = 0; i < 6; i++) drawLater(() => SFX.drawCoin(), 450 + i * 150);
+
+  // 연출이 끝나면 코인/프로필을 반영하고 '오늘은 완료' 상태로 전환
+  drawLater(() => {
+    drawBusy = false;
+    if (drawPendingProfile) { currentProfile = drawPendingProfile; drawPendingProfile = null; updateProfileUI(); }
+    renderDrawDialog();
+  }, 1900 + 150 * st.bursts);
+}
+
+dEl('openDrawBtn').addEventListener('click', openDrawDialog);
+dEl('drawCloseBtn').addEventListener('click', closeDrawDialog);
+dEl('drawBtn').addEventListener('click', doDraw);
+dEl('drawPod').addEventListener('click', doDraw);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && drawOpen) closeDrawDialog();
+});
 
 // ===== 랭킹 =====
 // 순위/총합 계산은 전부 서버가 하고, 클라이언트는 받은 목록을 그대로 보여주기만 한다
