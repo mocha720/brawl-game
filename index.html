@@ -380,6 +380,10 @@
   .char-actions { display: flex; flex-direction: column; gap: 8px; margin-top: auto; }
   .char-actions button { margin-top: 0; }
   .char-card button.upgrade-btn { --bg: var(--sky); --deep: #1f6fa8; --fg: var(--ink); font-size: 14px; }
+  .skin-box { display: flex; flex-direction: column; gap: 6px; margin: 0 0 12px; padding: 8px 10px; border: 2px dashed rgba(255,255,255,0.22); border-radius: 12px; }
+  .skin-box .skin-title { font-size: 12px; line-height: 1.4; color: var(--mute); text-align: left; }
+  .char-card button.skin-btn { margin-top: 0; min-height: 38px; padding: 6px 12px; font-size: 13px; --bg: var(--plum); --deep: var(--plum-deep); --fg: #fff; }
+  .char-card button.skin-btn.on { --bg: var(--mint); --deep: #2a9d74; --fg: var(--ink); }
 
   /* ----- 매칭 대기 ----- */
   .matching-spinner {
@@ -2755,6 +2759,23 @@ function renderCharacterList() {
       : next
         ? `<button class="upgrade-btn" data-upgrade-id="${c.id}" ${currentProfile.coins >= next.cost ? '' : 'disabled'}>⬆ 강화 Lv.${lv} → ${lv + 1} · 🪙 ${next.cost.toLocaleString()}${currentProfile.coins >= next.cost ? '' : ' (코인 부족)'}</button>`
         : `<button class="upgrade-btn" disabled>★ 최고 레벨</button>`;
+    // 스킨: 서버가 알려준 스킨 목록/보유/장착 상태를 그대로 보여준다 (가격/보유 판단은 서버가 함)
+    const charSkins = owned ? ((currentProfile && currentProfile.skinCatalog) || []).filter((k) => k.characterId === c.id) : [];
+    const ownedSkins = (currentProfile && currentProfile.skins) || [];
+    const equippedSkin = (currentProfile && currentProfile.equippedSkins && currentProfile.equippedSkins[c.id]) || null;
+    const skinBox = charSkins.length ? `
+      <div class="skin-box">
+        <div class="skin-title">🎨 스킨 (외형만 바뀌고 성능은 그대로예요)</div>
+        ${charSkins.map((k) => {
+          if (!ownedSkins.includes(k.id)) {
+            const ok = !!currentProfile && currentProfile.coins >= k.price;
+            return `<button class="skin-btn" data-skin-buy="${escapeHtml(k.id)}" ${ok ? '' : 'disabled'}>🎨 ${escapeHtml(k.name)} 스킨 · 🪙 ${k.price.toLocaleString()}${ok ? '' : ' (코인 부족)'}</button>`;
+          }
+          return equippedSkin === k.id
+            ? `<button class="skin-btn on" data-skin-equip="${escapeHtml(k.id)}" data-skin-char="${c.id}" data-skin-off="1">✅ ${escapeHtml(k.name)} 스킨 장착 중 (눌러서 해제)</button>`
+            : `<button class="skin-btn" data-skin-equip="${escapeHtml(k.id)}" data-skin-char="${c.id}">🎨 ${escapeHtml(k.name)} 스킨 장착하기</button>`;
+        }).join('')}
+      </div>` : '';
     const lvBadge = owned && table.length ? `<span class="lv-badge${next ? '' : ' max'}">Lv.${lv}</span>` : '';
     const action = owned
       ? `<div class="char-actions"><button data-char-id="${c.id}">선택</button>${upgradeBtn}</div>`
@@ -2769,6 +2790,7 @@ function renderCharacterList() {
       <div class="stat-line">🎯 ${escapeHtml(c.basic.name)}${c.basic.damage ? `: ${c.basic.damage.toLocaleString()}` : ''}${c.basic.desc ? ` (${escapeHtml(c.basic.desc)})` : ''}</div>
       <div class="stat-line">✨ ${escapeHtml(c.ultimate.name)}${c.ultimate.damage ? `: ${c.ultimate.damage.toLocaleString()}` : ''}${c.ultimate.desc ? ` (${escapeHtml(c.ultimate.desc)})` : ''}</div>
       ${c.gadget ? `<div class="stat-line">🔧 ${escapeHtml(c.gadget.name)}${c.gadget.desc ? ` (${escapeHtml(c.gadget.desc)})` : ''}</div>` : ''}
+      ${skinBox}
       ${action}
     </div>`;
   }).join('');
@@ -2793,6 +2815,37 @@ function renderCharacterList() {
         if (err || !res) { alert('서버 응답이 없습니다. 잠시 후 다시 시도해주세요.'); renderCharacterList(); return; }
         if (res.profile) { currentProfile = res.profile; updateProfileUI(); }
         if (!res.ok) alert(res.message || '강화에 실패했습니다.');
+        renderCharacterList();
+      });
+    });
+  });
+
+  list.querySelectorAll('button[data-skin-buy]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-skin-buy');
+      const k = ((currentProfile && currentProfile.skinCatalog) || []).find((x) => x.id === id);
+      if (!k) return;
+      if (!confirm(`${k.name} 스킨을 🪙 ${k.price.toLocaleString()} 코인으로 구매할까요?\n${k.desc}\n(구매 후 '장착하기'를 눌러야 적용돼요)`)) return;
+      btn.disabled = true;
+      socket.timeout(8000).emit('buySkin', { skinId: id }, (err, res) => {
+        if (err || !res) { alert('서버 응답이 없습니다. 잠시 후 다시 시도해주세요.'); renderCharacterList(); return; }
+        if (res.profile) { currentProfile = res.profile; updateProfileUI(); }
+        alert(res.message || (res.ok ? '구매 완료!' : '스킨 구매에 실패했습니다.'));
+        renderCharacterList();
+      });
+    });
+  });
+
+  list.querySelectorAll('button[data-skin-equip]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const skinId = btn.getAttribute('data-skin-equip');
+      const characterId = btn.getAttribute('data-skin-char');
+      const off = btn.getAttribute('data-skin-off') === '1'; // 이미 장착 중이면 해제(기본 스킨으로)
+      btn.disabled = true;
+      socket.timeout(8000).emit('equipSkin', { characterId, skinId: off ? null : skinId }, (err, res) => {
+        if (err || !res) { alert('서버 응답이 없습니다. 잠시 후 다시 시도해주세요.'); renderCharacterList(); return; }
+        if (res.profile) { currentProfile = res.profile; updateProfileUI(); }
+        if (!res.ok) alert(res.message || '스킨 장착에 실패했습니다.');
         renderCharacterList();
       });
     });
@@ -4418,6 +4471,94 @@ function drawBullet(b) {
       ctx.restore();
     }
     drawVortexShape(b.x, b.y, b.radius, spin, big ? 'rgba(190, 225, 255, 0.95)' : 'rgba(130, 200, 255, 0.95)', big ? 4 : 3);
+    return;
+  }
+  if (b.visual === 'shuriken') {
+    // 미남 닌자 스킨 기본공격: 표창 - 진행 방향을 향한 강철 표창 (꼬리에 붉은 끈) + 은빛 궤적
+    const ang = Math.atan2(b.vy || 0, b.vx || 1);
+    const L = b.radius * 4.4;     // 표창 길이
+    const hw = b.radius * 0.7;    // 날 두께의 절반
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.rotate(ang);
+    const trailLen = L * 1.8;
+    const tg = ctx.createLinearGradient(-L / 2 - trailLen, 0, -L / 2, 0);
+    tg.addColorStop(0, 'rgba(200, 215, 235, 0)');
+    tg.addColorStop(1, 'rgba(210, 225, 245, 0.5)');
+    ctx.strokeStyle = tg;
+    ctx.lineWidth = hw;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-L / 2 - trailLen, 0);
+    ctx.lineTo(-L / 2, 0);
+    ctx.stroke();
+    // 붉은 끈 (꼬리)
+    ctx.strokeStyle = '#d63031';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-L / 2, 0);
+    ctx.lineTo(-L / 2 - hw * 1.6, -hw * 0.9);
+    ctx.moveTo(-L / 2, 0);
+    ctx.lineTo(-L / 2 - hw * 1.6, hw * 0.9);
+    ctx.stroke();
+    // 강철 날 (양끝이 뾰족한 마름모꼴)
+    const blade = new Path2D();
+    blade.moveTo(L / 2, 0);
+    blade.lineTo(L * 0.1, -hw);
+    blade.lineTo(-L / 2, 0);
+    blade.lineTo(L * 0.1, hw);
+    blade.closePath();
+    const bg = ctx.createLinearGradient(0, -hw, 0, hw);
+    bg.addColorStop(0, '#f4f7fb');
+    bg.addColorStop(0.5, '#aab4c3');
+    bg.addColorStop(1, '#4b5666');
+    ctx.fillStyle = bg;
+    ctx.fill(blade);
+    ctx.strokeStyle = 'rgba(25, 30, 40, 0.85)';
+    ctx.lineWidth = 1;
+    ctx.stroke(blade);
+    ctx.restore();
+    return;
+  }
+  if (b.visual === 'bigShuriken') {
+    // 미남 닌자 스킨 궁극기: 수리검 - 빙글빙글 도는 큰 네 날 별 모양 수리검
+    const R = b.radius * 1.7;
+    const spin = Date.now() / 70;
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    // 회전 잔상
+    ctx.beginPath();
+    ctx.arc(0, 0, R * 1.05, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(190, 210, 240, 0.16)';
+    ctx.fill();
+    ctx.rotate(spin);
+    ctx.shadowColor = 'rgba(160, 190, 255, 0.85)';
+    ctx.shadowBlur = 10;
+    const star = new Path2D();
+    for (let i = 0; i < 8; i++) {
+      const a = (Math.PI / 4) * i;
+      const r = i % 2 === 0 ? R : R * 0.3;
+      const px = Math.cos(a) * r, py = Math.sin(a) * r;
+      if (i === 0) star.moveTo(px, py); else star.lineTo(px, py);
+    }
+    star.closePath();
+    const g = ctx.createRadialGradient(0, 0, 1, 0, 0, R);
+    g.addColorStop(0, '#6b7686');
+    g.addColorStop(0.5, '#c9d2de');
+    g.addColorStop(1, '#f2f6fb');
+    ctx.fillStyle = g;
+    ctx.fill(star);
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = 'rgba(20, 25, 38, 0.9)';
+    ctx.lineWidth = 1.5;
+    ctx.lineJoin = 'round';
+    ctx.stroke(star);
+    // 가운데 구멍
+    ctx.beginPath();
+    ctx.arc(0, 0, R * 0.16, 0, Math.PI * 2);
+    ctx.fillStyle = '#1b2230';
+    ctx.fill();
+    ctx.restore();
     return;
   }
   if (b.visual === 'clown') {
