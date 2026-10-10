@@ -5120,7 +5120,7 @@ function buildVisibleBullets(match, viewerId) {
 // ===== AI 봇 (연습 대결) =====
 // 봇은 '가짜 소켓'으로 사람과 똑같은 입력 핸들러(playerUpdate/shoot/ultimate/gadget/chargeStart...)를 호출한다.
 // 그래서 쿨다운, 탄약, 기절, 카운트다운, 덤불 은닉 같은 규칙이 사람과 똑같이 적용된다. (봇은 '보이는' 적만 노린다)
-const AI_MOVE_SPEED = 190; // 클라이언트의 MOVE_SPEED 와 같은 값 (px/초)
+const AI_MOVE_SPEED = 152; // 클라이언트의 MOVE_SPEED 와 같은 값 (px/초, 기존 190에서 20% 감소)
 let aiBotCounter = 0;
 
 function createBotSocket(id) {
