@@ -3772,6 +3772,91 @@ const SKIN_LOOKS = {
       ctx.restore();
     },
   },
+  syu_superman: {
+    // 슈퍼맨: 파란 슈트 + 붉은 망토 + 가슴의 S 방패 + 검은 머리(앞머리 컬) + 붉은 팬츠/노란 벨트. 항상 정면으로 똑바로 서 있음
+    body: '#1f5fbf',
+    avatarRing: '#d62828',
+    upright: true,
+    draw(R, p) {
+      const t = Date.now() / 160;
+      // 붉은 망토: 몸 양옆/아래로 펄럭이는 천 (몸통보다 먼저 그려서 뒤에 있는 것처럼 보임)
+      ctx.save();
+      ctx.fillStyle = '#c0392b';
+      ctx.strokeStyle = 'rgba(80, 10, 10, 0.55)';
+      ctx.lineWidth = 1.2;
+      for (const side of [-1, 1]) {
+        const flap = Math.sin(t + (side > 0 ? 1.1 : 0)) * R * 0.14;
+        ctx.beginPath();
+        ctx.moveTo(side * R * 0.7, -R * 0.55);
+        ctx.quadraticCurveTo(side * (R * 1.45 + flap), -R * 0.1, side * (R * 1.3 + flap), R * 0.85);
+        ctx.quadraticCurveTo(side * R * 1.0, R * 0.55, side * R * 0.55, R * 0.7);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
+      ctx.restore();
+      // 몸통 안쪽만 그리도록 잘라서 슈트/얼굴/방패를 그림
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(0, 0, R - 0.5, 0, Math.PI * 2);
+      ctx.clip();
+      // 슈트 (파랑) + 아래쪽 붉은 팬츠 + 노란 벨트
+      ctx.fillStyle = '#1f5fbf';
+      ctx.fillRect(-R, -R, R * 2, R * 2);
+      ctx.fillStyle = '#d62828';
+      ctx.fillRect(-R, R * 0.58, R * 2, R * 0.5);
+      ctx.fillStyle = '#ffd23f';
+      ctx.fillRect(-R, R * 0.5, R * 2, R * 0.12);
+      // 얼굴
+      ctx.fillStyle = '#f6cfa3';
+      ctx.beginPath();
+      ctx.ellipse(0, -R * 0.42, R * 0.4, R * 0.38, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // 검은 머리 (윗부분) + 이마 위로 내려온 컬
+      ctx.fillStyle = '#14161c';
+      ctx.beginPath();
+      ctx.moveTo(-R * 0.43, -R * 0.45);
+      ctx.quadraticCurveTo(-R * 0.45, -R * 0.98, 0, -R * 0.98);
+      ctx.quadraticCurveTo(R * 0.45, -R * 0.98, R * 0.43, -R * 0.45);
+      ctx.quadraticCurveTo(R * 0.3, -R * 0.66, R * 0.04, -R * 0.62);
+      ctx.quadraticCurveTo(-R * 0.1, -R * 0.54, -R * 0.02, -R * 0.46);
+      ctx.quadraticCurveTo(-R * 0.2, -R * 0.64, -R * 0.43, -R * 0.45);
+      ctx.closePath();
+      ctx.fill();
+      // 눈 + 씩 웃는 입
+      ctx.fillStyle = '#1b1b24';
+      for (const side of [-1, 1]) {
+        ctx.beginPath();
+        ctx.arc(side * R * 0.17, -R * 0.38, R * 0.05, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.strokeStyle = '#8a3b2a';
+      ctx.lineWidth = 1.4;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.arc(0, -R * 0.3, R * 0.13, 0.15 * Math.PI, 0.85 * Math.PI);
+      ctx.stroke();
+      // 가슴의 S 방패 (노란 방패 + 붉은 테두리 + 붉은 S)
+      ctx.beginPath();
+      ctx.moveTo(-R * 0.34, -R * 0.02);
+      ctx.lineTo(R * 0.34, -R * 0.02);
+      ctx.lineTo(R * 0.34, R * 0.22);
+      ctx.lineTo(0, R * 0.5);
+      ctx.lineTo(-R * 0.34, R * 0.22);
+      ctx.closePath();
+      ctx.fillStyle = '#ffd23f';
+      ctx.fill();
+      ctx.strokeStyle = '#d62828';
+      ctx.lineWidth = 1.6;
+      ctx.stroke();
+      ctx.fillStyle = '#d62828';
+      ctx.font = `bold ${Math.round(R * 0.5)}px sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('S', 0, R * 0.2);
+      ctx.restore();
+    },
+  },
 };
 
 function drawPlayer(p, isMe) {
@@ -4828,6 +4913,55 @@ function drawBullet(b) {
     ctx.fill();
     ctx.lineWidth = 1.5;
     ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+
+  if (b.visual === 'smallFist' || b.visual === 'bigFist') {
+    // 슈 슈퍼맨 스킨: 기본공격은 작은 주먹, 궁극기는 큰 주먹 (진행 방향으로 날아가는 주먹 + 속도선). 피격 범위(b.radius)는 그대로이고 모양만 다름
+    const big = b.visual === 'bigFist';
+    const ang = Math.atan2(b.vy || 0, b.vx || 1);
+    const u = b.radius * (big ? 1.5 : 2.2); // 주먹 크기 단위
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.rotate(ang);
+    // 속도선
+    ctx.strokeStyle = big ? 'rgba(255, 255, 255, 0.55)' : 'rgba(255, 255, 255, 0.4)';
+    ctx.lineWidth = big ? 2.4 : 1.4;
+    ctx.lineCap = 'round';
+    for (const k of [-0.6, 0, 0.6]) {
+      ctx.beginPath();
+      ctx.moveTo(-u * 1.1, k * u);
+      ctx.lineTo(-u * (big ? 3.1 : 2.6), k * u);
+      ctx.stroke();
+    }
+    if (big) { ctx.shadowColor = 'rgba(255, 90, 60, 0.85)'; ctx.shadowBlur = 12; }
+    // 파란 소매 + 붉은 띠
+    ctx.fillStyle = '#1f5fbf';
+    ctx.fillRect(-u * 1.5, -u * 0.55, u * 0.9, u * 1.1);
+    ctx.fillStyle = '#d62828';
+    ctx.fillRect(-u * 0.7, -u * 0.6, u * 0.3, u * 1.2);
+    ctx.shadowBlur = 0;
+    // 주먹 (손바닥 + 앞쪽에 네 손가락 마디)
+    ctx.fillStyle = '#f6cfa3';
+    ctx.strokeStyle = 'rgba(110, 60, 30, 0.8)';
+    ctx.lineWidth = big ? 1.8 : 1.1;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(-u * 0.45, -u * 0.68, u * 1.1, u * 1.36, u * 0.3);
+    else ctx.rect(-u * 0.45, -u * 0.68, u * 1.1, u * 1.36); // roundRect 를 지원하지 않는 옛 브라우저용
+    ctx.fill();
+    ctx.stroke();
+    for (let i = 0; i < 4; i += 1) {
+      ctx.beginPath();
+      ctx.arc(u * 0.62, -u * 0.51 + i * u * 0.34, u * 0.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+    // 엄지 (위쪽에 접힌 모양)
+    ctx.beginPath();
+    ctx.ellipse(u * 0.12, -u * 0.74, u * 0.36, u * 0.16, 0, 0, Math.PI * 2);
+    ctx.fill();
     ctx.stroke();
     ctx.restore();
     return;
