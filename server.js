@@ -380,7 +380,7 @@ const CHARACTERS = {
       type: 'turret',       // 조준 없이 자신의 위치에 자동 사격 터렛을 설치하는 궁극기
       hp: 4000,              // 터렛 자체 체력 (총알에 맞으면 줄어들고 0이 되면 파괴됨)
       radius: 22,
-      range: 294,             // 이 범위 안의 적만 자동으로 조준/사격 (기존 420에서 30% 감소)
+      range: 441,             // 이 범위 안의 적만 자동으로 조준/사격 (기존 294에서 50% 증가)
       fireInterval: 0.5,      // 초마다 한 발씩 발사
       damage: 1000,          // 터렛 총알 1발당 대미지 (1레벨 기준) - 기존 500에서 변경
       bulletSpeed: 900,
@@ -1179,6 +1179,24 @@ const SKINS = {
     desc: '겉모습이 똥으로 변해요! 기본공격과 가젯은 칼/총알 대신 화살촉이 똥인 화살이 나가고, 궁극기로 설치하는 터렛은 변기통이 돼요. (외형만 바뀌고 성능은 그대로예요)',
     // knife(기본공격), sniperBullet(가젯)을 똥 화살로, turret(궁극기 터렛)을 변기통으로 바꿈. 피해/속도/사거리/체력은 그대로
     visuals: { knife: 'poopArrow', sniperBullet: 'poopArrow', turret: 'toiletTurret' },
+  },
+  bobae_jinsoon: {
+    id: 'bobae_jinsoon',
+    characterId: 'bobae',
+    name: '진순',
+    price: SKIN_PRICE,
+    desc: '순한맛 라면으로 변신! 기본공격은 보배 대신 라면 스프가 날아가고, 궁극기는 폭탄 대신 보글보글 물이 끓는 냄비가 나와 뜨거운 물이 퍼져요. (외형만 바뀌고 성능은 그대로예요)',
+    // bobae(기본공격 발사체)를 라면 스프 봉지로, bobaeBomb(궁극기 설치물)을 끓는 냄비로 바꿈. 피해/속도/사거리/범위/지속시간은 그대로
+    visuals: { bobae: 'ramenSoup', bobaeBomb: 'ramenPot' },
+  },
+  yeoddongi_gigachanne: {
+    id: 'yeoddongi_gigachanne',
+    characterId: 'yeoddongi',
+    name: '기가차네',
+    price: SKIN_PRICE,
+    desc: '얼음을 다루는 용사로 변신! 기본공격은 똥 대신 얼음 3개가 나가 냉기가 퍼지고, 가젯은 감자칩 대신 얼음 소용돌이를 발사해요. (외형만 바뀌고 성능은 그대로예요. 궁극기 간식 처먹기도 똑같아요)',
+    // poop(기본공격 발사체)을 얼음 조각으로, poopGas(터진 뒤 남는 똥가루 구름)를 냉기 구름으로, pringles(가젯)를 얼음 소용돌이로 바꿈. 개수/피해/범위/넉백/사거리는 그대로
+    visuals: { poop: 'iceShard', poopGas: 'frostPool', pringles: 'iceVortex' },
   },
 };
 function getSkin(id) {
@@ -3187,8 +3205,10 @@ function sweptWallHit(walls, b) {
 
 function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
   // 해골물(원효대사) 스킨: 터진 뒤 남는 웅덩이 모양도 스킨에 따라 바뀜 (스킨이 없으면 spec 그대로)
-  const skinPoolVisual = spec.type === 'skullwater' ? skinVisual(p, 'skullWater') : null;
-  const poolVisual = skinPoolVisual && skinPoolVisual !== 'skullWater' ? skinPoolVisual : spec.poolVisual;
+  // 여똥이 스킨(기가차네): 똥가루 구름도 냉기 구름으로 바뀜
+  const poolSkinKey = spec.type === 'skullwater' ? 'skullWater' : spec.type === 'poopgas' ? 'poopGas' : null;
+  const skinPoolVisual = poolSkinKey ? skinVisual(p, poolSkinKey) : null;
+  const poolVisual = skinPoolVisual && skinPoolVisual !== poolSkinKey ? skinPoolVisual : spec.poolVisual;
   const pelletCount = spec.pelletCount || 1;
   const spreadRad = ((spec.spreadDegrees || 0) * Math.PI) / 180;
   const halfSpread = spreadRad / 2;
@@ -3455,7 +3475,7 @@ function spawnBomb(match, p, spec) {
     explodeDamage: spec.explodeDamage,
     slowMultiplier: spec.slowMultiplier != null ? spec.slowMultiplier : 1,
     exploded: false,
-    visual: spec.visual || 'bobaeBomb',
+    visual: skinVisual(p, spec.visual || 'bobaeBomb'), // 스킨이 있으면 설치물 모양만 바뀜 (진순: 끓는 냄비)
   });
 }
 
@@ -4957,7 +4977,7 @@ function updateMatch(match, dt, now) {
     if (bomb.fuseLeft <= 0) {
       bomb.exploded = true;
       effectIdCounter += 1;
-      match.effects.push({ id: effectIdCounter, type: 'explosion', x: bomb.x, y: bomb.y, radius: bomb.radius, life: EFFECT_LIFETIME });
+      match.effects.push({ id: effectIdCounter, type: 'explosion', x: bomb.x, y: bomb.y, radius: bomb.radius, life: EFFECT_LIFETIME, visual: bomb.visual === 'ramenPot' ? 'ramenSplash' : undefined });
 
       for (const pid in match.players) {
         const target = match.players[pid];
