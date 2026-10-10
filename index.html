@@ -3192,6 +3192,22 @@ function drawPlayer(p, isMe) {
 
   // HP 바 (숫자 포함)
   drawHpBar(p.x, p.y - PLAYER_RADIUS - 20, 54, 12, p.hp, p.maxHp || 100);
+
+  // AI 연습 대결의 상대는 남은 탄창(총알)을 체력바 아래에 점으로 보여줌 (일반 상대의 탄창은 숨김)
+  if (p.isBot) {
+    const maxA = p.maxAmmo || 3;
+    const gap = 11;
+    const startX = p.x - ((maxA - 1) * gap) / 2;
+    for (let i = 0; i < maxA; i++) {
+      ctx.beginPath();
+      ctx.arc(startX + i * gap, p.y - PLAYER_RADIUS - 3, 3.6, 0, Math.PI * 2);
+      ctx.fillStyle = i < (p.ammo || 0) ? '#ffd23f' : 'rgba(40, 40, 50, 0.75)';
+      ctx.fill();
+      ctx.lineWidth = 1.2;
+      ctx.strokeStyle = 'rgba(0, 0, 0, 0.7)';
+      ctx.stroke();
+    }
+  }
 }
 
 function drawVortexShape(x, y, r, spin, color, arms) {
