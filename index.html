@@ -2377,19 +2377,28 @@ function clearDrawTimers() { drawTimers.forEach(clearTimeout); drawTimers = []; 
 
 function kstDay() { return new Date(Date.now() + 9 * 3600 * 1000).toISOString().slice(0, 10); }
 function msUntilKstMidnight() { return 86400000 - ((Date.now() + 9 * 3600 * 1000) % 86400000); }
-// 서버가 알려준 뽑기 정보. 날짜가 바뀌었는데 화면을 안 갱신한 경우에도 '뽑을 수 있음'으로 보여준다 (실제 판단은 서버가 함)
+// 서버가 알려준 뽑기 정보. 서버가 준 '남은 시간(remainingMs)'을 받은 시각부터 줄여가며 계산하므로, 기기 시계가 틀려도 정확하다.
+// 대기 시간이 끝났는데 화면을 안 갱신한 경우에도 '뽑을 수 있음'으로 보여준다 (실제 판단은 서버가 함)
+let drawInfoSrc = null, drawInfoAt = 0; // 마지막으로 본 서버 뽑기 정보와, 그걸 처음 본 시각
+function drawRemainingMs() {
+  const dd = currentProfile && currentProfile.dailyDraw;
+  if (!dd) return 0;
+  if (dd !== drawInfoSrc) { drawInfoSrc = dd; drawInfoAt = Date.now(); } // 프로필이 새로 오면 그 시점부터 다시 카운트
+  return Math.max(0, (dd.remainingMs || 0) - (Date.now() - drawInfoAt));
+}
 function drawInfo() {
   const dd = currentProfile && currentProfile.dailyDraw;
   if (!dd) return null;
-  const available = dd.available || dd.day !== kstDay();
-  return { ...dd, available, today: available ? null : dd.today };
+  const remaining = drawRemainingMs();
+  const available = dd.available || remaining <= 0;
+  return { ...dd, available, remaining };
 }
 function updateDrawBadge() {
   const b = dEl('openDrawBtn');
   const info = drawInfo();
   if (b) b.classList.toggle('has-claim', !!(info && info.available));
 }
-setInterval(updateDrawBadge, 30000);
+setInterval(updateDrawBadge, 10000);
 
 function setDrawMsg(text, ok) {
   const el = dEl('drawMsg');
@@ -2423,9 +2432,9 @@ function renderDrawDialog() {
     amount.className = ''; amount.textContent = '';
     btn.disabled = false;
     btn.textContent = '🎁 뽑기!';
-    dEl('drawSub').textContent = '하루에 한 번! 50 ~ 1,000 코인이 나와요. 상자를 눌러도 열려요.';
+    dEl('drawSub').textContent = '2시간마다 한 번! 50 ~ 1,000 코인이 나와요. 상자를 눌러도 열려요.';
   } else {
-    const today = info.today;
+    const today = info.last; // 마지막으로 뽑은 결과
     const st = (today && DRAW_STYLE[today.tier]) || DRAW_NEUTRAL;
     const tier = today && info.tiers.find((t) => t.id === today.tier);
     pod.className = 'hidden';
@@ -2438,11 +2447,11 @@ function renderDrawDialog() {
       amount.className = 'still';
     }
     btn.disabled = true;
-    btn.textContent = '오늘은 완료';
+    btn.textContent = '⏳ 대기 중';
     const tick = () => {
-      const dd = currentProfile && currentProfile.dailyDraw;
-      if (dd && kstDay() !== dd.day) { updateDrawBadge(); renderDrawDialog(); return; } // 자정이 지났으면 새 뽑기 준비
-      dEl('drawSub').textContent = `오늘의 뽑기 완료! 다음 뽑기까지 ${fmtHMS(msUntilKstMidnight())}`;
+      const left = drawRemainingMs();
+      if (left <= 0) { updateDrawBadge(); renderDrawDialog(); return; } // 대기 시간이 끝났으면 새 뽑기 준비
+      dEl('drawSub').textContent = `뽑기 완료! 다음 뽑기까지 ${fmtHMS(left)}`;
     };
     tick();
     drawCountdownTimer = setInterval(tick, 1000);
@@ -2570,7 +2579,7 @@ function revealDraw(res) {
   }, 450);
   for (let i = 0; i < 6; i++) drawLater(() => SFX.drawCoin(), 450 + i * 150);
 
-  // 연출이 끝나면 코인/프로필을 반영하고 '오늘은 완료' 상태로 전환
+  // 연출이 끝나면 코인/프로필을 반영하고 '대기 중' 상태로 전환
   drawLater(() => {
     drawBusy = false;
     if (drawPendingProfile) { currentProfile = drawPendingProfile; drawPendingProfile = null; updateProfileUI(); }
