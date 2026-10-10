@@ -1791,6 +1791,7 @@ function updateTrophyRoadUI() {
   const next = road.rewards.find((r) => road.total < r.trophies);
   sumEl.innerHTML = `내 트로피 총합 <b>🏆 ${road.total.toLocaleString()}</b>`
     + (next ? `<br>다음 목표까지 🏆 ${(next.trophies - road.total).toLocaleString()} 남았어요` : '<br>모든 목표를 달성했어요! 🎉');
+  const prevScroll = listEl.scrollTop; // 보상을 받아서 목록을 다시 그려도 스크롤 위치를 유지
   listEl.innerHTML = road.rewards.map((r) => {
     const reached = road.total >= r.trophies;
     const pct = Math.round((Math.min(road.total, r.trophies) / r.trophies) * 100);
@@ -1803,6 +1804,7 @@ function updateTrophyRoadUI() {
       <div class="mission-foot"><span>${Math.min(road.total, r.trophies).toLocaleString()} / ${r.trophies.toLocaleString()}</span>${btn}</div>
     </div>`;
   }).join('');
+  listEl.scrollTop = prevScroll;
 
   listEl.querySelectorAll('button[data-trophy-reward]').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -1824,6 +1826,14 @@ function openTrophyRoadDialog() {
   setTrophyRoadMsg('');
   updateProfileUI();
   document.getElementById('trophyRoadOverlay').classList.add('open');
+  // 보상이 많아졌으니, 열 때 지금 받을 수 있는 보상(없으면 다음 목표) 위치로 스크롤
+  const listEl = document.getElementById('trophyRoadList');
+  const road = (currentProfile && currentProfile.trophyRoad) || { total: 0, rewards: [] };
+  let idx = road.rewards.findIndex((r) => !r.claimed && road.total >= r.trophies);
+  if (idx < 0) idx = road.rewards.findIndex((r) => road.total < r.trophies);
+  if (idx < 0) idx = road.rewards.length - 1;
+  const item = listEl.children[idx];
+  if (item) listEl.scrollTop = Math.max(0, item.offsetTop - listEl.offsetTop - 4);
 }
 function closeTrophyRoadDialog() { document.getElementById('trophyRoadOverlay').classList.remove('open'); }
 document.getElementById('openTrophyRoadBtn').addEventListener('click', openTrophyRoadDialog);
