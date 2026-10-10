@@ -370,27 +370,11 @@
     0%, 100% { box-shadow: 0 7px 0 var(--ink), 0 0 12px 2px rgba(168, 85, 247, 0.55), 0 0 28px 6px rgba(139, 61, 255, 0.28); }
     50% { box-shadow: 0 7px 0 var(--ink), 0 0 20px 5px rgba(190, 120, 255, 0.85), 0 0 44px 12px rgba(139, 61, 255, 0.45); }
   }
-  /* 아바타(원) 주변에서 이글이글 타오르는 보랏빛 불꽃 */
+  /* 아바타(원) 주변에서 타오르는 보랏빛 불꽃: 캔버스에 불꽃 입자를 그려서 위로 일렁이며 피어오르는 자연스러운 불을 표현 */
   .avatar-wrap { position: relative; width: 68px; height: 68px; margin: 2px auto 8px; }
-  .avatar-wrap .char-avatar { margin: 0; }
-  .avatar-fire { position: absolute; inset: 0; pointer-events: none; filter: drop-shadow(0 0 5px rgba(168, 85, 247, 0.95)); }
-  .avatar-fire::before { content: ''; position: absolute; inset: -9%; border-radius: 50%; background: radial-gradient(circle, transparent 52%, rgba(168, 85, 247, 0.55) 66%, transparent 78%); animation: fireGlow 0.9s ease-in-out infinite alternate; }
-  .avatar-fire i { position: absolute; inset: 0; transform: rotate(var(--a)); }
-  .avatar-fire i::before {
-    content: ''; position: absolute; left: 50%; width: 26%; margin-left: -13%;
-    height: calc(44% * var(--s)); top: calc(8% - 44% * var(--s));
-    background: linear-gradient(to top, #ffffff 0%, #e6b8ff 22%, #a63cff 58%, rgba(90, 20, 220, 0) 100%);
-    clip-path: polygon(50% 0, 74% 34%, 100% 72%, 82% 100%, 18% 100%, 0 72%, 26% 34%);
-    transform-origin: 50% 100%; animation: flameFlick 0.55s ease-in-out infinite alternate; animation-delay: var(--d);
-  }
-  .avatar-fire i.sm::before { width: 18%; margin-left: -9%; background: linear-gradient(to top, #fff 0%, #c88bff 40%, rgba(120, 40, 255, 0) 100%); animation-duration: 0.38s; }
-  @keyframes flameFlick {
-    0% { transform: scale(0.85, 0.7) skewX(-6deg); opacity: 0.8; }
-    50% { transform: scale(1.05, 1.1) skewX(5deg); opacity: 1; }
-    100% { transform: scale(0.92, 1.3) skewX(-4deg); opacity: 0.9; }
-  }
-  @keyframes fireGlow { from { opacity: 0.55; transform: scale(0.96); } to { opacity: 1; transform: scale(1.06); } }
-  @media (prefers-reduced-motion: reduce) { .char-card.maxlv { animation: none; } .avatar-fire i::before, .avatar-fire::before { animation: none; } }
+  .avatar-wrap .char-avatar { position: relative; margin: 0; }
+  .avatar-fire-cv { position: absolute; left: 50%; top: 50%; width: 240%; height: 240%; transform: translate(-50%, -50%); pointer-events: none; }
+  @media (prefers-reduced-motion: reduce) { .char-card.maxlv { animation: none; } }
   .char-avatar {
     width: 68px; height: 68px; margin: 2px auto 8px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
@@ -3720,17 +3704,106 @@ function update(dt) {
   socket.emit('playerUpdate', { x: myX, y: myY, angle: myAngle });
 }
 
-// 11레벨(최고 레벨) 캐릭터의 아바타 주변에 보랏빛 불꽃을 두르는 래퍼
+// 11레벨(최고 레벨) 캐릭터의 아바타 주변에 보랏빛 불꽃을 두르는 래퍼.
+// 불꽃은 캔버스 입자 효과: 원 가장자리에서 불씨가 생겨 흔들리며 위로 솟고, 점점 작아지고 어두워지며 사라진다 (실제 불처럼 위로만 타오름)
+const FIRE_W = 192, FIRE_R = 40; // 캔버스 해상도, 그 안에서 아바타 원의 반지름
+const fireState = new WeakMap();
+let fireRaf = 0;
+let fireSprites = null;
+function makeFireSprites() {
+  // 단계별(흰빛 → 연보라 → 보라 → 진보라) 부드러운 불덩이 스프라이트
+  const stops = [['244,214,255', '214,140,255'], ['206,128,255', '160,60,255'], ['170,70,255', '110,30,230'], ['110,40,220', '60,10,160']];
+  return stops.map(([c0, c1]) => {
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 64;
+    const g = cv.getContext('2d');
+    const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, `rgba(${c0},1)`);
+    gr.addColorStop(0.35, `rgba(${c1},0.75)`);
+    gr.addColorStop(1, `rgba(${c1},0)`);
+    g.fillStyle = gr;
+    g.fillRect(0, 0, 64, 64);
+    return cv;
+  });
+}
+function fireSpawn(st) {
+  const th = Math.random() * Math.PI * 2;
+  const side = Math.abs(Math.cos(th)); // 옆쪽에서 더 많이 피어오르고, 아래쪽 불씨는 원 뒤로 숨음
+  st.parts.push({
+    x: FIRE_W / 2 + Math.cos(th) * FIRE_R * 0.98,
+    y: FIRE_W / 2 + Math.sin(th) * FIRE_R * 0.98 * 0.9,
+    vx: Math.cos(th) * 0.22 + (Math.random() - 0.5) * 0.25,
+    vy: -(0.9 + Math.random() * 1.1 + side * 0.3),
+    age: 0,
+    life: 38 + Math.random() * 30,
+    size: 11 + Math.random() * 8,
+    ph: Math.random() * Math.PI * 2,
+  });
+}
+function fireStep(st, now) {
+  const n = 3 + (Math.random() < 0.5 ? 1 : 0);
+  for (let i = 0; i < n; i += 1) fireSpawn(st);
+  for (const p of st.parts) {
+    p.age += 1;
+    p.vx += Math.sin(now / 260 + p.ph + p.age * 0.12) * 0.045 - (p.x - FIRE_W / 2) * 0.0009; // 흔들리며 살짝 안쪽으로 모임 (불꽃 끝이 모아지는 느낌)
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy *= 0.992;
+  }
+  st.parts = st.parts.filter((p) => p.age < p.life);
+}
+function fireDraw(st) {
+  const g = st.ctx;
+  g.clearRect(0, 0, FIRE_W, FIRE_W);
+  g.globalCompositeOperation = 'lighter';
+  // 원 주변의 은은한 보랏빛 후광 (숨쉬듯 약하게 맥동)
+  const pulse = 0.8 + 0.2 * Math.sin(performance.now() / 380);
+  g.globalAlpha = 0.5 * pulse;
+  g.drawImage(fireSprites[2], FIRE_W / 2 - FIRE_R * 1.7, FIRE_W / 2 - FIRE_R * 1.7, FIRE_R * 3.4, FIRE_R * 3.4);
+  for (const p of st.parts) {
+    const t = p.age / p.life; // 0(갓 생김) → 1(사라짐)
+    const stage = t < 0.18 ? 0 : t < 0.42 ? 1 : t < 0.72 ? 2 : 3;
+    const sz = p.size * (1 - t * 0.7) * 2;
+    g.globalAlpha = Math.max(0, (t < 0.12 ? t / 0.12 : 1 - (t - 0.12) / 0.88)) * 0.9;
+    g.drawImage(fireSprites[stage], p.x - sz / 2, p.y - sz / 2, sz, sz);
+  }
+  g.globalAlpha = 1;
+  g.globalCompositeOperation = 'source-over';
+}
+function fireLoop() {
+  fireRaf = 0;
+  const cvs = document.querySelectorAll('canvas.avatar-fire-cv');
+  if (!cvs.length) return; // 화면에서 사라지면 멈춤 (다음에 카드가 그려질 때 다시 시작)
+  const now = performance.now();
+  if (!document.hidden) {
+    for (const cv of cvs) {
+      let st = fireState.get(cv);
+      if (!st) { st = { ctx: cv.getContext('2d'), parts: [] }; fireState.set(cv, st); }
+      fireStep(st, now);
+      fireDraw(st);
+    }
+  }
+  fireRaf = requestAnimationFrame(fireLoop);
+}
+function startFireLoop() {
+  if (!fireSprites) fireSprites = makeFireSprites();
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    // 움직임 줄이기: 한 번만 그려서 정지된 불꽃을 보여줌
+    requestAnimationFrame(() => {
+      for (const cv of document.querySelectorAll('canvas.avatar-fire-cv')) {
+        const st = { ctx: cv.getContext('2d'), parts: [] };
+        for (let i = 0; i < 40; i += 1) fireStep(st, i * 40);
+        fireDraw(st);
+      }
+    });
+    return;
+  }
+  if (!fireRaf) fireRaf = requestAnimationFrame(fireLoop);
+}
 function fireWrap(avatarHtml, isMax) {
   if (!isMax) return avatarHtml;
-  let flames = '';
-  const N = 14;
-  for (let i = 0; i < N; i += 1) {
-    const s = (0.85 + 0.35 * ((i * 7) % 5) / 4).toFixed(2);
-    flames += `<i style="--a:${Math.round((360 / N) * i)}deg;--s:${s};--d:${(-((i * 37) % 10) / 10).toFixed(1)}s"></i>`;
-    flames += `<i class="sm" style="--a:${Math.round((360 / N) * (i + 0.5))}deg;--s:${(0.6 + 0.25 * ((i * 3) % 4) / 3).toFixed(2)};--d:${(-((i * 53) % 10) / 10).toFixed(1)}s"></i>`;
-  }
-  return `<div class="avatar-wrap"><div class="avatar-fire">${flames}</div>${avatarHtml}</div>`;
+  setTimeout(startFireLoop, 0); // 카드가 화면에 들어간 다음에 시작
+  return `<div class="avatar-wrap"><canvas class="avatar-fire-cv" width="${FIRE_W}" height="${FIRE_W}"></canvas>${avatarHtml}</div>`;
 }
 
 // ===== 캐릭터 스킨 외형 =====
