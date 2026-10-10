@@ -1092,6 +1092,15 @@ const SKINS = {
     desc: '기본공격은 표창, 궁극기는 수리검이 나가요. (외형만 바뀌고 성능은 그대로예요)',
     visuals: { rifleBullet: 'shuriken', clown: 'bigShuriken' },
   },
+  jigi_chicken: {
+    id: 'jigi_chicken',
+    characterId: 'jigi',
+    name: '문치킨',
+    price: SKIN_PRICE,
+    desc: '기본공격은 구슬 대신 치킨을 던지고, 궁극기는 번개 대신 치킨이 떨어져요. 치킨집 사장님으로 변신! (외형만 바뀌고 성능은 그대로예요)',
+    // 발사체 모양(orb)과 궁극기 번개 이펙트(lightning)를 치킨으로 바꿈
+    visuals: { orb: 'chickenThrow', lightning: 'chickenDrop' },
+  },
 };
 function getSkin(id) {
   return typeof id === 'string' && Object.prototype.hasOwnProperty.call(SKINS, id) ? SKINS[id] : null;
@@ -3948,7 +3957,9 @@ function registerGameplayHandlers(socket) {
         const sy = Math.max(0, Math.min(ARENA_HEIGHT, p.y + Math.sin(angle) * dist));
 
         effectIdCounter += 1;
-        match.effects.push({ id: effectIdCounter, type: 'lightning', x: sx, y: sy, radius: ult.strikeRadius, life: EFFECT_LIFETIME });
+        const strikeVisual = skinVisual(p, 'lightning'); // 스킨이 있으면 번개 대신 다른 모양(치킨)이 떨어짐 (판정/피해는 그대로)
+        const strikeLife = strikeVisual === 'lightning' ? EFFECT_LIFETIME : 0.55; // 떨어지는 모습이 보이도록 스킨 이펙트는 조금 더 오래 남김 (피해는 즉시 적용)
+        match.effects.push({ id: effectIdCounter, type: 'lightning', visual: strikeVisual, x: sx, y: sy, radius: ult.strikeRadius, life: strikeLife, maxLife: strikeLife });
 
         for (const pid in match.players) {
           if (pid === socket.id) continue; // 자기 자신은 맞지 않음
