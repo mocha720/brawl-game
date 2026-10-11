@@ -235,6 +235,14 @@ const CHARACTERS = {
       lifetime: 1.5,
       visual: 'rifleBullet', // 기본공격과 같은 실제 총알 모양
     },
+    // 하이퍼 차지: 캐릭터를 최고 레벨(11)까지 키운 뒤 코인으로 획득하는 추가 스킬. 궁극기처럼 기본공격을 적중시켜 게이지를 채우고, 가득 차면 발동한다.
+    hyper: {
+      name: '하이퍼 차지',
+      duration: 4,              // 지속 시간(초)
+      speedMultiplier: 1.2,     // 이동속도 배율 (1.2 = 20% 증가)
+      damageMultiplier: 1.2,    // 공격력 배율 (1.2 = 20% 강화)
+      damageTakenMultiplier: 0.8, // 받는 피해 배율 (0.8 = 20% 감소)
+    },
   },
   jigi: {
     id: 'jigi',
@@ -945,6 +953,9 @@ function describeGadget(g) {
 // 밸런스 기준: 11레벨 = 체력 +35%, 공격력 +30%. (1레벨 상대로 맞붙으면 약 1.75배 유리 -> 실력으로 뒤집을 수 있는 수준)
 // 레벨 1->11 강화 총비용은 2,720코인 (1:1 승리 보상 45코인 기준 약 60승). 수치를 바꾸고 싶으면 이 표만 고치면 된다.
 const MAX_CHARACTER_LEVEL = 11;
+// 하이퍼 차지(추가 스킬): 최고 레벨을 찍은 캐릭터가 코인으로 획득. hyper 스펙이 있는 캐릭터에만 존재한다. (현재는 미남만)
+const HYPER_PRICE = 1000;
+const HYPER_REQUIRED_LEVEL = MAX_CHARACTER_LEVEL;
 const LEVEL_TABLE = [
   null, // 0번 칸은 사용하지 않음 (레벨은 1부터)
   { hp: 1.000, atk: 1.00, cost: 0 },
@@ -1003,6 +1014,21 @@ function getLeveledCharacter(id, level) {
   return c;
 }
 
+function describeHyper(hy) {
+  const pct = (m) => Math.round(Math.abs(m - 1) * 100);
+  return {
+    name: hy.name,
+    desc: `궁극기처럼 기본공격을 적중시켜 게이지를 채우고 발동하면 ${hy.duration}초 동안 이동속도 ${pct(hy.speedMultiplier)}% 증가, 공격력 ${pct(hy.damageMultiplier)}% 강화, 받는 피해 ${pct(hy.damageTakenMultiplier)}% 감소`,
+  };
+}
+// 하이퍼 차지를 획득한 캐릭터 id 목록 (하이퍼 스펙이 있는 캐릭터만 인정)
+function ownedHypersOf(u) {
+  return (u && u.hypers ? u.hypers : []).filter((id) => CHARACTERS[id] && CHARACTERS[id].hyper);
+}
+function hasHyper(u, charId) {
+  return !!(CHARACTERS[charId] && CHARACTERS[charId].hyper && u && (u.hypers || []).includes(charId));
+}
+
 const characterInfoCache = new Map();
 function buildCharacterInfo(levels) {
   const out = {};
@@ -1020,6 +1046,7 @@ function buildCharacterInfo(levels) {
         basic: describeBasic(c.basic),
         ultimate: describeUltimate(c.ultimate),
         gadget: c.gadget ? describeGadget(c.gadget) : null,
+        hyper: c.hyper ? describeHyper(c.hyper) : null, // 하이퍼 차지가 있는 캐릭터만 (미남)
       };
       characterInfoCache.set(cacheKey, info);
     }
@@ -1625,7 +1652,7 @@ function publicProfile(u) {
   const equippedSkins = {};
   for (const id in CHARACTERS) { const sk = equippedSkinOf(u, id); if (sk) equippedSkins[id] = sk; }
   return { username: u.name, coins: u.coins, wins: u.wins || 0, losses: u.losses || 0, unlocked: effectiveUnlocked(u), prices: allPrices(),
-    skinCatalog: skinCatalogPublic(), skins: ownedSkinsOf(u), equippedSkins, trophyRoad: trophyRoadView(u), trophies, streaks, missions: missionsView(u), repeatMissions: repeatMissionsView(u), ranks: TROPHY_RANKS, characters: buildCharacterInfo(levels), levels, levelTable: LEVEL_TABLE_PUBLIC, maxLevel: MAX_CHARACTER_LEVEL, isAdmin: u.key === ADMIN_KEY, announcements: allAnnouncements(), dailyDraw: dailyDrawView(u),
+    skinCatalog: skinCatalogPublic(), skins: ownedSkinsOf(u), equippedSkins, hypers: ownedHypersOf(u), hyperPrice: HYPER_PRICE, hyperRequiredLevel: HYPER_REQUIRED_LEVEL, trophyRoad: trophyRoadView(u), trophies, streaks, missions: missionsView(u), repeatMissions: repeatMissionsView(u), ranks: TROPHY_RANKS, characters: buildCharacterInfo(levels), levels, levelTable: LEVEL_TABLE_PUBLIC, maxLevel: MAX_CHARACTER_LEVEL, isAdmin: u.key === ADMIN_KEY, announcements: allAnnouncements(), dailyDraw: dailyDrawView(u),
     events: activeEvents().map((e) => ({ id: e.id, name: e.name, coins: e.coins, desc: e.desc, endsAt: e.endsAt || null, claimed: (u.redeemed || []).includes(eventClaimCode(e)) })) };
 }
 
@@ -1637,7 +1664,7 @@ const USERS_FILE = process.env.USERS_FILE || path.join(os.tmpdir(), 'brawl-users
 const ANNOUNCE_FILE = process.env.ANNOUNCE_FILE || path.join(os.tmpdir(), 'brawl-announcements.json'); // 개발자 모드로 올린 공지 (MongoDB를 쓰면 DB에 저장됨)
 
 function cloneUser(u) {
-  return u ? { ...u, unlocked: [...(u.unlocked || [])], skins: [...(u.skins || [])], equippedSkins: { ...(u.equippedSkins || {}) }, trophies: { ...(u.trophies || {}) }, streaks: { ...(u.streaks || {}) }, levels: { ...(u.levels || {}) }, redeemed: [...(u.redeemed || [])], missions: u.missions ? { day: u.missions.day, progress: { ...(u.missions.progress || {}) }, claimed: [...(u.missions.claimed || [])] } : undefined, repeatMissions: u.repeatMissions ? JSON.parse(JSON.stringify(u.repeatMissions)) : undefined, dailyDraw: u.dailyDraw ? { ...u.dailyDraw } : undefined } : null;
+  return u ? { ...u, unlocked: [...(u.unlocked || [])], skins: [...(u.skins || [])], hypers: [...(u.hypers || [])], equippedSkins: { ...(u.equippedSkins || {}) }, trophies: { ...(u.trophies || {}) }, streaks: { ...(u.streaks || {}) }, levels: { ...(u.levels || {}) }, redeemed: [...(u.redeemed || [])], missions: u.missions ? { day: u.missions.day, progress: { ...(u.missions.progress || {}) }, claimed: [...(u.missions.claimed || [])] } : undefined, repeatMissions: u.repeatMissions ? JSON.parse(JSON.stringify(u.repeatMissions)) : undefined, dailyDraw: u.dailyDraw ? { ...u.dailyDraw } : undefined } : null;
 }
 
 function createFileDb() {
@@ -1703,6 +1730,19 @@ function createFileDb() {
       if (u.coins < price) return { ok: false, reason: 'coins', user: cloneUser(u) };
       u.coins -= price;
       u.skins.push(skinId);
+      scheduleSave();
+      return { ok: true, user: cloneUser(u) };
+    },
+    // 하이퍼 차지 구매: 최고 레벨 + 코인 차감 + 지급을 한 번에 처리
+    async buyHyper(key, charId, price, requiredLevel) {
+      const u = users[key];
+      if (!u) return { ok: false, reason: 'noUser' };
+      u.hypers = u.hypers || [];
+      if (u.hypers.includes(charId)) return { ok: false, reason: 'already', user: cloneUser(u) };
+      if (levelOf(u, charId) < requiredLevel) return { ok: false, reason: 'level', user: cloneUser(u) };
+      if (u.coins < price) return { ok: false, reason: 'coins', user: cloneUser(u) };
+      u.coins -= price;
+      u.hypers.push(charId);
       scheduleSave();
       return { ok: true, user: cloneUser(u) };
     },
@@ -1951,6 +1991,21 @@ function createMongoDb(uri) {
       const user = await col.findOne({ key }, { projection });
       if (!user) return { ok: false, reason: 'noUser' };
       if ((user.skins || []).includes(skinId)) return { ok: false, reason: 'already', user };
+      return { ok: false, reason: 'coins', user };
+    },
+    // 하이퍼 차지 구매: 레벨 확인 + 코인 차감 + 지급을 한 번의 원자적 연산으로 처리 (중복 클릭/동시 요청으로 이중 차감되지 않음)
+    async buyHyper(key, charId, price, requiredLevel) {
+      const levelPath = `levels.${charId}`;
+      const updated = await col.findOneAndUpdate(
+        { key, coins: { $gte: price }, hypers: { $ne: charId }, [levelPath]: { $gte: requiredLevel } },
+        { $inc: { coins: -price }, $push: { hypers: charId } },
+        { returnDocument: 'after', projection }
+      );
+      if (updated) return { ok: true, user: updated };
+      const user = await col.findOne({ key }, { projection });
+      if (!user) return { ok: false, reason: 'noUser' };
+      if ((user.hypers || []).includes(charId)) return { ok: false, reason: 'already', user };
+      if (levelOf(user, charId) < requiredLevel) return { ok: false, reason: 'level', user };
       return { ok: false, reason: 'coins', user };
     },
     // 스킨 장착/해제. skinId 가 null 이면 기본 스킨으로 되돌림. 보유한 스킨만 장착 가능
@@ -2660,6 +2715,31 @@ function registerAuthHandlers(socket) {
     }
   });
 
+  // 하이퍼 차지 구매: 최고 레벨(11) + 1000코인. 조건/가격은 항상 서버 기준으로 판단한다. 구매하면 다음 매치부터 사용할 수 있다.
+  socket.on('buyHyper', async (data, ack) => {
+    if (typeof ack !== 'function') return;
+    try {
+      const key = socket.data.userKey;
+      if (!key) return ack({ ok: false, message: '로그인이 필요합니다.' });
+      if (socketToMatch[socket.id] || isQueued(socket.id)) return ack({ ok: false, message: '매치 중이거나 대기 중에는 구매할 수 없습니다.' });
+      const charId = data && data.characterId;
+      if (typeof charId !== 'string' || !CHARACTERS[charId] || !CHARACTERS[charId].hyper) return ack({ ok: false, message: '하이퍼 차지가 없는 캐릭터입니다.' });
+      if (!socket.data.unlocked.has(charId)) return ack({ ok: false, message: '먼저 캐릭터를 잠금해제해야 합니다.' });
+
+      const r = await db.buyHyper(key, charId, HYPER_PRICE, HYPER_REQUIRED_LEVEL);
+      if (r.ok) return ack({ ok: true, message: `${CHARACTERS[charId].name}의 ${CHARACTERS[charId].hyper.name}를 획득했어요!`, profile: publicProfile(r.user) });
+
+      const message = r.reason === 'coins' ? '코인이 부족합니다.'
+        : r.reason === 'level' ? `${HYPER_REQUIRED_LEVEL}레벨을 달성해야 획득할 수 있습니다.`
+        : r.reason === 'already' ? '이미 획득한 하이퍼 차지입니다.'
+        : '하이퍼 차지 획득에 실패했습니다.';
+      ack({ ok: false, message, profile: r.user ? publicProfile(r.user) : undefined });
+    } catch (e) {
+      console.error('buyHyper 오류', e);
+      ack({ ok: false, message: '서버 오류가 발생했습니다.' });
+    }
+  });
+
   // 스킨 장착/해제: skinId 를 보내면 장착, null 이면 기본 스킨으로 되돌린다. 보유한 스킨만 장착할 수 있다.
   socket.on('equipSkin', async (data, ack) => {
     if (typeof ack !== 'function') return;
@@ -2874,7 +2954,7 @@ function randomSpawnPoint(walls) {
   return fallbackCandidates[0];
 }
 
-function buildPlayer(socketId, name, characterId, team, spawn, level, skinId) {
+function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hyperOwned) {
   const character = getLeveledCharacter(characterId, level); // 레벨에 맞게 체력/대미지가 강화된 스펙 (1레벨은 기본 스펙)
   return {
     level: clampLevel(level),
@@ -2920,6 +3000,12 @@ function buildPlayer(socketId, name, characterId, team, spawn, level, skinId) {
     ultimate: character.ultimate,
     ultimateChargePerHit: character.ultimateChargePerHit || ULTIMATE_CHARGE_PER_HIT, // 캐릭터별로 다르게 설정 가능 (예: 슈는 펠릿이 많아 더 낮게)
     ultimateCharge: 0, // 0~100
+    // 하이퍼 차지: 획득한 플레이어(+hyper 스펙이 있는 캐릭터)만 가짐. 게이지는 궁극기처럼 기본공격 적중으로 참
+    hasHyper: !!(hyperOwned && character.hyper),
+    hyper: hyperOwned && character.hyper ? character.hyper : null,
+    hyperCharge: 0,  // 0~100
+    hyperUntil: 0,   // 이 시각(ms) 전까지 하이퍼 차지 발동 중
+    hyperLeft: 0,    // 남은 발동 시간(초) - 클라이언트 표시용 (서버/클라이언트 시계가 달라서 시각 대신 남은 시간을 보냄)
     gadget: character.gadget || null, // 캐릭터 전용 가젯 (없으면 null)
     gadgetCooldownLeft: 0, // 가젯 재사용까지 남은 시간(초). 0이면 사용 가능
     leaping: false,        // 모카의 궁극기 점프 중이면 true (공중: 조작 불가, 피격/총알 무시)
@@ -2969,8 +3055,20 @@ function buildPlayer(socketId, name, characterId, team, spawn, level, skinId) {
 function getDamageMultiplier(p) {
   if (!p) return 1;
   const now = Date.now();
-  if (p.damageBoostUntil && now >= p.damageBoostFrom && now < p.damageBoostUntil) return p.damageBoostMultiplier || 1;
+  let mult = 1;
+  if (p.damageBoostUntil && now >= p.damageBoostFrom && now < p.damageBoostUntil) mult *= p.damageBoostMultiplier || 1;
+  if (p.hyperUntil && now < p.hyperUntil && p.hyper) mult *= p.hyper.damageMultiplier || 1; // 하이퍼 차지: 공격력 강화
+  return mult;
+}
+// 받는 피해 배율 (하이퍼 차지 발동 중에는 받는 피해 감소)
+function getDamageTakenMultiplier(p) {
+  if (p && p.hyperUntil && Date.now() < p.hyperUntil && p.hyper) return p.hyper.damageTakenMultiplier || 1;
   return 1;
+}
+// 기본공격이 적중했을 때 궁극기 게이지와 하이퍼 차지 게이지를 함께 채움
+function chargeGauges(shooter) {
+  shooter.ultimateCharge = Math.min(100, shooter.ultimateCharge + shooter.ultimateChargePerHit);
+  if (shooter.hasHyper) shooter.hyperCharge = Math.min(100, (shooter.hyperCharge || 0) + shooter.ultimateChargePerHit);
 }
 
 // 총알이 대상에게 줄 기본 피해: 비율형 총알(하트)은 대상의 현재 체력 + 보호막의 비율, 그 외는 고정 피해
@@ -3005,7 +3103,7 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
   if (target.invincibleUntil && Date.now() < target.invincibleUntil) return; // 무적 상태(슈의 가젯)면 피해/궁극기 충전 모두 무시
 
   const shooter = match.players[shooterId];
-  damage = Math.round(damage * getDamageMultiplier(shooter)); // 공격력 증가 효과 적용
+  damage = Math.round(damage * getDamageMultiplier(shooter) * getDamageTakenMultiplier(target)); // 공격력 증가(보배 가젯/하이퍼 차지) + 받는 피해 감소(하이퍼 차지) 효과 적용
 
   // 보호막(슈의 가젯): 남은 보호막 수치만큼 피해를 대신 흡수하고, 넘치는 피해만 체력에 적용
   if (target.shieldHp > 0) {
@@ -3021,7 +3119,7 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
 
   // 공격이 적중했으면(보호막이 막았더라도) 궁극기 게이지는 충전됨
   if (shooter && chargeShooter) {
-    shooter.ultimateCharge = Math.min(100, shooter.ultimateCharge + shooter.ultimateChargePerHit);
+    chargeGauges(shooter);
   }
 
   if (target.hp <= 0) {
@@ -3077,6 +3175,8 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
       respawned.chargingUntil = 0;
       respawned.damageBoostFrom = 0;
       respawned.damageBoostUntil = 0;
+      respawned.hyperUntil = 0; // 하이퍼 차지 발동 중이었다면 해제 (게이지는 궁극기처럼 유지)
+      respawned.hyperLeft = 0;
       respawned.knockbackTimeLeft = 0;
       respawned.chargeStartAt = 0; // 충전 중이던 공격도 초기화
       respawned.chargeRatio = 0;
@@ -3542,7 +3642,7 @@ function startMatch(mode, entries, opts = {}) {
   // 대기열에 들어온 순서대로 앞쪽 teamSize명은 A팀, 나머지는 B팀으로 배정
   entries.forEach((e, idx) => {
     const team = idx < cfg.teamSize ? 'A' : 'B';
-    match.players[e.socket.id] = buildPlayer(e.socket.id, e.name, e.characterId, team, randomSpawnPoint(match.walls), e.level, e.skin);
+    match.players[e.socket.id] = buildPlayer(e.socket.id, e.name, e.characterId, team, randomSpawnPoint(match.walls), e.level, e.skin, e.hyper);
     match.accounts[e.socket.id] = e.userKey;
     if (e.isBot) {
       match.players[e.socket.id].isBot = true; // 클라이언트가 AI 상대의 탄창을 머리 위에 표시하는 데 사용
@@ -3852,11 +3952,13 @@ io.on('connection', (socket) => {
     let trophies = 0;
     let level = 1;
     let skin = null; // 장착 중인 스킨 (서버 저장소 기준, 외형만 바뀜)
+    let hyper = false; // 하이퍼 차지 보유 여부 (서버 저장소 기준)
     try {
       const u = await db.findUser(userKey);
       trophies = (u && u.trophies && u.trophies[characterId]) || 0;
       level = levelOf(u, characterId);
       skin = equippedSkinOf(u, characterId);
+      hyper = hasHyper(u, characterId);
     } catch (e) {
       console.error('트로피 조회 실패', userKey, e);
     }
@@ -3866,7 +3968,7 @@ io.on('connection', (socket) => {
     if (socketToMatch[socket.id] || isQueued(socket.id)) return;
     if (serverPause.on) { socket.emit('findMatchError', { message: serverPause.message }); return; } // 조회하는 사이에 일시정지가 켜진 경우
 
-    queues[mode].push({ socket, name, characterId, userKey, trophies, level, skin });
+    queues[mode].push({ socket, name, characterId, userKey, trophies, level, skin, hyper });
     // 이 모드에서 이미 기다리고 있던 사람들에게도 갱신된 인원수를 함께 알림
     broadcastQueueStatus(mode);
 
@@ -3895,18 +3997,20 @@ io.on('connection', (socket) => {
     let level = 1;
     let trophies = 0; // 대결 화면에 보여주기만 하고, AI 대결로는 절대 변하지 않음
     let skin = null;
+    let hyper = false;
     try {
       const u = await db.findUser(userKey);
       trophies = (u && u.trophies && u.trophies[requestedId]) || 0;
       level = levelOf(u, requestedId);
       skin = equippedSkinOf(u, requestedId);
+      hyper = hasHyper(u, requestedId);
     } catch (e) {
       console.error('캐릭터 레벨 조회 실패', userKey, e);
     }
     if (!socket.connected || socket.data.userKey !== userKey) return;
     if (socketToMatch[socket.id] || isQueued(socket.id)) return;
     if (serverPause.on) { socket.emit('findMatchError', { message: serverPause.message }); return; }
-    startAiMatch(socket, requestedId, userKey, level, trophies, skin);
+    startAiMatch(socket, requestedId, userKey, level, trophies, skin, hyper);
   });
 
   registerGameplayHandlers(socket); // 이동/공격/충전/가젯/궁극기 입력 처리 (AI 봇도 같은 함수를 써서 사람과 똑같은 규칙으로 행동함)
@@ -4255,6 +4359,22 @@ function registerGameplayHandlers(socket) {
     }
 
     p.gadgetCooldownLeft = GADGET_COOLDOWN_SEC;
+  });
+
+  // 하이퍼 차지 발동 요청 (하이퍼 차지를 획득했고 게이지가 100%일 때만 발동. 이미 발동 중이면 무시)
+  socket.on('hyper', () => {
+    const match = matches[socketToMatch[socket.id]];
+    if (!match || match.over || Date.now() < match.startsAt) return; // 대결 화면(카운트다운) 중에는 입력 무시
+    const p = match.players[socket.id];
+    if (!p || !p.alive || !p.hasHyper || !p.hyper) return;
+    if (p.hyperCharge < 100) return;
+    const now = Date.now();
+    if (p.hyperUntil && now < p.hyperUntil) return;
+    p.hyperUntil = now + p.hyper.duration * 1000;
+    p.hyperLeft = p.hyper.duration;
+    p.hyperCharge = 0;
+    effectIdCounter += 1;
+    match.effects.push({ id: effectIdCounter, type: 'hyperActivate', ownerId: p.id, x: p.x, y: p.y, radius: PLAYER_RADIUS * 3.2, life: 0.7, maxLife: 0.7 }); // 발동 순간 보랏빛 폭발 연출
   });
 
   // 궁극기 발사 요청 (게이지가 100%일 때만 발동)
@@ -4797,7 +4917,7 @@ function updateMatch(match, dt, now) {
           }
           if (!b.isUltimate) {
             const shooter = match.players[b.ownerId];
-            if (shooter) shooter.ultimateCharge = Math.min(100, shooter.ultimateCharge + shooter.ultimateChargePerHit);
+            if (shooter) chargeGauges(shooter);
           }
         } else {
           // 기본 공격만 궁극기 게이지를 충전시킴
@@ -4997,6 +5117,16 @@ function updateMatch(match, dt, now) {
   for (const pid in match.players) {
     const p = match.players[pid];
     if (p.speedBoostUntil && now < p.speedBoostUntil) p.speedMultiplier *= p.speedBoostMultiplier || 1;
+    // 하이퍼 차지: 발동 중에는 이동속도 증가. 남은 시간(초)은 클라이언트 표시용으로 매 틱 갱신
+    if (p.hasHyper) {
+      if (p.hyperUntil && now < p.hyperUntil && p.alive) {
+        p.speedMultiplier *= (p.hyper && p.hyper.speedMultiplier) || 1;
+        p.hyperLeft = (p.hyperUntil - now) / 1000;
+      } else {
+        p.hyperUntil = 0;
+        p.hyperLeft = 0;
+      }
+    }
 
     // 똥파리 충전: 사망/기절/돌진 등으로 조작 불가가 되면 충전 취소. 충전 중에는 이동속도 감소 + 충전 진행도(0~1)를 갱신
     if (p.chargeStartAt) {
@@ -5497,13 +5627,13 @@ function runAiBot(match, botId, ai, dt, now) {
 }
 
 // AI 연습 대결 시작: 사람 1명 + 무작위 캐릭터를 쓰는 AI 봇 1명의 1:1 매치. 대기열을 거치지 않고 바로 시작한다.
-function startAiMatch(socket, characterId, userKey, level, trophies, skin) {
+function startAiMatch(socket, characterId, userKey, level, trophies, skin, hyper) {
   const ids = Object.keys(CHARACTERS);
   const botCharId = ids[Math.floor(Math.random() * ids.length)];
   aiBotCounter += 1;
   const botSocket = createBotSocket(`ai_${aiBotCounter}`);
   const entries = [
-    { socket, name: socket.data.displayName, characterId, userKey, trophies: trophies || 0, level, skin: skin || null },
+    { socket, name: socket.data.displayName, characterId, userKey, trophies: trophies || 0, level, skin: skin || null, hyper: !!hyper },
     { socket: botSocket, name: `AI ${CHARACTERS[botCharId].name}`, characterId: botCharId, userKey: null, trophies: 0, level, isBot: true },
   ];
   startMatch('1v1', entries, { ai: true });
