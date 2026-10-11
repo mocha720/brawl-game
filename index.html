@@ -4683,6 +4683,521 @@ const SKIN_LOOKS = {
       }
     },
   },
+  uphal_magma: {
+    // 마그마: 용암이 흐르는 화산 거인. 현무암 갑옷 + 갈라진 틈마다 이글거리는 용암 + 가슴의 맥동하는 용암 핵 + 뿔 + 어깨 위로 솟은 용암 망치.
+    // 지진을 준비(선딜)하는 동안에는 drawFx 가 망치를 들어올리며 점점 달아오르게 그림
+    body: '#2a1a16',
+    avatarRing: '#ff7a1a',
+    upright: true,
+    draw(R, p) {
+      const t = Date.now() / 1000;
+      const pulse = 0.65 + 0.35 * Math.sin(t * 4);
+      const winding = !!(p && p.windupUntil && Date.now() < p.windupUntil);
+      // 뿔 (머리 양옆에서 위로 휘어 솟음, 끝은 달아오른 주황색)
+      for (const side of [-1, 1]) {
+        const hg = ctx.createLinearGradient(side * R * 0.3, -R * 0.8, side * R * 0.7, -R * 1.4);
+        hg.addColorStop(0, '#1b1210');
+        hg.addColorStop(0.7, '#3a2420');
+        hg.addColorStop(1, '#ff7a1a');
+        ctx.fillStyle = hg;
+        ctx.beginPath();
+        ctx.moveTo(side * R * 0.22, -R * 0.78);
+        ctx.quadraticCurveTo(side * R * 0.85, -R * 0.85, side * R * 0.7, -R * 1.42);
+        ctx.quadraticCurveTo(side * R * 0.5, -R * 0.98, side * R * 0.05, -R * 0.96);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = '#0d0706';
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+      }
+      // 등 뒤(어깨 위)의 용암 망치 - 지진을 준비 중일 때는 drawFx 가 따로 들어올려 그리므로 생략
+      if (!winding) {
+        ctx.save();
+        ctx.translate(-R * 0.5, -R * 0.25);
+        ctx.rotate(-0.55);
+        ctx.fillStyle = '#4a2f1e';
+        ctx.fillRect(-R * 0.07, -R * 0.95, R * 0.14, R * 1.35);
+        const hh = ctx.createLinearGradient(0, -R * 1.5, 0, -R * 0.95);
+        hh.addColorStop(0, '#ffb347');
+        hh.addColorStop(0.5, '#e8541a');
+        hh.addColorStop(1, '#6a1d0a');
+        ctx.shadowColor = 'rgba(255, 110, 20, 0.9)';
+        ctx.shadowBlur = 8 * pulse + 3;
+        ctx.fillStyle = hh;
+        ctx.fillRect(-R * 0.42, -R * 1.5, R * 0.84, R * 0.55);
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = '#2a0e06';
+        ctx.lineWidth = 1.4;
+        ctx.strokeRect(-R * 0.42, -R * 1.5, R * 0.84, R * 0.55);
+        ctx.strokeStyle = 'rgba(255, 230, 150, 0.8)';
+        ctx.beginPath();
+        ctx.moveTo(-R * 0.3, -R * 1.22);
+        ctx.lineTo(-R * 0.05, -R * 1.3);
+        ctx.lineTo(R * 0.12, -R * 1.18);
+        ctx.lineTo(R * 0.32, -R * 1.28);
+        ctx.stroke();
+        ctx.restore();
+      }
+      // 몸통 안쪽만 그리도록 잘라서 갑옷/용암/얼굴을 그림
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(0, 0, R - 0.5, 0, Math.PI * 2);
+      ctx.clip();
+      const rock = ctx.createLinearGradient(0, -R, 0, R);
+      rock.addColorStop(0, '#3d2924');
+      rock.addColorStop(1, '#150e0c');
+      ctx.fillStyle = rock;
+      ctx.fillRect(-R, -R, R * 2, R * 2);
+      // 현무암 판 (어두운 다각형 조각들)
+      ctx.fillStyle = '#241814';
+      ctx.strokeStyle = '#0d0706';
+      ctx.lineWidth = 1.1;
+      const plates = [
+        [[-0.9, 0.1], [-0.35, 0.0], [-0.3, 0.55], [-0.75, 0.7]],
+        [[0.9, 0.1], [0.35, 0.0], [0.3, 0.55], [0.75, 0.7]],
+        [[-0.3, 0.55], [0.3, 0.55], [0.2, 0.98], [-0.2, 0.98]],
+      ];
+      for (const pl of plates) {
+        ctx.beginPath();
+        pl.forEach(([x, y], i) => { if (i === 0) ctx.moveTo(x * R, y * R); else ctx.lineTo(x * R, y * R); });
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      }
+      // 갑옷 틈새로 이글거리는 용암 균열
+      ctx.shadowColor = 'rgba(255, 110, 20, 0.95)';
+      ctx.shadowBlur = 5 * pulse + 2;
+      ctx.strokeStyle = `rgba(255, ${Math.round(150 + 60 * pulse)}, 40, 0.95)`;
+      ctx.lineWidth = 1.7;
+      ctx.lineCap = 'round';
+      const cracks = [
+        [[-0.32, 0.0], [-0.2, 0.28], [-0.32, 0.55]],
+        [[0.32, 0.0], [0.2, 0.28], [0.32, 0.55]],
+        [[-0.75, 0.3], [-0.55, 0.45], [-0.62, 0.7]],
+        [[0.75, 0.3], [0.55, 0.45], [0.62, 0.7]],
+        [[0, 0.62], [-0.08, 0.8], [0.04, 0.96]],
+      ];
+      for (const cr of cracks) {
+        ctx.beginPath();
+        cr.forEach(([x, y], i) => { if (i === 0) ctx.moveTo(x * R, y * R); else ctx.lineTo(x * R, y * R); });
+        ctx.stroke();
+      }
+      // 가슴의 용암 핵 (맥동)
+      const core = ctx.createRadialGradient(0, R * 0.32, 0, 0, R * 0.32, R * 0.34);
+      core.addColorStop(0, `rgba(255, 245, 190, ${0.9 * pulse + 0.1})`);
+      core.addColorStop(0.5, 'rgba(255, 140, 30, 0.95)');
+      core.addColorStop(1, 'rgba(200, 50, 10, 0)');
+      ctx.fillStyle = core;
+      ctx.beginPath();
+      ctx.arc(0, R * 0.32, R * 0.34, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      // 어깨 갑옷 (용암빛 테두리)
+      for (const side of [-1, 1]) {
+        ctx.fillStyle = '#2d1e19';
+        ctx.beginPath();
+        ctx.arc(side * R * 0.82, -R * 0.02, R * 0.3, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(255, 120, 30, 0.9)';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+      // 얼굴: 거친 바위 얼굴 + 이글거리는 눈 + 갈라진 입
+      ctx.fillStyle = '#2a1c18';
+      ctx.beginPath();
+      ctx.ellipse(0, -R * 0.42, R * 0.46, R * 0.4, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#0d0706';
+      ctx.lineWidth = 1.3;
+      ctx.stroke();
+      ctx.fillStyle = '#17100e'; // 이마 바위 능선
+      ctx.beginPath();
+      ctx.moveTo(-R * 0.42, -R * 0.62);
+      ctx.lineTo(-R * 0.15, -R * 0.78);
+      ctx.lineTo(0, -R * 0.66);
+      ctx.lineTo(R * 0.15, -R * 0.78);
+      ctx.lineTo(R * 0.42, -R * 0.62);
+      ctx.lineTo(R * 0.3, -R * 0.54);
+      ctx.lineTo(-R * 0.3, -R * 0.54);
+      ctx.closePath();
+      ctx.fill();
+      ctx.shadowColor = 'rgba(255, 150, 30, 1)';
+      ctx.shadowBlur = 7;
+      ctx.fillStyle = `rgba(255, ${Math.round(170 + 50 * pulse)}, 50, 1)`;
+      for (const side of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(side * R * 0.07, -R * 0.4);
+        ctx.lineTo(side * R * 0.34, -R * 0.5);
+        ctx.lineTo(side * R * 0.28, -R * 0.34);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.strokeStyle = 'rgba(255, 130, 30, 0.95)';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(-R * 0.22, -R * 0.2);
+      ctx.lineTo(-R * 0.08, -R * 0.15);
+      ctx.lineTo(R * 0.06, -R * 0.2);
+      ctx.lineTo(R * 0.22, -R * 0.14);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.restore();
+    },
+    // 몸통 뒤에 깔리는 연출: 달아오른 열기 + 피어오르는 불씨, 지진 준비 중에는 들어올린 용암 망치
+    drawFx(p) {
+      if (!p.alive) return;
+      const t = Date.now() / 1000;
+      const R = PLAYER_RADIUS;
+      ctx.save();
+      const heat = ctx.createRadialGradient(p.x, p.y, R * 0.6, p.x, p.y, R * 2.1);
+      heat.addColorStop(0, 'rgba(255, 110, 20, 0.28)');
+      heat.addColorStop(1, 'rgba(255, 60, 0, 0)');
+      ctx.fillStyle = heat;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, R * 2.1, 0, Math.PI * 2);
+      ctx.fill();
+      for (let i = 0; i < 7; i++) {
+        const k = (t * 0.7 + i / 7) % 1;
+        const a = i * 2.3 + t * 0.5;
+        ctx.globalAlpha = 1 - k;
+        ctx.fillStyle = i % 3 === 0 ? 'rgba(255, 220, 120, 1)' : 'rgba(255, 110, 30, 1)';
+        ctx.beginPath();
+        ctx.arc(p.x + Math.cos(a) * R * 1.05, p.y + R * 0.5 - k * R * 2.5, 2.3 * (1 - k) + 0.7, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      // 지진 준비(선딜) 중: 용암 망치를 뒤로 들어올림. 시간이 갈수록 달아오르고 부들부들 떨림
+      if (p.windupUntil && Date.now() < p.windupUntil) {
+        const total = p.windupTotal || 1000;
+        const prog = Math.max(0, Math.min(1, 1 - (p.windupUntil - Date.now()) / total));
+        const shake = Math.sin(Date.now() / 22) * prog * 2.2;
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.angle - 0.2 - prog * 1.5);
+        const hl = R * 2.0;
+        ctx.fillStyle = '#4a2f1e';
+        ctx.fillRect(R * 0.5, -R * 0.1 + shake * 0.3, hl, R * 0.2);
+        const hg = ctx.createLinearGradient(R * 0.5 + hl, 0, R * 0.5 + hl + R * 0.9, 0);
+        hg.addColorStop(0, '#e8541a');
+        hg.addColorStop(1, `rgb(255, ${Math.round(150 + 90 * prog)}, ${Math.round(40 + 120 * prog)})`);
+        ctx.shadowColor = `rgba(255, 120, 20, ${0.6 + 0.4 * prog})`;
+        ctx.shadowBlur = 8 + 22 * prog;
+        ctx.fillStyle = hg;
+        ctx.fillRect(R * 0.5 + hl, -R * 0.55 + shake, R * 0.9, R * 1.1);
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = '#2a0e06';
+        ctx.lineWidth = 1.6;
+        ctx.strokeRect(R * 0.5 + hl, -R * 0.55 + shake, R * 0.9, R * 1.1);
+      }
+      ctx.restore();
+    },
+  },
+  mocha_shadow: {
+    // 섀도우: 후드를 깊게 눌러쓴 그림자 암살자. 어두운 망토 + 붉게 빛나는 눈 + 휘날리는 진홍 목도리 + 등 뒤에 교차한 쌍단검 + 어깨의 가시 갑옷.
+    // 몸 주위로 보랏빛 어둠의 기운이 일렁이고, 도약(궁극기) 중에는 drawFx 가 그림자 꼬리를 길게 끌며 날아감
+    body: '#1b1626',
+    avatarRing: '#e0163c',
+    upright: true,
+    draw(R, p) {
+      const t = Date.now() / 1000;
+      // 등 뒤에 교차한 쌍단검 (어깨 위로 칼자루가 삐죽 솟음)
+      ctx.save();
+      for (const side of [-1, 1]) {
+        ctx.save();
+        ctx.translate(side * R * 0.48, -R * 0.5);
+        ctx.rotate(side * 0.5);
+        ctx.fillStyle = '#d9dde8';
+        ctx.fillRect(-R * 0.06, -R * 0.1, R * 0.12, R * 1.0);
+        ctx.fillStyle = '#e0163c';
+        ctx.fillRect(-R * 0.1, -R * 0.2, R * 0.2, R * 0.1);
+        ctx.fillStyle = '#2a2233';
+        ctx.fillRect(-R * 0.055, -R * 0.62, R * 0.11, R * 0.42);
+        ctx.restore();
+      }
+      ctx.restore();
+      // 몸통 안쪽만 그리도록 잘라서 망토/후드/얼굴을 그림
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(0, 0, R - 0.5, 0, Math.PI * 2);
+      ctx.clip();
+      const cloak = ctx.createLinearGradient(0, -R, 0, R);
+      cloak.addColorStop(0, '#2d2340');
+      cloak.addColorStop(1, '#0f0b18');
+      ctx.fillStyle = cloak;
+      ctx.fillRect(-R, -R, R * 2, R * 2);
+      // 망토 가운데 주름 + 가슴의 진홍 장식선
+      ctx.strokeStyle = 'rgba(224, 22, 60, 0.75)';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(-R * 0.3, R * 0.05);
+      ctx.lineTo(0, R * 0.7);
+      ctx.lineTo(R * 0.3, R * 0.05);
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(120, 100, 170, 0.45)';
+      ctx.lineWidth = 1.2;
+      for (const k of [-0.55, 0.55]) {
+        ctx.beginPath();
+        ctx.moveTo(k * R, R * 0.2);
+        ctx.quadraticCurveTo(k * R * 0.8, R * 0.55, k * R * 0.55, R * 0.95);
+        ctx.stroke();
+      }
+      // 어깨 가시 갑옷 (양쪽 어깨에 뾰족한 철판)
+      for (const side of [-1, 1]) {
+        ctx.fillStyle = '#3b3550';
+        ctx.beginPath();
+        ctx.moveTo(side * R * 0.45, -R * 0.1);
+        ctx.lineTo(side * R * 1.05, -R * 0.38);
+        ctx.lineTo(side * R * 0.98, R * 0.22);
+        ctx.lineTo(side * R * 0.5, R * 0.3);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = '#a99bd0';
+        ctx.lineWidth = 1.2;
+        ctx.stroke();
+        ctx.fillStyle = '#e0163c';
+        ctx.beginPath();
+        ctx.moveTo(side * R * 0.8, -R * 0.22);
+        ctx.lineTo(side * R * 1.12, -R * 0.52);
+        ctx.lineTo(side * R * 0.95, -R * 0.1);
+        ctx.closePath();
+        ctx.fill();
+      }
+      // 진홍 목도리 (바람에 살랑이며 아래로 늘어짐)
+      const sway = Math.sin(t * 4) * R * 0.08;
+      ctx.fillStyle = '#c4122f';
+      ctx.beginPath();
+      ctx.moveTo(-R * 0.48, -R * 0.12);
+      ctx.quadraticCurveTo(0, R * 0.12, R * 0.48, -R * 0.12);
+      ctx.lineTo(R * 0.42, R * 0.04);
+      ctx.quadraticCurveTo(0, R * 0.26, -R * 0.42, R * 0.04);
+      ctx.closePath();
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(R * 0.24, R * 0.06);
+      ctx.lineTo(R * 0.4 + sway, R * 0.62);
+      ctx.lineTo(R * 0.22 + sway, R * 0.56);
+      ctx.lineTo(R * 0.1, R * 0.14);
+      ctx.closePath();
+      ctx.fill();
+      // 후드 (머리를 감싸는 뾰족한 두건)
+      ctx.fillStyle = '#18121f';
+      ctx.beginPath();
+      ctx.moveTo(-R * 0.58, -R * 0.1);
+      ctx.quadraticCurveTo(-R * 0.62, -R * 0.78, 0, -R * 1.08);
+      ctx.quadraticCurveTo(R * 0.62, -R * 0.78, R * 0.58, -R * 0.1);
+      ctx.quadraticCurveTo(0, R * 0.08, -R * 0.58, -R * 0.1);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = '#4a3d66';
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+      // 어둠에 잠긴 얼굴
+      ctx.fillStyle = '#07050b';
+      ctx.beginPath();
+      ctx.ellipse(0, -R * 0.42, R * 0.4, R * 0.34, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // 붉게 빛나는 눈 (날카로운 눈매 + 번쩍임)
+      const glow = 0.75 + 0.25 * Math.sin(t * 6);
+      ctx.shadowColor = 'rgba(255, 40, 70, 1)';
+      ctx.shadowBlur = 8;
+      ctx.fillStyle = `rgba(255, 60, 90, ${glow})`;
+      for (const side of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(side * R * 0.08, -R * 0.38);
+        ctx.lineTo(side * R * 0.34, -R * 0.5);
+        ctx.lineTo(side * R * 0.28, -R * 0.36);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.shadowBlur = 0;
+      ctx.restore();
+    },
+    // 몸통 뒤에 깔리는 연출: 보랏빛 어둠의 기운 + (도약 중) 그림자 꼬리
+    drawFx(p) {
+      if (!p.alive) return;
+      const t = Date.now() / 1000;
+      const R = PLAYER_RADIUS;
+      ctx.save();
+      // 몸 주위로 일렁이는 어둠의 기운
+      const aura = ctx.createRadialGradient(p.x, p.y, R * 0.6, p.x, p.y, R * 2.0);
+      aura.addColorStop(0, 'rgba(110, 60, 190, 0.32)');
+      aura.addColorStop(1, 'rgba(60, 20, 120, 0)');
+      ctx.fillStyle = aura;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, R * 2.0, 0, Math.PI * 2);
+      ctx.fill();
+      // 위로 피어오르는 그림자 연기 조각
+      for (let i = 0; i < 6; i++) {
+        const k = (t * 0.8 + i / 6) % 1;
+        const a = i * 2.1 + t * 0.7;
+        ctx.globalAlpha = (1 - k) * 0.55;
+        ctx.fillStyle = i % 2 === 0 ? 'rgba(30, 10, 55, 1)' : 'rgba(150, 30, 70, 1)';
+        ctx.beginPath();
+        ctx.ellipse(p.x + Math.cos(a) * R * 0.9, p.y + R * 0.5 - k * R * 2.2, R * 0.2 * (1 - k) + 2, R * 0.38 * (1 - k) + 2, Math.sin(a) * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+      // 도약 강습 중: 출발 지점에서 지금 위치까지 길게 끌리는 그림자 꼬리
+      if (p.leaping && typeof p.leapStartX === 'number') {
+        const dx = p.x - p.leapStartX;
+        const dy = p.y - p.leapStartY;
+        const len = Math.hypot(dx, dy);
+        if (len > 6) {
+          const g = ctx.createLinearGradient(p.leapStartX, p.leapStartY, p.x, p.y);
+          g.addColorStop(0, 'rgba(60, 20, 110, 0)');
+          g.addColorStop(1, 'rgba(210, 40, 90, 0.7)');
+          ctx.strokeStyle = g;
+          ctx.lineCap = 'round';
+          ctx.lineWidth = R * 1.3;
+          ctx.beginPath();
+          ctx.moveTo(p.leapStartX, p.leapStartY);
+          ctx.lineTo(p.x, p.y);
+          ctx.stroke();
+          ctx.lineWidth = 3;
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+          ctx.beginPath();
+          ctx.moveTo(p.leapStartX, p.leapStartY);
+          ctx.lineTo(p.x, p.y);
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
+    },
+  },
+  gwari_car: {
+    // 자동차: 위에서 내려다본 빨간 스포츠카. 조준 방향을 향해 차 앞부분이 돌아감. 타이어 4개 + 흰 레이싱 줄무늬 + 전조등/후미등 + 뒤쪽 스포일러.
+    // 돌진 중에는 뒤로 푸른 불꽃(니트로)이 뿜어져 나오고, drawFx 가 속도선/전조등 빛을 그림
+    body: '#2c303b',
+    avatarRing: '#ff3b30',
+    draw(R, p) {
+      const dashing = !!(p && p.dashing);
+      // 니트로 불꽃 (차 뒤쪽)
+      if (dashing) {
+        const fl = 0.7 + 0.3 * Math.sin(Date.now() / 25);
+        for (const side of [-1, 1]) {
+          const g = ctx.createLinearGradient(-R * 0.95, 0, -R * (1.9 + fl), 0);
+          g.addColorStop(0, 'rgba(255, 255, 255, 0.95)');
+          g.addColorStop(0.35, 'rgba(120, 200, 255, 0.85)');
+          g.addColorStop(1, 'rgba(60, 120, 255, 0)');
+          ctx.fillStyle = g;
+          ctx.beginPath();
+          ctx.moveTo(-R * 0.92, side * R * 0.26 - R * 0.11);
+          ctx.lineTo(-R * (1.9 + fl), side * R * 0.26);
+          ctx.lineTo(-R * 0.92, side * R * 0.26 + R * 0.11);
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
+      // 타이어 4개 (차체 밖으로 살짝 튀어나옴)
+      ctx.fillStyle = '#0f1014';
+      for (const wx of [-0.55, 0.55]) {
+        for (const wy of [-1, 1]) {
+          ctx.beginPath();
+          if (ctx.roundRect) ctx.roundRect(wx * R - R * 0.22, wy * R * 0.76 - R * 0.13, R * 0.44, R * 0.26, R * 0.07);
+          else ctx.rect(wx * R - R * 0.22, wy * R * 0.76 - R * 0.13, R * 0.44, R * 0.26); // 옛 브라우저용
+          ctx.fill();
+        }
+      }
+      // 차체 (빨간 그라데이션 + 둥근 앞/뒤)
+      const body = ctx.createLinearGradient(0, -R * 0.62, 0, R * 0.62);
+      body.addColorStop(0, '#ff5a4d');
+      body.addColorStop(0.5, '#e11d12');
+      body.addColorStop(1, '#a30f08');
+      ctx.fillStyle = body;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(-R * 0.95, -R * 0.6, R * 1.9, R * 1.2, R * 0.38);
+      else ctx.rect(-R * 0.95, -R * 0.6, R * 1.9, R * 1.2); // 옛 브라우저용
+      ctx.fill();
+      ctx.lineWidth = 1.4;
+      ctx.strokeStyle = 'rgba(60, 5, 3, 0.85)';
+      ctx.stroke();
+      // 흰 레이싱 줄무늬 두 줄
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+      ctx.fillRect(-R * 0.85, -R * 0.17, R * 1.7, R * 0.1);
+      ctx.fillRect(-R * 0.85, R * 0.07, R * 1.7, R * 0.1);
+      // 유리창: 앞유리 / 지붕 / 뒷유리
+      ctx.fillStyle = '#1d3b5c';
+      ctx.beginPath();
+      ctx.moveTo(R * 0.12, -R * 0.4);
+      ctx.lineTo(R * 0.5, -R * 0.32);
+      ctx.lineTo(R * 0.5, R * 0.32);
+      ctx.lineTo(R * 0.12, R * 0.4);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#c4140c';
+      ctx.fillRect(-R * 0.3, -R * 0.38, R * 0.42, R * 0.76);
+      ctx.fillStyle = '#16304d';
+      ctx.beginPath();
+      ctx.moveTo(-R * 0.3, -R * 0.38);
+      ctx.lineTo(-R * 0.52, -R * 0.3);
+      ctx.lineTo(-R * 0.52, R * 0.3);
+      ctx.lineTo(-R * 0.3, R * 0.38);
+      ctx.closePath();
+      ctx.fill();
+      // 유리 반짝임
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(R * 0.2, -R * 0.3);
+      ctx.lineTo(R * 0.34, -R * 0.26);
+      ctx.stroke();
+      // 전조등 (앞) / 후미등 (뒤)
+      ctx.fillStyle = '#fff6b0';
+      for (const side of [-1, 1]) {
+        ctx.beginPath();
+        ctx.ellipse(R * 0.88, side * R * 0.38, R * 0.1, R * 0.14, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = dashing ? '#ff2a2a' : '#8c0d0a';
+      for (const side of [-1, 1]) {
+        ctx.fillRect(-R * 0.95, side * R * 0.42 - R * 0.09, R * 0.08, R * 0.18);
+      }
+      // 뒤쪽 스포일러
+      ctx.fillStyle = '#16181f';
+      ctx.fillRect(-R * 1.02, -R * 0.62, R * 0.14, R * 1.24);
+    },
+    // 돌진 연출(몸통 뒤에 깔림): 노란 전조등 빛 + 뒤로 길게 뻗는 속도선 + 바닥에서 튀는 불꽃
+    drawFx(p) {
+      if (!p.alive || !p.dashing) return;
+      const t = Date.now() / 40;
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.angle);
+      // 전조등 빛줄기
+      const beam = ctx.createLinearGradient(PLAYER_RADIUS, 0, PLAYER_RADIUS + 130, 0);
+      beam.addColorStop(0, 'rgba(255, 245, 170, 0.55)');
+      beam.addColorStop(1, 'rgba(255, 245, 170, 0)');
+      ctx.fillStyle = beam;
+      ctx.beginPath();
+      ctx.moveTo(PLAYER_RADIUS, -6);
+      ctx.lineTo(PLAYER_RADIUS + 130, -46);
+      ctx.lineTo(PLAYER_RADIUS + 130, 46);
+      ctx.lineTo(PLAYER_RADIUS, 6);
+      ctx.closePath();
+      ctx.fill();
+      // 속도선
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.75)';
+      ctx.lineWidth = 2;
+      ctx.lineCap = 'round';
+      for (const k of [-1, -0.5, 0.5, 1]) {
+        const sl = 70 + 50 * (0.5 + 0.5 * Math.sin(t + k * 4));
+        ctx.beginPath();
+        ctx.moveTo(-PLAYER_RADIUS * 1.2, k * PLAYER_RADIUS * 0.95);
+        ctx.lineTo(-PLAYER_RADIUS * 1.2 - sl, k * PLAYER_RADIUS * 0.95);
+        ctx.stroke();
+      }
+      // 뒷바퀴에서 튀는 불꽃
+      ctx.fillStyle = 'rgba(255, 190, 60, 0.95)';
+      for (let i = 0; i < 8; i++) {
+        const k = (t * 0.07 + i / 8) % 1;
+        const side = i % 2 === 0 ? -1 : 1;
+        ctx.globalAlpha = 1 - k;
+        ctx.beginPath();
+        ctx.arc(-PLAYER_RADIUS * 0.6 - k * 55, side * (PLAYER_RADIUS * 0.8 + k * 14), 2.6 * (1 - k) + 0.8, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    },
+  },
   yeoddongi_gigachanne: {
     // 기가차네: 얼음을 다루는 용사. 서리 낀 푸른 몸 + 은빛 얼음 흉갑(눈꽃 문장) + 어깨 얼음 견갑 + 하늘색 투구(뾰족한 얼음 결정 장식)
     // + 하얀 앞머리 + 빛나는 하늘색 눈 + 등 뒤로 솟은 얼음 검 + 몸 주위를 도는 눈꽃. 항상 정면으로 똑바로 서 있음
@@ -5120,31 +5635,71 @@ function drawPlayer(p, isMe) {
     ctx.restore();
   }
 
-  // 반사 방어막 표시 (나이의 가젯): 몸 주변에 거울 같은 푸른 막이 둘러지고, 빛줄기가 빙글빙글 돈다. 끝나기 0.5초 전부터 깜빡임
+  // 반사 방어막 표시 (나이의 가젯): 크고 밝은 거울 같은 방어막. 육각형 무늬 + 빙글빙글 도는 빛 + 남은 시간 표시 호. 끝나기 0.6초 전부터 깜빡임
   if (p.reflectUntil && Date.now() < p.reflectUntil) {
-    const left = p.reflectUntil - Date.now();
-    const blink = left < 500 ? (Math.floor(Date.now() / 70) % 2 === 0 ? 0.45 : 1) : 1;
-    const t = Date.now() / 1000;
-    const R = PLAYER_RADIUS + 12;
+    const nowMs = Date.now();
+    const left = p.reflectUntil - nowMs;
+    const blink = left < 600 ? (Math.floor(nowMs / 70) % 2 === 0 ? 0.4 : 1) : 1;
+    const t = nowMs / 1000;
+    const R = PLAYER_RADIUS + 20;
     ctx.save();
     ctx.globalAlpha = blink;
+    // 바깥 후광
+    const halo = ctx.createRadialGradient(p.x, p.y, R * 0.8, p.x, p.y, R * 1.6);
+    halo.addColorStop(0, 'rgba(120, 220, 255, 0.45)');
+    halo.addColorStop(1, 'rgba(120, 220, 255, 0)');
+    ctx.fillStyle = halo;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, R * 1.6, 0, Math.PI * 2);
+    ctx.fill();
+    // 막 본체 (가장자리일수록 진함)
+    const body = ctx.createRadialGradient(p.x, p.y, R * 0.3, p.x, p.y, R);
+    body.addColorStop(0, 'rgba(170, 235, 255, 0.10)');
+    body.addColorStop(0.75, 'rgba(150, 225, 255, 0.30)');
+    body.addColorStop(1, 'rgba(235, 252, 255, 0.60)');
+    ctx.fillStyle = body;
     ctx.beginPath();
     ctx.arc(p.x, p.y, R, 0, Math.PI * 2);
-    const g = ctx.createRadialGradient(p.x, p.y, R * 0.55, p.x, p.y, R);
-    g.addColorStop(0, 'rgba(200, 240, 255, 0.04)');
-    g.addColorStop(1, 'rgba(160, 225, 255, 0.38)');
-    ctx.fillStyle = g;
     ctx.fill();
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = 'rgba(225, 248, 255, 0.95)';
+    // 육각형 무늬 (천천히 회전)
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+    ctx.lineWidth = 1.5;
+    for (let ring = 0; ring < 2; ring++) {
+      const rr = R * (ring === 0 ? 1 : 0.62);
+      ctx.beginPath();
+      for (let i = 0; i <= 6; i++) {
+        const a = t * (ring === 0 ? 0.8 : -1.1) + (i * Math.PI) / 3;
+        const x = p.x + Math.cos(a) * rr;
+        const y = p.y + Math.sin(a) * rr;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+    // 테두리
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = 'rgba(240, 253, 255, 1)';
+    ctx.shadowColor = 'rgba(90, 210, 255, 1)';
+    ctx.shadowBlur = 14;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, R, 0, Math.PI * 2);
     ctx.stroke();
-    ctx.lineWidth = 3.5;
+    // 남은 시간 호 (바깥쪽, 시간이 줄수록 짧아짐)
+    const total = ((p.gadget && p.gadget.duration) || 2) * 1000;
+    const ratio = Math.max(0, Math.min(1, left / total));
+    ctx.lineWidth = 5;
     ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 1)';
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, R + 7, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * ratio);
+    ctx.stroke();
+    // 빙글빙글 도는 빛줄기
+    ctx.shadowBlur = 0;
+    ctx.lineWidth = 5;
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
     for (let i = 0; i < 3; i++) {
-      const a0 = t * 3 + (i * Math.PI * 2) / 3;
+      const a0 = t * 4 + (i * Math.PI * 2) / 3;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, R - 3, a0, a0 + 0.55);
+      ctx.arc(p.x, p.y, R - 4, a0, a0 + 0.6);
       ctx.stroke();
     }
     ctx.restore();
@@ -5910,7 +6465,7 @@ function drawBoomerangGlow(b) {
 function isAllyOwner(o) {
   return o.ownerId === myId || (myTeam && o.team === myTeam);
 }
-const SKIN_TEAM_BULLETS = { fireball: 1, iceShard: 1, poisonVial: 1 };
+const SKIN_TEAM_BULLETS = { fireball: 1, iceShard: 1, poisonVial: 1, tire: 1 };
 function drawTeamHalo(b) {
   const ally = isAllyOwner(b);
   ctx.save();
@@ -6794,6 +7349,60 @@ function drawBullet(b) {
     return;
   }
 
+  if (b.visual === 'tire') {
+    // 자동차 스킨 궁극기: 굴러가는 타이어 (진행 방향 뒤로 먼지 꼬리 + 빙글빙글 도는 바퀴 무늬)
+    const ang = Math.atan2(b.vy || 0, b.vx || 1);
+    const T = b.radius * 2.1;
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.rotate(ang);
+    const tail = ctx.createLinearGradient(0, 0, -T * 3.2, 0);
+    tail.addColorStop(0, 'rgba(190, 190, 190, 0.55)');
+    tail.addColorStop(1, 'rgba(190, 190, 190, 0)');
+    ctx.fillStyle = tail;
+    ctx.beginPath();
+    ctx.moveTo(0, -T * 0.8);
+    ctx.lineTo(-T * 3.2, 0);
+    ctx.lineTo(0, T * 0.8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.rotate(Date.now() / 55 + b.id * 1.7); // 굴러가는 회전
+    ctx.fillStyle = '#14161b';
+    ctx.beginPath();
+    ctx.arc(0, 0, T, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#2a2d36'; // 바깥 트레드 홈
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2;
+      ctx.save();
+      ctx.rotate(a);
+      ctx.fillRect(T * 0.82, -T * 0.09, T * 0.2, T * 0.18);
+      ctx.restore();
+    }
+    ctx.strokeStyle = '#3a3e4a';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(0, 0, T * 0.82, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = '#c9ced6'; // 휠(은색)
+    ctx.beginPath();
+    ctx.arc(0, 0, T * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#6b717d';
+    for (let i = 0; i < 5; i++) {
+      const a = (i / 5) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.arc(Math.cos(a) * T * 0.3, Math.sin(a) * T * 0.3, T * 0.07, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = '#4a4f5a';
+    ctx.beginPath();
+    ctx.arc(0, 0, T * 0.14, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    return;
+  }
+
   if (b.visual === 'chili') {
     // 꽈리의 고추 발사 - 날아가는 방향으로 회전한 빨간 고추
     ctx.save();
@@ -7521,6 +8130,52 @@ function drawEffect(e) {
     drawSlipperExplosion(e);
   } else if (e.type === 'leapLand' && e.visual === 'shoot') {
     drawShootLand(e);
+  } else if (e.type === 'carDash') {
+    // 자동차 스킨 돌진: 바닥에 타이어 자국 두 줄 + 출발 지점의 먼지 구름과 불꽃 + 도착 지점의 번쩍임
+    const prog = 1 - Math.max(0, Math.min(1, e.life / (e.maxLife || 0.8)));
+    const dx = Math.cos(e.angle), dy = Math.sin(e.angle);
+    const nx = -dy, ny = dx;
+    const d = e.dist || 129;
+    ctx.save();
+    // 타이어 자국 (천천히 옅어짐)
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = `rgba(20, 20, 24, ${0.55 * (1 - prog)})`;
+    ctx.lineWidth = 6;
+    for (const side of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(e.x + nx * side * 12, e.y + ny * side * 12);
+      ctx.lineTo(e.x + dx * d + nx * side * 12, e.y + dy * d + ny * side * 12);
+      ctx.stroke();
+    }
+    // 출발 지점의 먼지 구름
+    ctx.fillStyle = `rgba(200, 200, 200, ${0.4 * (1 - prog)})`;
+    for (let i = 0; i < 5; i++) {
+      const sx = e.x - dx * (4 + i * 6) * (0.4 + prog) + nx * (i - 2) * 9 * (0.5 + prog);
+      const sy = e.y - dy * (4 + i * 6) * (0.4 + prog) + ny * (i - 2) * 9 * (0.5 + prog);
+      ctx.beginPath();
+      ctx.arc(sx, sy, 8 + 16 * prog, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // 불꽃 (자국을 따라 튀어오름)
+    ctx.fillStyle = `rgba(255, 190, 60, ${1 - prog})`;
+    for (let i = 0; i < 10; i++) {
+      const k = i / 9;
+      const jx = e.x + dx * d * k + nx * Math.sin(i * 7.1) * (14 + 26 * prog);
+      const jy = e.y + dy * d * k + ny * Math.sin(i * 7.1) * (14 + 26 * prog);
+      ctx.beginPath();
+      ctx.arc(jx, jy, 3 * (1 - prog) + 0.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // 도착 지점의 번쩍이는 충격파
+    if (prog < 0.6) {
+      const q = prog / 0.6;
+      ctx.strokeStyle = `rgba(255, 245, 190, ${1 - q})`;
+      ctx.lineWidth = 4 * (1 - q) + 1;
+      ctx.beginPath();
+      ctx.arc(e.x + dx * d, e.y + dy * d, 14 + 30 * q, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
   } else if (e.type === 'reflect') {
     // 나이의 반사 방어막에 투사체가 튕겨나가는 순간: 번쩍이는 불꽃 + 튕겨나가는 방향의 빛줄기
     const prog = 1 - Math.max(0, Math.min(1, e.life / (e.maxLife || 0.3)));
@@ -7529,16 +8184,16 @@ function drawEffect(e) {
     ctx.globalAlpha = 1 - prog;
     ctx.fillStyle = 'rgba(255, 255, 255, 1)';
     ctx.beginPath();
-    ctx.arc(0, 0, 6 + 14 * prog, 0, Math.PI * 2);
+    ctx.arc(0, 0, 10 + 22 * prog, 0, Math.PI * 2);
     ctx.fill();
     ctx.lineCap = 'round';
     ctx.strokeStyle = 'rgba(160, 230, 255, 1)';
-    ctx.lineWidth = 3.5 * (1 - prog) + 1;
+    ctx.lineWidth = 5 * (1 - prog) + 1.5;
     for (let i = -2; i <= 2; i++) {
       const a = (e.angle || 0) + i * 0.45;
       ctx.beginPath();
-      ctx.moveTo(Math.cos(a) * (8 + 10 * prog), Math.sin(a) * (8 + 10 * prog));
-      ctx.lineTo(Math.cos(a) * (22 + 34 * prog), Math.sin(a) * (22 + 34 * prog));
+      ctx.moveTo(Math.cos(a) * (12 + 14 * prog), Math.sin(a) * (12 + 14 * prog));
+      ctx.lineTo(Math.cos(a) * (32 + 50 * prog), Math.sin(a) * (32 + 50 * prog));
       ctx.stroke();
     }
     ctx.restore();
@@ -7550,7 +8205,7 @@ function drawEffect(e) {
     ctx.lineWidth = 5 * (1 - prog) + 1.5;
     ctx.strokeStyle = 'rgba(210, 245, 255, 1)';
     ctx.beginPath();
-    ctx.arc(e.x, e.y, (PLAYER_RADIUS + 12) * (0.8 + 1.1 * prog), 0, Math.PI * 2);
+    ctx.arc(e.x, e.y, (PLAYER_RADIUS + 20) * (0.8 + 1.6 * prog), 0, Math.PI * 2);
     ctx.stroke();
     ctx.restore();
   } else if (e.type === 'shieldPush') {
@@ -7644,6 +8299,8 @@ function drawEffect(e) {
     ctx.textBaseline = 'middle';
     ctx.fillText('💥', e.x, e.y);
     ctx.restore();
+  } else if (e.type === 'leapLand' && e.visual === 'shadowLand') {
+    drawShadowLand(e);
   } else if (e.type === 'leapLand') {
     // 모카의 도약 강습 착지 - 충격파
     const alpha = Math.max(0, Math.min(1, e.life / 0.4));
@@ -7661,8 +8318,12 @@ function drawEffect(e) {
     ctx.textBaseline = 'middle';
     ctx.fillText('💥', e.x, e.y);
     ctx.restore();
+  } else if (e.type === 'melee' && e.visual === 'shadowStab') {
+    drawShadowStabEffect(e);
   } else if (e.type === 'melee' && e.visual === 'stab') {
     drawStabEffect(e);
+  } else if (e.type === 'melee' && e.visual === 'magmaQuake') {
+    drawMagmaQuakeEffect(e);
   } else if (e.type === 'melee' && e.visual === 'quake') {
     drawQuakeEffect(e);
   } else if (e.type === 'melee' && e.visual === 'plunger') {
@@ -7933,6 +8594,150 @@ function drawPlungerEffect(e) {
 
 // 업할의 망치 지진: 망치를 내려친 자리에서 부채꼴로 지진이 빠르게 퍼져나가며 땅이 갈라진다.
 // 기본공격과 궁극기가 같은 이펙트를 쓰되, 범위(radius)가 큰 궁극기는 균열이 더 많고 굵게 그려진다.
+function drawMagmaQuakeEffect(e) {
+  // 업할 마그마: 땅이 갈라지며 용암이 솟구치는 화산 지진. 부채꼴 안에 달궈진 땅 + 빛나는 용암 균열 + 균열 끝마다 솟는 불기둥 + 튀는 바위 파편 + 내려치는 용암 망치
+  const maxLife = e.maxLife || 0.5;
+  const t = Math.max(0, Math.min(1, 1 - e.life / maxLife));
+  const reach = 1 - Math.pow(1 - Math.min(1, t / 0.35), 3);
+  const front = e.radius * reach;
+  const fade = t < 0.5 ? 1 : Math.max(0, 1 - (t - 0.5) / 0.5);
+  const half = ((e.arcDegrees || 40) * Math.PI) / 180 / 2;
+  const big = e.radius > 350;
+  const seed = e.id || 1;
+
+  ctx.save();
+  ctx.translate(e.x, e.y);
+  ctx.rotate(e.angle);
+  ctx.globalAlpha = fade;
+
+  // 달궈진 땅 (안쪽은 어둡고 바깥쪽 가장자리는 용암빛)
+  const ground = ctx.createRadialGradient(0, 0, 0, 0, 0, Math.max(1, front));
+  ground.addColorStop(0, 'rgba(40, 14, 8, 0.55)');
+  ground.addColorStop(0.65, 'rgba(150, 40, 10, 0.4)');
+  ground.addColorStop(1, 'rgba(255, 120, 30, 0.5)');
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.arc(0, 0, front, -half, half);
+  ctx.closePath();
+  ctx.fillStyle = ground;
+  ctx.fill();
+
+  // 용암 균열: 어두운 틈 위에 주황 + 노란 심지 두 겹
+  const cracks = big ? 9 : 5;
+  const tips = [];
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  for (let pass = 0; pass < 3; pass++) {
+    ctx.strokeStyle = pass === 0 ? 'rgba(25, 8, 4, 0.9)' : pass === 1 ? 'rgba(255, 110, 20, 0.95)' : 'rgba(255, 235, 150, 0.95)';
+    ctx.lineWidth = (big ? 6 : 4.5) - pass * (big ? 2.2 : 1.7);
+    if (pass === 1) { ctx.shadowColor = 'rgba(255, 110, 20, 1)'; ctx.shadowBlur = 10; }
+    if (pass === 2) ctx.shadowBlur = 0;
+    for (let i = 0; i < cracks; i++) {
+      const baseA = -half + (2 * half) * ((i + 0.5) / cracks);
+      const len = front * (0.7 + 0.3 * Math.abs(Math.sin(seed * 3.1 + i * 1.7)));
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(baseA) * PLAYER_RADIUS, Math.sin(baseA) * PLAYER_RADIUS);
+      const segs = 6;
+      let lx = 0, ly = 0;
+      for (let k = 1; k <= segs; k++) {
+        const d = PLAYER_RADIUS + (len - PLAYER_RADIUS) * (k / segs);
+        const wob = Math.sin(seed * 7.7 + i * 5.3 + k * 2.9) * (big ? 0.08 : 0.12);
+        lx = Math.cos(baseA + wob) * d;
+        ly = Math.sin(baseA + wob) * d;
+        ctx.lineTo(lx, ly);
+      }
+      ctx.stroke();
+      if (pass === 0) tips.push([lx, ly, i]);
+    }
+  }
+  ctx.shadowBlur = 0;
+
+  // 균열 끝에서 솟구치는 불기둥 (지진이 퍼진 뒤 솟아올랐다가 사그라듦)
+  const rise = Math.max(0, Math.min(1, (t - 0.12) / 0.3)) * (1 - Math.max(0, (t - 0.55) / 0.45));
+  if (rise > 0.02) {
+    for (const [tx, ty, i] of tips) {
+      const h = (big ? 60 : 38) * rise * (0.7 + 0.3 * Math.abs(Math.sin(seed + i * 2.3)));
+      const w = (big ? 15 : 11) * (0.6 + 0.4 * rise);
+      const sway = Math.sin(Date.now() / 60 + i * 1.7) * 3;
+      // 불기둥은 화면 위쪽(−y 월드)으로 솟아오르므로 지진 방향 회전을 되돌려서 그림
+      ctx.save();
+      ctx.translate(tx, ty);
+      ctx.rotate(-e.angle);
+      const fg = ctx.createLinearGradient(0, 0, 0, -h);
+      fg.addColorStop(0, 'rgba(255, 245, 190, 0.95)');
+      fg.addColorStop(0.4, 'rgba(255, 140, 30, 0.9)');
+      fg.addColorStop(1, 'rgba(200, 30, 0, 0)');
+      ctx.fillStyle = fg;
+      ctx.beginPath();
+      ctx.moveTo(-w, 0);
+      ctx.quadraticCurveTo(-w * 0.8 + sway, -h * 0.55, sway, -h);
+      ctx.quadraticCurveTo(w * 0.8 + sway, -h * 0.55, w, 0);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
+  }
+
+  // 바깥으로 퍼지는 충격 파동 선 (용암빛)
+  ctx.beginPath();
+  ctx.arc(0, 0, front, -half, half);
+  ctx.strokeStyle = 'rgba(255, 190, 90, 0.95)';
+  ctx.lineWidth = big ? 6 : 4;
+  ctx.shadowColor = 'rgba(255, 110, 20, 1)';
+  ctx.shadowBlur = 10;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // 튀어오르는 바위 파편
+  ctx.fillStyle = '#1d1210';
+  ctx.strokeStyle = 'rgba(255, 120, 30, 0.8)';
+  ctx.lineWidth = 1;
+  const debris = big ? 14 : 8;
+  for (let i = 0; i < debris; i++) {
+    const a = -half + (2 * half) * (((i * 0.618) % 1));
+    const d = front * (0.35 + 0.65 * ((i * 0.37 + 0.13) % 1)) * Math.min(1, t * 2.2);
+    const up = Math.sin(Math.min(1, t * 1.6) * Math.PI) * (14 + (i % 3) * 8);
+    const px = Math.cos(a) * d;
+    const py = Math.sin(a) * d;
+    ctx.save();
+    ctx.translate(px, py);
+    ctx.rotate(-e.angle);
+    ctx.translate(0, -up);
+    ctx.rotate(i * 1.3 + t * 5);
+    ctx.beginPath();
+    ctx.moveTo(-3.2, -2);
+    ctx.lineTo(3.4, -1.4);
+    ctx.lineTo(1.8, 3);
+    ctx.lineTo(-2.6, 2.4);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // 내려치는 용암 망치 (앞부분에서만 잠깐 보임)
+  if (t < 0.4) {
+    const q = 1 - t / 0.4;
+    ctx.globalAlpha = fade * q;
+    const hx = PLAYER_RADIUS + (big ? 30 : 20);
+    const hs = big ? 1.5 : 1;
+    ctx.shadowColor = 'rgba(255, 120, 20, 1)';
+    ctx.shadowBlur = 16;
+    ctx.fillStyle = '#4a2f1e';
+    ctx.fillRect(PLAYER_RADIUS * 0.4, -3 * hs, hx - PLAYER_RADIUS * 0.4, 6 * hs);
+    const hg = ctx.createLinearGradient(hx, 0, hx + 26 * hs, 0);
+    hg.addColorStop(0, '#e8541a');
+    hg.addColorStop(1, '#ffd36a');
+    ctx.fillStyle = hg;
+    ctx.fillRect(hx, -15 * hs, 26 * hs, 30 * hs);
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = '#2a0e06';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(hx, -15 * hs, 26 * hs, 30 * hs);
+  }
+  ctx.restore();
+}
+
 function drawQuakeEffect(e) {
   const maxLife = e.maxLife || 0.5;
   const t = Math.max(0, Math.min(1, 1 - e.life / maxLife)); // 0 -> 1 진행도
@@ -7995,6 +8800,140 @@ function drawQuakeEffect(e) {
 
 // 모카의 양손 찌르기: 손(단검)이 앞으로 쭉 뻗었다가 빠르게 회수되는 동작 + 궤적 + 끝에서 튀는 타격 불꽃.
 // 왼손/오른손(e.side)이 번갈아 나가고, 이펙트 수명(maxLife)보다 찌르기 간격이 짧아서 앞 동작이 끝나기 전에 다음 손이 겹쳐 나간다.
+function drawShadowStabEffect(e) {
+  // 모카 섀도우: 진홍빛 쌍검 찌르기. 뻗는 동안 보랏빛 잔상 두 겹 + 진홍 궤적 + 가장 멀리 뻗은 순간 초승달 검기가 앞으로 번쩍임
+  const maxLife = e.maxLife || 0.2;
+  const t = Math.max(0, Math.min(1, 1 - e.life / maxLife));
+  const reach = t < 0.4 ? 1 - Math.pow(1 - t / 0.4, 3) : 1 - Math.pow((t - 0.4) / 0.6, 2);
+  const startD = PLAYER_RADIUS * 0.6;
+  const tipD = startD + reach * (e.radius - startD);
+  const lateral = (e.side || 1) * 10;
+  const fade = t < 0.7 ? 1 : Math.max(0, (1 - t) / 0.3);
+
+  ctx.save();
+  ctx.translate(e.x, e.y);
+  ctx.rotate(e.angle);
+  ctx.globalAlpha = fade;
+  ctx.lineCap = 'round';
+
+  // 보랏빛 잔상 두 겹 (칼 뒤에 남는 그림자)
+  for (let i = 2; i >= 1; i--) {
+    const d = Math.max(startD, tipD - i * 12);
+    ctx.globalAlpha = fade * (0.28 / i);
+    ctx.strokeStyle = 'rgba(130, 80, 220, 1)';
+    ctx.lineWidth = 7 - i * 1.5;
+    ctx.beginPath();
+    ctx.moveTo(startD, lateral);
+    ctx.lineTo(d, lateral);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = fade;
+
+  // 진홍 궤적
+  if (tipD - startD > 4) {
+    const grad = ctx.createLinearGradient(startD, 0, tipD, 0);
+    grad.addColorStop(0, 'rgba(224, 22, 60, 0)');
+    grad.addColorStop(1, 'rgba(255, 120, 150, 0.95)');
+    ctx.strokeStyle = grad;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(startD, lateral);
+    ctx.lineTo(tipD, lateral);
+    ctx.stroke();
+  }
+
+  // 단검: 검은 손잡이 + 붉은 날밑 + 은빛 칼날(붉게 빛남)
+  const bladeLen = 26;
+  ctx.shadowColor = 'rgba(255, 40, 80, 0.95)';
+  ctx.shadowBlur = 10;
+  ctx.fillStyle = '#1c1426';
+  ctx.fillRect(tipD - bladeLen - 11, lateral - 2.5, 11, 5);
+  ctx.fillStyle = '#e0163c';
+  ctx.fillRect(tipD - bladeLen - 2, lateral - 5.5, 3.5, 11);
+  ctx.beginPath();
+  ctx.moveTo(tipD - bladeLen, lateral - 4.5);
+  ctx.lineTo(tipD, lateral);
+  ctx.lineTo(tipD - bladeLen, lateral + 4.5);
+  ctx.closePath();
+  ctx.fillStyle = '#f4f1fb';
+  ctx.fill();
+  ctx.lineWidth = 1.6;
+  ctx.strokeStyle = '#ff4d6d';
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // 가장 멀리 뻗은 순간: 앞으로 퍼지는 초승달 검기 + 붉은 불꽃
+  const peak = 1 - Math.abs(t - 0.4) / 0.25;
+  if (peak > 0) {
+    ctx.strokeStyle = `rgba(255, 90, 120, ${peak})`;
+    ctx.lineWidth = 4 * peak + 1;
+    ctx.beginPath();
+    ctx.arc(tipD - 18, lateral, 20 + (1 - peak) * 10, -0.95, 0.95);
+    ctx.stroke();
+    ctx.strokeStyle = `rgba(255, 255, 255, ${peak})`;
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 4; i++) {
+      const a = (Math.PI / 2) * i + Math.PI / 4;
+      const r1 = 3 + (1 - peak) * 5;
+      const r2 = r1 + 9 * peak;
+      ctx.beginPath();
+      ctx.moveTo(tipD + Math.cos(a) * r1, lateral + Math.sin(a) * r1);
+      ctx.lineTo(tipD + Math.cos(a) * r2, lateral + Math.sin(a) * r2);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+function drawShadowLand(e) {
+  // 모카 섀도우의 도약 강습 착지: 어둠이 퍼지며 그림자 가시 8개가 사방으로 터지고, 진홍 충격파 두 겹이 번져나감 (피해 범위 = e.radius)
+  const maxLife = e.maxLife || 0.7;
+  const t = Math.max(0, Math.min(1, 1 - e.life / maxLife));
+  const out = 1 - Math.pow(1 - Math.min(1, t / 0.5), 3);
+  const fade = t < 0.55 ? 1 : Math.max(0, (1 - t) / 0.45);
+  ctx.save();
+  ctx.translate(e.x, e.y);
+  ctx.globalAlpha = fade;
+  // 퍼지는 어둠 웅덩이
+  const pool = ctx.createRadialGradient(0, 0, 0, 0, 0, e.radius);
+  pool.addColorStop(0, 'rgba(15, 8, 30, 0.85)');
+  pool.addColorStop(0.7, 'rgba(60, 20, 110, 0.5)');
+  pool.addColorStop(1, 'rgba(60, 20, 110, 0)');
+  ctx.fillStyle = pool;
+  ctx.beginPath();
+  ctx.arc(0, 0, e.radius * (0.35 + 0.65 * out), 0, Math.PI * 2);
+  ctx.fill();
+  // 그림자 가시 8개 (바깥으로 뻗어나감)
+  const spin = 0.4;
+  for (let i = 0; i < 8; i++) {
+    const a = spin + (i * Math.PI * 2) / 8;
+    const len = e.radius * (0.25 + 0.95 * out) * (i % 2 === 0 ? 1 : 0.7);
+    const w = 7 * (1 - t * 0.5);
+    const g = ctx.createLinearGradient(0, 0, Math.cos(a) * len, Math.sin(a) * len);
+    g.addColorStop(0, 'rgba(255, 70, 110, 0.95)');
+    g.addColorStop(1, 'rgba(40, 10, 70, 0.9)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a + Math.PI / 2) * w, Math.sin(a + Math.PI / 2) * w);
+    ctx.lineTo(Math.cos(a) * len, Math.sin(a) * len);
+    ctx.lineTo(Math.cos(a - Math.PI / 2) * w, Math.sin(a - Math.PI / 2) * w);
+    ctx.closePath();
+    ctx.fill();
+  }
+  // 진홍 충격파 두 겹
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 2; i++) {
+    const q = Math.max(0, Math.min(1, (t - i * 0.12) / 0.6));
+    ctx.globalAlpha = fade * (1 - q);
+    ctx.lineWidth = 6 * (1 - q) + 1.5;
+    ctx.strokeStyle = i === 0 ? 'rgba(255, 90, 120, 1)' : 'rgba(180, 130, 255, 1)';
+    ctx.beginPath();
+    ctx.arc(0, 0, e.radius * (0.2 + 0.85 * q), 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function drawStabEffect(e) {
   const maxLife = e.maxLife || 0.2;
   const t = Math.max(0, Math.min(1, 1 - e.life / maxLife)); // 0 -> 1 진행도
