@@ -766,6 +766,12 @@ const CHARACTERS = {
       landRadius: 100,        // 착지 지점 주변 피해 반경
       stunDuration: 1,        // 맞은 적을 기절시키는 시간(초)
     },
+    gadget: {
+      name: '반사 방어막',
+      type: 'reflect',        // 조준 불필요, 즉시 발동. duration초 동안 자신에게 닿는 적의 모든 투사체를 반대로 튕겨냄 (튕겨낸 투사체는 나이의 것이 되어 원래 쏜 사람 쪽으로 날아감)
+      instant: true,
+      duration: 2,            // 반사 방어막 지속 시간(초)
+    },
   },
 };
 
@@ -927,6 +933,9 @@ function describeGadget(g) {
       break;
     case 'shield':
       desc = `${fmtNum(g.shieldHp)} 피해를 막아주는 보호막을 두름 (다 막으면 사라짐)`;
+      break;
+    case 'reflect':
+      desc = `${g.duration}초 동안 반사 방어막을 둘러 자신에게 날아오는 모든 투사체를 원래 쏜 사람 쪽으로 튕겨냄`;
       break;
     case 'invincible':
       desc = `${g.duration}초 동안 모든 피해를 받지 않음`;
@@ -1436,6 +1445,17 @@ function repeatMissionsView(u) {
 // id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
+  {
+    id: '2026-10-11-nai-gadget',
+    date: '2026-10-11',
+    tag: 'new',
+    title: '나이 가젯 추가!',
+    items: [
+      '나이에게 가젯 [반사 방어막]이 생겼어요.',
+      '2초 동안 방어막을 둘러서, 자신에게 날아오는 적의 모든 투사체를 원래 쏜 사람 쪽으로 튕겨내요. 튕겨낸 투사체는 나이의 것이 돼서 원래 쏜 사람에게 피해를 줘요.',
+      '실내화 같은 포물선 투척도 착지 폭발이 방어막에 닿으면 던진 곳으로 되돌아가요. 사용 후 15초 뒤에 다시 쓸 수 있어요.',
+    ],
+  },
   {
     id: '2026-10-10-daily-draw',
     date: '2026-10-10',
@@ -3044,6 +3064,7 @@ function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hy
     leapStun: 0,           // 점프 착지 때 적을 기절시키는 시간(초) (나이의 슛). 0이면 기절시키지 않음
     ultGadgetLeft: 0,      // 모카의 가젯: 궁극기 게이지가 천천히 채워지는 남은 시간(초)
     ultGadgetRate: 0,      // 초당 채워지는 게이지(%)
+    reflectUntil: 0,       // 이 시각(ms) 전까지 반사 방어막이 켜져 있음 (나이의 가젯 '반사 방어막')
     invincibleUntil: 0,    // 이 시각(ms, Date.now() 기준) 전까지는 무적 상태 (현재 사용하는 캐릭터는 없지만 'invincible' 가젯용으로 남겨둠)
     shieldHp: 0,           // 남은 보호막 수치 (슈의 가젯). 0이면 보호막 없음
     shieldMax: 0,          // 이번에 발동한 보호막의 최대치 (화면 표시용)
@@ -3198,6 +3219,7 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
       respawned.windupUntil = 0; // 진행 중이던 공격 선딜도 취소
       respawned.windupId = (respawned.windupId || 0) + 1;
       respawned.invincibleUntil = 0; // 리스폰 시 이전 무적 상태는 초기화
+      respawned.reflectUntil = 0;    // 반사 방어막도 초기화
       respawned.shieldHp = 0;        // 리스폰 시 보호막도 초기화
       respawned.shieldMax = 0;
       respawned.reloadBoostUntil = 0;
@@ -3222,6 +3244,40 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
 // (예: 슈의 샷건 - 탄창/쿨다운은 소비 1회로 취급되고, 여기서는 실제 총알 개체만 만든다)
 const SLIPPER_EXPLOSION_LIFE = 0.7;   // 실내화 폭발 이펙트가 화면에 남는 시간(초)
 const POOP_BOMB_EXPLOSION_LIFE = 0.75; // 폭탄 똥 폭발 이펙트가 화면에 남는 시간(초) - 피해 판정은 폭발 즉시 끝나고, 이 시간은 연출용
+// ===== 반사 방어막 (나이의 가젯) =====
+const REFLECT_PAD = 12; // 반사 방어막이 몸 바깥으로 얼마나(px) 나와 있는지 (클라이언트가 그리는 방어막 크기와 같음)
+const isReflecting = (p) => !!p && !!p.reflectUntil && Date.now() < p.reflectUntil;
+
+// 적의 투사체를 튕겨냄: 방향을 반대로 바꾸고, 투사체의 주인/팀을 방어막 주인으로 바꿔서
+// 원래 쏜 사람(과 그 팀)에게 피해를 주게 만든다. (피해량/속도/모양은 그대로)
+function reflectBullet(match, b, reflector) {
+  const origOwner = match.players[b.ownerId];
+  if (b.boomerang) {
+    // 부메랑은 일반 투사체로 바꿔서 원래 던진 사람 쪽으로 돌려보냄
+    const sp = Math.hypot(b.vx, b.vy) || b.baseSpeed || 500;
+    const dx = origOwner ? origOwner.x - b.x : -b.vx;
+    const dy = origOwner ? origOwner.y - b.y : -b.vy;
+    const d = Math.hypot(dx, dy) || 1;
+    b.vx = (dx / d) * sp;
+    b.vy = (dy / d) * sp;
+    b.boomerang = false;
+    b.phase = null;
+  } else {
+    b.vx = -b.vx;
+    b.vy = -b.vy;
+  }
+  b.ownerId = reflector.id;
+  b.team = reflector.team;
+  if (Array.isArray(b.hitIds)) b.hitIds = []; // 관통 발사체: 원래 쏜 사람도 다시 맞힐 수 있게 초기화
+  if (b.sweep) { b.prevX = b.x; b.prevY = b.y; }
+  // 날아온 만큼은 다시 날아갈 수 있게 수명 보충
+  const elapsed = Math.max(0, (b.maxLife || 0) - b.life);
+  b.life = Math.max(b.life, elapsed, 0.4);
+  b.reflected = true;
+  effectIdCounter += 1;
+  match.effects.push({ id: effectIdCounter, type: 'reflect', x: b.x, y: b.y, angle: Math.atan2(b.vy, b.vx), ownerId: reflector.id, life: 0.3, maxLife: 0.3 });
+}
+
 // 폭발하는 똥(똥파리의 가젯 '폭탄 똥'): 총알 위치에서 폭발해 범위 안의 적(플레이어/터렛/닭)에게 explodeDamage 피해를 준다.
 // 아군에게는 피해가 없고, 폭발 이펙트는 클라이언트가 그리도록 effects 에 넣는다.
 function explodePoopBomb(match, b) {
@@ -4408,6 +4464,11 @@ function registerGameplayHandlers(socket) {
       }
       effectIdCounter += 1;
       match.effects.push({ id: effectIdCounter, type: 'shieldPush', ownerId: p.id, x: p.x, y: p.y, radius: gadget.pushRadius, life: 0.5, maxLife: 0.5 }); // 퍼져나가는 파동 연출
+    } else if (gadget.type === 'reflect') {
+      // 나이의 가젯: duration초 동안 반사 방어막 (재사용 시 새로 duration초로 갱신). 실제 반사는 updateMatch 의 총알-플레이어 충돌 판정에서 일어남
+      p.reflectUntil = Date.now() + (gadget.duration || 2) * 1000;
+      effectIdCounter += 1;
+      match.effects.push({ id: effectIdCounter, type: 'reflectOn', x: p.x, y: p.y, ownerId: p.id, life: 0.4, maxLife: 0.4 });
     } else if (gadget.type === 'invincible') {
       // 슈의 가젯: duration초 동안 무적 (재사용 시 남은 시간이 아니라 새로 duration초로 갱신)
       p.invincibleUntil = Date.now() + (gadget.duration || 1.5) * 1000;
@@ -4937,6 +4998,25 @@ function updateMatch(match, dt, now) {
     if (b.lob) {
       // 포물선 투척은 벽/맵 경계/적에 막히지 않고 날다가, 착지(수명 종료)하는 순간 그 자리에서 폭발
       if (b.life <= 0) {
+        // 반사 방어막(나이의 가젯): 착지 폭발이 방어막을 켠 적에게 닿으면 폭발하지 않고 던진 곳으로 되던져짐 (한 번만)
+        if (!b.lobReflected) {
+          for (const pid in match.players) {
+            const t = match.players[pid];
+            if (!t.alive || t.team === b.team || !isReflecting(t)) continue;
+            if (Math.hypot(t.x - b.targetX, t.y - b.targetY) >= PLAYER_RADIUS + REFLECT_PAD + b.explodeRadius) continue;
+            const backX = Math.max(0, Math.min(ARENA_WIDTH, b.startX));
+            const backY = Math.max(0, Math.min(ARENA_HEIGHT, b.startY));
+            b.startX = b.targetX; b.startY = b.targetY;
+            b.targetX = backX; b.targetY = backY;
+            b.x = b.startX; b.y = b.startY;
+            b.ownerId = t.id; b.team = t.team;
+            b.life = b.maxLife;
+            b.lobReflected = true;
+            effectIdCounter += 1;
+            match.effects.push({ id: effectIdCounter, type: 'reflect', x: b.startX, y: b.startY, angle: Math.atan2(backY - b.startY, backX - b.startX), ownerId: t.id, life: 0.3, maxLife: 0.3 });
+            return true;
+          }
+        }
         explodePoopBomb(match, { ...b, x: b.targetX, y: b.targetY });
         return false;
       }
@@ -4987,6 +5067,12 @@ function updateMatch(match, dt, now) {
       if (b.hitIds && b.hitIds.includes(pid)) continue; // 관통 발사체가 이미 맞힌 대상은 다시 맞히지 않음
 
       const dist = bulletDistTo(b, target.x, target.y); // sweep 발사체는 이동 경로(선분)까지의 거리, 아니면 현재 위치까지의 거리
+
+      // 반사 방어막(나이의 가젯): 방어막에 닿은 적의 투사체는 피해 없이 튕겨나가 원래 쏜 사람 쪽으로 돌아감
+      if (isReflecting(target) && dist < PLAYER_RADIUS + REFLECT_PAD + b.radius) {
+        reflectBullet(match, b, target);
+        break;
+      }
 
       if (dist < PLAYER_RADIUS + b.radius) {
         if (b.boomerang) {
@@ -5730,7 +5816,10 @@ function runAiBot(match, botId, ai, dt, now) {
       use = offensiveOK && !!target && dist < gr * 0.9;
     } else if (g.type === 'powerCharge') use = (mode === 'fight' || mode === 'chase') && !!target && dist < 400;
     else if (g.type === 'shieldPush') use = !!target && dist < gadgetRangeFor(g) && mode !== 'hide'; // 적이 파동 범위 안에 있을 때만 사용
-    else if (g.type === 'speedBoost' || g.type === 'sprint' || g.type === 'invincible' || g.type === 'shield') {
+    else if (g.type === 'reflect') {
+      // 적의 투사체가 자신 쪽으로 날아오고 있으면 사용
+      use = match.bullets.some((b) => !b.lob && b.team !== p.team && Math.hypot(b.x - p.x, b.y - p.y) < 400 && (b.vx * (p.x - b.x) + b.vy * (p.y - b.y)) > 0);
+    } else if (g.type === 'speedBoost' || g.type === 'sprint' || g.type === 'invincible' || g.type === 'shield') {
       use = !!target && dist < (escaping ? 600 : 400) && mode !== 'hide'; // 도망칠 때 탈출용으로 사용
       if (use && g.type === 'sprint' && mode === 'flee' && (moveX || moveY)) {
         h.playerUpdate({ x: p.x, y: p.y, angle: Math.atan2(moveY, moveX) }); // 돌진은 바라보는 방향으로 나가므로, 도망 방향을 보고 사용
