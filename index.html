@@ -1417,6 +1417,7 @@ const CHARACTERS = [
     maxHp: 6000,
     basic: { name: '실내화 던지기', damage: 2500, desc: '실내화를 포물선으로 던져 땅에 착지하면 폭발 (벽을 넘어감), 던지는 거리는 조준으로 100~364px 조절 (거리와 상관없이 1.5초 뒤에 착지), 폭발 반경 91 안의 적에게 2,500 피해 (폭발 범위 안에 자신이 있으면 피해 없이 날아감), 재장전 시간 40% 증가' },
     ultimate: { name: '슛', damage: 1500, desc: '조준한 방향으로 벽을 무시하고 점프, 거리는 조준으로 100~320px 조절 (공중에서는 피격 불가), 착지 지점 반경 100 안의 적에게 1,500 피해 + 1초 기절' },
+    gadget: { name: '반사 방어막', desc: '2초 동안 반사 방어막을 둘러 자신에게 날아오는 모든 투사체를 원래 쏜 사람 쪽으로 튕겨냄 (15초마다 사용 가능)' },
   },
 ];
 let selectedCharacterId = CHARACTERS[0].id;
@@ -5119,6 +5120,36 @@ function drawPlayer(p, isMe) {
     ctx.restore();
   }
 
+  // 반사 방어막 표시 (나이의 가젯): 몸 주변에 거울 같은 푸른 막이 둘러지고, 빛줄기가 빙글빙글 돈다. 끝나기 0.5초 전부터 깜빡임
+  if (p.reflectUntil && Date.now() < p.reflectUntil) {
+    const left = p.reflectUntil - Date.now();
+    const blink = left < 500 ? (Math.floor(Date.now() / 70) % 2 === 0 ? 0.45 : 1) : 1;
+    const t = Date.now() / 1000;
+    const R = PLAYER_RADIUS + 12;
+    ctx.save();
+    ctx.globalAlpha = blink;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, R, 0, Math.PI * 2);
+    const g = ctx.createRadialGradient(p.x, p.y, R * 0.55, p.x, p.y, R);
+    g.addColorStop(0, 'rgba(200, 240, 255, 0.04)');
+    g.addColorStop(1, 'rgba(160, 225, 255, 0.38)');
+    ctx.fillStyle = g;
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(225, 248, 255, 0.95)';
+    ctx.stroke();
+    ctx.lineWidth = 3.5;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
+    for (let i = 0; i < 3; i++) {
+      const a0 = t * 3 + (i * Math.PI * 2) / 3;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, R - 3, a0, a0 + 0.55);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   // 기절 상태 표시 (변기 돌진 등에 맞았을 때) / 충전 중 표시 (보배의 가젯)
   if (p.chargingUntil && Date.now() < p.chargingUntil) {
     ctx.font = `${PLAYER_RADIUS}px sans-serif`;
@@ -7490,6 +7521,38 @@ function drawEffect(e) {
     drawSlipperExplosion(e);
   } else if (e.type === 'leapLand' && e.visual === 'shoot') {
     drawShootLand(e);
+  } else if (e.type === 'reflect') {
+    // 나이의 반사 방어막에 투사체가 튕겨나가는 순간: 번쩍이는 불꽃 + 튕겨나가는 방향의 빛줄기
+    const prog = 1 - Math.max(0, Math.min(1, e.life / (e.maxLife || 0.3)));
+    ctx.save();
+    ctx.translate(e.x, e.y);
+    ctx.globalAlpha = 1 - prog;
+    ctx.fillStyle = 'rgba(255, 255, 255, 1)';
+    ctx.beginPath();
+    ctx.arc(0, 0, 6 + 14 * prog, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgba(160, 230, 255, 1)';
+    ctx.lineWidth = 3.5 * (1 - prog) + 1;
+    for (let i = -2; i <= 2; i++) {
+      const a = (e.angle || 0) + i * 0.45;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * (8 + 10 * prog), Math.sin(a) * (8 + 10 * prog));
+      ctx.lineTo(Math.cos(a) * (22 + 34 * prog), Math.sin(a) * (22 + 34 * prog));
+      ctx.stroke();
+    }
+    ctx.restore();
+  } else if (e.type === 'reflectOn') {
+    // 반사 방어막이 켜지는 순간: 몸 주변에서 파동이 퍼짐
+    const prog = 1 - Math.max(0, Math.min(1, e.life / (e.maxLife || 0.4)));
+    ctx.save();
+    ctx.globalAlpha = (1 - prog) * 0.9;
+    ctx.lineWidth = 5 * (1 - prog) + 1.5;
+    ctx.strokeStyle = 'rgba(210, 245, 255, 1)';
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, (PLAYER_RADIUS + 12) * (0.8 + 1.1 * prog), 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
   } else if (e.type === 'shieldPush') {
     // 엑헤 가젯 '수호의 파동': 보호막이 터지듯 바깥으로 퍼지는 파동 (밀치는 범위 = 반경). 피해는 없음
     const prog = 1 - Math.max(0, Math.min(1, e.life / (e.maxLife || 0.5)));
