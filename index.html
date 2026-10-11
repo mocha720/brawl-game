@@ -1195,7 +1195,7 @@
 <!-- 궁극기 버튼: 게이지가 차면 클릭/탭으로 발동 (PC/모바일 공용) -->
 <div id="ultimateButton"><div class="ult-inner">🤡</div></div>
 
-<!-- 하이퍼 차지 버튼: 하이퍼 차지를 획득한 캐릭터일 때만 표시. 게이지가 차면 탭(모바일) 또는 Q키(PC)로 발동 -->
+<!-- 하이퍼 차지 버튼: 하이퍼 차지를 획득한 캐릭터일 때만 표시. 게이지가 차면 탭(모바일) 또는 스페이스바/Q키(PC)로 발동 -->
 <div id="hyperButton"><div class="hyper-inner">⚡</div></div>
 
 <!-- 가젯 버튼: 캐릭터에게 가젯이 있을 때만 표시. 쿨다운이 끝나면 탭(모바일) 또는 F키(PC)로 장전 -->
@@ -2969,7 +2969,7 @@ function renderCharacterList() {
         <div class="hyper-title">⚡ ${escapeHtml(hyperInfo.name)}</div>
         <div class="hyper-desc">${escapeHtml(hyperInfo.desc)}</div>
         ${hyperOwned
-          ? `<div class="hyper-state">✅ 획득 완료 (게임 중 Q키 / ⚡ 버튼으로 발동)</div>`
+          ? `<div class="hyper-state">✅ 획득 완료 (게임 중 스페이스바 / Q키 / ⚡ 버튼으로 발동)</div>`
           : lv >= hyperReqLv
             ? `<button class="hyper-btn" data-hyper-buy="${c.id}" ${currentProfile.coins >= hyperPrice ? '' : 'disabled'}>⚡ 하이퍼 차지 획득 · 🪙 ${hyperPrice.toLocaleString()}${currentProfile.coins >= hyperPrice ? '' : ' (코인 부족)'}</button>`
             : `<div class="hyper-state">🔒 Lv.${hyperReqLv} 달성 후 🪙 ${hyperPrice.toLocaleString()}로 획득 (현재 Lv.${lv})</div>`}
@@ -3618,7 +3618,7 @@ window.addEventListener('keydown', (e) => {
 });
 
 // ===== 하이퍼 차지 =====
-// 게이지(궁극기처럼 기본공격 적중으로 충전)가 가득 차면 탭(모바일) 또는 Q키(PC)로 즉시 발동. 조준 불필요.
+// 게이지(궁극기처럼 기본공격 적중으로 충전)가 가득 차면 탭(모바일) 또는 스페이스바/Q키(PC)로 즉시 발동. 조준 불필요.
 // 발동 중에는 서버가 이동속도/공격력/받는 피해를 바꿔주므로, 클라이언트는 입력과 표시만 담당한다.
 function activateHyperControl() {
   if (!joined || inCountdown()) return;
@@ -3635,8 +3635,13 @@ document.getElementById('hyperButton').addEventListener('pointerdown', (e) => {
 });
 
 window.addEventListener('keydown', (e) => {
-  if (isChatFocused()) return; // 채팅 입력 중에는 하이퍼 단축키 무시
+  if (isChatFocused()) return; // 채팅 입력 중에는 하이퍼 단축키 무시 (스페이스바로 띄어쓰기를 해야 하므로)
   if (e.key === 'q' || e.key === 'Q') activateHyperControl();
+  if (e.code === 'Space' || e.key === ' ') {
+    if (!joined) return; // 게임 중이 아닐 때(로그인/메뉴 화면)는 기본 동작(버튼 누르기, 입력 등)을 건드리지 않음
+    e.preventDefault(); // 스페이스바로 페이지가 스크롤되거나 포커스된 버튼이 눌리지 않게 함
+    if (!e.repeat) activateHyperControl();
+  }
 });
 
 function updateHyperButton() {
@@ -3646,7 +3651,7 @@ function updateHyperButton() {
   btn.style.display = has ? 'flex' : 'none';
   if (!has) return;
   const left = me.hyperLeft || 0;
-  const dur = (me.hyper && me.hyper.duration) || 4;
+  const dur = (me.hyper && me.hyper.duration) || 5;
   const active = left > 0;
   const charge = Math.max(0, Math.min(100, me.hyperCharge || 0));
   // 발동 중에는 남은 시간만큼 게이지가 줄어들고, 그 외에는 충전량만큼 차오른다
@@ -5718,7 +5723,41 @@ function drawShootLand(e) {
   ctx.restore();
 }
 
+// 하이퍼 차지 발동 중 미남의 부메랑 궁극기: 보랏빛 불꽃 후광과 꼬리 (나갈 때는 연보라, 돌아올 때는 더 밝은 분홍빛으로 구분)
+function drawBoomerangGlow(b) {
+  const t = Date.now() / 1000;
+  const back = b.phase === 'back';
+  const ang = Math.atan2(b.vy || 0, b.vx || 1);
+  const r = b.radius;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.translate(b.x, b.y);
+  const glow = ctx.createRadialGradient(0, 0, r * 0.4, 0, 0, r * 2.6);
+  glow.addColorStop(0, back ? 'rgba(255, 170, 240, 0.65)' : 'rgba(190, 120, 255, 0.65)');
+  glow.addColorStop(1, 'rgba(110, 40, 230, 0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 2.6, 0, Math.PI * 2);
+  ctx.fill();
+  // 뒤로 길게 끌리는 불꽃 꼬리
+  ctx.rotate(ang);
+  const len = r * 5;
+  const tg = ctx.createLinearGradient(-len, 0, 0, 0);
+  tg.addColorStop(0, 'rgba(120, 40, 230, 0)');
+  tg.addColorStop(1, back ? 'rgba(255, 180, 245, 0.75)' : 'rgba(200, 130, 255, 0.75)');
+  ctx.fillStyle = tg;
+  ctx.beginPath();
+  ctx.moveTo(-len, 0);
+  ctx.quadraticCurveTo(-len * 0.5, -r * (1.1 + 0.3 * Math.sin(t * 20)), 0, -r * 0.9);
+  ctx.lineTo(0, r * 0.9);
+  ctx.quadraticCurveTo(-len * 0.5, r * (1.1 + 0.3 * Math.cos(t * 20)), -len, 0);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
 function drawBullet(b) {
+  if (b.boomerang) drawBoomerangGlow(b); // 부메랑 궁극기의 후광/꼬리를 먼저 깔고, 그 위에 원래 모양(피에로/표창)을 그림
   if (b.lob) { drawSlipperBullet(b); return; } // 나이의 실내화 (포물선 투척)
   if (b.visual === 'sysOrb' || b.visual === 'sysThrow') {
     // 시스템의 구슬: 원거리 구슬은 푸른 빛, 던지는 구슬은 더 크고 보라색 + 회전하는 고리
