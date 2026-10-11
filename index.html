@@ -397,6 +397,11 @@
   .char-actions { display: flex; flex-direction: column; gap: 8px; margin-top: auto; }
   .char-actions button { margin-top: 0; }
   .char-card button.upgrade-btn { --bg: var(--sky); --deep: #1f6fa8; --fg: var(--ink); font-size: 14px; }
+  .hyper-box { margin: 0 0 12px; padding: 8px 10px; border: 2px solid rgba(168, 85, 247, 0.55); border-radius: 12px; background: rgba(120, 50, 200, 0.14); text-align: left; }
+  .hyper-box .hyper-title { font-size: 13px; font-weight: 700; color: #d9b3ff; margin-bottom: 4px; }
+  .hyper-box .hyper-desc { font-size: 12px; line-height: 1.5; color: #d5d7f2; margin-bottom: 6px; }
+  .hyper-box .hyper-state { font-size: 12px; color: #d9b3ff; }
+  .char-card button.hyper-btn { margin-top: 0; min-height: 38px; padding: 6px 12px; font-size: 13px; --bg: #9d4edd; --deep: #5a189a; --fg: #fff; }
   .skin-box { display: flex; flex-direction: column; gap: 6px; margin: 0 0 12px; padding: 8px 10px; border: 2px dashed rgba(255,255,255,0.22); border-radius: 12px; }
   .skin-box .skin-title { font-size: 12px; line-height: 1.4; color: var(--mute); text-align: left; }
   .char-card button.skin-btn { margin-top: 0; min-height: 38px; padding: 6px 12px; font-size: 13px; --bg: var(--plum); --deep: var(--plum-deep); --fg: #fff; }
@@ -669,6 +674,32 @@
     0%, 100% { box-shadow: 0 0 0px rgba(241, 196, 15, 0.8); }
     50% { box-shadow: 0 0 18px rgba(241, 196, 15, 0.9); }
   }
+  /* ===== 하이퍼 차지 버튼 (궁극기 버튼 위쪽, 보랏빛). 하이퍼 차지를 획득한 캐릭터일 때만 표시 ===== */
+  #hyperButton {
+    position: fixed;
+    bottom: calc(272px + env(safe-area-inset-bottom, 0px));
+    right: calc(36px + env(safe-area-inset-right, 0px));
+    width: 62px;
+    height: 62px;
+    border-radius: 50%;
+    z-index: 6;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    background: conic-gradient(#a855f7 0%, rgba(255,255,255,0.15) 0%);
+  }
+  #hyperButton.ready { animation: hyperPulse 0.9s infinite; }
+  #hyperButton.active { animation: hyperPulse 0.5s infinite; }
+  #hyperButton .hyper-inner {
+    width: 50px; height: 50px; border-radius: 50%; background: #1e1230;
+    display: flex; align-items: center; justify-content: center; font-size: 22px; color: #fff; font-weight: 700;
+  }
+  #hyperButton.ready .hyper-inner, #hyperButton.active .hyper-inner { background: #4a1d8a; }
+  @keyframes hyperPulse {
+    0%, 100% { box-shadow: 0 0 6px rgba(168, 85, 247, 0.7); }
+    50% { box-shadow: 0 0 22px rgba(200, 130, 255, 1); }
+  }
   /* ===== 가젯 버튼 (궁극기 버튼 왼쪽, 핀란드 국기 무늬) ===== */
   #gadgetButton {
     position: fixed;
@@ -731,6 +762,8 @@
     #scoreboard ol { font-size: 11px; }
     #ultimateButton { right: calc(26px + env(safe-area-inset-right, 0px)); bottom: calc(160px + env(safe-area-inset-bottom, 0px)); width: 62px; height: 62px; }
     #ultimateButton .ult-inner { width: 50px; height: 50px; font-size: 22px; }
+    #hyperButton { right: calc(30px + env(safe-area-inset-right, 0px)); bottom: calc(230px + env(safe-area-inset-bottom, 0px)); width: 52px; height: 52px; }
+    #hyperButton .hyper-inner { width: 42px; height: 42px; font-size: 18px; }
   }
   /* ===== 탄창(탄약) 표시 ===== */
   #ammoDisplay {
@@ -1161,6 +1194,9 @@
 
 <!-- 궁극기 버튼: 게이지가 차면 클릭/탭으로 발동 (PC/모바일 공용) -->
 <div id="ultimateButton"><div class="ult-inner">🤡</div></div>
+
+<!-- 하이퍼 차지 버튼: 하이퍼 차지를 획득한 캐릭터일 때만 표시. 게이지가 차면 탭(모바일) 또는 Q키(PC)로 발동 -->
+<div id="hyperButton"><div class="hyper-inner">⚡</div></div>
 
 <!-- 가젯 버튼: 캐릭터에게 가젯이 있을 때만 표시. 쿨다운이 끝나면 탭(모바일) 또는 F키(PC)로 장전 -->
 <div id="gadgetButton"><div class="gad-inner"><div class="gad-cd"></div></div></div>
@@ -2923,13 +2959,28 @@ function renderCharacterList() {
             : `<button class="skin-btn" data-skin-equip="${escapeHtml(k.id)}" data-skin-char="${c.id}">🎨 ${escapeHtml(k.name)} 스킨 장착하기</button>`;
         }).join('')}
       </div>` : '';
+    // 하이퍼 차지: 최고 레벨을 찍고 코인으로 획득하면 영구히 사용 가능. 획득한 캐릭터는 아바타 주변에 보랏빛 불꽃이 타오른다
+    const hyperInfo = (currentProfile && currentProfile.characters && currentProfile.characters[c.id] && currentProfile.characters[c.id].hyper) || null;
+    const hyperOwned = !!(hyperInfo && owned && ((currentProfile && currentProfile.hypers) || []).includes(c.id));
+    const hyperPrice = (currentProfile && currentProfile.hyperPrice) || 1000;
+    const hyperReqLv = (currentProfile && currentProfile.hyperRequiredLevel) || maxLv;
+    const hyperBox = hyperInfo && owned ? `
+      <div class="hyper-box">
+        <div class="hyper-title">⚡ ${escapeHtml(hyperInfo.name)}</div>
+        <div class="hyper-desc">${escapeHtml(hyperInfo.desc)}</div>
+        ${hyperOwned
+          ? `<div class="hyper-state">✅ 획득 완료 (게임 중 Q키 / ⚡ 버튼으로 발동)</div>`
+          : lv >= hyperReqLv
+            ? `<button class="hyper-btn" data-hyper-buy="${c.id}" ${currentProfile.coins >= hyperPrice ? '' : 'disabled'}>⚡ 하이퍼 차지 획득 · 🪙 ${hyperPrice.toLocaleString()}${currentProfile.coins >= hyperPrice ? '' : ' (코인 부족)'}</button>`
+            : `<div class="hyper-state">🔒 Lv.${hyperReqLv} 달성 후 🪙 ${hyperPrice.toLocaleString()}로 획득 (현재 Lv.${lv})</div>`}
+      </div>` : '';
     const lvBadge = owned && table.length ? `<span class="lv-badge${next ? '' : ' max'}">Lv.${lv}</span>` : '';
     const action = owned
       ? `<div class="char-actions"><button data-char-id="${c.id}">선택</button>${upgradeBtn}</div>`
       : `<button class="locked-btn" data-unlock-id="${c.id}" ${canAfford ? '' : 'disabled'}>🔒 🪙 ${price.toLocaleString()} ${canAfford ? '잠금해제' : '(코인 부족)'}</button>`;
     return `
     <div class="char-card${owned ? '' : ' locked'}${owned && table.length && !next ? ' maxlv' : ''}">
-      ${fireWrap(`<div class="char-avatar" style="background:${equippedSkin && SKIN_LOOKS[equippedSkin] ? SKIN_LOOKS[equippedSkin].body : c.color};${equippedSkin && SKIN_LOOKS[equippedSkin] ? `box-shadow: inset 0 0 0 4px ${SKIN_LOOKS[equippedSkin].avatarRing || '#fff'};` : ''}">${escapeHtml(c.name.slice(0, 1))}</div>`, owned && table.length && !next)}
+      ${fireWrap(`<div class="char-avatar" style="background:${equippedSkin && SKIN_LOOKS[equippedSkin] ? SKIN_LOOKS[equippedSkin].body : c.color};${equippedSkin && SKIN_LOOKS[equippedSkin] ? `box-shadow: inset 0 0 0 4px ${SKIN_LOOKS[equippedSkin].avatarRing || '#fff'};` : ''}">${escapeHtml(c.name.slice(0, 1))}</div>`, hyperOwned)}
       <h3>${escapeHtml(c.name)}${lvBadge}</h3>
       ${trophyLine}
       ${bonusLine}
@@ -2938,6 +2989,7 @@ function renderCharacterList() {
       <div class="stat-line">✨ ${escapeHtml(c.ultimate.name)}${c.ultimate.damage ? `: ${c.ultimate.damage.toLocaleString()}` : ''}${c.ultimate.desc ? ` (${escapeHtml(c.ultimate.desc)})` : ''}</div>
       ${c.gadget ? `<div class="stat-line">🔧 ${escapeHtml(c.gadget.name)}${c.gadget.desc ? ` (${escapeHtml(c.gadget.desc)})` : ''}</div>` : ''}
       ${skinBox}
+      ${hyperBox}
       ${action}
     </div>`;
   }).join('');
@@ -2978,6 +3030,24 @@ function renderCharacterList() {
         if (err || !res) { alert('서버 응답이 없습니다. 잠시 후 다시 시도해주세요.'); renderCharacterList(); return; }
         if (res.profile) { currentProfile = res.profile; updateProfileUI(); }
         alert(res.message || (res.ok ? '구매 완료!' : '스킨 구매에 실패했습니다.'));
+        renderCharacterList();
+      });
+    });
+  });
+
+  list.querySelectorAll('button[data-hyper-buy]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-hyper-buy');
+      const c = CHARACTERS.find((x) => x.id === id);
+      const info = currentProfile && currentProfile.characters && currentProfile.characters[id] && currentProfile.characters[id].hyper;
+      const price = (currentProfile && currentProfile.hyperPrice) || 1000;
+      if (!c || !info) return;
+      if (!confirm(`${c.name}의 ${info.name}를 🪙 ${price.toLocaleString()} 코인으로 획득할까요?\n${info.desc}`)) return;
+      btn.disabled = true;
+      socket.timeout(8000).emit('buyHyper', { characterId: id }, (err, res) => {
+        if (err || !res) { alert('서버 응답이 없습니다. 잠시 후 다시 시도해주세요.'); renderCharacterList(); return; }
+        if (res.profile) { currentProfile = res.profile; updateProfileUI(); }
+        alert(res.message || (res.ok ? '획득 완료!' : '하이퍼 차지 획득에 실패했습니다.'));
         renderCharacterList();
       });
     });
@@ -3375,6 +3445,7 @@ socket.on('state', (state) => {
   }
   updateUltimateButton();
   updateGadgetButton();
+  updateHyperButton();
   updateAmmoDisplay();
 });
 
@@ -3545,6 +3616,46 @@ window.addEventListener('keydown', (e) => {
   if (isChatFocused()) return; // 채팅 입력 중에는 궁극기 단축키 무시
   if (e.key === 'e' || e.key === 'E') activateUltimateControl();
 });
+
+// ===== 하이퍼 차지 =====
+// 게이지(궁극기처럼 기본공격 적중으로 충전)가 가득 차면 탭(모바일) 또는 Q키(PC)로 즉시 발동. 조준 불필요.
+// 발동 중에는 서버가 이동속도/공격력/받는 피해를 바꿔주므로, 클라이언트는 입력과 표시만 담당한다.
+function activateHyperControl() {
+  if (!joined || inCountdown()) return;
+  const me = latestState.players[myId];
+  if (!me || !me.alive || !me.hasHyper) return;
+  if ((me.hyperCharge || 0) < 100 || (me.hyperLeft || 0) > 0) return;
+  socket.emit('hyper');
+  SFX.ultimate();
+}
+
+document.getElementById('hyperButton').addEventListener('pointerdown', (e) => {
+  e.preventDefault();
+  activateHyperControl();
+});
+
+window.addEventListener('keydown', (e) => {
+  if (isChatFocused()) return; // 채팅 입력 중에는 하이퍼 단축키 무시
+  if (e.key === 'q' || e.key === 'Q') activateHyperControl();
+});
+
+function updateHyperButton() {
+  const btn = document.getElementById('hyperButton');
+  const me = latestState.players[myId];
+  const has = !!(joined && me && me.hasHyper);
+  btn.style.display = has ? 'flex' : 'none';
+  if (!has) return;
+  const left = me.hyperLeft || 0;
+  const dur = (me.hyper && me.hyper.duration) || 4;
+  const active = left > 0;
+  const charge = Math.max(0, Math.min(100, me.hyperCharge || 0));
+  // 발동 중에는 남은 시간만큼 게이지가 줄어들고, 그 외에는 충전량만큼 차오른다
+  const shown = active ? Math.round((left / dur) * 100) : Math.round(charge);
+  btn.style.background = `conic-gradient(${active ? '#e0b3ff' : '#a855f7'} ${shown}%, rgba(255,255,255,0.15) ${shown}%)`;
+  btn.classList.toggle('ready', !active && charge >= 100);
+  btn.classList.toggle('active', active);
+  btn.querySelector('.hyper-inner').textContent = active ? String(Math.ceil(left)) : '⚡';
+}
 
 // ===== 가젯 =====
 // 조준이 필요한 가젯(예: 연발 사격)은 '장전' 상태로 전환되고, 이후 기본 공격 입력으로 발사한다.
@@ -3804,6 +3915,57 @@ function fireWrap(avatarHtml, isMax) {
   if (!isMax) return avatarHtml;
   setTimeout(startFireLoop, 0); // 카드가 화면에 들어간 다음에 시작
   return `<div class="avatar-wrap"><canvas class="avatar-fire-cv" width="${FIRE_W}" height="${FIRE_W}"></canvas>${avatarHtml}</div>`;
+}
+
+// 하이퍼 차지 발동 중인 플레이어 주위의 보랏빛 불꽃 오라 (월드 좌표계에서 그림). 위로 일렁이는 불꽃 + 맥동하는 후광 + 떠오르는 불씨
+function drawHyperAura(p) {
+  const t = Date.now() / 1000;
+  const R = PLAYER_RADIUS;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  // 후광
+  const pulse = 0.75 + 0.25 * Math.sin(t * 9);
+  const glow = ctx.createRadialGradient(p.x, p.y, R * 0.5, p.x, p.y, R * 2.3);
+  glow.addColorStop(0, `rgba(190, 120, 255, ${0.5 * pulse})`);
+  glow.addColorStop(0.6, `rgba(130, 50, 230, ${0.28 * pulse})`);
+  glow.addColorStop(1, 'rgba(90, 20, 200, 0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, R * 2.3, 0, Math.PI * 2);
+  ctx.fill();
+  // 원 둘레에서 위로 솟는 불꽃 혀 (각각 다른 위상으로 흔들리며 길이가 변함)
+  for (let i = 0; i < 12; i += 1) {
+    const th = (i / 12) * Math.PI * 2;
+    if (Math.sin(th) > 0.75) continue; // 아래쪽에서는 불꽃이 몸 밖으로 삐져나와 보이므로 생략 (불은 위/옆으로만 타오름)
+    const bx = p.x + Math.cos(th) * R * 0.95;
+    const by = p.y + Math.sin(th) * R * 0.95;
+    const flick = 0.6 + 0.4 * Math.sin(t * 11 + i * 1.9);
+    const h = R * (0.9 + 0.9 * flick) * (0.65 + 0.35 * Math.max(0, -Math.sin(th))); // 위쪽일수록 길게
+    const sway = Math.sin(t * 7 + i * 2.3) * R * 0.22;
+    const w = R * 0.34;
+    const g = ctx.createLinearGradient(bx, by, bx + sway, by - h);
+    g.addColorStop(0, 'rgba(235, 200, 255, 0.85)');
+    g.addColorStop(0.5, 'rgba(166, 60, 255, 0.6)');
+    g.addColorStop(1, 'rgba(90, 20, 220, 0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.moveTo(bx - w, by);
+    ctx.quadraticCurveTo(bx - w * 0.6 + sway * 0.4, by - h * 0.55, bx + sway, by - h);
+    ctx.quadraticCurveTo(bx + w * 0.6 + sway * 0.4, by - h * 0.55, bx + w, by);
+    ctx.closePath();
+    ctx.fill();
+  }
+  // 떠오르는 불씨
+  ctx.fillStyle = 'rgba(230, 190, 255, 0.9)';
+  for (let i = 0; i < 6; i += 1) {
+    const k = (t * 0.9 + i / 6) % 1;
+    const a = i * 2.4 + t * 0.6;
+    ctx.globalAlpha = 1 - k;
+    ctx.beginPath();
+    ctx.arc(p.x + Math.cos(a) * R * 1.1, p.y + R * 0.4 - k * R * 2.6, 2.2 * (1 - k) + 0.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
 }
 
 // ===== 캐릭터 스킨 외형 =====
@@ -4731,6 +4893,8 @@ function drawPlayer(p, isMe) {
   }
   // 스킨 전용 돌진 연출 (용사의 푸른 잔상/빛줄기/검 찌르기). 몸통보다 먼저 그려서 몸 뒤쪽에 깔림
   if (p.skin && SKIN_LOOKS[p.skin] && SKIN_LOOKS[p.skin].drawFx) SKIN_LOOKS[p.skin].drawFx(p);
+  // 하이퍼 차지 발동 중: 몸 주위에서 보랏빛 불꽃이 타오름 (몸통보다 먼저 그려서 뒤에 깔림)
+  if (p.alive && p.hyperLeft > 0) drawHyperAura(p);
   // 몸통
   ctx.save();
   ctx.translate(p.x, p.y - lift);
@@ -6938,6 +7102,31 @@ function drawEffect(e) {
     drawSlipperExplosion(e);
   } else if (e.type === 'leapLand' && e.visual === 'shoot') {
     drawShootLand(e);
+  } else if (e.type === 'hyperActivate') {
+    // 하이퍼 차지 발동 순간: 보랏빛 충격파가 퍼지고 불꽃 불씨가 사방으로 튐
+    const prog = 1 - Math.max(0, Math.min(1, e.life / (e.maxLife || 0.7)));
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalAlpha = 1 - prog;
+    ctx.lineWidth = 6 * (1 - prog) + 1;
+    ctx.strokeStyle = 'rgba(200, 130, 255, 1)';
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, e.radius * (0.3 + 0.9 * prog), 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(255, 235, 255, 0.9)';
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, e.radius * (0.2 + 0.6 * prog), 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(220, 160, 255, 0.95)';
+    for (let i = 0; i < 12; i += 1) {
+      const a = (i / 12) * Math.PI * 2 + 0.2;
+      const d = e.radius * (0.4 + 0.9 * prog);
+      ctx.beginPath();
+      ctx.arc(e.x + Math.cos(a) * d, e.y + Math.sin(a) * d - prog * 10, 4 * (1 - prog) + 1, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
   } else if (e.type === 'explosion' && e.visual === 'ramenSplash') {
     // 진순 스킨 궁극기 마지막: 끓는 냄비에서 뜨거운 물이 사방으로 확 퍼짐
     const prog = 1 - Math.max(0, Math.min(1, e.life / 0.4));
