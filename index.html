@@ -4466,6 +4466,125 @@ const SKIN_LOOKS = {
       ctx.restore();
     },
   },
+  ekhe_poison: {
+    // 독 마법사: 짙은 보라색 로브 + 끝이 꺾인 뾰족한 마법사 모자(독초록 띠와 해골 버클) + 두건 속 창백한 초록빛 얼굴 + 형형하게 빛나는 독초록 눈 +
+    // 비죽 웃는 송곳니 + 로브 아래로 뚝뚝 떨어지는 독 + 몸 주위를 떠다니는 독 방울. 항상 정면으로 똑바로 서 있음
+    body: '#3b1f5c',
+    avatarRing: '#7CFC00',
+    upright: true,
+    draw(R, p) {
+      const t = Date.now() / 600;
+      // 몸통 안쪽만 그리도록 잘라서 로브/얼굴을 그림
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(0, 0, R - 0.5, 0, Math.PI * 2);
+      ctx.clip();
+      const robe = ctx.createLinearGradient(0, -R, 0, R);
+      robe.addColorStop(0, '#4a2a74');
+      robe.addColorStop(1, '#241238');
+      ctx.fillStyle = robe;
+      ctx.fillRect(-R, -R, R * 2, R * 2);
+      // 로브 앞 여밈선 + 독초록 자수
+      ctx.strokeStyle = '#8bff3a';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(0, R * 0.2);
+      ctx.lineTo(0, R);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(-R * 0.5, R * 0.55);
+      ctx.lineTo(-R * 0.15, R * 0.4);
+      ctx.moveTo(R * 0.5, R * 0.55);
+      ctx.lineTo(R * 0.15, R * 0.4);
+      ctx.stroke();
+      // 두건(어두운 그림자) + 얼굴
+      ctx.fillStyle = '#150a22';
+      ctx.beginPath();
+      ctx.ellipse(0, -R * 0.38, R * 0.62, R * 0.58, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#b9d9a0';
+      ctx.beginPath();
+      ctx.ellipse(0, -R * 0.34, R * 0.4, R * 0.36, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // 빛나는 독초록 눈 (치켜올라간 사악한 눈매)
+      ctx.shadowColor = 'rgba(120, 255, 60, 0.95)';
+      ctx.shadowBlur = 6;
+      ctx.fillStyle = '#7CFC00';
+      for (const side of [-1, 1]) {
+        ctx.save();
+        ctx.translate(side * R * 0.17, -R * 0.38);
+        ctx.rotate(side * -0.45);
+        ctx.beginPath();
+        ctx.ellipse(0, 0, R * 0.12, R * 0.065, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#10200a';
+      for (const side of [-1, 1]) {
+        ctx.beginPath();
+        ctx.ellipse(side * R * 0.17, -R * 0.38, R * 0.025, R * 0.055, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // 비죽 웃는 입 + 송곳니
+      ctx.strokeStyle = '#2a0f1f';
+      ctx.lineWidth = 1.5;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.arc(0, -R * 0.26, R * 0.17, 0.12 * Math.PI, 0.88 * Math.PI);
+      ctx.stroke();
+      ctx.fillStyle = '#ffffff';
+      for (const side of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(side * R * 0.11 - R * 0.035, -R * 0.2);
+        ctx.lineTo(side * R * 0.11 + R * 0.035, -R * 0.2);
+        ctx.lineTo(side * R * 0.11, -R * 0.12);
+        ctx.closePath();
+        ctx.fill();
+      }
+      // 로브에서 뚝뚝 떨어지는 독 방울
+      ctx.fillStyle = 'rgba(120, 255, 60, 0.9)';
+      for (let i = 0; i < 3; i += 1) {
+        const k = (t * 0.8 + i / 3) % 1;
+        ctx.beginPath();
+        ctx.arc(-R * 0.55 + i * R * 0.55, R * 0.55 + k * R * 0.4, R * 0.07 * (1 - k * 0.5), 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+      // 끝이 꺾인 뾰족한 마법사 모자 (몸통 바깥으로 솟음) + 넓은 챙 + 독초록 띠 + 해골 버클
+      ctx.fillStyle = '#2b1448';
+      ctx.strokeStyle = '#120820';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(-R * 0.5, -R * 0.62);
+      ctx.quadraticCurveTo(-R * 0.3, -R * 1.2, R * 0.05, -R * 1.5);
+      ctx.quadraticCurveTo(R * 0.55, -R * 1.62, R * 0.7, -R * 1.38); // 꺾인 끝
+      ctx.quadraticCurveTo(R * 0.3, -R * 1.34, R * 0.3, -R * 0.95);
+      ctx.quadraticCurveTo(R * 0.4, -R * 0.78, R * 0.5, -R * 0.62);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.ellipse(0, -R * 0.62, R * 0.82, R * 0.17, 0, 0, Math.PI * 2);
+      ctx.fillStyle = '#34195a';
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#7CFC00';
+      ctx.fillRect(-R * 0.45, -R * 0.78, R * 0.9, R * 0.1);
+      ctx.fillStyle = '#e8f5d0';
+      ctx.beginPath();
+      ctx.arc(0, -R * 0.73, R * 0.075, 0, Math.PI * 2);
+      ctx.fill();
+      // 몸 주위를 떠다니는 독 방울
+      ctx.fillStyle = 'rgba(130, 255, 70, 0.85)';
+      for (let i = 0; i < 3; i += 1) {
+        const a = t * 1.2 + i * 2.1;
+        ctx.beginPath();
+        ctx.arc(Math.cos(a) * R * 1.28, Math.sin(a * 0.8) * R * 0.5 + R * 0.35, R * 0.1, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    },
+  },
   bobae_jinsoon: {
     // 진순: 순한맛 라면 컨셉. 노란 라면 봉지색 몸 + 구불구불한 면발 머리 + 반숙 계란 + 송송 썬 파 + 순한 눈웃음 + 볼터치 + 가슴의 '순' 글자 + 김이 모락모락.
     // 항상 정면으로 똑바로 서 있음
@@ -5756,7 +5875,44 @@ function drawBoomerangGlow(b) {
   ctx.restore();
 }
 
+// 스킨 기본공격 구분용 팀 색 표시: 내 팀(초록) / 적(빨강). 기본 모습(똥/물/계란)의 장판과 같은 색 규칙을 스킨에도 똑같이 적용한다.
+function isAllyOwner(o) {
+  return o.ownerId === myId || (myTeam && o.team === myTeam);
+}
+const SKIN_TEAM_BULLETS = { fireball: 1, iceShard: 1, poisonVial: 1 };
+function drawTeamHalo(b) {
+  const ally = isAllyOwner(b);
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(b.x, b.y, b.radius * 1.55, 0, Math.PI * 2);
+  ctx.fillStyle = ally ? 'rgba(46, 204, 113, 0.28)' : 'rgba(231, 76, 60, 0.30)';
+  ctx.fill();
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = ally ? 'rgba(46, 204, 113, 0.95)' : 'rgba(231, 76, 60, 0.95)';
+  ctx.stroke();
+  ctx.restore();
+}
+// 스킨 장판 가장자리에 두껍게 덧그리는 팀 색 띠 (장판 그림이 화려해도 한눈에 보이게)
+function drawTeamPoolRing(pool, alpha) {
+  const ally = isAllyOwner(pool);
+  const a = Math.max(0.55, Math.min(1, alpha == null ? 1 : alpha));
+  ctx.save();
+  const g = ctx.createRadialGradient(pool.x, pool.y, pool.radius * 0.7, pool.x, pool.y, pool.radius);
+  g.addColorStop(0, ally ? 'rgba(46, 204, 113, 0)' : 'rgba(231, 76, 60, 0)');
+  g.addColorStop(1, ally ? 'rgba(46, 204, 113, 0.45)' : 'rgba(231, 76, 60, 0.45)');
+  ctx.globalAlpha = a;
+  ctx.beginPath();
+  ctx.arc(pool.x, pool.y, pool.radius, 0, Math.PI * 2);
+  ctx.fillStyle = g;
+  ctx.fill();
+  ctx.lineWidth = 6;
+  ctx.strokeStyle = ally ? 'rgba(46, 204, 113, 1)' : 'rgba(231, 76, 60, 1)';
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawBullet(b) {
+  if (SKIN_TEAM_BULLETS[b.visual]) drawTeamHalo(b); // 스킨 기본공격 탄: 팀 색 후광을 먼저 깔고 그 위에 스킨 모양을 그림
   if (b.boomerang) drawBoomerangGlow(b); // 부메랑 궁극기의 후광/꼬리를 먼저 깔고, 그 위에 원래 모양(피에로/표창)을 그림
   if (b.lob) { drawSlipperBullet(b); return; } // 나이의 실내화 (포물선 투척)
   if (b.visual === 'sysOrb' || b.visual === 'sysThrow') {
@@ -6450,6 +6606,62 @@ function drawBullet(b) {
     return;
   }
 
+  if (b.visual === 'poisonVial') {
+    // 엑헤 독 마법사 스킨 기본공격: 빙글빙글 돌며 날아가는 독병 - 초록 독이 찰랑이는 유리병 + 뒤로 흩날리는 독 방울
+    const spin = (b.maxLife && b.life != null ? (b.maxLife - b.life) : 0) * 9;
+    const ang = Math.atan2(b.vy || 0, b.vx || 1);
+    const r = b.radius;
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.save();
+    ctx.rotate(ang);
+    ctx.fillStyle = 'rgba(120, 255, 60, 0.55)';
+    for (let i = 0; i < 4; i += 1) {
+      const k = i / 4;
+      ctx.beginPath();
+      ctx.arc(-r * (1.2 + k * 2.2), Math.sin(spin * 1.3 + i * 2) * r * (0.3 + k * 0.5), Math.max(1, r * (0.28 - k * 0.15)), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+    ctx.rotate(spin);
+    ctx.shadowColor = 'rgba(120, 255, 60, 0.9)';
+    ctx.shadowBlur = 8;
+    // 병 몸통 (둥근 플라스크) + 독 액체
+    ctx.beginPath();
+    ctx.arc(0, r * 0.2, r * 0.95, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(210, 240, 230, 0.55)';
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(0, r * 0.2, r * 0.9, 0, Math.PI * 2);
+    ctx.clip();
+    const liq = ctx.createLinearGradient(0, -r * 0.3, 0, r * 1.1);
+    liq.addColorStop(0, '#b6ff5a');
+    liq.addColorStop(1, '#2fae1a');
+    ctx.fillStyle = liq;
+    ctx.fillRect(-r, r * 0.1, r * 2, r);
+    ctx.restore();
+    ctx.lineWidth = 1.4;
+    ctx.strokeStyle = 'rgba(240, 255, 245, 0.9)';
+    ctx.beginPath();
+    ctx.arc(0, r * 0.2, r * 0.95, 0, Math.PI * 2);
+    ctx.stroke();
+    // 병목 + 코르크 마개
+    ctx.fillStyle = 'rgba(210, 240, 230, 0.8)';
+    ctx.fillRect(-r * 0.28, -r * 1.05, r * 0.56, r * 0.55);
+    ctx.fillStyle = '#7a4a22';
+    ctx.fillRect(-r * 0.34, -r * 1.3, r * 0.68, r * 0.28);
+    // 해골 표시
+    ctx.fillStyle = '#10200a';
+    ctx.font = `${Math.round(r * 0.9)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('☠', 0, r * 0.35);
+    ctx.restore();
+    return;
+  }
+
   if (b.visual === 'egg') {
     // 엑헤의 계란 던지기 - 깨지면 흰자가 퍼지는 계란
     ctx.save();
@@ -6873,6 +7085,58 @@ function drawBomb(bomb) {
 
 // 지속 지형 효과: 원효대사의 물웅덩이(적 대미지 + 아군 회복) / 여똥이의 똥가루 구름(적에게만 대미지)
 // 엑헤의 계란 흰자: 깨진 계란이 퍼진 웅덩이 (적에게만 대미지)
+// 엑헤 독 마법사 스킨: 독병이 깨진 자리에 퍼지는 독 장판 (범위/지속시간/피해는 흰자와 동일, 모양만 다름). 부글부글 끓는 독 + 떠오르는 독 방울과 해골
+// 테두리 색은 다른 장판처럼 내 팀(초록) / 적(빨강)으로 구분한다.
+function drawPoisonPool(pool) {
+  const isAlly = pool.ownerId === myId || (myTeam && pool.team === myTeam);
+  const stroke = isAlly ? 'rgba(46, 204, 113, 1)' : 'rgba(231, 76, 60, 1)';
+  const t = Date.now() / 1000;
+  const maxLife = pool.maxLife || 1;
+  const age = Math.max(0, maxLife - pool.life);
+  ctx.save();
+  const alpha = Math.max(0.25, Math.min(0.75, pool.life + 0.25));
+  ctx.globalAlpha = alpha;
+  const g = ctx.createRadialGradient(pool.x, pool.y, 1, pool.x, pool.y, pool.radius);
+  g.addColorStop(0, 'rgba(190, 255, 90, 0.95)');
+  g.addColorStop(0.5, 'rgba(90, 200, 40, 0.85)');
+  g.addColorStop(1, 'rgba(70, 40, 120, 0.6)');
+  ctx.beginPath();
+  ctx.arc(pool.x, pool.y, pool.radius, 0, Math.PI * 2);
+  ctx.fillStyle = g;
+  ctx.fill();
+  ctx.globalAlpha = Math.min(1, alpha + 0.3);
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = stroke;
+  ctx.stroke();
+  // 부글부글 올라오는 독 방울
+  ctx.fillStyle = 'rgba(225, 255, 170, 0.85)';
+  for (let i = 0; i < 9; i += 1) {
+    const k = (t * 1.1 + i * 0.37) % 1;
+    const a = i * 2.4;
+    const rr = pool.radius * (0.2 + 0.6 * ((i * 0.29) % 1));
+    ctx.globalAlpha = (1 - k) * Math.min(1, alpha + 0.2);
+    ctx.beginPath();
+    ctx.arc(pool.x + Math.cos(a) * rr, pool.y + Math.sin(a) * rr - k * 14, 2 + k * 4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = Math.min(1, alpha + 0.3);
+  ctx.font = `${Math.min(30, pool.radius * 0.4)}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('☠️', pool.x, pool.y);
+  // 터진 직후: 바깥으로 퍼지는 독 고리
+  if (age < 0.25) {
+    const k = age / 0.25;
+    ctx.globalAlpha = 1 - k;
+    ctx.lineWidth = 5 * (1 - k) + 1;
+    ctx.strokeStyle = '#d6ff8a';
+    ctx.beginPath();
+    ctx.arc(pool.x, pool.y, pool.radius * (0.4 + 0.7 * k), 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function drawEggWhite(pool) {
   const isAlly = pool.ownerId === myId || (myTeam && pool.team === myTeam);
   const stroke = isAlly ? 'rgba(46, 204, 113, 1)' : 'rgba(231, 76, 60, 1)';
@@ -6899,7 +7163,91 @@ function drawEggWhite(pool) {
 }
 
 // 엑헤의 닭 (궁극기로 소환된 자동 추격 유닛)
+// 엑헤 독 마법사 스킨 궁극기: 닭 대신 검은 고양이 (체력/돌진/피해는 닭과 같음). 뾰족한 귀 + 형광 초록 눈 + 수염 + 꼬리. 돌격 중에는 눈이 붉게 번뜩임
+function drawBlackCat(c) {
+  const isAlly = c.ownerId === myId || (myTeam && c.team === myTeam);
+  const peck = c.peckTimer > 0 ? 4 : 0;
+  const R = c.radius;
+  const t = Date.now() / 1000;
+  ctx.save();
+  ctx.translate(c.x, c.y + peck);
+  // 팀 구분 링
+  ctx.beginPath();
+  ctx.arc(0, 0, R + 4, 0, Math.PI * 2);
+  ctx.strokeStyle = isAlly ? '#2ecc71' : '#e74c3c';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+  // 꼬리 (살랑살랑)
+  ctx.strokeStyle = '#14101c';
+  ctx.lineWidth = R * 0.34;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(R * 0.7, R * 0.5);
+  ctx.quadraticCurveTo(R * 1.5, R * 0.3 + Math.sin(t * 5) * R * 0.3, R * 1.25, -R * 0.45 + Math.sin(t * 5) * R * 0.2);
+  ctx.stroke();
+  // 몸통(머리) + 귀
+  ctx.fillStyle = '#17121f';
+  ctx.beginPath();
+  ctx.arc(0, 0, R, 0, Math.PI * 2);
+  ctx.fill();
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(side * R * 0.25, -R * 0.78);
+    ctx.lineTo(side * R * 0.95, -R * 1.25);
+    ctx.lineTo(side * R * 0.92, -R * 0.3);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#5a2a5a'; // 귀 안쪽
+    ctx.beginPath();
+    ctx.moveTo(side * R * 0.45, -R * 0.78);
+    ctx.lineTo(side * R * 0.82, -R * 1.08);
+    ctx.lineTo(side * R * 0.8, -R * 0.45);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#17121f';
+  }
+  // 눈 (형광 초록, 돌격 중에는 붉게) + 세로 눈동자
+  const eye = c.charging ? '#ff4a3a' : '#9dff3a';
+  ctx.shadowColor = eye;
+  ctx.shadowBlur = 6;
+  ctx.fillStyle = eye;
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.ellipse(side * R * 0.38, -R * 0.1, R * 0.22, R * 0.2, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#0c0814';
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.ellipse(side * R * 0.38, -R * 0.1, R * 0.05, R * 0.17, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // 코 + 입 + 수염
+  ctx.fillStyle = '#ff8fb0';
+  ctx.beginPath();
+  ctx.moveTo(-R * 0.08, R * 0.2);
+  ctx.lineTo(R * 0.08, R * 0.2);
+  ctx.lineTo(0, R * 0.3);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(235, 235, 245, 0.8)';
+  ctx.lineWidth = 1;
+  ctx.lineCap = 'round';
+  for (const side of [-1, 1]) {
+    for (const dy of [-0.05, 0.1]) {
+      ctx.beginPath();
+      ctx.moveTo(side * R * 0.3, R * (0.3 + dy));
+      ctx.lineTo(side * R * 0.95, R * (0.28 + dy * 2.2));
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+  drawHpBar(c.x, c.y - c.radius - 17, 52, 11, c.hp, c.maxHp || 1);
+}
+
 function drawChicken(c) {
+  if (c.visual === 'blackCat') { drawBlackCat(c); return; }
   const isAlly = c.ownerId === myId || (myTeam && c.team === myTeam);
   const peck = c.peckTimer > 0 ? 4 : 0; // 쪼는 순간 살짝 튀어나오는 연출
   ctx.save();
@@ -6985,7 +7333,7 @@ function drawFirePool(pool) {
 }
 
 // 여똥이 기가차네 스킨: 얼음이 터진 자리에 퍼지는 냉기 구름 (피해/범위/지속시간은 똥가루 구름과 동일, 모양만 다름)
-// 아군이 만든 구름은 하늘색, 적이 만든 구름은 붉은 기가 도는 보랏빛 테두리로 구분
+// 아군이 만든 구름은 초록, 적이 만든 구름은 빨강 테두리로 구분 (다른 장판과 같은 규칙)
 function drawFrostPool(pool) {
   const isAlly = pool.ownerId === myId || (myTeam && pool.team === myTeam);
   const t = Date.now() / 500;
@@ -7002,7 +7350,7 @@ function drawFrostPool(pool) {
   ctx.fill();
   ctx.globalAlpha = Math.min(1, alpha + 0.4);
   ctx.lineWidth = 3;
-  ctx.strokeStyle = isAlly ? 'rgba(120, 230, 255, 1)' : 'rgba(255, 120, 150, 1)';
+  ctx.strokeStyle = isAlly ? 'rgba(46, 204, 113, 1)' : 'rgba(231, 76, 60, 1)';
   ctx.stroke();
   // 바닥에 번지는 눈꽃 결정 무늬
   ctx.globalAlpha = Math.min(1, alpha + 0.3);
@@ -7030,9 +7378,10 @@ function drawFrostPool(pool) {
 }
 
 function drawWaterPool(pool) {
-  if (pool.visual === 'firePool') { drawFirePool(pool); return; }
+  if (pool.visual === 'firePool') { drawFirePool(pool); drawTeamPoolRing(pool, pool.life + 0.4); return; }
   if (pool.visual === 'eggWhite') { drawEggWhite(pool); return; }
-  if (pool.visual === 'frostPool') { drawFrostPool(pool); return; }
+  if (pool.visual === 'frostPool') { drawFrostPool(pool); drawTeamPoolRing(pool, pool.life + 0.4); return; }
+  if (pool.visual === 'poisonPool') { drawPoisonPool(pool); drawTeamPoolRing(pool, pool.life + 0.4); return; }
   const isPoisonGas = !pool.heal; // heal이 0(또는 없음)이면 회복 효과가 없는 독가스 구름(똥가루)으로 간주
   // 내 팀(자신/아군)이 만든 원은 초록색, 적군이 만든 원은 빨간색으로 구분
   const isAlly = pool.ownerId === myId || (myTeam && pool.team === myTeam);
@@ -7141,6 +7490,22 @@ function drawEffect(e) {
     drawSlipperExplosion(e);
   } else if (e.type === 'leapLand' && e.visual === 'shoot') {
     drawShootLand(e);
+  } else if (e.type === 'shieldPush') {
+    // 엑헤 가젯 '수호의 파동': 보호막이 터지듯 바깥으로 퍼지는 파동 (밀치는 범위 = 반경). 피해는 없음
+    const prog = 1 - Math.max(0, Math.min(1, e.life / (e.maxLife || 0.5)));
+    ctx.save();
+    ctx.globalAlpha = (1 - prog) * 0.9;
+    ctx.lineWidth = 7 * (1 - prog) + 1.5;
+    ctx.strokeStyle = 'rgba(150, 230, 255, 1)';
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, e.radius * (0.25 + 0.75 * prog), 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.globalAlpha = (1 - prog) * 0.35;
+    ctx.fillStyle = 'rgba(120, 200, 255, 1)';
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, e.radius * (0.25 + 0.75 * prog), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   } else if (e.type === 'hyperActivate') {
     // 하이퍼 차지 발동 순간: 보랏빛 충격파가 퍼지고 불꽃 불씨가 사방으로 튐
     const prog = 1 - Math.max(0, Math.min(1, e.life / (e.maxLife || 0.7)));
