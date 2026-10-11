@@ -238,10 +238,14 @@ const CHARACTERS = {
     // 하이퍼 차지: 캐릭터를 최고 레벨(11)까지 키운 뒤 코인으로 획득하는 추가 스킬. 궁극기처럼 기본공격을 적중시켜 게이지를 채우고, 가득 차면 발동한다.
     hyper: {
       name: '하이퍼 차지',
-      duration: 4,              // 지속 시간(초)
+      duration: 5,              // 지속 시간(초)
+      chargeMultiplier: 0.3,    // 게이지 충전량 배율 (0.3 = 궁극기 충전량의 30%, 즉 70% 감소). 발동 중에는 충전되지 않음
       speedMultiplier: 1.2,     // 이동속도 배율 (1.2 = 20% 증가)
       damageMultiplier: 1.2,    // 공격력 배율 (1.2 = 20% 강화)
       damageTakenMultiplier: 0.8, // 받는 피해 배율 (0.8 = 20% 감소)
+      // 발동 중에 궁극기를 쓰면 더 강해짐: 투사체가 outTime초 동안 앞으로 날아갔다가 방향을 바꿔 시전자에게 돌아옴.
+      // 나갈 때와 돌아올 때 모두 적을 관통하며 맞힘 (같은 방향 이동 중에는 한 대상을 한 번만 맞힘). 벽에 닿으면 그 자리에서 되돌아옴
+      ultimateBoomerang: { outTime: 1.2 },
     },
   },
   jigi: {
@@ -1016,10 +1020,11 @@ function getLeveledCharacter(id, level) {
 
 function describeHyper(hy) {
   const pct = (m) => Math.round(Math.abs(m - 1) * 100);
-  return {
-    name: hy.name,
-    desc: `궁극기처럼 기본공격을 적중시켜 게이지를 채우고 발동하면 ${hy.duration}초 동안 이동속도 ${pct(hy.speedMultiplier)}% 증가, 공격력 ${pct(hy.damageMultiplier)}% 강화, 받는 피해 ${pct(hy.damageTakenMultiplier)}% 감소`,
-  };
+  const parts = [];
+  parts.push(`기본공격을 적중시켜 게이지를 채우고(궁극기보다 충전량 ${pct(hy.chargeMultiplier != null ? hy.chargeMultiplier : 1)}% 감소) 발동하면 ${hy.duration}초 동안 이동속도 ${pct(hy.speedMultiplier)}% 증가, 공격력 ${pct(hy.damageMultiplier)}% 강화, 받는 피해 ${pct(hy.damageTakenMultiplier)}% 감소`);
+  parts.push('발동 중에는 하이퍼 차지 게이지가 충전되지 않음');
+  if (hy.ultimateBoomerang) parts.push('발동 중 궁극기를 쓰면 앞으로 날아갔다가 다시 돌아오며, 갈 때와 올 때 모두 적을 맞힘');
+  return { name: hy.name, desc: parts.join('. ') + '.' };
 }
 // 하이퍼 차지를 획득한 캐릭터 id 목록 (하이퍼 스펙이 있는 캐릭터만 인정)
 function ownedHypersOf(u) {
@@ -3068,7 +3073,11 @@ function getDamageTakenMultiplier(p) {
 // 기본공격이 적중했을 때 궁극기 게이지와 하이퍼 차지 게이지를 함께 채움
 function chargeGauges(shooter) {
   shooter.ultimateCharge = Math.min(100, shooter.ultimateCharge + shooter.ultimateChargePerHit);
-  if (shooter.hasHyper) shooter.hyperCharge = Math.min(100, (shooter.hyperCharge || 0) + shooter.ultimateChargePerHit);
+  // 하이퍼 차지 게이지: 궁극기보다 적게 차고(chargeMultiplier), 발동 중에는 충전되지 않음
+  if (shooter.hasHyper && !(shooter.hyperUntil && Date.now() < shooter.hyperUntil)) {
+    const mult = shooter.hyper && shooter.hyper.chargeMultiplier != null ? shooter.hyper.chargeMultiplier : 1;
+    shooter.hyperCharge = Math.min(100, (shooter.hyperCharge || 0) + shooter.ultimateChargePerHit * mult);
+  }
 }
 
 // 총알이 대상에게 줄 기본 피해: 비율형 총알(하트)은 대상의 현재 체력 + 보호막의 비율, 그 외는 고정 피해
@@ -3303,6 +3312,32 @@ function sweptWallHit(walls, b) {
   return false;
 }
 
+// 부메랑 발사체: 나가는 중에는 직진하다가 시간이 다 되거나 벽/맵 끝에 닿으면 방향을 바꾸고,
+// 돌아오는 중에는 시전자의 현재 위치를 향해 날아와서(벽은 통과) 닿으면 사라진다. 방향을 바꿀 때 맞힌 대상 목록을 비워서 돌아올 때 다시 맞힐 수 있게 한다.
+function turnBoomerang(b) {
+  b.phase = 'back';
+  b.hitIds = [];
+  b.pierceWalls = true;
+  b.life = Math.max(b.life, 3); // 돌아오는 동안 사라지지 않도록 충분히 연장 (시전자가 죽으면 아래에서 바로 사라짐)
+}
+function updateBoomerang(match, b, dt) {
+  if (b.phase === 'out') {
+    b.outLeft -= dt;
+    const outOfMap = b.x < 0 || b.x > ARENA_WIDTH || b.y < 0 || b.y > ARENA_HEIGHT;
+    if (outOfMap) { b.x = Math.max(0, Math.min(ARENA_WIDTH, b.x)); b.y = Math.max(0, Math.min(ARENA_HEIGHT, b.y)); }
+    if (!(b.outLeft <= 0 || outOfMap || collidesWithWalls(match.walls, b.x, b.y, b.radius))) return;
+    turnBoomerang(b); // 방향을 바꾼 이 틱부터 바로 시전자 쪽으로 날아가야 함 (속도를 바꾸지 않으면 다음 틱에 맵 밖으로 나가 사라짐) -> 아래 돌아오는 처리로 이어짐
+  }
+  const owner = match.players[b.ownerId];
+  if (!owner || !owner.alive) { b.life = 0; return; }
+  const dx = owner.x - b.x, dy = owner.y - b.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist < PLAYER_RADIUS + b.radius) { b.life = 0; return; } // 시전자에게 돌아옴
+  const sp = b.baseSpeed || 500;
+  b.vx = (dx / dist) * sp;
+  b.vy = (dy / dist) * sp;
+}
+
 function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
   // 해골물(원효대사) 스킨: 터진 뒤 남는 웅덩이 모양도 스킨에 따라 바뀜 (스킨이 없으면 spec 그대로)
   // 여똥이 스킨(기가차네): 똥가루 구름도 냉기 구름으로 바뀜
@@ -3343,7 +3378,12 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
       launchDuration: spec.launchDuration || 0, // 0보다 크면 맞은 적을 이 시간(초) 동안 하늘로 띄움 (시스템의 궁극기)
       landDamage: spec.landDamage || 0,         // 띄워진 적이 땅에 떨어질 때 받는 피해
       pierceTargets: !!spec.pierceTargets,      // true면 적을 맞혀도 사라지지 않고 계속 날아가 여러 명을 맞힘
-      hitIds: spec.pierceTargets ? [] : null,   // 관통 발사체가 이미 맞힌 대상 (같은 대상을 두 번 띄우지 않기 위함. 배열이어야 클라이언트로 전송 가능)
+      hitIds: spec.pierceTargets || spec.boomerang ? [] : null,   // 관통 발사체가 이미 맞힌 대상 (같은 대상을 두 번 띄우지 않기 위함. 배열이어야 클라이언트로 전송 가능)
+      // 부메랑(하이퍼 차지 발동 중 미남의 궁극기): outLeft초 동안 앞으로 날아간 뒤 방향을 바꿔 시전자에게 돌아옴 (updateMatch 의 총알 이동에서 처리)
+      boomerang: !!spec.boomerang,
+      phase: spec.boomerang ? 'out' : null, // 'out'(나가는 중) / 'back'(돌아오는 중)
+      outLeft: spec.boomerang ? (spec.boomerangOutTime || 1.2) : 0,
+      baseSpeed: spec.speed,
       pierceWalls: !!spec.pierceWalls, // 성스럽다의 칼 던지기처럼 벽(장애물)을 무시하고 통과하는 발사체
       // 원효대사의 해골물 뿌리기처럼 벽/적에 닿으면 물웅덩이를 생성하는 발사체를 위한 부가 정보
       poolOnImpact: !!spec.poolOnImpact,
@@ -4509,7 +4549,13 @@ function registerGameplayHandlers(socket) {
       performMeleeAttack(match, p, ult, true);
     } else {
       // 조준한 방향으로 날아가는 궁극기 (예: 피에로 발사, 메가 샷건)
-      spawnProjectiles(match, p, ult, true);
+      // 하이퍼 차지 발동 중이면 더 강해짐: 앞으로 날아갔다가 다시 돌아오는 부메랑 궁극기 (미남)
+      const hyperOn = p.hasHyper && p.hyper && p.hyper.ultimateBoomerang && p.hyperUntil && Date.now() < p.hyperUntil;
+      if (hyperOn && ult.type === 'projectile') {
+        spawnProjectiles(match, p, { ...ult, boomerang: true, boomerangOutTime: p.hyper.ultimateBoomerang.outTime }, true);
+      } else {
+        spawnProjectiles(match, p, ult, true);
+      }
     }
 
     if (!match.over) p.ultimateCharge = 0;
@@ -4830,6 +4876,7 @@ function updateMatch(match, dt, now) {
     b.x += b.vx * dt;
     b.y += b.vy * dt;
     b.life -= dt;
+    if (b.boomerang) updateBoomerang(match, b, dt);
     if (b.lob) {
       // 포물선 투척(나이의 실내화): 지면 위치를 시작점에서 착지점까지 직선 보간 (높이는 클라이언트가 그림)
       const t = 1 - Math.max(0, b.life) / b.maxLife;
@@ -4895,6 +4942,12 @@ function updateMatch(match, dt, now) {
       const dist = bulletDistTo(b, target.x, target.y); // sweep 발사체는 이동 경로(선분)까지의 거리, 아니면 현재 위치까지의 거리
 
       if (dist < PLAYER_RADIUS + b.radius) {
+        if (b.boomerang) {
+          // 부메랑: 적을 맞혀도 사라지지 않고 계속 날아감. 한 방향(나가는 중/돌아오는 중)에서는 한 대상을 한 번만 맞힘
+          applyDamage(match, target, bulletDamageFor(b, target), b.ownerId, { chargeShooter: false });
+          b.hitIds.push(pid);
+          continue;
+        }
         if (b.launchDuration > 0) {
           // 시스템의 거대 소용돌이: 적중 즉시 피해는 없고 하늘로 띄움. 관통형이면 사라지지 않고 계속 날아감
           launchTarget(match, target, b);
@@ -4946,8 +4999,15 @@ function updateMatch(match, dt, now) {
 
     for (const turret of match.turrets) {
       if (!FRIENDLY_FIRE && turret.team === b.team) continue; // 아군 총알은 자신의 터렛을 통과함
+      if (b.boomerang && b.hitIds.includes(`t${turret.id}`)) continue;
 
       if (bulletDistTo(b, turret.x, turret.y) < turret.radius + b.radius) {
+        if (b.boomerang) {
+          // 부메랑은 터렛도 관통: 방향마다 한 번씩 피해
+          turret.hp -= bulletDamageFor(b, turret) * getDamageMultiplier(match.players[b.ownerId]);
+          b.hitIds.push(`t${turret.id}`);
+          continue;
+        }
         hitBulletIds.add(b.id);
         if (b.explodeDamage > 0) {
           explodePoopBomb(match, b); // 폭탄 똥: 터렛에 닿으면 폭발
@@ -4976,7 +5036,13 @@ function updateMatch(match, dt, now) {
     for (const chicken of match.chickens) {
       if (chicken.hp <= 0) continue;
       if (!FRIENDLY_FIRE && chicken.team === b.team) continue;
+      if (b.boomerang && b.hitIds.includes(`c${chicken.id}`)) continue;
       if (bulletDistTo(b, chicken.x, chicken.y) < chicken.radius + b.radius) {
+        if (b.boomerang) {
+          chicken.hp -= bulletDamageFor(b, chicken) * getDamageMultiplier(match.players[b.ownerId]);
+          b.hitIds.push(`c${chicken.id}`);
+          continue;
+        }
         hitBulletIds.add(b.id);
         if (b.explodeDamage > 0) {
           explodePoopBomb(match, b); // 폭탄 똥: 닭에 닿으면 폭발
