@@ -268,6 +268,16 @@ const CHARACTERS = {
       strikeRadius: 60,      // 번개 한 발의 피격 반경
       areaRadius: 220,       // 시전자로부터 번개가 떨어지는 고정 거리 (원형으로 균등 배치)
     },
+    // 하이퍼 차지: 캐릭터를 최고 레벨(11)까지 키운 뒤 코인으로 획득하는 추가 스킬. 기본공격을 적중시켜 게이지를 채우고, 가득 차면 발동한다.
+    hyper: {
+      name: '하이퍼 차지',
+      duration: 5,              // 지속 시간(초)
+      chargeMultiplier: 0.45,   // 게이지 충전량 배율 (0.45 = 궁극기 충전량의 45%). 발동 중에는 충전되지 않음
+      speedMultiplier: 1.25,    // 이동속도 배율 (1.25 = 25% 증가)
+      damageMultiplier: 1.25,   // 공격력 배율 (1.25 = 25% 강화)
+      damageTakenMultiplier: 0.95, // 받는 피해 배율 (0.95 = 5% 감소)
+      ultimateStrikeCount: 10,  // 발동 중에 궁극기(벼락지기)를 쓰면 번개가 5개 대신 이만큼 떨어짐
+    },
     gadget: {
       name: '탄창 충전',
       type: 'reloadAmmo',   // 조준 불필요, 즉시 탄창을 가득 채움
@@ -978,7 +988,7 @@ function describeGadget(g) {
 // 밸런스 기준: 11레벨 = 체력 +35%, 공격력 +30%. (1레벨 상대로 맞붙으면 약 1.75배 유리 -> 실력으로 뒤집을 수 있는 수준)
 // 레벨 1->11 강화 총비용은 2,720코인 (1:1 승리 보상 45코인 기준 약 60승). 수치를 바꾸고 싶으면 이 표만 고치면 된다.
 const MAX_CHARACTER_LEVEL = 11;
-// 하이퍼 차지(추가 스킬): 최고 레벨을 찍은 캐릭터가 코인으로 획득. hyper 스펙이 있는 캐릭터에만 존재한다. (현재는 미남만)
+// 하이퍼 차지(추가 스킬): 최고 레벨을 찍은 캐릭터가 코인으로 획득. hyper 스펙이 있는 캐릭터에만 존재한다. (현재는 미남, 지기)
 const HYPER_PRICE = 1000;
 const HYPER_REQUIRED_LEVEL = MAX_CHARACTER_LEVEL;
 const LEVEL_TABLE = [
@@ -1045,6 +1055,7 @@ function describeHyper(hy) {
   parts.push(`기본공격을 적중시켜 게이지를 채우고(궁극기보다 충전량 ${pct(hy.chargeMultiplier != null ? hy.chargeMultiplier : 1)}% 감소) 발동하면 ${hy.duration}초 동안 이동속도 ${pct(hy.speedMultiplier)}% 증가, 공격력 ${pct(hy.damageMultiplier)}% 강화, 받는 피해 ${pct(hy.damageTakenMultiplier)}% 감소`);
   parts.push('발동 중에는 하이퍼 차지 게이지가 충전되지 않음');
   if (hy.ultimateBoomerang) parts.push('발동 중 궁극기를 쓰면 앞으로 날아갔다가 다시 돌아오며, 갈 때와 올 때 모두 적을 맞힘');
+  if (hy.ultimateStrikeCount) parts.push(`발동 중 궁극기를 쓰면 번개가 ${hy.ultimateStrikeCount}개 떨어짐`);
   return { name: hy.name, desc: parts.join('. ') + '.' };
 }
 // 하이퍼 차지를 획득한 캐릭터 id 목록 (하이퍼 스펙이 있는 캐릭터만 인정)
@@ -1251,6 +1262,33 @@ const SKINS = {
     // egg(기본공격 발사체)를 독병으로, eggWhite(터진 뒤 퍼지는 흰자)를 독 장판으로, chicken(궁극기 소환수)을 검은 고양이로 바꿈. 피해/범위/지속시간/체력은 그대로
     visuals: { egg: 'poisonVial', eggWhite: 'poisonPool', chicken: 'blackCat' },
   },
+  uphal_magma: {
+    id: 'uphal_magma',
+    characterId: 'uphal',
+    name: '마그마',
+    price: SKIN_PRICE,
+    desc: '용암을 두른 화산 거인으로 변신! 뿔 달린 현무암 갑옷과 이글거리는 용암 망치를 들고, 내려칠 준비를 하면 망치가 달아오르며, 지진은 땅이 갈라져 용암과 불기둥이 솟구치는 화산 폭발이 돼요. (외형만 바뀌고 성능은 그대로예요)',
+    // quake(기본공격/궁극기 지진 연출)를 용암 균열 + 불기둥으로 바꿈. 피해/범위/기절/선딜은 그대로
+    visuals: { quake: 'magmaQuake' },
+  },
+  mocha_shadow: {
+    id: 'mocha_shadow',
+    characterId: 'mocha',
+    name: '섀도우',
+    price: SKIN_PRICE,
+    desc: '붉은 눈이 빛나는 그림자 암살자로 변신! 양손 찌르기는 진홍빛 쌍검이 잔상과 초승달 검기를 남기고, 도약 강습은 어둠 속을 가르며 날아가 착지하면 그림자 가시가 사방으로 터져요. (외형만 바뀌고 성능은 그대로예요)',
+    // stab(기본공격 찌르기 연출)을 진홍 쌍검으로, leapLand(궁극기 착지 연출)를 그림자 폭발로 바꿈. 피해/범위/사거리/점프 거리는 그대로
+    visuals: { stab: 'shadowStab', leapLand: 'shadowLand' },
+  },
+  gwari_car: {
+    id: 'gwari_car',
+    characterId: 'gwari',
+    name: '자동차',
+    price: SKIN_PRICE,
+    desc: '겉모습이 빨간 스포츠카로 변해요! 기본공격 돌진은 타이어 자국과 불꽃을 남기며 질주하는 드리프트 돌진이 되고, 궁극기는 고추 대신 타이어 3개가 굴러가요. (외형만 바뀌고 성능은 그대로예요)',
+    // chili(궁극기 발사체)를 타이어로, dash(기본공격 돌진 연출)를 자동차 질주로 바꿈. 피해/속도/사거리/돌진 거리는 그대로
+    visuals: { chili: 'tire', dash: 'carDash' },
+  },
   yeoddongi_gigachanne: {
     id: 'yeoddongi_gigachanne',
     characterId: 'yeoddongi',
@@ -1445,6 +1483,39 @@ function repeatMissionsView(u) {
 // id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
+  {
+    id: '2026-10-11-uphal-magma',
+    date: '2026-10-11',
+    tag: 'new',
+    title: '업할 스킨 [마그마] 추가!',
+    items: [
+      '업할의 새 스킨 [마그마]가 상점에 나왔어요. 뿔 달린 현무암 갑옷에 용암이 흐르는 화산 거인으로 변신해요.',
+      '지진을 내려칠 준비를 하면 용암 망치가 점점 달아오르고, 지진이 터지면 땅이 갈라지며 용암 균열과 불기둥이 솟구쳐요. 궁극기는 더 크고 많은 불기둥이 터져요.',
+      '(외형만 바뀌고 성능은 그대로예요)',
+    ],
+  },
+  {
+    id: '2026-10-11-mocha-shadow',
+    date: '2026-10-11',
+    tag: 'new',
+    title: '모카 스킨 [섀도우] 추가!',
+    items: [
+      '모카의 새 스킨 [섀도우]가 상점에 나왔어요. 붉은 눈이 빛나는 그림자 암살자로 변신해요.',
+      '양손 찌르기는 진홍빛 쌍검이 잔상과 초승달 검기를 남기고, 도약 강습은 어둠 속을 가르며 날아가 착지하면 그림자 가시가 터져요.',
+      '(외형만 바뀌고 성능은 그대로예요)',
+    ],
+  },
+  {
+    id: '2026-10-11-gwari-car',
+    date: '2026-10-11',
+    tag: 'new',
+    title: '꽈리 스킨 [자동차] 추가!',
+    items: [
+      '꽈리의 새 스킨 [자동차]가 상점에 나왔어요. 겉모습이 빨간 스포츠카로 바뀌어요.',
+      '기본공격 돌진은 타이어 자국, 불꽃, 먼지를 남기며 질주하는 연출로 바뀌어요.',
+      '궁극기는 고추 대신 타이어 3개가 굴러가요. (외형만 바뀌고 성능은 그대로예요)',
+    ],
+  },
   {
     id: '2026-10-11-nai-gadget',
     date: '2026-10-11',
@@ -3245,7 +3316,7 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
 const SLIPPER_EXPLOSION_LIFE = 0.7;   // 실내화 폭발 이펙트가 화면에 남는 시간(초)
 const POOP_BOMB_EXPLOSION_LIFE = 0.75; // 폭탄 똥 폭발 이펙트가 화면에 남는 시간(초) - 피해 판정은 폭발 즉시 끝나고, 이 시간은 연출용
 // ===== 반사 방어막 (나이의 가젯) =====
-const REFLECT_PAD = 12; // 반사 방어막이 몸 바깥으로 얼마나(px) 나와 있는지 (클라이언트가 그리는 방어막 크기와 같음)
+const REFLECT_PAD = 20; // 반사 방어막이 몸 바깥으로 얼마나(px) 나와 있는지 (클라이언트가 그리는 방어막 크기와 같음)
 const isReflecting = (p) => !!p && !!p.reflectUntil && Date.now() < p.reflectUntil;
 
 // 적의 투사체를 튕겨냄: 방향을 반대로 바꾸고, 투사체의 주인/팀을 방어막 주인으로 바꿔서
@@ -4341,6 +4412,11 @@ function registerGameplayHandlers(socket) {
       p.dashTimeLeft = p.basic.duration;
       p.dashTotal = p.dashTimeLeft; // 돌진 속도 곡선(처음 빠르고 점점 느려짐)을 계산하기 위한 전체 시간
       p.dashHitIds = []; // 이번 돌진에서 이미 맞힌 대상 (관통 돌진이 같은 적을 두 번 때리지 않도록)
+      if (skinVisual(p, 'dash') === 'carDash') {
+        // 자동차 스킨: 타이어 자국/불꽃/먼지를 그리는 돌진 연출 (연출만, 성능은 그대로)
+        effectIdCounter += 1;
+        match.effects.push({ id: effectIdCounter, type: 'carDash', ownerId: p.id, x: p.x, y: p.y, angle: p.angle, dist: Math.round(p.basic.speed * p.basic.duration), life: 0.8, maxLife: 0.8 });
+      }
     } else if (p.basic.type === 'lob') {
       // 나이의 실내화 던지기: 조준한 거리(클라이언트가 보낸 distance, 서버가 범위 제한)만큼 포물선으로 던짐
       spawnLob(match, p, p.basic, data && data.distance);
@@ -4539,8 +4615,12 @@ function registerGameplayHandlers(socket) {
     if (ult.type === 'lightning') {
       // 자신 주변에 고정된 간격으로 원형 배치된 위치에 번개를 여러 발 떨어뜨림 (조준 불필요)
       const angleOffset = Math.random() * Math.PI * 2; // 매번 같은 모양이 반복되지 않도록 전체 패턴만 회전
-      for (let i = 0; i < ult.strikeCount; i++) {
-        const angle = angleOffset + (Math.PI * 2 * i) / ult.strikeCount;
+      // 하이퍼 차지 발동 중이면 번개가 더 많이 떨어짐 (지기). 번개가 촘촘해져서 겹치므로, 한 대상은 이번 궁극기에서 한 번만 맞음
+      const hyperStrikes = p.hasHyper && p.hyper && p.hyper.ultimateStrikeCount && p.hyperUntil && Date.now() < p.hyperUntil ? p.hyper.ultimateStrikeCount : 0;
+      const strikeCount = hyperStrikes || ult.strikeCount;
+      const struckIds = new Set();
+      for (let i = 0; i < strikeCount; i++) {
+        const angle = angleOffset + (Math.PI * 2 * i) / strikeCount;
         const dist = ult.areaRadius;
         const sx = Math.max(0, Math.min(ARENA_WIDTH, p.x + Math.cos(angle) * dist));
         const sy = Math.max(0, Math.min(ARENA_HEIGHT, p.y + Math.sin(angle) * dist));
@@ -4555,10 +4635,12 @@ function registerGameplayHandlers(socket) {
           const target = match.players[pid];
           if (!target.alive) continue;
           if (!FRIENDLY_FIRE && target.team === p.team) continue; // 아군은 맞지 않음
+          if (struckIds.has(pid)) continue; // 이미 이번 궁극기의 번개에 맞은 대상
 
           const ddx = target.x - sx;
           const ddy = target.y - sy;
           if (Math.sqrt(ddx * ddx + ddy * ddy) < PLAYER_RADIUS + ult.strikeRadius) {
+            struckIds.add(pid);
             applyDamage(match, target, ult.damage, socket.id, { chargeShooter: false });
             if (match.over) break;
           }
@@ -4692,7 +4774,10 @@ function updateMatch(match, dt, now) {
     if (p.stunnedUntil === p.leapEndsAt) p.stunnedUntil = 0; // 점프 때문에 걸어둔 입력 차단만 해제 (다른 기절은 유지)
 
     effectIdCounter += 1;
-    match.effects.push({ id: effectIdCounter, type: 'leapLand', visual: p.leapStun > 0 ? 'shoot' : undefined, x: p.x, y: p.y, radius: p.leapRadius, life: p.leapStun > 0 ? 0.6 : EFFECT_LIFETIME, maxLife: p.leapStun > 0 ? 0.6 : undefined });
+    const landSkinVisual = skinVisual(p, 'leapLand'); // 스킨이 있으면 착지 연출이 바뀜 (모카 섀도우). 스킨이 없으면 'leapLand' 그대로라서 기본 연출
+    const landVisual = p.leapStun > 0 ? 'shoot' : (landSkinVisual !== 'leapLand' ? landSkinVisual : undefined);
+    const landLife = p.leapStun > 0 ? 0.6 : (landVisual ? 0.7 : EFFECT_LIFETIME);
+    match.effects.push({ id: effectIdCounter, type: 'leapLand', visual: landVisual, x: p.x, y: p.y, radius: p.leapRadius, life: landLife, maxLife: landVisual ? landLife : undefined });
 
     for (const tid in match.players) {
       if (tid === pid) continue;
