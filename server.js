@@ -239,7 +239,7 @@ const CHARACTERS = {
     hyper: {
       name: '하이퍼 차지',
       duration: 5,              // 지속 시간(초)
-      chargeMultiplier: 0.3,    // 게이지 충전량 배율 (0.3 = 궁극기 충전량의 30%, 즉 70% 감소). 발동 중에는 충전되지 않음
+      chargeMultiplier: 0.45,   // 게이지 충전량 배율 (0.45 = 궁극기 충전량의 45%, 즉 55% 감소. 기존 0.3에서 50% 증가). 발동 중에는 충전되지 않음
       speedMultiplier: 1.2,     // 이동속도 배율 (1.2 = 20% 증가)
       damageMultiplier: 1.2,    // 공격력 배율 (1.2 = 20% 강화)
       damageTakenMultiplier: 0.8, // 받는 피해 배율 (0.8 = 20% 감소)
@@ -522,6 +522,14 @@ const CHARACTERS = {
       radius: 16,
       duration: 8,           // 닭이 남아있는 시간(초)
     },
+    gadget: {
+      name: '수호의 파동',
+      type: 'shieldPush',    // 조준 불필요, 즉시 발동. 피해를 막는 보호막을 두르고, 주변의 적을 바깥으로 밀쳐냄 (피해는 주지 않음)
+      instant: true,
+      shieldHp: 2000,        // 보호막이 흡수하는 피해량 (다 막으면 사라짐)
+      pushRadius: 190,       // 이 거리 안에 있는 적을 밀쳐냄
+      pushDistance: 210,     // 밀려나는 거리(px). 시전자에서 멀어지는 방향으로 밀림
+    },
   },
   gwari: {
     id: 'gwari',
@@ -768,6 +776,7 @@ const fmtNum = (n) => Number(n).toLocaleString('en-US');
 const fmtMult = (n) => String(Math.round(n * 100) / 100);
 const rangeOf = (spec) => (spec.speed && spec.lifetime ? Math.round(spec.speed * spec.lifetime) : 0);
 
+const gadgetRangeFor = (g) => (g.pushRadius || 150) * 0.9; // 밀치기 가젯을 AI가 쓸 거리
 function describeBasic(b) {
   const parts = [];
   let damage = null;
@@ -939,6 +948,9 @@ function describeGadget(g) {
       break;
     case 'powerCharge':
       desc = `${g.chargeTime}초 동안 이동/공격 불가 상태가 되지만, 이후 ${g.boostDuration}초 동안 공격력 ${fmtMult(g.damageMultiplier)}배`;
+      break;
+    case 'shieldPush':
+      desc = `${fmtNum(g.shieldHp)} 피해를 막아주는 보호막을 두르고, 반경 ${g.pushRadius} 안의 적을 ${g.pushDistance}px 밀쳐냄 (피해는 주지 않음)`;
       break;
     case 'poopBomb': {
       const r = rangeOf(g);
@@ -1220,6 +1232,15 @@ const SKINS = {
     desc: '순한맛 라면으로 변신! 기본공격은 보배 대신 라면 스프가 날아가고, 궁극기는 폭탄 대신 보글보글 물이 끓는 냄비가 나와 뜨거운 물이 퍼져요. (외형만 바뀌고 성능은 그대로예요)',
     // bobae(기본공격 발사체)를 라면 스프 봉지로, bobaeBomb(궁극기 설치물)을 끓는 냄비로 바꿈. 피해/속도/사거리/범위/지속시간은 그대로
     visuals: { bobae: 'ramenSoup', bobaeBomb: 'ramenPot' },
+  },
+  ekhe_poison: {
+    id: 'ekhe_poison',
+    characterId: 'ekhe',
+    name: '독 마법사',
+    price: SKIN_PRICE,
+    desc: '사악한 독 마법사로 변신! 기본공격은 계란 대신 독이 나가 독이 퍼지고, 궁극기는 닭 대신 검은 고양이가 나와요. (외형만 바뀌고 성능은 그대로예요)',
+    // egg(기본공격 발사체)를 독병으로, eggWhite(터진 뒤 퍼지는 흰자)를 독 장판으로, chicken(궁극기 소환수)을 검은 고양이로 바꿈. 피해/범위/지속시간/체력은 그대로
+    visuals: { egg: 'poisonVial', eggWhite: 'poisonPool', chicken: 'blackCat' },
   },
   yeoddongi_gigachanne: {
     id: 'yeoddongi_gigachanne',
@@ -3343,7 +3364,8 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
   // 여똥이 스킨(기가차네): 똥가루 구름도 냉기 구름으로 바뀜
   const poolSkinKey = spec.type === 'skullwater' ? 'skullWater' : spec.type === 'poopgas' ? 'poopGas' : null;
   const skinPoolVisual = poolSkinKey ? skinVisual(p, poolSkinKey) : null;
-  const poolVisual = skinPoolVisual && skinPoolVisual !== poolSkinKey ? skinPoolVisual : spec.poolVisual;
+  let poolVisual = skinPoolVisual && skinPoolVisual !== poolSkinKey ? skinPoolVisual : spec.poolVisual;
+  if (poolVisual && !poolSkinKey) poolVisual = skinVisual(p, poolVisual); // 엑헤 독 마법사 스킨: 흰자(eggWhite) 대신 독 장판
   const pelletCount = spec.pelletCount || 1;
   const spreadRad = ((spec.spreadDegrees || 0) * Math.PI) / 180;
   const halfSpread = spreadRad / 2;
@@ -3539,6 +3561,7 @@ function spawnChicken(match, p, spec) {
   chickenIdCounter += 1;
   match.chickens.push({
     id: chickenIdCounter,
+    visual: skinVisual(p, 'chicken'), // 스킨이 있으면 닭 대신 다른 모습(검은 고양이)이 나옴 (체력/피해/속도는 그대로)
     ownerId: p.id,
     team: p.team,
     x: p.x + Math.cos(p.angle) * (PLAYER_RADIUS + spec.radius + 6),
@@ -4361,6 +4384,30 @@ function registerGameplayHandlers(socket) {
       // 슈의 가젯: shieldHp만큼 피해를 막는 보호막 (재사용 시 남은 양이 아니라 새로 shieldHp로 채워짐)
       p.shieldHp = gadget.shieldHp || 1000;
       p.shieldMax = p.shieldHp;
+    } else if (gadget.type === 'shieldPush') {
+      // 엑헤의 가젯: 보호막을 두르고(재사용 시 새로 shieldHp로 채워짐), 주변의 적을 시전자에게서 멀어지는 방향으로 밀쳐냄. 피해/기절은 없음
+      p.shieldHp = gadget.shieldHp || 2000;
+      p.shieldMax = p.shieldHp;
+      const now = Date.now();
+      for (const pid in match.players) {
+        if (pid === p.id) continue;
+        const target = match.players[pid];
+        if (!target.alive || target.leaping || target.airborneTimeLeft > 0) continue; // 점프/공중 상태인 대상은 영향 없음
+        if (!FRIENDLY_FIRE && target.team === p.team) continue; // 아군은 밀치지 않음
+        if (target.invincibleUntil && now < target.invincibleUntil) continue; // 무적이면 밀리지 않음
+        const dx = target.x - p.x, dy = target.y - p.y;
+        const dist = Math.hypot(dx, dy);
+        if (dist >= PLAYER_RADIUS + gadget.pushRadius) continue;
+        const nx = dist > 0.001 ? dx / dist : Math.cos(p.angle);
+        const ny = dist > 0.001 ? dy / dist : Math.sin(p.angle);
+        target.knockbackDirX = nx;
+        target.knockbackDirY = ny;
+        target.knockbackDistance = gadget.pushDistance;
+        target.knockbackTimeLeft = KNOCKBACK_DURATION;
+        target.knockbackTotalTime = KNOCKBACK_DURATION;
+      }
+      effectIdCounter += 1;
+      match.effects.push({ id: effectIdCounter, type: 'shieldPush', ownerId: p.id, x: p.x, y: p.y, radius: gadget.pushRadius, life: 0.5, maxLife: 0.5 }); // 퍼져나가는 파동 연출
     } else if (gadget.type === 'invincible') {
       // 슈의 가젯: duration초 동안 무적 (재사용 시 남은 시간이 아니라 새로 duration초로 갱신)
       p.invincibleUntil = Date.now() + (gadget.duration || 1.5) * 1000;
@@ -5682,6 +5729,7 @@ function runAiBot(match, botId, ai, dt, now) {
       const gr = g.speed && g.lifetime ? g.speed * g.lifetime : 350;
       use = offensiveOK && !!target && dist < gr * 0.9;
     } else if (g.type === 'powerCharge') use = (mode === 'fight' || mode === 'chase') && !!target && dist < 400;
+    else if (g.type === 'shieldPush') use = !!target && dist < gadgetRangeFor(g) && mode !== 'hide'; // 적이 파동 범위 안에 있을 때만 사용
     else if (g.type === 'speedBoost' || g.type === 'sprint' || g.type === 'invincible' || g.type === 'shield') {
       use = !!target && dist < (escaping ? 600 : 400) && mode !== 'hide'; // 도망칠 때 탈출용으로 사용
       if (use && g.type === 'sprint' && mode === 'flee' && (moveX || moveY)) {
