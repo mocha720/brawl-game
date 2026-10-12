@@ -319,6 +319,16 @@ const CHARACTERS = {
       instant: true,        // true면 누르는 즉시 발동
       shieldHp: 2500,       // 보호막이 막아주는 피해량 (기존 1000에서 변경). 다 소모되면 보호막이 사라지고, 다시 쓰면 2500으로 새로 채워짐
     },
+    // 하이퍼 차지: 캐릭터를 최고 레벨(11)까지 키운 뒤 코인으로 획득하는 추가 스킬. 기본공격을 적중시켜 게이지를 채우고, 가득 차면 발동한다.
+    hyper: {
+      name: '하이퍼 차지',
+      duration: 5,              // 지속 시간(초)
+      chargeMultiplier: 0.45,   // 게이지 충전량 배율 (0.45 = 궁극기 충전량의 45%). 발동 중에는 충전되지 않음
+      speedMultiplier: 1.1,     // 이동속도 배율 (1.1 = 10% 증가)
+      damageMultiplier: 1.25,   // 공격력 배율 (1.25 = 25% 강화)
+      damageTakenMultiplier: 0.9, // 받는 피해 배율 (0.9 = 10% 감소)
+      rangeMultiplier: 1.2,     // 발동 중 기본공격/궁극기 사거리 배율 (1.2 = 20% 증가). 발사체의 수명(lifetime)이 늘어나서 더 멀리 날아감
+    },
   },
   wonhyo: {
     id: 'wonhyo',
@@ -988,7 +998,7 @@ function describeGadget(g) {
 // 밸런스 기준: 11레벨 = 체력 +35%, 공격력 +30%. (1레벨 상대로 맞붙으면 약 1.75배 유리 -> 실력으로 뒤집을 수 있는 수준)
 // 레벨 1->11 강화 총비용은 2,720코인 (1:1 승리 보상 45코인 기준 약 60승). 수치를 바꾸고 싶으면 이 표만 고치면 된다.
 const MAX_CHARACTER_LEVEL = 11;
-// 하이퍼 차지(추가 스킬): 최고 레벨을 찍은 캐릭터가 코인으로 획득. hyper 스펙이 있는 캐릭터에만 존재한다. (현재는 미남, 지기)
+// 하이퍼 차지(추가 스킬): 최고 레벨을 찍은 캐릭터가 코인으로 획득. hyper 스펙이 있는 캐릭터에만 존재한다. (현재는 미남, 지기, 슈)
 const HYPER_PRICE = 1000;
 const HYPER_REQUIRED_LEVEL = MAX_CHARACTER_LEVEL;
 const LEVEL_TABLE = [
@@ -1056,6 +1066,7 @@ function describeHyper(hy) {
   parts.push('발동 중에는 하이퍼 차지 게이지가 충전되지 않음');
   if (hy.ultimateBoomerang) parts.push('발동 중 궁극기를 쓰면 앞으로 날아갔다가 다시 돌아오며, 갈 때와 올 때 모두 적을 맞힘');
   if (hy.ultimateStrikeCount) parts.push(`발동 중 궁극기를 쓰면 번개가 ${hy.ultimateStrikeCount}개 떨어짐`);
+  if (hy.rangeMultiplier) parts.push(`발동 중 기본공격과 궁극기 사거리 ${pct(hy.rangeMultiplier)}% 증가`);
   return { name: hy.name, desc: parts.join('. ') + '.' };
 }
 // 하이퍼 차지를 획득한 캐릭터 id 목록 (하이퍼 스펙이 있는 캐릭터만 인정)
@@ -3496,6 +3507,9 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
   const pelletCount = spec.pelletCount || 1;
   const spreadRad = ((spec.spreadDegrees || 0) * Math.PI) / 180;
   const halfSpread = spreadRad / 2;
+  // 하이퍼 차지 발동 중 사거리 증가 (슈): 속도는 그대로 두고 수명을 늘려서 더 멀리 날아가게 함 (기본공격/궁극기 모두 적용)
+  const hyperRange = p.hasHyper && p.hyper && p.hyper.rangeMultiplier && p.hyperUntil && Date.now() < p.hyperUntil ? p.hyper.rangeMultiplier : 1;
+  const bulletLife = spec.lifetime * hyperRange;
 
   for (let i = 0; i < pelletCount; i++) {
     const angleOffset = pelletCount > 1 ? -halfSpread + (spreadRad * i) / (pelletCount - 1) : 0;
@@ -3516,8 +3530,8 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
       vy: Math.sin(angle) * spec.speed,
       ownerId: p.id,
       team: p.team,
-      life: spec.lifetime,
-      maxLife: spec.lifetime, // 처음 수명 (폭탄 똥이 터지기 직전에 더 빠르게 깜빡이는 연출용)
+      life: bulletLife,
+      maxLife: bulletLife, // 처음 수명 (폭탄 똥이 터지기 직전에 더 빠르게 깜빡이는 연출용)
       damage: spec.damage,
       executeBelowHp: spec.executeBelowHp || 0, // 0보다 크면 맞은 대상의 현재 체력이 이 값 이하일 때 즉사 (진우Park의 하트)
       currentHpRatio: spec.currentHpRatio || 0, // 0보다 크면 고정 피해 대신 대상 현재 체력(+보호막)의 비율만큼 피해 (진우Park의 하트)
