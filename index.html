@@ -9278,6 +9278,8 @@ function drawAimRangeIndicator() {
     return;
   }
 
+  if (me.hyperLeft > 0 && me.hyper && me.hyper.rangeMultiplier) range *= me.hyper.rangeMultiplier; // 하이퍼 차지 발동 중 사거리 증가 (슈)
+
   const endX = me.x + Math.cos(touchAimAngle) * range;
   const endY = me.y + Math.sin(touchAimAngle) * range;
 
