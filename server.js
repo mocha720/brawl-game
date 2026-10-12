@@ -521,9 +521,9 @@ const CHARACTERS = {
       poolRadius: 85,       // 흰자가 퍼지는 반경
       poolLifetime: 1,       // 퍼진 계란이 유지되는 시간(초)
       poolTickInterval: 0.2, // 0.2초마다 대미지 적용
-      poolDamage: 300,      // 흰자에 닿은 적이 주기(0.2초)마다 입는 대미지
+      poolDamage: 180,      // 흰자에 닿은 적이 주기(0.2초)마다 입는 대미지 (기존 300에서 40% 감소)
       poolHeal: 0,          // 아군/자신에게는 아무 효과 없음
-      directDamage: 1200,   // 계란에 직접 맞았을 때의 대미지
+      directDamage: 720,    // 계란에 직접 맞았을 때의 대미지 (기존 1200에서 40% 감소)
     },
     ultimate: {
       name: '닭 소환',
@@ -1110,6 +1110,7 @@ const DEFAULT_CHARACTER_ID = 'minam';
 const REDEEM_CODES = {
   'FREE1972': { coins: 200 },
   'SIU1972': { coins: 500 },
+  'EVENT1972': { coins: 1500 },
 };
 function normalizeCode(raw) {
   return String(raw || '').replace(/\s+/g, '').toUpperCase();
@@ -1494,6 +1495,17 @@ function repeatMissionsView(u) {
 // id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
+  {
+    id: '2026-10-13-ekhe-balance',
+    date: '2026-10-13',
+    tag: 'balance',
+    title: '엑헤 밸런스 조정',
+    items: [
+      '엑헤 기본공격 [계란 던지기] 공격력 40% 감소',
+      '직접 적중 피해: 1,200 → 720',
+      '흰자 지속 피해: 0.2초마다 300 → 180',
+    ],
+  },
   {
     id: '2026-10-11-uphal-magma',
     date: '2026-10-11',
