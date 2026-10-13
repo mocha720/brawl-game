@@ -1581,7 +1581,9 @@ function getLeapAimDistance(me) {
 }
 // 거리를 조절하는 공격(점프 궁극기, 나이의 실내화 던지기)의 현재 조준 거리 - spec.minDistance ~ spec.distance 사이
 function getAimDistanceFor(me, u) {
-  const maxD = u.distance;
+  // 하이퍼 차지 발동 중 궁극기 점프 거리 증가 (모카): 서버도 같은 배율로 최대 거리를 늘림
+  const hyperDist = me.hyperLeft > 0 && me.hyper && me.hyper.ultimateDistanceMultiplier && me.ultimate === u ? me.hyper.ultimateDistanceMultiplier : 1;
+  const maxD = u.distance * hyperDist;
   const minD = Math.min(maxD, u.minDistance || 0);
   if (touchAimActive) return minD + Math.max(0, Math.min(1, touchAimMag)) * (maxD - minD);
   const worldMouseX = mouseX / cameraScale + camera.x;
@@ -4683,6 +4685,146 @@ const SKIN_LOOKS = {
       }
     },
   },
+  system_mad: {
+    // 미친 과학자: 사방으로 뻗친 헝클어진 백발(정전기로 지직거림) + 크기가 다른 초록 고글 + 하얀 실험 가운 + 가슴 주머니의 시험관 + 광기 어린 웃음.
+    // 머리 주변에서는 drawFx 가 푸른 전기 불꽃을 계속 튀김
+    body: '#e9eef2',
+    avatarRing: '#39d98a',
+    upright: true,
+    draw(R, p) {
+      const t = Date.now() / 1000;
+      // 사방으로 뻗친 백발 (몸 밖으로 삐죽삐죽 튀어나옴)
+      ctx.save();
+      ctx.fillStyle = '#f3f4f7';
+      ctx.strokeStyle = '#9aa0ad';
+      ctx.lineWidth = 1.1;
+      const tufts = [-1.25, -1.0, -0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75, 1.0, 1.25];
+      tufts.forEach((a, i) => {
+        const ang = -Math.PI / 2 + a;
+        const len = R * (0.55 + 0.3 * Math.abs(Math.sin(i * 3.1)) + 0.05 * Math.sin(t * 6 + i));
+        const bx = Math.cos(ang) * R * 0.68;
+        const by = -R * 0.2 + Math.sin(ang) * R * 0.68;
+        const w = R * 0.14;
+        ctx.beginPath();
+        ctx.moveTo(bx - Math.cos(ang + Math.PI / 2) * w, by - Math.sin(ang + Math.PI / 2) * w);
+        ctx.lineTo(bx + Math.cos(ang) * len + Math.sin(i) * 3, by + Math.sin(ang) * len);
+        ctx.lineTo(bx + Math.cos(ang + Math.PI / 2) * w, by + Math.sin(ang + Math.PI / 2) * w);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      });
+      ctx.restore();
+      // 몸통 안쪽만 그리도록 잘라서 가운/얼굴을 그림
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(0, 0, R - 0.5, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.fillStyle = '#eef2f6';
+      ctx.fillRect(-R, -R, R * 2, R * 2);
+      // 흰 머리(이마 위)
+      ctx.fillStyle = '#f7f8fb';
+      ctx.beginPath();
+      ctx.ellipse(0, -R * 0.72, R * 0.78, R * 0.34, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // 얼굴
+      ctx.fillStyle = '#ffe0c4';
+      ctx.beginPath();
+      ctx.ellipse(0, -R * 0.34, R * 0.46, R * 0.4, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#8a5f3a';
+      ctx.lineWidth = 1.1;
+      ctx.stroke();
+      // 고글 (크기가 다른 두 렌즈 + 가죽 끈 + 초록 빛)
+      ctx.fillStyle = '#5a3d2b';
+      ctx.fillRect(-R * 0.62, -R * 0.5, R * 1.24, R * 0.1);
+      const pulse = 0.7 + 0.3 * Math.sin(t * 7);
+      for (const [lx, lr] of [[-0.2, 0.2], [0.22, 0.15]]) {
+        ctx.beginPath();
+        ctx.arc(lx * R, -R * 0.44, lr * R + 1.5, 0, Math.PI * 2);
+        ctx.fillStyle = '#a9742f';
+        ctx.fill();
+        const lg = ctx.createRadialGradient(lx * R - 1, -R * 0.46, 0, lx * R, -R * 0.44, lr * R);
+        lg.addColorStop(0, `rgba(230, 255, 200, ${pulse})`);
+        lg.addColorStop(1, 'rgba(40, 200, 90, 0.95)');
+        ctx.beginPath();
+        ctx.arc(lx * R, -R * 0.44, lr * R, 0, Math.PI * 2);
+        ctx.fillStyle = lg;
+        ctx.fill();
+        ctx.fillStyle = '#10241a'; // 눈동자 (작고 흔들림)
+        ctx.beginPath();
+        ctx.arc(lx * R + Math.sin(t * 9) * 0.8, -R * 0.44, lr * R * 0.28, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // 광기 어린 웃음 (이빨이 보이는 큰 입)
+      ctx.fillStyle = '#4a1414';
+      ctx.beginPath();
+      ctx.moveTo(-R * 0.24, -R * 0.18);
+      ctx.quadraticCurveTo(0, R * 0.08, R * 0.24, -R * 0.2);
+      ctx.quadraticCurveTo(0, -R * 0.12, -R * 0.24, -R * 0.18);
+      ctx.fill();
+      ctx.fillStyle = '#ffffff';
+      for (let i = -2; i <= 2; i++) {
+        ctx.fillRect(i * R * 0.09 - R * 0.035, -R * 0.17 + Math.abs(i) * R * 0.012, R * 0.07, R * 0.06);
+      }
+      // 가운 옷깃 + 가슴 주머니의 시험관
+      ctx.strokeStyle = '#b8c0cc';
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(-R * 0.55, R * 0.02);
+      ctx.lineTo(-R * 0.08, R * 0.55);
+      ctx.lineTo(-R * 0.08, R);
+      ctx.moveTo(R * 0.55, R * 0.02);
+      ctx.lineTo(R * 0.08, R * 0.55);
+      ctx.lineTo(R * 0.08, R);
+      ctx.stroke();
+      ctx.fillStyle = '#dfe5ec';
+      ctx.fillRect(R * 0.22, R * 0.42, R * 0.4, R * 0.36);
+      ctx.strokeRect(R * 0.22, R * 0.42, R * 0.4, R * 0.36);
+      ctx.fillStyle = `rgba(80, 255, 140, ${0.75 + 0.25 * Math.sin(t * 5)})`;
+      ctx.fillRect(R * 0.32, R * 0.3, R * 0.1, R * 0.34);
+      ctx.fillRect(R * 0.46, R * 0.34, R * 0.08, R * 0.3);
+      ctx.fillStyle = '#ff5a5a';
+      ctx.beginPath();
+      ctx.arc(-R * 0.4, R * 0.62, R * 0.07, 0, Math.PI * 2); // 가운 위 얼룩
+      ctx.fill();
+      ctx.restore();
+    },
+    // 머리와 몸 주변에서 튀는 푸른 정전기 불꽃 + 연한 전기 오라
+    drawFx(p) {
+      if (!p.alive) return;
+      const R = PLAYER_RADIUS;
+      const step = Math.floor(Date.now() / 90);
+      ctx.save();
+      const aura = ctx.createRadialGradient(p.x, p.y, R * 0.6, p.x, p.y, R * 1.9);
+      aura.addColorStop(0, 'rgba(90, 220, 255, 0.2)');
+      aura.addColorStop(1, 'rgba(90, 220, 255, 0)');
+      ctx.fillStyle = aura;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, R * 1.9, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(170, 245, 255, 0.95)';
+      ctx.shadowColor = 'rgba(80, 220, 255, 1)';
+      ctx.shadowBlur = 8;
+      ctx.lineWidth = 1.6;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      for (let k = 0; k < 3; k++) {
+        const a = prand(step + (p.id ? p.id.length : 0), k) * Math.PI * 2;
+        const x0 = p.x + Math.cos(a) * R * 1.0;
+        const y0 = p.y + Math.sin(a) * R * 1.0;
+        ctx.beginPath();
+        ctx.moveTo(x0, y0);
+        let ax = x0, ay = y0;
+        for (let j = 1; j <= 3; j++) {
+          ax += Math.cos(a) * R * 0.28 + (prand(step * 3 + j, k + 9) - 0.5) * R * 0.45;
+          ay += Math.sin(a) * R * 0.28 + (prand(step * 5 + j, k + 4) - 0.5) * R * 0.45;
+          ctx.lineTo(ax, ay);
+        }
+        ctx.stroke();
+      }
+      ctx.restore();
+    },
+  },
   nai_chef: {
     // 주방장: 하얀 조리복(이중 단추) + 빨간 목 스카프 + 높고 풍성한 요리모자. 반사 방어막은 은색 요리 뚜껑(클로슈) 모양, 궁극기 도약 중에는 불꽃 꼬리를 끌며 날아감
     body: '#f4f1ea',
@@ -6944,7 +7086,7 @@ function drawBoomerangGlow(b) {
 function isAllyOwner(o) {
   return o.ownerId === myId || (myTeam && o.team === myTeam);
 }
-const SKIN_TEAM_BULLETS = { fireball: 1, iceShard: 1, poisonVial: 1, tire: 1 };
+const SKIN_TEAM_BULLETS = { fireball: 1, iceShard: 1, poisonVial: 1, tire: 1, chip: 1, battery: 1, machine: 1 };
 function drawTeamHalo(b) {
   const ally = isAllyOwner(b);
   ctx.save();
@@ -6980,6 +7122,257 @@ function drawBullet(b) {
   if (SKIN_TEAM_BULLETS[b.visual]) drawTeamHalo(b); // 스킨 기본공격 탄: 팀 색 후광을 먼저 깔고 그 위에 스킨 모양을 그림
   if (b.boomerang) drawBoomerangGlow(b); // 부메랑 궁극기의 후광/꼬리를 먼저 깔고, 그 위에 원래 모양(피에로/표창)을 그림
   if (b.lob) { drawSlipperBullet(b); return; } // 나이의 실내화 (포물선 투척)
+  if (b.visual === 'chip') {
+    // 시스템 미친 과학자 1타: 날아가는 반도체 칩 (까만 패키지 + 금색 핀 + 푸른 회로 + 지직거리는 전기 꼬리)
+    const ang = Math.atan2(b.vy || 0, b.vx || 1);
+    const s = b.radius * 1.15;
+    const st = Math.floor(Date.now() / 60);
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.rotate(ang);
+    // 전기 꼬리 (뒤쪽으로 지그재그)
+    ctx.strokeStyle = 'rgba(120, 235, 255, 0.9)';
+    ctx.shadowColor = 'rgba(80, 220, 255, 1)';
+    ctx.shadowBlur = 8;
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-s, 0);
+    for (let j = 1; j <= 4; j++) {
+      ctx.lineTo(-s - j * s * 0.85, (prand(st + b.id, j) - 0.5) * s * 1.3);
+    }
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    // 금색 핀 (위/아래 각 4개)
+    ctx.fillStyle = '#e8c15a';
+    for (let i = -1.5; i <= 1.5; i++) {
+      ctx.fillRect(i * s * 0.56 - s * 0.12, -s * 1.38, s * 0.24, s * 0.45);
+      ctx.fillRect(i * s * 0.56 - s * 0.12, s * 0.93, s * 0.24, s * 0.45);
+    }
+    // 본체
+    const bg = ctx.createLinearGradient(-s, -s, s, s);
+    bg.addColorStop(0, '#2c3446');
+    bg.addColorStop(1, '#10141d');
+    ctx.fillStyle = bg;
+    ctx.strokeStyle = '#05070b';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.rect(-s * 1.05, -s * 1.05, s * 2.1, s * 2.1);
+    ctx.fill();
+    ctx.stroke();
+    // 속의 다이 + 회로선
+    ctx.fillStyle = '#3d4a63';
+    ctx.fillRect(-s * 0.55, -s * 0.55, s * 1.1, s * 1.1);
+    ctx.strokeStyle = 'rgba(100, 235, 255, 0.95)';
+    ctx.lineWidth = 1.3;
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.9, -s * 0.2);
+    ctx.lineTo(-s * 0.2, -s * 0.2);
+    ctx.lineTo(-s * 0.2, s * 0.35);
+    ctx.lineTo(s * 0.5, s * 0.35);
+    ctx.moveTo(s * 0.9, -s * 0.5);
+    ctx.lineTo(s * 0.25, -s * 0.5);
+    ctx.lineTo(s * 0.25, s * 0.0);
+    ctx.stroke();
+    // 방향 표시 점 (1번 핀 표식)
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(-s * 0.78, -s * 0.78, s * 0.1, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    return;
+  }
+  if (b.visual === 'battery') {
+    // 시스템 미친 과학자 2타: 빙글빙글 돌며 날아가는 배터리 (금색 + - 단자, 주변으로 지직거리는 전기)
+    const L = b.radius * 2.3;
+    const W = b.radius * 1.15;
+    const st = Math.floor(Date.now() / 70);
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.rotate(Date.now() / 140 + b.id);
+    ctx.fillStyle = '#c9ced6'; // + 단자
+    ctx.fillRect(L * 0.5, -W * 0.28, L * 0.14, W * 0.56);
+    const bg = ctx.createLinearGradient(0, -W / 2, 0, W / 2);
+    bg.addColorStop(0, '#3b4252');
+    bg.addColorStop(1, '#14171f');
+    ctx.fillStyle = bg;
+    ctx.beginPath();
+    ctx.rect(-L / 2, -W / 2, L, W);
+    ctx.fill();
+    ctx.fillStyle = '#ffc83d'; // 금색 띠
+    ctx.fillRect(L * 0.08, -W / 2, L * 0.42, W);
+    ctx.strokeStyle = '#06080c';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(-L / 2, -W / 2, L, W);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(L * 0.22, -W * 0.06, L * 0.18, W * 0.12); // + 표시
+    ctx.fillRect(L * 0.29, -W * 0.18, L * 0.04, W * 0.36);
+    ctx.fillRect(-L * 0.38, -W * 0.06, L * 0.18, W * 0.12); // - 표시
+    // 전기 불꽃
+    ctx.strokeStyle = 'rgba(255, 245, 140, 0.95)';
+    ctx.shadowColor = 'rgba(255, 220, 60, 1)';
+    ctx.shadowBlur = 8;
+    ctx.lineWidth = 1.8;
+    ctx.lineJoin = 'round';
+    for (let k = 0; k < 3; k++) {
+      const a = prand(st + b.id, k) * Math.PI * 2;
+      const x0 = Math.cos(a) * L * 0.5;
+      const y0 = Math.sin(a) * W * 0.55;
+      ctx.beginPath();
+      ctx.moveTo(x0, y0);
+      ctx.lineTo(x0 + Math.cos(a) * L * 0.3 + (prand(st, k + 5) - 0.5) * 6, y0 + Math.sin(a) * L * 0.3);
+      ctx.lineTo(x0 + Math.cos(a) * L * 0.55 + (prand(st, k + 8) - 0.5) * 6, y0 + Math.sin(a) * L * 0.55 + (prand(st, k + 3) - 0.5) * 6);
+      ctx.stroke();
+    }
+    ctx.restore();
+    return;
+  }
+  if (b.visual === 'machine') {
+    // 시스템 미친 과학자 3타: 날아가는 기계 (톱니바퀴가 도는 작은 기계 - 붉은 눈이 번쩍이고 뒤로 김과 불꽃을 뿜음)
+    const ang = Math.atan2(b.vy || 0, b.vx || 1);
+    const r = b.radius;
+    const now = Date.now();
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.rotate(ang);
+    // 배기 불꽃
+    const fl = 0.6 + 0.4 * Math.sin(now / 40 + b.id);
+    const fg = ctx.createLinearGradient(-r * 0.9, 0, -r * (2.4 + fl), 0);
+    fg.addColorStop(0, 'rgba(255, 230, 130, 0.95)');
+    fg.addColorStop(1, 'rgba(255, 90, 20, 0)');
+    ctx.fillStyle = fg;
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.9, -r * 0.4);
+    ctx.lineTo(-r * (2.4 + fl), 0);
+    ctx.lineTo(-r * 0.9, r * 0.4);
+    ctx.closePath();
+    ctx.fill();
+    // 양옆 톱니바퀴 (빙글빙글)
+    for (const side of [-1, 1]) {
+      ctx.save();
+      ctx.translate(-r * 0.1, side * r * 0.95);
+      ctx.rotate((now / 110) * side);
+      ctx.fillStyle = '#b87b3b';
+      ctx.strokeStyle = '#3b2410';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      for (let i = 0; i < 16; i++) {
+        const a = (i / 16) * Math.PI * 2;
+        const rad = i % 2 === 0 ? r * 0.55 : r * 0.4;
+        const x = Math.cos(a) * rad;
+        const y = Math.sin(a) * rad;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = '#3b2410';
+      ctx.beginPath();
+      ctx.arc(0, 0, r * 0.14, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+    // 본체
+    const bg = ctx.createLinearGradient(0, -r, 0, r);
+    bg.addColorStop(0, '#9aa4b3');
+    bg.addColorStop(1, '#4b5463');
+    ctx.fillStyle = bg;
+    ctx.strokeStyle = '#1d222b';
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.rect(-r * 0.9, -r * 0.7, r * 1.8, r * 1.4);
+    ctx.fill();
+    ctx.stroke();
+    // 볼트 4개
+    ctx.fillStyle = '#d7dce5';
+    for (const [bx, by] of [[-0.62, -0.46], [0.62, -0.46], [-0.62, 0.46], [0.62, 0.46]]) {
+      ctx.beginPath();
+      ctx.arc(bx * r, by * r, r * 0.07, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // 붉은 눈 (번쩍)
+    const eye = 0.6 + 0.4 * Math.sin(now / 90 + b.id * 2);
+    ctx.shadowColor = 'rgba(255, 40, 40, 1)';
+    ctx.shadowBlur = 8;
+    ctx.fillStyle = `rgba(255, ${Math.round(60 + 60 * eye)}, 60, 1)`;
+    ctx.beginPath();
+    ctx.arc(r * 0.25, 0, r * 0.28, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#1a0606';
+    ctx.beginPath();
+    ctx.arc(r * 0.3, 0, r * 0.1, 0, Math.PI * 2);
+    ctx.fill();
+    // 안테나
+    ctx.strokeStyle = '#c9ced6';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(r * 0.5, -r * 0.7);
+    ctx.lineTo(r * 0.7, -r * 1.2);
+    ctx.stroke();
+    ctx.fillStyle = '#7af0ff';
+    ctx.beginPath();
+    ctx.arc(r * 0.7, -r * 1.2, r * 0.12, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+    return;
+  }
+  if (b.visual === 'elecTornado') {
+    // 시스템 미친 과학자 궁극기: 번개가 휘몰아치는 전기 회오리 바람 (회전하는 소용돌이 + 사방으로 뻗는 번개 + 도는 불꽃) - 크기는 b.radius 를 따라감 (하이퍼 차지 중에는 더 커짐)
+    const now = Date.now();
+    const st = Math.floor(now / 65);
+    const R = b.radius;
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    const gl = ctx.createRadialGradient(0, 0, R * 0.2, 0, 0, R * 1.15);
+    gl.addColorStop(0, 'rgba(120, 90, 255, 0.35)');
+    gl.addColorStop(0.7, 'rgba(70, 200, 255, 0.22)');
+    gl.addColorStop(1, 'rgba(70, 200, 255, 0)');
+    ctx.fillStyle = gl;
+    ctx.beginPath();
+    ctx.arc(0, 0, R * 1.15, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(160, 235, 255, 0.75)';
+    ctx.beginPath();
+    ctx.arc(0, 0, R, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+    drawVortexShape(b.x, b.y, R, now / 140, 'rgba(180, 230, 255, 0.95)', 4);
+    drawVortexShape(b.x, b.y, R * 0.62, -now / 90, 'rgba(255, 245, 140, 0.9)', 3);
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.shadowColor = 'rgba(120, 220, 255, 1)';
+    ctx.shadowBlur = 12;
+    for (let k = 0; k < 7; k++) {
+      const a = prand(st, k + b.id) * Math.PI * 2;
+      ctx.strokeStyle = k % 2 === 0 ? 'rgba(255, 255, 255, 0.98)' : 'rgba(255, 240, 120, 0.95)';
+      ctx.lineWidth = k % 2 === 0 ? 2.6 : 2;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      let rad = 0;
+      const segs = 5;
+      for (let j = 1; j <= segs; j++) {
+        rad = (R * 1.05 * j) / segs;
+        const jit = (prand(st * 7 + j, k + 20) - 0.5) * 0.7;
+        ctx.lineTo(Math.cos(a + jit) * rad, Math.sin(a + jit) * rad);
+      }
+      ctx.stroke();
+    }
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(255, 250, 200, 0.95)';
+    for (let i = 0; i < 8; i++) {
+      const a = now / 200 + (i / 8) * Math.PI * 2;
+      const rr = R * (0.55 + 0.4 * ((i * 0.37) % 1));
+      ctx.beginPath();
+      ctx.arc(Math.cos(a) * rr, Math.sin(a) * rr, 2.3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+    return;
+  }
   if (b.visual === 'sysOrb' || b.visual === 'sysThrow') {
     // 시스템의 구슬: 원거리 구슬은 푸른 빛, 던지는 구슬은 더 크고 보라색 + 회전하는 고리
     const thrown = b.visual === 'sysThrow';
@@ -9746,6 +10139,7 @@ function drawAimRangeIndicator() {
     color = 'rgba(52, 152, 219, 0.9)'; // 가젯은 파란색으로 구분
   } else if (ultimateArmed && me.ultimate && me.ultimate.type !== 'lightning') {
     range = me.ultimate.distance || me.ultimate.range || me.ultimate.speed * me.ultimate.lifetime; // 점프 궁극기는 distance, 부채꼴 궁극기는 range, 발사형은 속도×수명
+    if (me.ultimate.distance && me.hyperLeft > 0 && me.hyper && me.hyper.ultimateDistanceMultiplier) range *= me.hyper.ultimateDistanceMultiplier; // 하이퍼 차지 발동 중 점프 거리 증가 (모카)
     color = 'rgba(231, 76, 60, 0.85)'; // 궁극기는 빨간색으로 구분
   } else if (me.basic) {
     if (me.basic.combo) {
