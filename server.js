@@ -31,6 +31,7 @@ app.use(express.static(path.join(__dirname)));
 const ARENA_WIDTH = 770;    // 맵 크기 30% 추가 축소 (1100 → 770)
 const ARENA_HEIGHT = 700;   // 맵 크기 30% 추가 축소 (1000 → 700)
 const PLAYER_RADIUS = 20;
+const HYPER_CHARGE_BONUS = 1.15; // 모든 캐릭터의 하이퍼 차지 게이지 충전량 배율 (1.15 = 15% 증가). 각 캐릭터의 hyper.chargeMultiplier 에 곱해짐
 const RESPAWN_DELAY = 3000;     // ms
 const TICK_RATE = 20;           // 초당 서버 틱 수
 const TICK_MS = 1000 / TICK_RATE;
@@ -367,7 +368,7 @@ const CHARACTERS = {
   byeongitong: {
     id: 'byeongitong',
     name: '변기통',
-    maxHp: 8000,
+    maxHp: 7500, // 1레벨 기준 (기존 8000에서 너프)
     basic: {
       name: '뚫어뻥 휘두르기',
       type: 'melee',        // 발사체가 아니라 즉시 판정되는 근접 공격
@@ -624,6 +625,17 @@ const CHARACTERS = {
       duration: 0.55,        // 공중에 떠 있는 시간(초). 이 동안은 조작 불가 + 피격/총알 무시 (길수록 점프가 느리게 보임)
       landRadius: 90,        // 착지 지점 주변 피해 반경
     },
+    // 하이퍼 차지: 캐릭터를 최고 레벨(11)까지 키운 뒤 코인으로 획득하는 추가 스킬. 기본공격을 적중시켜 게이지를 채우고, 가득 차면 발동한다.
+    hyper: {
+      name: '하이퍼 차지',
+      duration: 5,              // 지속 시간(초)
+      chargeMultiplier: 0.45,   // 게이지 충전량 배율 (0.45 = 궁극기 충전량의 45%, 거기에 전체 보너스 +15%가 곱해짐). 발동 중에는 충전되지 않음
+      speedMultiplier: 1.3,     // 이동속도 배율 (1.3 = 30% 증가)
+      damageMultiplier: 1.25,   // 공격력 배율 (1.25 = 25% 강화)
+      damageTakenMultiplier: 1, // 받는 피해 배율 (1 = 변화 없음)
+      ultimateChargeMultiplier: 1.5,   // 발동 중 궁극기 게이지 충전량 배율 (1.5 = 50% 증가)
+      ultimateDistanceMultiplier: 1.25, // 발동 중 궁극기(도약 강습) 최대 점프 거리 배율 (1.25 = 25% 증가)
+    },
     gadget: {
       name: '기합 충전',
       type: 'ultCharge',     // 조준 불필요, 즉시 발동. duration초에 걸쳐 궁극기 게이지를 amount%만큼 천천히 채움
@@ -724,6 +736,17 @@ const CHARACTERS = {
       radius: 60,
       lifetime: 1.4,         // 사거리 약 530
       visual: 'bigVortex',
+    },
+    // 하이퍼 차지: 캐릭터를 최고 레벨(11)까지 키운 뒤 코인으로 획득하는 추가 스킬. 기본공격을 적중시켜 게이지를 채우고, 가득 차면 발동한다.
+    hyper: {
+      name: '하이퍼 차지',
+      duration: 5,              // 지속 시간(초)
+      chargeMultiplier: 0.45,   // 게이지 충전량 배율 (0.45 = 궁극기 충전량의 45%). 발동 중에는 충전되지 않음
+      speedMultiplier: 1.2,     // 이동속도 배율 (1.2 = 20% 증가)
+      damageMultiplier: 1.25,   // 공격력 배율 (1.25 = 25% 증가)
+      damageTakenMultiplier: 0.95, // 받는 피해 배율 (0.95 = 5% 감소)
+      ultimateRadiusMultiplier: 1.5, // 발동 중 궁극기(거대 소용돌이)의 공격 범위(크기) 배율 (1.5 = 50% 증가)
+      ultimateLandStun: 2,      // 발동 중 궁극기로 띄운 적이 땅에 떨어졌을 때 추가로 기절하는 시간(초)
     },
     gadget: {
       name: '긴급 재장전',
@@ -1009,7 +1032,7 @@ function describeGadget(g) {
 // 밸런스 기준: 11레벨 = 체력 +35%, 공격력 +30%. (1레벨 상대로 맞붙으면 약 1.75배 유리 -> 실력으로 뒤집을 수 있는 수준)
 // 레벨 1->11 강화 총비용은 2,720코인 (1:1 승리 보상 45코인 기준 약 60승). 수치를 바꾸고 싶으면 이 표만 고치면 된다.
 const MAX_CHARACTER_LEVEL = 11;
-// 하이퍼 차지(추가 스킬): 최고 레벨을 찍은 캐릭터가 코인으로 획득. hyper 스펙이 있는 캐릭터에만 존재한다. (현재는 미남, 지기, 슈, 변기통)
+// 하이퍼 차지(추가 스킬): 최고 레벨을 찍은 캐릭터가 코인으로 획득. hyper 스펙이 있는 캐릭터에만 존재한다. (현재는 미남, 지기, 슈, 변기통, 시스템, 모카)
 const HYPER_PRICE = 1000;
 const HYPER_REQUIRED_LEVEL = MAX_CHARACTER_LEVEL;
 const LEVEL_TABLE = [
@@ -1073,11 +1096,18 @@ function getLeveledCharacter(id, level) {
 function describeHyper(hy) {
   const pct = (m) => Math.round(Math.abs(m - 1) * 100);
   const parts = [];
-  parts.push(`기본공격을 적중시켜 게이지를 채우고(궁극기보다 충전량 ${pct(hy.chargeMultiplier != null ? hy.chargeMultiplier : 1)}% 감소) 발동하면 ${hy.duration}초 동안 이동속도 ${pct(hy.speedMultiplier)}% 증가, 공격력 ${pct(hy.damageMultiplier)}% 강화, 받는 피해 ${pct(hy.damageTakenMultiplier)}% 감소`);
+  const effCharge = (hy.chargeMultiplier != null ? hy.chargeMultiplier : 1) * HYPER_CHARGE_BONUS;
+  const buffs = [`이동속도 ${pct(hy.speedMultiplier)}% 증가`, `공격력 ${pct(hy.damageMultiplier)}% 강화`];
+  if (hy.damageTakenMultiplier && hy.damageTakenMultiplier !== 1) buffs.push(`받는 피해 ${pct(hy.damageTakenMultiplier)}% 감소`);
+  parts.push(`기본공격을 적중시켜 게이지를 채우고(궁극기보다 충전량 ${pct(effCharge)}% ${effCharge < 1 ? '감소' : '증가'}) 발동하면 ${hy.duration}초 동안 ${buffs.join(', ')}`);
   parts.push('발동 중에는 하이퍼 차지 게이지가 충전되지 않음');
   if (hy.ultimateBoomerang) parts.push('발동 중 궁극기를 쓰면 앞으로 날아갔다가 다시 돌아오며, 갈 때와 올 때 모두 적을 맞힘');
   if (hy.ultimateDashReturn) parts.push('발동 중 궁극기를 쓰면 돌진했다가 출발한 자리로 다시 돌아오며, 갈 때와 올 때 모두 피해와 기절을 줌');
+  if (hy.ultimateRadiusMultiplier) parts.push(`발동 중 궁극기의 공격 범위 ${pct(hy.ultimateRadiusMultiplier)}% 증가`);
+  if (hy.ultimateLandStun) parts.push(`발동 중 궁극기로 띄운 적이 땅에 떨어지면 ${hy.ultimateLandStun}초 동안 기절`);
   if (hy.ultimateStrikeCount) parts.push(`발동 중 궁극기를 쓰면 번개가 ${hy.ultimateStrikeCount}개 떨어짐`);
+  if (hy.ultimateChargeMultiplier) parts.push(`발동 중 궁극기 충전량 ${pct(hy.ultimateChargeMultiplier)}% 증가`);
+  if (hy.ultimateDistanceMultiplier) parts.push(`발동 중 궁극기 점프 거리 ${pct(hy.ultimateDistanceMultiplier)}% 증가`);
   if (hy.rangeMultiplier) parts.push(`발동 중 기본공격과 궁극기 사거리 ${pct(hy.rangeMultiplier)}% 증가`);
   return { name: hy.name, desc: parts.join('. ') + '.' };
 }
@@ -1285,6 +1315,15 @@ const SKINS = {
     desc: '사악한 독 마법사로 변신! 기본공격은 계란 대신 독이 나가 독이 퍼지고, 궁극기는 닭 대신 검은 고양이가 나와요. (외형만 바뀌고 성능은 그대로예요)',
     // egg(기본공격 발사체)를 독병으로, eggWhite(터진 뒤 퍼지는 흰자)를 독 장판으로, chicken(궁극기 소환수)을 검은 고양이로 바꿈. 피해/범위/지속시간/체력은 그대로
     visuals: { egg: 'poisonVial', eggWhite: 'poisonPool', chicken: 'blackCat' },
+  },
+  system_mad: {
+    id: 'system_mad',
+    characterId: 'system',
+    name: '미친 과학자',
+    price: SKIN_PRICE,
+    desc: '헝클어진 머리에 번쩍이는 고글, 하얀 실험 가운을 입은 미친 과학자로 변신! 기본공격 3연타는 1타 반도체 칩, 2타 배터리, 3타 날아가는 기계 3대로 바뀌고, 궁극기는 번개가 휘몰아치는 전기 회오리 바람이 돼요. (외형만 바뀌고 성능은 그대로예요)',
+    // sysOrb(1타)를 반도체로, sysThrow(2타)를 배터리로, vortex(3타)를 날아가는 기계로, bigVortex(궁극기)를 전기 회오리로 바꿈. 피해/속도/사거리/띄우기는 그대로
+    visuals: { sysOrb: 'chip', sysThrow: 'battery', vortex: 'machine', bigVortex: 'elecTornado' },
   },
   nai_chef: {
     id: 'nai_chef',
@@ -1516,6 +1555,30 @@ function repeatMissionsView(u) {
 // id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
+  {
+    id: '2026-10-14-mocha-hyper-balance',
+    date: '2026-10-14',
+    tag: 'balance',
+    title: '모카 하이퍼 차지 추가 + 밸런스 조정',
+    items: [
+      '모카에게 하이퍼 차지가 생겼어요. 발동 중 이동속도 30% 증가, 공격력 25% 강화예요. (받는 피해는 그대로)',
+      '발동 중에는 궁극기 충전량이 50% 늘고, 궁극기 [도약 강습]의 점프 거리가 25% 늘어요.',
+      '모든 캐릭터의 하이퍼 차지 게이지 충전량이 15% 증가했어요.',
+      '변기통 체력(1레벨 기준): 8,000 → 7,500 (너프)',
+    ],
+  },
+  {
+    id: '2026-10-14-system-mad',
+    date: '2026-10-14',
+    tag: 'new',
+    title: '시스템 스킨 [미친 과학자] + 하이퍼 차지 추가!',
+    items: [
+      '시스템의 새 스킨 [미친 과학자]가 상점에 나왔어요. 헝클어진 머리와 번쩍이는 고글, 하얀 실험 가운 차림이에요.',
+      '기본공격 3연타가 1타 반도체 칩, 2타 배터리, 3타 날아가는 기계 3대로 바뀌고, 궁극기는 번개가 휘몰아치는 전기 회오리가 돼요. (외형만 바뀌고 성능은 그대로예요)',
+      '시스템에게 하이퍼 차지가 생겼어요. 발동 중 이동속도 20% 증가, 공격력 25% 증가, 받는 피해 5% 감소예요.',
+      '발동 중 궁극기 [거대 소용돌이]는 크기(공격 범위)가 50% 커지고, 띄워진 적이 땅에 떨어지면 2초 동안 기절해요.',
+    ],
+  },
   {
     id: '2026-10-13-byeongitong-hyper',
     date: '2026-10-13',
@@ -3262,10 +3325,13 @@ function getDamageTakenMultiplier(p) {
 }
 // 기본공격이 적중했을 때 궁극기 게이지와 하이퍼 차지 게이지를 함께 채움
 function chargeGauges(shooter) {
-  shooter.ultimateCharge = Math.min(100, shooter.ultimateCharge + shooter.ultimateChargePerHit);
-  // 하이퍼 차지 게이지: 궁극기보다 적게 차고(chargeMultiplier), 발동 중에는 충전되지 않음
-  if (shooter.hasHyper && !(shooter.hyperUntil && Date.now() < shooter.hyperUntil)) {
-    const mult = shooter.hyper && shooter.hyper.chargeMultiplier != null ? shooter.hyper.chargeMultiplier : 1;
+  // 하이퍼 차지 발동 중 궁극기 충전량 증가 (모카): hyper.ultimateChargeMultiplier 배
+  const hyperActive = shooter.hasHyper && shooter.hyperUntil && Date.now() < shooter.hyperUntil;
+  const ultGain = shooter.ultimateChargePerHit * (hyperActive && shooter.hyper && shooter.hyper.ultimateChargeMultiplier ? shooter.hyper.ultimateChargeMultiplier : 1);
+  shooter.ultimateCharge = Math.min(100, shooter.ultimateCharge + ultGain);
+  // 하이퍼 차지 게이지: 궁극기보다 적게 차고(chargeMultiplier × 전체 보너스), 발동 중에는 충전되지 않음
+  if (shooter.hasHyper && !hyperActive) {
+    const mult = (shooter.hyper && shooter.hyper.chargeMultiplier != null ? shooter.hyper.chargeMultiplier : 1) * HYPER_CHARGE_BONUS;
     shooter.hyperCharge = Math.min(100, (shooter.hyperCharge || 0) + shooter.ultimateChargePerHit * mult);
   }
 }
@@ -3287,6 +3353,7 @@ function launchTarget(match, target, b) {
   target.airborneTotal = total;
   target.airborneTimeLeft = total;
   target.airborneLandDamage = b.landDamage;
+  target.airborneLandStun = b.landStun || 0; // 착지 후 추가 기절 시간(초)
   target.airborneBy = b.ownerId;
   target.airborneStunUntil = Date.now() + total * 1000;
   target.stunnedUntil = target.airborneStunUntil;
@@ -3363,6 +3430,7 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
       respawned.dashHitIds = [];
       respawned.stunnedUntil = 0;
       respawned.airborneTimeLeft = 0; // 하늘에 떠 있던 상태도 초기화
+      respawned.airborneLandStun = 0;
       respawned.comboDashId = (respawned.comboDashId || 0) + 1; // 예약돼 있던 시스템의 돌진도 취소
       respawned.windupUntil = 0; // 진행 중이던 공격 선딜도 취소
       respawned.windupId = (respawned.windupId || 0) + 1;
@@ -3576,6 +3644,10 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
   // 하이퍼 차지 발동 중 사거리 증가 (슈): 속도는 그대로 두고 수명을 늘려서 더 멀리 날아가게 함 (기본공격/궁극기 모두 적용)
   const hyperRange = p.hasHyper && p.hyper && p.hyper.rangeMultiplier && p.hyperUntil && Date.now() < p.hyperUntil ? p.hyper.rangeMultiplier : 1;
   const bulletLife = spec.lifetime * hyperRange;
+  // 하이퍼 차지 발동 중 시스템의 궁극기: 공격 범위(소용돌이 크기) 증가 + 띄운 적이 떨어질 때 기절
+  const hyperUltOn = isUltimate && p.hasHyper && p.hyper && p.hyperUntil && Date.now() < p.hyperUntil;
+  const hyperUltRadius = hyperUltOn && p.hyper.ultimateRadiusMultiplier ? p.hyper.ultimateRadiusMultiplier : 1;
+  const hyperUltLandStun = hyperUltOn && p.hyper.ultimateLandStun ? p.hyper.ultimateLandStun : 0;
 
   for (let i = 0; i < pelletCount; i++) {
     const angleOffset = pelletCount > 1 ? -halfSpread + (spreadRad * i) / (pelletCount - 1) : 0;
@@ -3601,11 +3673,12 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
       damage: spec.damage,
       executeBelowHp: spec.executeBelowHp || 0, // 0보다 크면 맞은 대상의 현재 체력이 이 값 이하일 때 즉사 (진우Park의 하트)
       currentHpRatio: spec.currentHpRatio || 0, // 0보다 크면 고정 피해 대신 대상 현재 체력(+보호막)의 비율만큼 피해 (진우Park의 하트)
-      radius: spec.radius,
+      radius: spec.radius * hyperUltRadius, // 하이퍼 차지 발동 중 궁극기(시스템)는 크기가 커짐
       isUltimate,
       visual: skinVisual(p, spec.visual), // 스킨이 있으면 발사체 모양만 바뀜 (피해/속도/사거리는 spec 그대로)
       launchDuration: spec.launchDuration || 0, // 0보다 크면 맞은 적을 이 시간(초) 동안 하늘로 띄움 (시스템의 궁극기)
       landDamage: spec.landDamage || 0,         // 띄워진 적이 땅에 떨어질 때 받는 피해
+      landStun: hyperUltLandStun,               // 띄워진 적이 땅에 떨어진 뒤 추가로 기절하는 시간(초) (하이퍼 차지 발동 중 시스템의 궁극기)
       pierceTargets: !!spec.pierceTargets,      // true면 적을 맞혀도 사라지지 않고 계속 날아가 여러 명을 맞힘
       hitIds: spec.pierceTargets || spec.boomerang ? [] : null,   // 관통 발사체가 이미 맞힌 대상 (같은 대상을 두 번 띄우지 않기 위함. 배열이어야 클라이언트로 전송 가능)
       // 부메랑(하이퍼 차지 발동 중 미남의 궁극기): outLeft초 동안 앞으로 날아간 뒤 방향을 바꿔 시전자에게 돌아옴 (updateMatch 의 총알 이동에서 처리)
@@ -4789,7 +4862,8 @@ function registerGameplayHandlers(socket) {
       // 실제 이동/착지 피해는 updateMatch가 처리한다. 점프 시간 동안은 stunnedUntil로 입력을 막는다.
       // 점프 거리는 클라이언트가 조준한 값(PC: 마우스까지의 거리 / 모바일: 스틱을 당긴 정도)을 보내오지만,
       // 서버가 항상 minDistance ~ distance 범위로 제한한다 (이상한 값이 와도 최대 거리를 넘지 못함). 값이 없으면 최대 거리.
-      const maxDist = ult.distance;
+      const hyperDistMult = p.hasHyper && p.hyper && p.hyper.ultimateDistanceMultiplier && p.hyperUntil && Date.now() < p.hyperUntil ? p.hyper.ultimateDistanceMultiplier : 1; // 하이퍼 차지 발동 중 점프 거리 증가 (모카)
+      const maxDist = ult.distance * hyperDistMult;
       const minDist = Math.min(maxDist, ult.minDistance || 0);
       const sent = data && typeof data.distance === 'number' && Number.isFinite(data.distance) ? data.distance : maxDist;
       const leapDist = Math.max(minDist, Math.min(maxDist, sent));
@@ -5576,6 +5650,11 @@ function updateMatch(match, dt, now) {
         applyDamage(match, p, p.airborneLandDamage, p.airborneBy, { chargeShooter: false });
         if (match.over) break;
         if (!p.alive) continue;
+        if (p.airborneLandStun > 0) {
+          // 하이퍼 차지 궁극기: 땅에 떨어진 뒤에도 일정 시간 기절
+          p.stunnedUntil = Date.now() + p.airborneLandStun * 1000;
+          p.airborneLandStun = 0;
+        }
       }
     }
 
