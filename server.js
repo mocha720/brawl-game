@@ -402,6 +402,7 @@ const CHARACTERS = {
       damageMultiplier: 1.1,    // 공격력 배율 (1.1 = 10% 증가)
       damageTakenMultiplier: 0.9, // 받는 피해 배율 (0.9 = 10% 감소)
       ultimateDashReturn: true, // 발동 중에 궁극기(변기 돌진)를 쓰면 돌진했다가 출발했던 자리로 다시 돌아오며, 갈 때와 올 때 모두 피해(+기절)를 줌
+      dashReturnSpeedMultiplier: 2.2, // 돌아오는 돌진의 속도 배율 (2.2 = 나아갈 때보다 2.2배 빠르게 되돌아옴)
     },
   },
   seongseureopda: {
@@ -4985,13 +4986,14 @@ function updateMatch(match, dt, now) {
         const rdy = rt.y - p.y;
         const rdist = Math.hypot(rdx, rdy);
         if (rdist > 8) {
-          const sp = p.dashSpeed || ult.speed || 1400;
+          const sp = (p.dashSpeed || ult.speed || 1400) * ((p.hyper && p.hyper.dashReturnSpeedMultiplier) || 1); // 돌아올 때는 더 빠르게
+          p.dashSpeed = sp; // 돌아오는 동안의 이동 속도 (속도 곡선 계산에 쓰임)
           p.dashing = true;
           p.dashReturning = true;
           p.dashReturnTarget = rt;
           p.dashDirX = rdx / rdist;
           p.dashDirY = rdy / rdist;
-          p.dashTimeLeft = Math.max(0.1, rdist / sp); // 속도 곡선의 평균이 sp 이므로 시간 = 거리 / 속도
+          p.dashTimeLeft = Math.max(0.05, rdist / sp); // 속도 곡선의 평균이 sp 이므로 시간 = 거리 / 속도
           p.dashTotal = p.dashTimeLeft;
           p.dashHitIds = [];
         }
