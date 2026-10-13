@@ -393,6 +393,16 @@ const CHARACTERS = {
       speed: 970,           // 돌진 속도(px/초)
       duration: 0.165,      // 돌진 지속 시간(초). 이동 거리 ≈ speed × duration = 160px (서버 틱이 1/30초라 5틱 = 약 162px 이동). 벽에 막히면 그 앞에서 멈춤
     },
+    // 하이퍼 차지: 캐릭터를 최고 레벨(11)까지 키운 뒤 코인으로 획득하는 추가 스킬. 기본공격을 적중시켜 게이지를 채우고, 가득 차면 발동한다.
+    hyper: {
+      name: '하이퍼 차지',
+      duration: 5,              // 지속 시간(초)
+      chargeMultiplier: 0.45,   // 게이지 충전량 배율 (0.45 = 궁극기 충전량의 45%). 발동 중에는 충전되지 않음
+      speedMultiplier: 1.15,    // 이동속도 배율 (1.15 = 15% 증가)
+      damageMultiplier: 1.1,    // 공격력 배율 (1.1 = 10% 증가)
+      damageTakenMultiplier: 0.9, // 받는 피해 배율 (0.9 = 10% 감소)
+      ultimateDashReturn: true, // 발동 중에 궁극기(변기 돌진)를 쓰면 돌진했다가 출발했던 자리로 다시 돌아오며, 갈 때와 올 때 모두 피해(+기절)를 줌
+    },
   },
   seongseureopda: {
     id: 'seongseureopda',
@@ -998,7 +1008,7 @@ function describeGadget(g) {
 // 밸런스 기준: 11레벨 = 체력 +35%, 공격력 +30%. (1레벨 상대로 맞붙으면 약 1.75배 유리 -> 실력으로 뒤집을 수 있는 수준)
 // 레벨 1->11 강화 총비용은 2,720코인 (1:1 승리 보상 45코인 기준 약 60승). 수치를 바꾸고 싶으면 이 표만 고치면 된다.
 const MAX_CHARACTER_LEVEL = 11;
-// 하이퍼 차지(추가 스킬): 최고 레벨을 찍은 캐릭터가 코인으로 획득. hyper 스펙이 있는 캐릭터에만 존재한다. (현재는 미남, 지기, 슈)
+// 하이퍼 차지(추가 스킬): 최고 레벨을 찍은 캐릭터가 코인으로 획득. hyper 스펙이 있는 캐릭터에만 존재한다. (현재는 미남, 지기, 슈, 변기통)
 const HYPER_PRICE = 1000;
 const HYPER_REQUIRED_LEVEL = MAX_CHARACTER_LEVEL;
 const LEVEL_TABLE = [
@@ -1065,6 +1075,7 @@ function describeHyper(hy) {
   parts.push(`기본공격을 적중시켜 게이지를 채우고(궁극기보다 충전량 ${pct(hy.chargeMultiplier != null ? hy.chargeMultiplier : 1)}% 감소) 발동하면 ${hy.duration}초 동안 이동속도 ${pct(hy.speedMultiplier)}% 증가, 공격력 ${pct(hy.damageMultiplier)}% 강화, 받는 피해 ${pct(hy.damageTakenMultiplier)}% 감소`);
   parts.push('발동 중에는 하이퍼 차지 게이지가 충전되지 않음');
   if (hy.ultimateBoomerang) parts.push('발동 중 궁극기를 쓰면 앞으로 날아갔다가 다시 돌아오며, 갈 때와 올 때 모두 적을 맞힘');
+  if (hy.ultimateDashReturn) parts.push('발동 중 궁극기를 쓰면 돌진했다가 출발한 자리로 다시 돌아오며, 갈 때와 올 때 모두 피해와 기절을 줌');
   if (hy.ultimateStrikeCount) parts.push(`발동 중 궁극기를 쓰면 번개가 ${hy.ultimateStrikeCount}개 떨어짐`);
   if (hy.rangeMultiplier) parts.push(`발동 중 기본공격과 궁극기 사거리 ${pct(hy.rangeMultiplier)}% 증가`);
   return { name: hy.name, desc: parts.join('. ') + '.' };
@@ -1504,6 +1515,16 @@ function repeatMissionsView(u) {
 // id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
+  {
+    id: '2026-10-13-byeongitong-hyper',
+    date: '2026-10-13',
+    tag: 'new',
+    title: '변기통 하이퍼 차지 추가!',
+    items: [
+      '변기통에게 하이퍼 차지가 생겼어요. 발동 중 이동속도 15% 증가, 공격력 10% 증가, 받는 피해 10% 감소예요.',
+      '발동 중에 궁극기 [변기 돌진]을 쓰면 돌진했다가 출발한 자리로 다시 돌아오면서, 갈 때와 올 때 모두 피해와 기절을 줘요.',
+    ],
+  },
   {
     id: '2026-10-13-nai-chef',
     date: '2026-10-13',
@@ -4733,6 +4754,11 @@ function registerGameplayHandlers(socket) {
       p.dashTimeLeft = ult.duration || 0.4;
       p.dashTotal = p.dashTimeLeft; // 돌진 속도 곡선(처음 빠르고 점점 느려짐)을 계산하기 위한 전체 시간
       p.dashHitIds = []; // 이번 돌진에서 이미 맞힌 대상 (관통 돌진이 같은 적을 두 번 때리지 않도록)
+      // 하이퍼 차지 발동 중이면: 돌진이 끝난 뒤 출발했던 자리로 다시 돌진해서 돌아오며, 돌아오는 길에도 피해를 줌 (변기통)
+      const hyperDashReturn = p.hasHyper && p.hyper && p.hyper.ultimateDashReturn && p.hyperUntil && Date.now() < p.hyperUntil;
+      p.dashReturn = hyperDashReturn ? { x: p.x, y: p.y } : null;
+      p.dashReturning = false;
+      p.dashReturnTarget = null;
     } else if (ult.type === 'burst') {
       // 꽈리의 고추 발사: 발사 순간의 조준 방향으로 고추를 짧은 간격으로 연달아 발사 (첫 발은 즉시)
       const fireAngle = p.angle;
@@ -4884,7 +4910,7 @@ function updateMatch(match, dt, now) {
     if (match.over) break;
     const p = match.players[pid];
     if (!p.dashing) continue;
-    if (!p.alive) { p.dashing = false; continue; }
+    if (!p.alive) { p.dashing = false; p.dashReturn = null; p.dashReturning = false; continue; }
 
     const ult = p.ultimate;
     // 자연스러운 돌진: 일정한 속도로 갑자기 멈추지 않고, 처음엔 빠르다가 점점 느려지며 멈춘다(ease-out).
@@ -4943,7 +4969,34 @@ function updateMatch(match, dt, now) {
     }
 
     // 관통 돌진은 적에게 닿아도 멈추지 않는다. 벽에 막히거나 돌진 시간이 끝나면 종료
-    if (blockedByWall || p.dashTimeLeft <= 0) p.dashing = false;
+    if (blockedByWall || p.dashTimeLeft <= 0) {
+      p.dashing = false;
+      if (p.dashReturning) {
+        // 돌아오는 돌진이 끝남: 출발했던 자리에 정확히 서도록 맞춤
+        p.dashReturning = false;
+        const rt = p.dashReturnTarget;
+        p.dashReturnTarget = null;
+        if (rt && Math.hypot(rt.x - p.x, rt.y - p.y) < 40 && !collidesWithWalls(match.walls, rt.x, rt.y, PLAYER_RADIUS)) { p.x = rt.x; p.y = rt.y; }
+      } else if (p.dashReturn) {
+        // 하이퍼 차지 궁극기: 나아가는 돌진이 끝났으니, 출발했던 자리를 향해 다시 돌진 (맞힌 적 목록을 비워서 돌아오는 길에 한 번 더 맞힐 수 있음)
+        const rt = p.dashReturn;
+        p.dashReturn = null;
+        const rdx = rt.x - p.x;
+        const rdy = rt.y - p.y;
+        const rdist = Math.hypot(rdx, rdy);
+        if (rdist > 8) {
+          const sp = p.dashSpeed || ult.speed || 1400;
+          p.dashing = true;
+          p.dashReturning = true;
+          p.dashReturnTarget = rt;
+          p.dashDirX = rdx / rdist;
+          p.dashDirY = rdy / rdist;
+          p.dashTimeLeft = Math.max(0.1, rdist / sp); // 속도 곡선의 평균이 sp 이므로 시간 = 거리 / 속도
+          p.dashTotal = p.dashTimeLeft;
+          p.dashHitIds = [];
+        }
+      }
+    }
   }
 
   // 넉백(밀쳐냄) 처리: 등감속 운동으로 처음엔 빠르게 날아가다가 점점 느려지며 목표 거리만큼 이동 후 멈춘다
