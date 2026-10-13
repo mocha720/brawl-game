@@ -1274,6 +1274,15 @@ const SKINS = {
     // egg(기본공격 발사체)를 독병으로, eggWhite(터진 뒤 퍼지는 흰자)를 독 장판으로, chicken(궁극기 소환수)을 검은 고양이로 바꿈. 피해/범위/지속시간/체력은 그대로
     visuals: { egg: 'poisonVial', eggWhite: 'poisonPool', chicken: 'blackCat' },
   },
+  nai_chef: {
+    id: 'nai_chef',
+    characterId: 'nai',
+    name: '주방장',
+    price: SKIN_PRICE,
+    desc: '하얀 조리복에 높은 요리모자를 쓴 주방장으로 변신! 기본공격은 실내화 대신 은쟁반을 던져 터지는 범위 피해 공격이 되고, 궁극기는 불꽃이 활활 타오르는 프라이팬 강타로, 반사 방어막은 반짝이는 은색 요리 뚜껑 모양으로 바뀌어요. (외형만 바뀌고 성능은 그대로예요)',
+    // slipper(기본공격 투척물)를 쟁반으로, slipperExplosion(폭발)을 쟁반 폭발로, leapLand(궁극기 착지)를 프라이팬 강타로 바꿈. 피해/범위/사거리/기절은 그대로
+    visuals: { slipper: 'tray', slipperExplosion: 'trayExplosion', leapLand: 'chefLand' },
+  },
   uphal_magma: {
     id: 'uphal_magma',
     characterId: 'uphal',
@@ -1495,6 +1504,18 @@ function repeatMissionsView(u) {
 // id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
+  {
+    id: '2026-10-13-nai-chef',
+    date: '2026-10-13',
+    tag: 'new',
+    title: '나이 스킨 [주방장] 추가!',
+    items: [
+      '나이의 새 스킨 [주방장]이 상점에 나왔어요. 하얀 조리복과 높은 요리모자를 쓴 주방장으로 변신해요.',
+      '기본공격은 실내화 대신 은쟁반을 던져요. 쟁반이 떨어지면 접시 파편이 튀며 터져서 범위 피해를 줘요.',
+      '궁극기는 프라이팬을 내려찍고 불꽃이 활활 타오르는 강타로, 반사 방어막은 반짝이는 은색 요리 뚜껑 모양으로 바뀌어요.',
+      '(외형만 바뀌고 성능은 그대로예요)',
+    ],
+  },
   {
     id: '2026-10-13-balance-2',
     date: '2026-10-13',
@@ -3387,7 +3408,7 @@ function reflectBullet(match, b, reflector) {
 // 아군에게는 피해가 없고, 폭발 이펙트는 클라이언트가 그리도록 effects 에 넣는다.
 function explodePoopBomb(match, b) {
   const exVisual = b.explodeVisual || 'poopBomb'; // 폭발 모양: 폭탄 똥(기본) / 나이의 실내화('slipper')
-  const exLife = exVisual === 'slipper' ? SLIPPER_EXPLOSION_LIFE : POOP_BOMB_EXPLOSION_LIFE;
+  const exLife = exVisual === 'slipper' || exVisual === 'trayExplosion' ? SLIPPER_EXPLOSION_LIFE : POOP_BOMB_EXPLOSION_LIFE;
   effectIdCounter += 1;
   match.effects.push({ id: effectIdCounter, type: 'explosion', visual: exVisual, x: b.x, y: b.y, radius: b.explodeRadius, life: exLife, maxLife: exLife });
 
@@ -3462,12 +3483,12 @@ function spawnLob(match, p, spec, sentDistance) {
     damage: 0,
     radius: spec.radius,
     isUltimate: false,
-    visual: spec.visual,
+    visual: skinVisual(p, spec.visual), // 스킨이 있으면 투척물 모양이 바뀜 (나이 주방장의 쟁반)
     lob: true,                       // 포물선 투척: 비행 중 충돌 판정 없음, 수명이 끝나면(착지) 폭발
     arcHeight: spec.arcHeight || 100, // 화면 연출용 최고 높이
     explodeDamage: spec.explodeDamage,
     explodeRadius: spec.explodeRadius,
-    explodeVisual: 'slipper',
+    explodeVisual: skinVisual(p, 'slipperExplosion') === 'trayExplosion' ? 'trayExplosion' : 'slipper',
     explodeChargesUlt: true,         // 기본공격이므로 적중 시 궁극기 게이지 충전
     selfKnockback: spec.selfKnockback || 0, // 폭발 범위 안의 던진 본인을 밀쳐내는 거리(px)
   });
@@ -4812,8 +4833,8 @@ function updateMatch(match, dt, now) {
 
     effectIdCounter += 1;
     const landSkinVisual = skinVisual(p, 'leapLand'); // 스킨이 있으면 착지 연출이 바뀜 (모카 섀도우). 스킨이 없으면 'leapLand' 그대로라서 기본 연출
-    const landVisual = p.leapStun > 0 ? 'shoot' : (landSkinVisual !== 'leapLand' ? landSkinVisual : undefined);
-    const landLife = p.leapStun > 0 ? 0.6 : (landVisual ? 0.7 : EFFECT_LIFETIME);
+    const landVisual = landSkinVisual !== 'leapLand' ? landSkinVisual : (p.leapStun > 0 ? 'shoot' : undefined);
+    const landLife = landVisual === 'chefLand' ? 0.95 : (landVisual === 'shoot' ? 0.6 : (landVisual ? 0.7 : EFFECT_LIFETIME));
     match.effects.push({ id: effectIdCounter, type: 'leapLand', visual: landVisual, x: p.x, y: p.y, radius: p.leapRadius, life: landLife, maxLife: landVisual ? landLife : undefined });
 
     for (const tid in match.players) {
