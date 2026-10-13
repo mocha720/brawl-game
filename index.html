@@ -4683,6 +4683,228 @@ const SKIN_LOOKS = {
       }
     },
   },
+  nai_chef: {
+    // 주방장: 하얀 조리복(이중 단추) + 빨간 목 스카프 + 높고 풍성한 요리모자. 반사 방어막은 은색 요리 뚜껑(클로슈) 모양, 궁극기 도약 중에는 불꽃 꼬리를 끌며 날아감
+    body: '#f4f1ea',
+    avatarRing: '#e8b923',
+    upright: true,
+    draw(R, p) {
+      const t = Date.now() / 1000;
+      // 요리모자: 몸 위로 솟은 풍성한 모자 (뭉게뭉게 3덩이 + 주름진 띠)
+      ctx.save();
+      ctx.fillStyle = '#fbfaf6';
+      ctx.strokeStyle = '#b9b3a6';
+      ctx.lineWidth = 1.4;
+      for (const [cx, cy, cr] of [[-0.42, -1.05, 0.46], [0.42, -1.05, 0.46], [0, -1.32, 0.52], [0, -1.02, 0.5]]) {
+        ctx.beginPath();
+        ctx.arc(cx * R, cy * R, cr * R, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+      ctx.restore();
+      // 몸통 안쪽만 그리도록 잘라서 조리복/얼굴을 그림
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(0, 0, R - 0.5, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.fillStyle = '#f7f4ec';
+      ctx.fillRect(-R, -R, R * 2, R * 2);
+      // 모자 챙(이마 위 주름 띠)
+      ctx.fillStyle = '#ece7da';
+      ctx.fillRect(-R * 0.62, -R * 0.82, R * 1.24, R * 0.2);
+      ctx.strokeStyle = '#c9c2b2';
+      ctx.lineWidth = 1;
+      for (let i = -2; i <= 2; i++) {
+        ctx.beginPath();
+        ctx.moveTo(i * R * 0.24, -R * 0.82);
+        ctx.lineTo(i * R * 0.24, -R * 0.62);
+        ctx.stroke();
+      }
+      // 얼굴
+      ctx.fillStyle = '#ffd9b3';
+      ctx.beginPath();
+      ctx.ellipse(0, -R * 0.38, R * 0.44, R * 0.36, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#8a5f3a';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+      ctx.fillStyle = '#2b1c14'; // 눈
+      for (const side of [-1, 1]) {
+        ctx.beginPath();
+        ctx.arc(side * R * 0.17, -R * 0.42, R * 0.06, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = 'rgba(255, 120, 130, 0.5)'; // 볼터치
+      for (const side of [-1, 1]) {
+        ctx.beginPath();
+        ctx.ellipse(side * R * 0.28, -R * 0.3, R * 0.09, R * 0.06, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.strokeStyle = '#7a3b2a'; // 웃는 입
+      ctx.lineWidth = 1.3;
+      ctx.beginPath();
+      ctx.arc(0, -R * 0.28, R * 0.13, 0.15 * Math.PI, 0.85 * Math.PI);
+      ctx.stroke();
+      // 빨간 목 스카프
+      ctx.fillStyle = '#d8283a';
+      ctx.beginPath();
+      ctx.moveTo(-R * 0.4, -R * 0.02);
+      ctx.lineTo(R * 0.4, -R * 0.02);
+      ctx.lineTo(0, R * 0.3);
+      ctx.closePath();
+      ctx.fill();
+      // 조리복 이중 단추 + 옷깃 선
+      ctx.strokeStyle = '#cfc8b8';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(0, R * 0.3);
+      ctx.lineTo(0, R);
+      ctx.stroke();
+      for (const side of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(side * R * 0.5, R * 0.1);
+        ctx.lineTo(side * R * 0.1, R);
+        ctx.stroke();
+        for (let i = 0; i < 3; i++) {
+          ctx.fillStyle = '#e8b923';
+          ctx.beginPath();
+          ctx.arc(side * R * (0.2 + 0.0 * i), R * (0.45 + i * 0.22), R * 0.06, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      // 어깨 쪽 소매 윤곽
+      ctx.strokeStyle = 'rgba(160, 150, 130, 0.6)';
+      ctx.lineWidth = 1.3;
+      for (const side of [-1, 1]) {
+        ctx.beginPath();
+        ctx.arc(side * R * 0.95, R * 0.1, R * 0.45, side > 0 ? Math.PI * 0.6 : Math.PI * 0.4, side > 0 ? Math.PI * 1.4 : Math.PI * 1.6, side < 0);
+        ctx.stroke();
+      }
+      ctx.restore();
+      // 모자 위로 솟는 따뜻한 김 (살짝)
+      ctx.save();
+      for (let i = 0; i < 3; i++) {
+        const k = (t * 0.6 + i / 3) % 1;
+        ctx.globalAlpha = (1 - k) * 0.35;
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc((i - 1) * R * 0.5 + Math.sin(t * 2 + i) * 3, -R * 1.7 - k * R * 0.9, R * 0.16 + k * R * 0.12, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    },
+    // 반사 방어막: 은색 요리 뚜껑(클로슈). 윗면은 반짝이는 금속 돔 + 가운데 금빛 손잡이 + 테두리 리벳 + 빙글 도는 반짝임. 가장자리로 김이 피어오름
+    drawReflect(p, R, blink, t, left, ratio) {
+      // 김
+      for (let i = 0; i < 8; i++) {
+        const k = (t * 0.9 + i / 8) % 1;
+        const a = (i / 8) * Math.PI * 2 + t * 0.4;
+        ctx.globalAlpha = blink * (1 - k) * 0.5;
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(p.x + Math.cos(a) * R * (0.95 + k * 0.45), p.y + Math.sin(a) * R * (0.95 + k * 0.45), R * 0.12 + k * R * 0.14, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = blink;
+      // 돔 본체 (반투명 은색 금속)
+      const dome = ctx.createRadialGradient(p.x - R * 0.35, p.y - R * 0.4, R * 0.1, p.x, p.y, R);
+      dome.addColorStop(0, 'rgba(255, 255, 255, 0.85)');
+      dome.addColorStop(0.45, 'rgba(190, 200, 212, 0.6)');
+      dome.addColorStop(1, 'rgba(100, 112, 128, 0.7)');
+      ctx.fillStyle = dome;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, R, 0, Math.PI * 2);
+      ctx.fill();
+      // 반짝이는 빛줄기(천천히 도는 부채꼴)
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, R - 2, 0, Math.PI * 2);
+      ctx.clip();
+      const sa = t * 1.3;
+      const sg = ctx.createLinearGradient(p.x + Math.cos(sa) * -R, p.y + Math.sin(sa) * -R, p.x + Math.cos(sa) * R, p.y + Math.sin(sa) * R);
+      sg.addColorStop(0.38, 'rgba(255, 255, 255, 0)');
+      sg.addColorStop(0.5, 'rgba(255, 255, 255, 0.85)');
+      sg.addColorStop(0.62, 'rgba(255, 255, 255, 0)');
+      ctx.fillStyle = sg;
+      ctx.fillRect(p.x - R, p.y - R, R * 2, R * 2);
+      ctx.restore();
+      // 테두리: 어두운 바깥 선 + 밝은 안쪽 선 + 리벳 8개
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = '#4b5560';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, R, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#eef2f6';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, R - 3, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = '#f6f8fb';
+      ctx.strokeStyle = '#4b5560';
+      ctx.lineWidth = 1;
+      for (let i = 0; i < 8; i++) {
+        const a = (i / 8) * Math.PI * 2 + Math.PI / 8;
+        ctx.beginPath();
+        ctx.arc(p.x + Math.cos(a) * (R - 6), p.y + Math.sin(a) * (R - 6), 1.8, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+      // 가운데 금빛 손잡이 (캐릭터 얼굴을 가리지 않도록 작게)
+      const knob = ctx.createRadialGradient(p.x - 2, p.y - 2, 1, p.x, p.y, R * 0.24);
+      knob.addColorStop(0, '#fff3b0');
+      knob.addColorStop(1, '#c8921a');
+      ctx.fillStyle = knob;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y - R * 0.55, R * 0.16, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#7a5410';
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+      // 남은 시간 호 (금색)
+      ctx.lineWidth = 5;
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = '#ffd34d';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, R + 7, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * ratio);
+      ctx.stroke();
+    },
+    // 도약(궁극기) 중: 출발 지점에서 길게 이어지는 불꽃 꼬리 + 튀는 불똥
+    drawFx(p) {
+      if (!p.alive || !p.leaping || typeof p.leapStartX !== 'number') return;
+      const dx = p.x - p.leapStartX;
+      const dy = p.y - p.leapStartY;
+      const len = Math.hypot(dx, dy);
+      if (len < 6) return;
+      ctx.save();
+      const g = ctx.createLinearGradient(p.leapStartX, p.leapStartY, p.x, p.y);
+      g.addColorStop(0, 'rgba(255, 90, 20, 0)');
+      g.addColorStop(1, 'rgba(255, 170, 40, 0.8)');
+      ctx.strokeStyle = g;
+      ctx.lineCap = 'round';
+      ctx.lineWidth = PLAYER_RADIUS * 1.4;
+      ctx.beginPath();
+      ctx.moveTo(p.leapStartX, p.leapStartY);
+      ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+      ctx.lineWidth = 4;
+      ctx.strokeStyle = 'rgba(255, 250, 200, 0.85)';
+      ctx.beginPath();
+      ctx.moveTo(p.leapStartX, p.leapStartY);
+      ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+      const nx = -dy / len, ny = dx / len;
+      ctx.fillStyle = 'rgba(255, 220, 90, 0.95)';
+      for (let i = 0; i < 9; i++) {
+        const k = ((Date.now() / 260) + i / 9) % 1;
+        const side = i % 2 === 0 ? 1 : -1;
+        ctx.globalAlpha = 1 - k;
+        ctx.beginPath();
+        ctx.arc(p.x - dx * k * 0.5 + nx * side * (6 + k * 16), p.y - dy * k * 0.5 + ny * side * (6 + k * 16), 3 * (1 - k) + 0.8, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
+    },
+  },
   uphal_magma: {
     // 마그마: 용암이 흐르는 화산 거인. 현무암 갑옷 + 갈라진 틈마다 이글거리는 용암 + 가슴의 맥동하는 용암 핵 + 뿔 + 어깨 위로 솟은 용암 망치.
     // 지진을 준비(선딜)하는 동안에는 drawFx 가 망치를 들어올리며 점점 달아오르게 그림
@@ -5642,6 +5864,15 @@ function drawPlayer(p, isMe) {
     const blink = left < 600 ? (Math.floor(nowMs / 70) % 2 === 0 ? 0.4 : 1) : 1;
     const t = nowMs / 1000;
     const R = PLAYER_RADIUS + 20;
+    const skinShield = p.skin && SKIN_LOOKS[p.skin] && SKIN_LOOKS[p.skin].drawReflect;
+    if (skinShield) {
+      // 스킨 전용 방어막 모양 (나이 주방장의 요리 뚜껑 등)
+      const totalMs = ((p.gadget && p.gadget.duration) || 2) * 1000;
+      ctx.save();
+      ctx.globalAlpha = blink;
+      skinShield(p, R, blink, t, left, Math.max(0, Math.min(1, left / totalMs)));
+      ctx.restore();
+    } else {
     ctx.save();
     ctx.globalAlpha = blink;
     // 바깥 후광
@@ -5703,6 +5934,7 @@ function drawPlayer(p, isMe) {
       ctx.stroke();
     }
     ctx.restore();
+    }
   }
 
   // 기절 상태 표시 (변기 돌진 등에 맞았을 때) / 충전 중 표시 (보배의 가젯)
@@ -6180,6 +6412,7 @@ function drawSlipperBullet(b) {
   ctx.scale(1 + 0.12 * (h / arcH), 1 + 0.12 * (h / arcH));
   ctx.rotate(now * 11 + b.id);
   ctx.lineJoin = 'round';
+  if (b.visual === 'tray') { drawTrayBody(r, now, t); ctx.restore(); return; } // 나이 주방장: 실내화 대신 은쟁반
   // 밑창
   ctx.fillStyle = '#f6f2e9';
   ctx.strokeStyle = '#3b2f3a';
@@ -6363,6 +6596,252 @@ function drawSlipperExplosion(e) {
 }
 
 // 나이의 궁극기 '슛' 착지: 노란 충격파 + 별이 빙글빙글 도는 기절 표시 + '슛!' 글자
+function drawTrayBody(r, now, t) {
+  // 빙글빙글 도는 은쟁반 (윗면이 보이는 둥근 쟁반 + 양쪽 손잡이 + 곧 터질 것 같은 깜빡이는 불빛)
+  const T = r * 1.9;
+  const lw = Math.max(1.2, r * 0.12);
+  ctx.strokeStyle = '#3a414b';
+  ctx.lineWidth = lw;
+  ctx.fillStyle = '#9aa3b0';
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.ellipse(side * T * 1.05, 0, T * 0.26, T * 0.14, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
+  const g = ctx.createRadialGradient(-T * 0.3, -T * 0.3, T * 0.1, 0, 0, T);
+  g.addColorStop(0, '#ffffff');
+  g.addColorStop(0.5, '#cfd6df');
+  g.addColorStop(1, '#8b95a3');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(0, 0, T, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(70, 80, 95, 0.6)';
+  ctx.lineWidth = Math.max(1, r * 0.1);
+  ctx.beginPath();
+  ctx.arc(0, 0, T * 0.74, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.85)';
+  ctx.lineWidth = Math.max(1, r * 0.16);
+  ctx.beginPath();
+  ctx.arc(0, 0, T * 0.58, -2.6, -1.4);
+  ctx.stroke();
+  const blink = 0.5 + 0.5 * Math.sin(now * (14 + 26 * t));
+  ctx.fillStyle = `rgba(255, 70, 50, ${0.45 + 0.5 * blink})`;
+  ctx.beginPath();
+  ctx.arc(0, 0, r * (0.22 + 0.14 * blink), 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawTrayExplosion(e) {
+  // 나이 주방장의 쟁반 폭발: 따뜻한 주황 섬광 + 사방으로 튀는 은접시 파편 + 김 + 충격파 (폭발 범위 = e.radius)
+  const maxLife = e.maxLife || 0.7;
+  const t = Math.max(0, Math.min(1, 1 - e.life / maxLife));
+  const ease = 1 - Math.pow(1 - t, 3);
+  const R = e.radius;
+  const seed = e.id || 1;
+  ctx.save();
+  ctx.translate(e.x, e.y);
+  // 폭발 범위
+  ctx.fillStyle = `rgba(255, 170, 60, ${0.2 * (1 - t)})`;
+  ctx.beginPath();
+  ctx.arc(0, 0, R * ease, 0, Math.PI * 2);
+  ctx.fill();
+  // 중심 섬광 (노랑 → 주황)
+  const fa = Math.pow(1 - t, 1.3);
+  const fr = Math.max(2, R * (0.25 + 0.55 * ease));
+  const fg = ctx.createRadialGradient(0, 0, 0, 0, 0, fr);
+  fg.addColorStop(0, `rgba(255, 255, 235, ${fa})`);
+  fg.addColorStop(0.5, `rgba(255, 205, 80, ${fa * 0.95})`);
+  fg.addColorStop(1, `rgba(255, 110, 30, ${fa * 0.7})`);
+  ctx.fillStyle = fg;
+  ctx.beginPath();
+  ctx.arc(0, 0, fr, 0, Math.PI * 2);
+  ctx.fill();
+  // 충격파 두 겹
+  for (let i = 0; i < 2; i++) {
+    const q = Math.max(0, Math.min(1, (t - i * 0.1) / 0.6));
+    ctx.strokeStyle = `rgba(255, 245, 220, ${(1 - q) * 0.9})`;
+    ctx.lineWidth = 5 * (1 - q) + 1.2;
+    ctx.beginPath();
+    ctx.arc(0, 0, R * (0.2 + 0.85 * q), 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  // 튀어나가는 은접시 파편
+  for (let i = 0; i < 9; i++) {
+    const a = prand(seed, i) * Math.PI * 2;
+    const dist = R * (0.5 + 0.7 * prand(seed, i + 30)) * ease;
+    const up = Math.sin(Math.min(1, t * 1.4) * Math.PI) * (16 + prand(seed, i + 60) * 18);
+    ctx.save();
+    ctx.globalAlpha = 1 - t * t;
+    ctx.translate(Math.cos(a) * dist, Math.sin(a) * dist - up);
+    ctx.rotate(t * 9 + i);
+    const dr = 5 + prand(seed, i + 90) * 3;
+    ctx.fillStyle = '#dfe5ec';
+    ctx.strokeStyle = '#3a414b';
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, dr, dr * 0.55, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+  // 피어오르는 김
+  for (let i = 0; i < 6; i++) {
+    const a = prand(seed, i + 120) * Math.PI * 2;
+    const d = R * 0.5 * prand(seed, i + 150);
+    ctx.fillStyle = `rgba(255, 255, 255, ${0.5 * (1 - t)})`;
+    ctx.beginPath();
+    ctx.arc(Math.cos(a) * d, Math.sin(a) * d - t * 28, 7 + t * 12, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawChefLand(e) {
+  // 나이 주방장의 궁극기(슛) 착지: 거대한 프라이팬이 내려찍히고, 불꽃 고리와 불기둥이 사방으로 번지며 접시/음식 파편이 튐 (피해·기절 범위 = e.radius)
+  const maxLife = e.maxLife || 0.95;
+  const t = Math.max(0, Math.min(1, 1 - e.life / maxLife));
+  const ease = 1 - Math.pow(1 - Math.min(1, t / 0.5), 3);
+  const fade = t < 0.6 ? 1 : Math.max(0, (1 - t) / 0.4);
+  const R = e.radius;
+  const seed = e.id || 1;
+  ctx.save();
+  ctx.translate(e.x, e.y);
+  // 그을린 바닥
+  const scorch = ctx.createRadialGradient(0, 0, 0, 0, 0, R);
+  scorch.addColorStop(0, `rgba(30, 14, 8, ${0.6 * fade})`);
+  scorch.addColorStop(0.8, `rgba(120, 40, 10, ${0.35 * fade})`);
+  scorch.addColorStop(1, 'rgba(255, 120, 30, 0)');
+  ctx.fillStyle = scorch;
+  ctx.beginPath();
+  ctx.arc(0, 0, R * (0.3 + 0.7 * ease), 0, Math.PI * 2);
+  ctx.fill();
+  // 불꽃 고리
+  ctx.save();
+  ctx.globalAlpha = fade;
+  ctx.lineWidth = 12 * (1 - t) + 3;
+  const rg = ctx.createLinearGradient(-R, 0, R, 0);
+  rg.addColorStop(0, '#ff7a1a');
+  rg.addColorStop(0.5, '#ffd34d');
+  rg.addColorStop(1, '#ff7a1a');
+  ctx.strokeStyle = rg;
+  ctx.shadowColor = 'rgba(255, 110, 20, 1)';
+  ctx.shadowBlur = 14;
+  ctx.beginPath();
+  ctx.arc(0, 0, R * (0.25 + 0.75 * ease), 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
+  // 고리를 따라 솟는 불기둥 14개
+  const rise = Math.max(0, Math.min(1, (t - 0.08) / 0.3)) * (1 - Math.max(0, (t - 0.55) / 0.45));
+  if (rise > 0.02) {
+    for (let i = 0; i < 14; i++) {
+      const a = (i / 14) * Math.PI * 2 + prand(seed, i) * 0.2;
+      const rad = R * (0.25 + 0.75 * ease) * 0.96;
+      const bx = Math.cos(a) * rad;
+      const by = Math.sin(a) * rad;
+      const h = (28 + 20 * prand(seed, i + 40)) * rise;
+      const w = 9 * (0.6 + 0.4 * rise);
+      const sway = Math.sin(Date.now() / 70 + i * 1.9) * 3;
+      const fg = ctx.createLinearGradient(0, by, 0, by - h);
+      fg.addColorStop(0, 'rgba(255, 250, 200, 0.95)');
+      fg.addColorStop(0.45, 'rgba(255, 150, 30, 0.9)');
+      fg.addColorStop(1, 'rgba(210, 40, 0, 0)');
+      ctx.fillStyle = fg;
+      ctx.beginPath();
+      ctx.moveTo(bx - w, by);
+      ctx.quadraticCurveTo(bx - w * 0.8 + sway, by - h * 0.55, bx + sway, by - h);
+      ctx.quadraticCurveTo(bx + w * 0.8 + sway, by - h * 0.55, bx + w, by);
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+  // 내려찍히는 프라이팬 (처음 짧은 순간: 크게 → 제자리로 쾅 → 서서히 사라짐)
+  if (t < 0.55) {
+    const drop = t < 0.18 ? 1 + (1 - t / 0.18) * 1.5 : 1;
+    const pa = t < 0.18 ? 0.95 : Math.max(0, 1 - (t - 0.18) / 0.37);
+    const pr = R * 0.36 * drop;
+    ctx.save();
+    ctx.globalAlpha = pa;
+    ctx.rotate(-0.6);
+    ctx.fillStyle = '#2b2f36'; // 손잡이
+    ctx.strokeStyle = '#0f1115';
+    ctx.lineWidth = 2;
+    ctx.fillRect(pr * 0.85, -pr * 0.13, pr * 1.2, pr * 0.26);
+    ctx.strokeRect(pr * 0.85, -pr * 0.13, pr * 1.2, pr * 0.26);
+    const pg = ctx.createRadialGradient(-pr * 0.3, -pr * 0.3, pr * 0.1, 0, 0, pr);
+    pg.addColorStop(0, '#6d7584');
+    pg.addColorStop(1, '#1c1f25');
+    ctx.fillStyle = pg;
+    ctx.beginPath();
+    ctx.arc(0, 0, pr, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, pr * 0.78, 0.2, 1.4);
+    ctx.stroke();
+    ctx.restore();
+  }
+  // 충격 별 (착지 순간)
+  if (t < 0.3) {
+    const q = t / 0.3;
+    const sr = R * (0.25 + 0.5 * q);
+    ctx.fillStyle = `rgba(255, 235, 120, ${1 - q})`;
+    ctx.beginPath();
+    for (let i = 0; i < 20; i++) {
+      const ang = (i / 20) * Math.PI * 2;
+      const rad = i % 2 === 0 ? sr : sr * 0.55;
+      const x = Math.cos(ang) * rad;
+      const y = Math.sin(ang) * rad;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
+  // 튀어오르는 접시 / 음식 조각
+  for (let i = 0; i < 12; i++) {
+    const a = prand(seed, i + 70) * Math.PI * 2;
+    const dist = R * (0.4 + 0.75 * prand(seed, i + 100)) * ease;
+    const up = Math.sin(Math.min(1, t * 1.3) * Math.PI) * (22 + prand(seed, i + 130) * 26);
+    ctx.save();
+    ctx.globalAlpha = fade;
+    ctx.translate(Math.cos(a) * dist, Math.sin(a) * dist - up);
+    ctx.rotate(t * 8 + i);
+    if (i % 3 === 0) {
+      ctx.fillStyle = '#e24a3a'; // 토마토 조각
+      ctx.beginPath();
+      ctx.arc(0, 0, 4, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (i % 3 === 1) {
+      ctx.fillStyle = '#6fbf4a'; // 채소 조각
+      ctx.fillRect(-4, -2, 8, 4);
+    } else {
+      ctx.fillStyle = '#dfe5ec'; // 접시
+      ctx.strokeStyle = '#3a414b';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 6, 3.4, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  // 바깥으로 번지는 충격파
+  for (let i = 0; i < 2; i++) {
+    const q = Math.max(0, Math.min(1, (t - i * 0.12) / 0.6));
+    ctx.strokeStyle = i === 0 ? `rgba(255, 245, 210, ${1 - q})` : `rgba(255, 150, 60, ${1 - q})`;
+    ctx.lineWidth = 6 * (1 - q) + 1.5;
+    ctx.beginPath();
+    ctx.arc(0, 0, R * (0.2 + 0.9 * q), 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function drawShootLand(e) {
   const maxLife = e.maxLife || 0.6;
   const t = Math.max(0, Math.min(1, 1 - e.life / maxLife));
@@ -8126,6 +8605,10 @@ function drawEffect(e) {
     ctx.fillStyle = '#fff';
     ctx.fillText('⚡', e.x, e.y);
     ctx.restore();
+  } else if (e.type === 'explosion' && e.visual === 'trayExplosion') {
+    drawTrayExplosion(e);
+  } else if (e.type === 'leapLand' && e.visual === 'chefLand') {
+    drawChefLand(e);
   } else if (e.type === 'explosion' && e.visual === 'slipper') {
     drawSlipperExplosion(e);
   } else if (e.type === 'leapLand' && e.visual === 'shoot') {
