@@ -447,6 +447,16 @@
   .vote-btn.chosen { border-color: #2ecc71; background: rgba(46, 204, 113, 0.18); }
   .vote-btn:disabled { cursor: default; }
   .vote-note { margin-top: 8px; font-size: 13px; opacity: 0.85; }
+  /* 맵 투표 (게임 모드 투표 아래) */
+  .vote-sub-title { margin: 12px 0 6px; font-family: var(--font-display); font-size: 17px; color: var(--sun); }
+  .map-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .map-btn { box-sizing: border-box; padding: 6px 4px; border-radius: 12px; border: 3px solid var(--lift); background: var(--dusk); color: var(--paper); cursor: pointer; font: inherit; text-align: center; }
+  .map-btn svg { display: block; width: 100%; max-width: 84px; height: auto; margin: 0 auto 4px; border-radius: 6px; }
+  .map-btn .map-name { display: block; font-family: var(--font-display); font-size: 14px; }
+  .map-btn .vote-count { display: block; margin-top: 2px; font-size: 13px; font-weight: 700; color: var(--sun); }
+  .map-btn.mine { border-color: var(--sun); box-shadow: 0 0 0 2px rgba(255, 214, 90, 0.35); }
+  .map-btn.chosen { border-color: #2ecc71; background: rgba(46, 204, 113, 0.18); }
+  .map-btn:disabled { cursor: default; }
   /* 경기 시작 때 크게 뜨는 안내 문구 (문지기 모드) */
   #startBanner { display: none; position: fixed; left: 50%; top: 32%; transform: translate(-50%, -50%); z-index: 25; pointer-events: none; width: min(92vw, 640px); box-sizing: border-box; padding: 14px 18px; text-align: center; font-family: var(--font-display); font-size: clamp(22px, 5.6vw, 40px); line-height: 1.25; color: #fff; background: rgba(120, 20, 20, 0.82); border: 4px solid #ffd35a; border-radius: 18px; text-shadow: 0 3px 0 #000; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.55); }
   #startBanner.show { display: block; animation: startBannerPop 3s ease-out forwards; }
@@ -3248,9 +3258,15 @@ function setupVoteUi(vote) {
     el.innerHTML = '';
     return;
   }
-  voteState = { resolved: false, myVote: null, counts: { knockout: 0, gatekeeper: 0 }, options: vote.options || [] };
+  voteState = { resolved: false, myVote: null, counts: { knockout: 0, gatekeeper: 0 }, options: vote.options || [], mapOptions: vote.maps || [], myMapVote: null, mapCounts: {} };
   el.classList.add('open');
   renderVoteUi();
+}
+
+// 맵 투표 버튼에 쓰는 작은 미리보기: 벽(회색)과 덤불(초록)을 그대로 축소해서 그린다
+function mapThumbSvg(m) {
+  const rects = (list, fill) => (list || []).map((r) => `<rect x="${r.x}" y="${r.y}" width="${r.width}" height="${r.height}" fill="${fill}"/>`).join('');
+  return `<svg viewBox="0 0 ${ARENA_WIDTH} ${ARENA_HEIGHT}" xmlns="http://www.w3.org/2000/svg"><rect width="${ARENA_WIDTH}" height="${ARENA_HEIGHT}" fill="#2b3158"/>${rects(m.bushes, '#3f9b52')}${rects(m.walls, '#d6dae3')}</svg>`;
 }
 
 function renderVoteUi(result) {
@@ -3266,15 +3282,33 @@ function renderVoteUi(result) {
       <span class="vote-count">${voteState.counts[o.id] || 0}표</span>
     </button>`;
   }).join('');
+  const mapBtns = (voteState.mapOptions || []).map((m) => {
+    const cls = ['map-btn'];
+    if (voteState.myMapVote === m.id) cls.push('mine');
+    if (result && result.mapId === m.id) cls.push('chosen');
+    return `<button class="${cls.join(' ')}" data-map="${escapeHtml(m.id)}" ${voteState.resolved ? 'disabled' : ''}>
+      ${mapThumbSvg(m)}
+      <span class="map-name">${escapeHtml(m.name)}</span>
+      <span class="vote-count">${(voteState.mapCounts || {})[m.id] || 0}표</span>
+    </button>`;
+  }).join('');
+  const mapSection = mapBtns ? `<div class="vote-sub-title">${result ? '맵 결정' : '어떤 맵에서 할까요?'}</div><div class="map-options">${mapBtns}</div>` : '';
   let note = '표가 같으면 무작위로 정해져요';
-  if (result) note = `🎮 ${escapeHtml(result.gameModeName)} 모드로 결정!${result.tie ? ' (동표라서 무작위)' : ''}`;
-  else if (voteState.myVote) note = '투표했어요! 다른 사람이 정할 때까지 바꿀 수 있어요';
-  el.innerHTML = `<div class="vote-title">${result ? '게임 모드 결정' : '어떤 모드로 할까요?'}</div><div class="vote-options">${btns}</div><div class="vote-note">${note}</div>`;
+  if (result) note = `🎮 ${escapeHtml(result.gameModeName)} 모드${result.tie ? '(동표라서 무작위)' : ''}${result.mapName ? ` · 🗺 ${escapeHtml(result.mapName)} 맵${result.mapTie ? '(동표라서 무작위)' : ''}` : ''}으로 결정!`;
+  else if (voteState.myVote || voteState.myMapVote) note = '투표했어요! 다른 사람이 정할 때까지 바꿀 수 있어요 (모드와 맵 모두 투표하면 바로 시작해요)';
+  el.innerHTML = `<div class="vote-title">${result ? '게임 모드 결정' : '어떤 모드로 할까요?'}</div><div class="vote-options">${btns}</div>${mapSection}<div class="vote-note">${note}</div>`;
   if (!voteState.resolved) {
     el.querySelectorAll('.vote-btn').forEach((b) => {
       b.addEventListener('click', () => {
         voteState.myVote = b.dataset.mode;
         socket.emit('voteMode', { mode: b.dataset.mode });
+        renderVoteUi();
+      });
+    });
+    el.querySelectorAll('.map-btn').forEach((b) => {
+      b.addEventListener('click', () => {
+        voteState.myMapVote = b.dataset.map;
+        socket.emit('voteMap', { mapId: b.dataset.map });
         renderVoteUi();
       });
     });
@@ -3284,16 +3318,22 @@ function renderVoteUi(result) {
 socket.on('modeVoteUpdate', (data) => {
   if (!voteState || voteState.resolved) return;
   voteState.counts = data.counts || voteState.counts;
+  voteState.mapCounts = data.mapCounts || voteState.mapCounts;
   renderVoteUi();
 });
 
 socket.on('modeVoteResult', (data) => {
   matchGameMode = data.gameMode || 'knockout';
   if (data.winScore) matchWinScore = data.winScore;
+  // 투표로 정해진 맵으로 교체: 벽/덤불을 바꾸고, 서버가 옮겨준 새 스폰 위치로 내 위치도 다시 맞춘다
+  if (data.walls) WALLS = data.walls;
+  if (data.bushes) BUSHES = data.bushes;
+  wasAlive = false;
   countdownEndsAt = Date.now() + (data.startsInMs || 0); // 결과를 보여준 뒤 카운트다운
   if (voteState) {
     voteState.resolved = true;
     voteState.counts = data.counts || voteState.counts;
+    voteState.mapCounts = data.mapCounts || voteState.mapCounts;
     renderVoteUi(data);
   }
 });
@@ -3329,12 +3369,12 @@ socket.on('matchFound', (data) => {
   matchWinScore = data.winScore || 5;
   matchIsAi = !!data.ai;
   matchGameMode = data.gameMode || 'knockout';
-  setupVoteUi(data.vote);
   ARENA_WIDTH = data.arena.width;
   ARENA_HEIGHT = data.arena.height;
   PLAYER_RADIUS = data.playerRadius;
   WALLS = data.walls || [];
   BUSHES = data.bushes || [];
+  setupVoteUi(data.vote); // 맵 미리보기 크기가 아레나 크기를 쓰므로 아레나 크기를 받은 뒤에 만듦
   resizeCanvas(); // 캔버스는 맵 크기가 아니라 화면 크기에 맞춤 (카메라가 그 안에서 맵을 비춤)
   // 서버로부터 실제 스폰 좌표를 받기 전까지 잠시 쓰이는 임시값 (아래 state 핸들러가 곧바로 덮어씀)
   myX = ARENA_WIDTH / 2;
