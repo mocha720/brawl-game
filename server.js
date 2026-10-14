@@ -785,8 +785,8 @@ const CHARACTERS = {
       type: 'charge',          // 탄창 없음. 공격 버튼을 누르는 동안 충전하고, 떼는 순간 충전 시간에 비례한 똥을 발사
       minDamage: 800,          // 충전 없이 바로 쐈을 때 피해 (1레벨 기준)
       maxDamage: 3000,         // 완전히 충전했을 때 피해 (1레벨 기준)
-      chargeTime: 3,           // 완전 충전까지 걸리는 시간(초)
-      chargeSpeedMultiplier: 0.7, // 충전하는 동안 이동속도 배율 (0.7 = 30% 감소)
+      chargeTime: 2,           // 완전 충전까지 걸리는 시간(초) (기존 3초에서 단축)
+      chargeSpeedMultiplier: 0.9, // 충전하는 동안 이동속도 배율 (0.9 = 10% 감소) (기존 0.7)
       fireCooldown: 1.5,       // 똥을 발사한 뒤 다음 똥을 발사할 수 있기까지 걸리는 시간(초)
       speed: 560,
       radius: 10,              // 충전 없이 쐈을 때 똥 크기
