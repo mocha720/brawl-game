@@ -48,6 +48,16 @@ const MODES = {
   '1v1': { size: 2, teamSize: 1, winScore: 5, coinReward: 45, trophyReward: 15, trophyLoss: 5 },
   '2v2': { size: 4, teamSize: 2, winScore: 8, coinReward: 60, trophyReward: 12, trophyLoss: 4 },
 };
+// ===== 게임 종류(규칙) =====
+// 매칭 모드(1v1/2v2)로 인원이 정해지면, 매칭된 사람들이 투표해서 어떤 규칙으로 할지 정한다 (동표면 무작위)
+const GAME_MODES = {
+  knockout: { name: '녹아우', desc: '상대를 먼저 쓰러뜨려 목표 킬 수에 도달하면 승리' },
+  gatekeeper: { name: '문지기', desc: '상대 리스폰 근처에 있는 문을 먼저 공격해 파괴하면 승리' },
+};
+const MODE_VOTE_MS = 8000;        // 게임 종류 투표 시간 (모두 투표하면 바로 끝남)
+const GATE_HP = 15000;            // 문지기 모드: 문의 체력 (모든 공격이 문에 통함)
+const GATE_RADIUS = 36;           // 문의 크기(피격 반경)
+const RESPAWN_INVINCIBLE_MS = 3000; // 리스폰 직후 무적 시간
 const MATCH_COUNTDOWN_MS = 4000; // 매칭 직후 상대 정보(캐릭터/트로피)를 보여주는 대결 화면 시간. 이 동안은 이동/공격/스킬 입력이 막힘
 const AI_COIN_REWARD = 20; // AI 연습 대결에서 점수로 이겼을 때 받는 코인 (트로피/전적/연승/미션은 기록하지 않음). 일반 1:1 승리 보상(45)보다 적게 설정
 const MATCH_CLEANUP_DELAY_MS = 600; // 승리 판정 후 마지막 상태를 한 번 더 보낸 뒤 방을 정리하기까지의 지연
@@ -1555,6 +1565,19 @@ function repeatMissionsView(u) {
 // id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
+  {
+    id: '2026-10-14-gatekeeper-mode',
+    date: '2026-10-14',
+    tag: 'new',
+    title: '새 게임 모드 [문지기] 추가 + 리스폰 변경!',
+    items: [
+      '매칭이 되면 [녹아우]와 [문지기] 중 어떤 모드로 할지 투표해요. 표가 같으면 무작위로 정해져요.',
+      '[녹아우]: 상대를 먼저 쓰러뜨려 목표 킬 수에 도달하면 승리해요.',
+      '[문지기]: 상대 리스폰 근처에 있는 문을 공격해서 먼저 파괴하면 승리해요. 문은 모든 공격으로 부술 수 있어요.',
+      '리스폰 위치가 정해졌어요. 한 팀은 맵 위쪽, 다른 팀은 맵 아래쪽에서 시작하고 다시 나타나요.',
+      '리스폰한 직후 3초 동안은 무적이에요.',
+    ],
+  },
   {
     id: '2026-10-14-mocha-hyper-balance',
     date: '2026-10-14',
@@ -3135,7 +3158,7 @@ async function settleMatch(match, winnerTeam, reason, leaverId) {
     const p = match.players[pid];
     const won = p.team === winnerTeam;
     // 패배 페널티: 점수로 져서 끝난 매치는 패배한 팀 전원, 중도 이탈로 끝난 매치는 나간 사람만 (남은 팀원은 깎이지 않음)
-    const penalized = !won && (reason === 'scoreLimit' || pid === leaverId);
+    const penalized = !won && (reason === 'scoreLimit' || reason === 'gateDestroyed' || pid === leaverId);
     try {
       // 연승 계산: 이 매치에서 쓴 캐릭터의 직전 연승 수를 서버 저장소에서 읽는다
       let previousStreak = 0;
@@ -3149,7 +3172,7 @@ async function settleMatch(match, winnerTeam, reason, leaverId) {
       // 승리: 연승 +1 / 페널티 받는 패배: 연승 0 / 페널티 없는 패배(팀원 이탈 등): 연승 유지
       const newStreak = won ? previousStreak + 1 : (penalized ? 0 : null);
       // 미션 진행도 누적 (정상 종료된 매치만). addResult보다 먼저 해서 아래 profileUpdate에 최신 진행도가 담기게 함
-      if (reason === 'scoreLimit') {
+      if (reason === 'scoreLimit' || reason === 'gateDestroyed') {
         await db.addMissionProgress(key, missionDay(), missionIncrements(won, match.mode, p.score || 0));
         await db.addRepeatProgress(key, repeatIncrements(won, match.mode, p.score || 0)); // 무한 미션도 같은 조건으로 누적
       }
@@ -3209,6 +3232,113 @@ function randomSpawnPoint(walls) {
     if (!collidesWithWalls(walls, c.x, c.y, PLAYER_RADIUS)) return c;
   }
   return fallbackCandidates[0];
+}
+
+// 팀별 고정 스폰 위치: A팀은 맵 위쪽, B팀은 맵 아래쪽. 같은 팀원은 가로로 나란히 서고(slot 순서), 벽에 겹치면 가까운 빈 곳으로 비킨다.
+// 리스폰할 때도 같은 위치(자기 팀 쪽)에서 다시 나타난다.
+function teamSpawnPoint(walls, team, slot, teamSize) {
+  const baseY = team === 'A' ? 55 : ARENA_HEIGHT - 55;
+  const dirY = team === 'A' ? 1 : -1; // 맵 안쪽 방향
+  const baseX = (ARENA_WIDTH * ((slot || 0) + 1)) / ((teamSize || 1) + 1);
+  for (let dy = 0; dy <= 120; dy += 12) {
+    for (const dx of [0, 14, -14, 28, -28, 42, -42]) {
+      const x = baseX + dx;
+      const y = baseY + dirY * dy;
+      if (x < PLAYER_RADIUS + 10 || x > ARENA_WIDTH - PLAYER_RADIUS - 10) continue;
+      if (!collidesWithWalls(walls, x, y, PLAYER_RADIUS + 10)) return { x, y };
+    }
+  }
+  return randomSpawnPoint(walls); // 극히 드문 경우의 안전장치
+}
+
+// 문지기 모드의 문: 터렛과 같은 방식의 '맞을 수 있는 구조물'이라서 총알/근접/폭발/궁극기 등 기존 모든 공격이 그대로 통한다.
+// 쏘지는 않고(isGate), 체력이 0이 되면 그 팀이 패배한다 (updateMatch 뒤의 checkGates 가 판정).
+function createGates(match) {
+  match.gates = {};
+  for (const team of ['A', 'B']) {
+    const baseY = team === 'A' ? 125 : ARENA_HEIGHT - 125; // 자기 팀 스폰 근처 (맵 중앙 라인)
+    const dirY = team === 'A' ? 1 : -1;
+    let pos = { x: ARENA_WIDTH / 2, y: baseY };
+    outer:
+    for (let dy = 0; dy <= 110; dy += 10) {
+      for (const dx of [0, 24, -24, 48, -48, 72, -72]) {
+        const x = ARENA_WIDTH / 2 + dx;
+        const y = baseY + dirY * dy;
+        if (!collidesWithWalls(match.walls, x, y, GATE_RADIUS + 8)) { pos = { x, y }; break outer; }
+      }
+    }
+    turretIdCounter += 1;
+    const gate = {
+      id: turretIdCounter,
+      ownerId: null,
+      team,
+      x: pos.x,
+      y: pos.y,
+      hp: GATE_HP,
+      maxHp: GATE_HP,
+      radius: GATE_RADIUS,
+      isGate: true,
+      range: 0,
+      fireInterval: 9999,
+      fireCooldown: 9999,
+      damage: 0,
+      bulletSpeed: 0,
+      bulletRadius: 0,
+      bulletLifetime: 0,
+      visual: 'gate',
+    };
+    match.turrets.push(gate);
+    match.gates[team] = gate;
+  }
+}
+
+// 문이 부서졌는지 확인해서, 부서졌다면 상대 팀 승리로 매치를 끝낸다
+function checkGates(match) {
+  if (match.over || match.gameMode !== 'gatekeeper' || !match.gates) return;
+  const aDown = match.gates.A.hp <= 0;
+  const bDown = match.gates.B.hp <= 0;
+  if (!aDown && !bDown) return;
+  const brokenTeam = aDown && bDown ? (Math.random() < 0.5 ? 'A' : 'B') : (aDown ? 'A' : 'B');
+  const winnerTeam = brokenTeam === 'A' ? 'B' : 'A';
+  match.over = true;
+  io.to(match.id).emit('matchOver', {
+    reason: 'gateDestroyed',
+    winnerTeam,
+    brokenTeam,
+    teamScore: match.teamScore,
+    coinReward: match.ai ? 0 : (MODES[match.mode].coinReward || 0),
+    ai: !!match.ai,
+  });
+  settleMatch(match, winnerTeam, 'gateDestroyed');
+  setTimeout(() => endMatch(match.id), MATCH_CLEANUP_DELAY_MS);
+}
+
+// 매칭된 사람들의 투표를 집계해서 이번 매치의 게임 종류를 정한다. 최다 득표 종류로 하고, 표가 같으면(아무도 투표 안 한 경우 포함) 무작위로 고른다.
+function resolveModeVote(matchId) {
+  const match = matches[matchId];
+  if (!match || match.over || !match.voteOpen) return;
+  match.voteOpen = false;
+  if (match.voteTimer) { clearTimeout(match.voteTimer); match.voteTimer = null; }
+  const counts = { knockout: 0, gatekeeper: 0 };
+  for (const sid in match.votes) {
+    const v = match.votes[sid];
+    if (counts[v] != null) counts[v] += 1;
+  }
+  const max = Math.max(counts.knockout, counts.gatekeeper);
+  const top = Object.keys(counts).filter((k) => counts[k] === max);
+  const chosen = top[Math.floor(Math.random() * top.length)];
+  match.gameMode = chosen;
+  if (chosen === 'gatekeeper') createGates(match);
+  match.startsAt = Date.now() + MATCH_COUNTDOWN_MS; // 결과를 보여준 뒤 카운트다운 시작
+  io.to(matchId).emit('modeVoteResult', {
+    gameMode: chosen,
+    gameModeName: GAME_MODES[chosen].name,
+    counts,
+    tie: top.length > 1,
+    startsInMs: MATCH_COUNTDOWN_MS,
+    winScore: match.winScore,
+    gateHp: GATE_HP,
+  });
 }
 
 function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hyperOwned) {
@@ -3398,7 +3528,7 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
     }
 
     // 먼저 팀 누적 킬 수가 승리 점수에 도달하면 즉시 매치 종료 (1:1은 곧 개인 킬 수와 동일)
-    if (shooter && match.teamScore[shooter.team] >= match.winScore) {
+    if (shooter && match.gameMode !== 'gatekeeper' && match.teamScore[shooter.team] >= match.winScore) {
       match.over = true;
       io.to(match.id).emit('matchOver', {
         reason: 'scoreLimit',
@@ -3418,7 +3548,7 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
       if (!m || m.over) return; // 이미 매치가 끝났거나 정리된 경우
       const respawned = m.players[deadId];
       if (!respawned) return; // 이미 접속 해제한 경우
-      const spawn = randomSpawnPoint(m.walls);
+      const spawn = teamSpawnPoint(m.walls, respawned.team, respawned.spawnSlot || 0, MODES[m.mode].teamSize); // 자기 팀 쪽(A=위, B=아래) 고정 위치에서 리스폰
       respawned.x = spawn.x;
       respawned.y = spawn.y;
       respawned.hp = respawned.maxHp;
@@ -3434,7 +3564,7 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
       respawned.comboDashId = (respawned.comboDashId || 0) + 1; // 예약돼 있던 시스템의 돌진도 취소
       respawned.windupUntil = 0; // 진행 중이던 공격 선딜도 취소
       respawned.windupId = (respawned.windupId || 0) + 1;
-      respawned.invincibleUntil = 0; // 리스폰 시 이전 무적 상태는 초기화
+      respawned.invincibleUntil = Date.now() + RESPAWN_INVINCIBLE_MS; // 리스폰 직후 3초 동안 무적
       respawned.reflectUntil = 0;    // 반사 방어막도 초기화
       respawned.shieldHp = 0;        // 리스폰 시 보호막도 초기화
       respawned.shieldMax = 0;
@@ -3971,7 +4101,12 @@ function startMatch(mode, entries, opts = {}) {
     teamScore: { A: 0, B: 0 },
     winScore: cfg.winScore,
     over: false,
-    startsAt: Date.now() + MATCH_COUNTDOWN_MS, // 이 시각 전까지는 대결 화면 (이동/공격/스킬 불가)
+    gameMode: 'knockout',     // 게임 종류: 'knockout'(녹아우) 또는 'gatekeeper'(문지기). 매칭 직후 투표로 바뀔 수 있음 (AI 연습 대결은 항상 녹아우)
+    gates: null,              // 문지기 모드의 문 { A: gate, B: gate }
+    votes: {},                // socketId -> 투표한 게임 종류
+    voteOpen: !opts.ai,       // 게임 종류 투표 진행 중 여부 (AI 연습 대결은 투표 없음)
+    voteTimer: null,
+    startsAt: Date.now() + (opts.ai ? 0 : MODE_VOTE_MS) + MATCH_COUNTDOWN_MS, // 이 시각 전까지는 대결/투표 화면 (이동/공격/스킬 불가). 투표가 끝나면 다시 정해짐
     accounts: {},   // socketId -> 계정 키 (코인 정산용, 클라이언트에는 전송하지 않음)
     settled: false,
   };
@@ -3982,10 +4117,14 @@ function startMatch(mode, entries, opts = {}) {
   }
   matches[matchId] = match;
 
-  // 대기열에 들어온 순서대로 앞쪽 teamSize명은 A팀, 나머지는 B팀으로 배정
+  // 대기열에 들어온 순서대로 앞쪽 teamSize명은 A팀(맵 위쪽), 나머지는 B팀(맵 아래쪽)으로 배정
+  const slotCount = { A: 0, B: 0 };
   entries.forEach((e, idx) => {
     const team = idx < cfg.teamSize ? 'A' : 'B';
-    match.players[e.socket.id] = buildPlayer(e.socket.id, e.name, e.characterId, team, randomSpawnPoint(match.walls), e.level, e.skin, e.hyper);
+    const slot = slotCount[team];
+    slotCount[team] += 1;
+    match.players[e.socket.id] = buildPlayer(e.socket.id, e.name, e.characterId, team, teamSpawnPoint(match.walls, team, slot, cfg.teamSize), e.level, e.skin, e.hyper);
+    match.players[e.socket.id].spawnSlot = slot; // 리스폰할 때 같은 자리를 쓰기 위해 기억
     match.accounts[e.socket.id] = e.userKey;
     if (e.isBot) {
       match.players[e.socket.id].isBot = true; // 클라이언트가 AI 상대의 탄창을 머리 위에 표시하는 데 사용
@@ -4024,9 +4163,13 @@ function startMatch(mode, entries, opts = {}) {
       opponentNames,
       roster,
       ai: !!opts.ai, // AI 연습 대결 여부 (트로피를 얻을 수 없음)
-      startsInMs: MATCH_COUNTDOWN_MS,
+      gameMode: 'knockout',
+      vote: match.voteOpen ? { options: Object.keys(GAME_MODES).map((id) => ({ id, name: GAME_MODES[id].name, desc: GAME_MODES[id].desc })), endsInMs: MODE_VOTE_MS } : null,
+      startsInMs: match.voteOpen ? MODE_VOTE_MS : MATCH_COUNTDOWN_MS,
     });
   });
+
+  if (match.voteOpen) match.voteTimer = setTimeout(() => resolveModeVote(matchId), MODE_VOTE_MS);
 }
 
 // 특정 모드의 대기열에 있는 '모든' 사람에게 현재 대기 인원을 알림
@@ -4414,6 +4557,19 @@ io.on('connection', (socket) => {
 // 이동/공격/충전/가젯/궁극기 입력 핸들러 등록. 사람의 소켓뿐 아니라 AI 봇의 가짜 소켓에도 똑같이 등록되므로,
 // 봇은 사람과 완전히 같은 검증(쿨다운/탄약/기절/카운트다운 등)을 거친다. 이 함수 안에서는 socket.on / socket.id 만 사용한다.
 function registerGameplayHandlers(socket) {
+  // 게임 종류 투표: 매칭 직후 투표 시간 동안만 유효. 한 사람당 한 표 (다시 누르면 변경)
+  socket.on('voteMode', (data) => {
+    const match = matches[socketToMatch[socket.id]];
+    if (!match || match.over || !match.voteOpen || !match.players[socket.id]) return;
+    const mode = data && data.mode;
+    if (!GAME_MODES[mode]) return;
+    match.votes[socket.id] = mode;
+    const counts = { knockout: 0, gatekeeper: 0 };
+    for (const sid in match.votes) counts[match.votes[sid]] += 1;
+    io.to(match.id).emit('modeVoteUpdate', { counts });
+    const humans = Object.values(match.players).filter((pl) => !pl.isBot);
+    if (humans.every((pl) => match.votes[pl.id])) resolveModeVote(match.id); // 모두 투표했으면 바로 결정
+  });
   // 클라이언트가 매 프레임 자신의 위치/각도를 전송
   socket.on('playerUpdate', (data) => {
     const match = matches[socketToMatch[socket.id]];
@@ -5101,6 +5257,7 @@ function updateMatch(match, dt, now) {
   // 터렛(성스럽다 궁극기) AI: 사거리 안에서 가장 가까운 적을 자동으로 조준해 주기적으로 총알을 발사
   for (const turret of match.turrets) {
     if (match.over) break;
+    if (turret.isGate) continue; // 문지기 모드의 문은 공격하지 않음 (맞기만 함)
     turret.fireCooldown -= dt;
     if (turret.fireCooldown > 0) continue;
 
@@ -6133,9 +6290,11 @@ function gameLoop() {
 
     if (match.aiBots) updateAiBots(match, dt, now); // AI 연습 대결의 봇 행동
     updateMatch(match, dt, now);
+    checkGates(match); // 문지기 모드: 문이 부서졌는지 확인
 
     for (const pid in match.players) {
       io.to(pid).emit('state', {
+        gameMode: match.gameMode,
         players: buildVisiblePlayers(match, pid),
         bullets: buildVisibleBullets(match, pid),
         effects: match.effects,
