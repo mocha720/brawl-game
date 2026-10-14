@@ -5236,6 +5236,21 @@ function updateMatch(match, dt, now) {
         }
       }
 
+      // 기본공격 돌진(꽈리): 지나가는 길에 있는 적 터렛(성스럽다의 저격 터렛, 문지기 모드의 문 포함)도 한 번씩 때린다
+      if (!p.dashHarmless && p.dashCharge && !match.over) {
+        if (!p.dashHitIds) p.dashHitIds = [];
+        for (const turret of match.turrets) {
+          if (!FRIENDLY_FIRE && turret.team === p.team) continue;
+          const tKey = `t${turret.id}`;
+          if (p.dashHitIds.includes(tKey)) continue;
+          if (Math.hypot(turret.x - p.x, turret.y - p.y) < turret.radius + PLAYER_RADIUS) {
+            p.dashHitIds.push(tKey);
+            turret.hp -= p.dashDamage * getDamageMultiplier(p);
+          }
+        }
+        match.turrets = match.turrets.filter((t) => t.hp > 0);
+      }
+
       // 벽에 닿으면 벽을 따라 미끄러지거나 튕겨나가지 않고, 닿은 그 자리에서 그대로 멈춘다
       if (blockedByWall) break;
     }
