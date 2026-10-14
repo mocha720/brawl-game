@@ -56,6 +56,7 @@ const GAME_MODES = {
 };
 const MODE_VOTE_MS = 8000;        // 게임 종류 투표 시간 (모두 투표하면 바로 끝남)
 const GATE_HP = 100000;           // 문지기 모드: 문의 체력 (모든 공격이 문에 통함)
+const JINWOOPARK_GATE_DAMAGE = 3000; // 문지기 모드: 진우Park 하트(현재 체력 비율 피해)가 문에 주는 피해. 문은 체력이 매우 커서 비율 피해가 과하게 들어가므로 3000으로 고정
 const GATE_RADIUS = 36;           // 문의 크기(피격 반경)
 const RESPAWN_INVINCIBLE_MS = 3000; // 리스폰 직후 무적 시간
 const MATCH_COUNTDOWN_MS = 4000; // 매칭 직후 상대 정보(캐릭터/트로피)를 보여주는 대결 화면 시간. 이 동안은 이동/공격/스킬 입력이 막힘
@@ -249,7 +250,7 @@ const CHARACTERS = {
     // 하이퍼 차지: 캐릭터를 최고 레벨(11)까지 키운 뒤 코인으로 획득하는 추가 스킬. 궁극기처럼 기본공격을 적중시켜 게이지를 채우고, 가득 차면 발동한다.
     hyper: {
       name: '하이퍼 차지',
-      duration: 5,              // 지속 시간(초)
+      duration: 10,             // 지속 시간(초)
       chargeMultiplier: 0.45,   // 게이지 충전량 배율 (0.45 = 궁극기 충전량의 45%, 즉 55% 감소. 기존 0.3에서 50% 증가). 발동 중에는 충전되지 않음
       speedMultiplier: 1.2,     // 이동속도 배율 (1.2 = 20% 증가)
       damageMultiplier: 1.2,    // 공격력 배율 (1.2 = 20% 강화)
@@ -282,7 +283,7 @@ const CHARACTERS = {
     // 하이퍼 차지: 캐릭터를 최고 레벨(11)까지 키운 뒤 코인으로 획득하는 추가 스킬. 기본공격을 적중시켜 게이지를 채우고, 가득 차면 발동한다.
     hyper: {
       name: '하이퍼 차지',
-      duration: 5,              // 지속 시간(초)
+      duration: 10,             // 지속 시간(초)
       chargeMultiplier: 0.45,   // 게이지 충전량 배율 (0.45 = 궁극기 충전량의 45%). 발동 중에는 충전되지 않음
       speedMultiplier: 1.25,    // 이동속도 배율 (1.25 = 25% 증가)
       damageMultiplier: 1.25,   // 공격력 배율 (1.25 = 25% 강화)
@@ -305,7 +306,7 @@ const CHARACTERS = {
     ultimateChargePerHit: 4, // 기본값(17)의 약 1/4 수준 (궁극기 충전 속도 50% 감소 적용, 기존 8에서 절반)
     basic: {
       name: '샷건 발사',
-      damage: 300,        // 펠릿(총알) 1개당 대미지
+      damage: 350,        // 펠릿(총알) 1개당 대미지 (1레벨 기준, 기존 300에서 변경)
       speed: 700,
       radius: 4,
       lifetime: 0.4,       // 사거리 ≈ 280px (샷건이라 사거리가 짧음)
@@ -333,7 +334,7 @@ const CHARACTERS = {
     // 하이퍼 차지: 캐릭터를 최고 레벨(11)까지 키운 뒤 코인으로 획득하는 추가 스킬. 기본공격을 적중시켜 게이지를 채우고, 가득 차면 발동한다.
     hyper: {
       name: '하이퍼 차지',
-      duration: 5,              // 지속 시간(초)
+      duration: 10,             // 지속 시간(초)
       chargeMultiplier: 0.45,   // 게이지 충전량 배율 (0.45 = 궁극기 충전량의 45%). 발동 중에는 충전되지 않음
       speedMultiplier: 1.1,     // 이동속도 배율 (1.1 = 10% 증가)
       damageMultiplier: 1.25,   // 공격력 배율 (1.25 = 25% 강화)
@@ -378,7 +379,7 @@ const CHARACTERS = {
   byeongitong: {
     id: 'byeongitong',
     name: '변기통',
-    maxHp: 7500, // 1레벨 기준 (기존 8000에서 너프)
+    maxHp: 7200, // 1레벨 기준 (기존 7500에서 너프)
     basic: {
       name: '뚫어뻥 휘두르기',
       type: 'melee',        // 발사체가 아니라 즉시 판정되는 근접 공격
@@ -407,7 +408,7 @@ const CHARACTERS = {
     // 하이퍼 차지: 캐릭터를 최고 레벨(11)까지 키운 뒤 코인으로 획득하는 추가 스킬. 기본공격을 적중시켜 게이지를 채우고, 가득 차면 발동한다.
     hyper: {
       name: '하이퍼 차지',
-      duration: 5,              // 지속 시간(초)
+      duration: 10,             // 지속 시간(초)
       chargeMultiplier: 0.45,   // 게이지 충전량 배율 (0.45 = 궁극기 충전량의 45%). 발동 중에는 충전되지 않음
       speedMultiplier: 1.15,    // 이동속도 배율 (1.15 = 15% 증가)
       damageMultiplier: 1.1,    // 공격력 배율 (1.1 = 10% 증가)
@@ -604,6 +605,17 @@ const CHARACTERS = {
       duration: 3,           // 지속 시간(초)
       speedMultiplier: 1.25, // 재장전 속도 배율 (1.25 = 25% 빨라짐)
     },
+    // 하이퍼 차지: 캐릭터를 최고 레벨(11)까지 키운 뒤 코인으로 획득하는 추가 스킬. 기본공격을 적중시켜 게이지를 채우고, 가득 차면 발동한다.
+    hyper: {
+      name: '하이퍼 차지',
+      duration: 10,             // 지속 시간(초)
+      chargeMultiplier: 0.45,   // 게이지 충전량 배율 (0.45 = 궁극기 충전량의 45%). 발동 중에는 충전되지 않음
+      speedMultiplier: 1.2,     // 이동속도 배율 (1.2 = 20% 증가)
+      damageMultiplier: 1.15,   // 공격력 배율 (1.15 = 15% 강화)
+      damageTakenMultiplier: 0.9, // 받는 피해 배율 (0.9 = 10% 감소)
+      dashDistanceMultiplier: 1.25, // 발동 중 기본공격(돌진 박치기) 돌진 거리 배율 (1.25 = 25% 증가)
+      ultimateBounceTime: 5,    // 발동 중 궁극기(고추 발사)의 고추가 적을 관통하고 벽/맵 끝에 튕기며 이 시간(초) 동안 날아다니다 사라짐
+    },
   },
   mocha: {
     id: 'mocha',
@@ -638,7 +650,7 @@ const CHARACTERS = {
     // 하이퍼 차지: 캐릭터를 최고 레벨(11)까지 키운 뒤 코인으로 획득하는 추가 스킬. 기본공격을 적중시켜 게이지를 채우고, 가득 차면 발동한다.
     hyper: {
       name: '하이퍼 차지',
-      duration: 5,              // 지속 시간(초)
+      duration: 10,             // 지속 시간(초)
       chargeMultiplier: 0.45,   // 게이지 충전량 배율 (0.45 = 궁극기 충전량의 45%, 거기에 전체 보너스 +15%가 곱해짐). 발동 중에는 충전되지 않음
       speedMultiplier: 1.3,     // 이동속도 배율 (1.3 = 30% 증가)
       damageMultiplier: 1.25,   // 공격력 배율 (1.25 = 25% 강화)
@@ -750,7 +762,7 @@ const CHARACTERS = {
     // 하이퍼 차지: 캐릭터를 최고 레벨(11)까지 키운 뒤 코인으로 획득하는 추가 스킬. 기본공격을 적중시켜 게이지를 채우고, 가득 차면 발동한다.
     hyper: {
       name: '하이퍼 차지',
-      duration: 5,              // 지속 시간(초)
+      duration: 10,             // 지속 시간(초)
       chargeMultiplier: 0.45,   // 게이지 충전량 배율 (0.45 = 궁극기 충전량의 45%). 발동 중에는 충전되지 않음
       speedMultiplier: 1.2,     // 이동속도 배율 (1.2 = 20% 증가)
       damageMultiplier: 1.25,   // 공격력 배율 (1.25 = 25% 증가)
@@ -1118,6 +1130,8 @@ function describeHyper(hy) {
   if (hy.ultimateStrikeCount) parts.push(`발동 중 궁극기를 쓰면 번개가 ${hy.ultimateStrikeCount}개 떨어짐`);
   if (hy.ultimateChargeMultiplier) parts.push(`발동 중 궁극기 충전량 ${pct(hy.ultimateChargeMultiplier)}% 증가`);
   if (hy.ultimateDistanceMultiplier) parts.push(`발동 중 궁극기 점프 거리 ${pct(hy.ultimateDistanceMultiplier)}% 증가`);
+  if (hy.dashDistanceMultiplier) parts.push(`발동 중 기본공격(돌진) 거리 ${pct(hy.dashDistanceMultiplier)}% 증가`);
+  if (hy.ultimateBounceTime) parts.push(`발동 중 궁극기의 고추가 적을 관통하고 벽에 튕기며 ${hy.ultimateBounceTime}초 동안 날아다니다 사라짐`);
   if (hy.rangeMultiplier) parts.push(`발동 중 기본공격과 궁극기 사거리 ${pct(hy.rangeMultiplier)}% 증가`);
   return { name: hy.name, desc: parts.join('. ') + '.' };
 }
@@ -3468,6 +3482,8 @@ function chargeGauges(shooter) {
 
 // 총알이 대상에게 줄 기본 피해: 비율형 총알(하트)은 대상의 현재 체력 + 보호막의 비율, 그 외는 고정 피해
 function bulletDamageFor(b, target) {
+  // 문지기 모드의 문: 비율형 총알(진우Park의 하트)은 비율 대신 고정 피해 (처형 판정도 문에는 적용하지 않음)
+  if (target.isGate && b.currentHpRatio > 0) return JINWOOPARK_GATE_DAMAGE;
   // 처형: 현재 체력이 기준 이하면 보호막까지 뚫고 확실히 죽을 만큼의 피해를 줌
   if (b.executeBelowHp > 0 && (target.hp || 0) <= b.executeBelowHp) return (target.hp || 0) + (target.shieldHp || 0) + 1;
   if (b.currentHpRatio > 0) return Math.max(1, Math.round(((target.hp || 0) + (target.shieldHp || 0)) * b.currentHpRatio));
@@ -3761,6 +3777,35 @@ function updateBoomerang(match, b, dt) {
   b.vy = (dy / dist) * sp;
 }
 
+// 튕기는 발사체(하이퍼 차지 꽈리의 고추)의 이동: 적/터렛/닭은 관통하고 벽/맵 끝에만 튕김. 작은 걸음으로 나눠 이동하면서 벽/맵 끝에 닿으면 그 축의 속도를 뒤집는다.
+// 이미 벽 안에 있거나 맵 끝 바깥쪽을 향해 있지 않은 경우에는 뒤집지 않아서(끼임 방지) 빠져나올 수 있다.
+function moveBouncingBullet(match, b, dt) {
+  const r = b.radius;
+  const subSteps = Math.max(1, Math.ceil((Math.hypot(b.vx, b.vy) * dt) / 4));
+  for (let i = 0; i < subSteps; i++) {
+    let nx = b.x + (b.vx * dt) / subSteps;
+    let ny = b.y + (b.vy * dt) / subSteps;
+    let flipX = (nx < r && b.vx < 0) || (nx > ARENA_WIDTH - r && b.vx > 0);
+    let flipY = (ny < r && b.vy < 0) || (ny > ARENA_HEIGHT - r && b.vy > 0);
+    if (!collidesWithWalls(match.walls, b.x, b.y, r)) {
+      if (!flipX && collidesWithWalls(match.walls, nx, b.y, r)) flipX = true;
+      if (!flipY && collidesWithWalls(match.walls, b.x, ny, r)) flipY = true;
+      if (!flipX && !flipY && collidesWithWalls(match.walls, nx, ny, r)) { flipX = true; flipY = true; } // 벽 모서리
+    }
+    if (flipX) { b.vx = -b.vx; nx = b.x; }
+    if (flipY) { b.vy = -b.vy; ny = b.y; }
+    if ((flipX || flipY) && b.hitIds && b.hitIds.length) {
+      // 튕긴 뒤에는 이미 맞힌 대상도 다시 맞힐 수 있음. 단, 튕기는 순간 아직 겹쳐 있는 플레이어는 연속으로 두 번 맞지 않게 그대로 둠
+      b.hitIds = b.hitIds.filter((id) => {
+        const t = match.players[id];
+        return t && Math.hypot(t.x - b.x, t.y - b.y) < PLAYER_RADIUS + r + 15;
+      });
+    }
+    b.x = nx;
+    b.y = ny;
+  }
+}
+
 function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
   // 해골물(원효대사) 스킨: 터진 뒤 남는 웅덩이 모양도 스킨에 따라 바뀜 (스킨이 없으면 spec 그대로)
   // 여똥이 스킨(기가차네): 똥가루 구름도 냉기 구름으로 바뀜
@@ -3778,6 +3823,8 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
   const hyperUltOn = isUltimate && p.hasHyper && p.hyper && p.hyperUntil && Date.now() < p.hyperUntil;
   const hyperUltRadius = hyperUltOn && p.hyper.ultimateRadiusMultiplier ? p.hyper.ultimateRadiusMultiplier : 1;
   const hyperUltLandStun = hyperUltOn && p.hyper.ultimateLandStun ? p.hyper.ultimateLandStun : 0;
+  // 하이퍼 차지 발동 중 꽈리의 궁극기: 고추가 벽/맵 끝에 튕기며 bounceTime초 동안 날아다니다 사라짐 (수명 = bounceTime)
+  const bounceTime = hyperUltOn && p.hyper.ultimateBounceTime ? p.hyper.ultimateBounceTime : 0;
 
   for (let i = 0; i < pelletCount; i++) {
     const angleOffset = pelletCount > 1 ? -halfSpread + (spreadRad * i) / (pelletCount - 1) : 0;
@@ -3798,8 +3845,8 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
       vy: Math.sin(angle) * spec.speed,
       ownerId: p.id,
       team: p.team,
-      life: bulletLife,
-      maxLife: bulletLife, // 처음 수명 (폭탄 똥이 터지기 직전에 더 빠르게 깜빡이는 연출용)
+      life: bounceTime > 0 ? bounceTime : bulletLife,
+      maxLife: bounceTime > 0 ? bounceTime : bulletLife, // 처음 수명 (폭탄 똥이 터지기 직전에 더 빠르게 깜빡이는 연출용)
       damage: spec.damage,
       executeBelowHp: spec.executeBelowHp || 0, // 0보다 크면 맞은 대상의 현재 체력이 이 값 이하일 때 즉사 (진우Park의 하트)
       currentHpRatio: spec.currentHpRatio || 0, // 0보다 크면 고정 피해 대신 대상 현재 체력(+보호막)의 비율만큼 피해 (진우Park의 하트)
@@ -3810,12 +3857,13 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
       landDamage: spec.landDamage || 0,         // 띄워진 적이 땅에 떨어질 때 받는 피해
       landStun: hyperUltLandStun,               // 띄워진 적이 땅에 떨어진 뒤 추가로 기절하는 시간(초) (하이퍼 차지 발동 중 시스템의 궁극기)
       pierceTargets: !!spec.pierceTargets,      // true면 적을 맞혀도 사라지지 않고 계속 날아가 여러 명을 맞힘
-      hitIds: spec.pierceTargets || spec.boomerang ? [] : null,   // 관통 발사체가 이미 맞힌 대상 (같은 대상을 두 번 띄우지 않기 위함. 배열이어야 클라이언트로 전송 가능)
+      hitIds: spec.pierceTargets || spec.boomerang || bounceTime > 0 ? [] : null,   // 관통 발사체가 이미 맞힌 대상 (같은 대상을 두 번 띄우지 않기 위함. 배열이어야 클라이언트로 전송 가능)
       // 부메랑(하이퍼 차지 발동 중 미남의 궁극기): outLeft초 동안 앞으로 날아간 뒤 방향을 바꿔 시전자에게 돌아옴 (updateMatch 의 총알 이동에서 처리)
       boomerang: !!spec.boomerang,
       phase: spec.boomerang ? 'out' : null, // 'out'(나가는 중) / 'back'(돌아오는 중)
       outLeft: spec.boomerang ? (spec.boomerangOutTime || 1.2) : 0,
       baseSpeed: spec.speed,
+      bounce: bounceTime > 0, // true면 벽/맵 끝에 닿아도 사라지지 않고 튕김 (moveBouncingBullet)
       pierceWalls: !!spec.pierceWalls, // 성스럽다의 칼 던지기처럼 벽(장애물)을 무시하고 통과하는 발사체
       // 원효대사의 해골물 뿌리기처럼 벽/적에 닿으면 물웅덩이를 생성하는 발사체를 위한 부가 정보
       poolOnImpact: !!spec.poolOnImpact,
@@ -4718,13 +4766,15 @@ function registerGameplayHandlers(socket) {
       p.dashCharge = true;
       p.dashDirX = Math.cos(p.angle);
       p.dashDirY = Math.sin(p.angle);
-      p.dashTimeLeft = p.basic.duration;
+      // 하이퍼 차지 발동 중 돌진 거리 증가 (꽈리): 돌진 시간을 늘리면 속도 곡선 그대로 거리가 같은 비율로 늘어남
+      const hyperDashMult = p.hasHyper && p.hyper && p.hyper.dashDistanceMultiplier && p.hyperUntil && Date.now() < p.hyperUntil ? p.hyper.dashDistanceMultiplier : 1;
+      p.dashTimeLeft = p.basic.duration * hyperDashMult;
       p.dashTotal = p.dashTimeLeft; // 돌진 속도 곡선(처음 빠르고 점점 느려짐)을 계산하기 위한 전체 시간
       p.dashHitIds = []; // 이번 돌진에서 이미 맞힌 대상 (관통 돌진이 같은 적을 두 번 때리지 않도록)
       if (skinVisual(p, 'dash') === 'carDash') {
         // 자동차 스킨: 타이어 자국/불꽃/먼지를 그리는 돌진 연출 (연출만, 성능은 그대로)
         effectIdCounter += 1;
-        match.effects.push({ id: effectIdCounter, type: 'carDash', ownerId: p.id, x: p.x, y: p.y, angle: p.angle, dist: Math.round(p.basic.speed * p.basic.duration), life: 0.8, maxLife: 0.8 });
+        match.effects.push({ id: effectIdCounter, type: 'carDash', ownerId: p.id, x: p.x, y: p.y, angle: p.angle, dist: Math.round(p.basic.speed * p.basic.duration * hyperDashMult), life: 0.8, maxLife: 0.8 });
       }
     } else if (p.basic.type === 'lob') {
       // 나이의 실내화 던지기: 조준한 거리(클라이언트가 보낸 distance, 서버가 범위 제한)만큼 포물선으로 던짐
@@ -5410,8 +5460,12 @@ function updateMatch(match, dt, now) {
   // 총알 이동
   for (const b of match.bullets) {
     if (b.sweep) { b.prevX = b.x; b.prevY = b.y; }
-    b.x += b.vx * dt;
-    b.y += b.vy * dt;
+    if (b.bounce) {
+      moveBouncingBullet(match, b, dt); // 하이퍼 차지 꽈리의 고추: 벽에 튕김
+    } else {
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
+    }
     b.life -= dt;
     if (b.boomerang) updateBoomerang(match, b, dt);
     if (b.lob) {
@@ -5504,8 +5558,8 @@ function updateMatch(match, dt, now) {
       }
 
       if (dist < PLAYER_RADIUS + b.radius) {
-        if (b.boomerang) {
-          // 부메랑: 적을 맞혀도 사라지지 않고 계속 날아감. 한 방향(나가는 중/돌아오는 중)에서는 한 대상을 한 번만 맞힘
+        if (b.boomerang || b.bounce) {
+          // 부메랑/튕기는 고추(하이퍼 꽈리): 적을 맞혀도 사라지지 않고 계속 날아감. 한 방향(나가는 중/벽에 튕기기 전까지)에서는 한 대상을 한 번만 맞힘
           applyDamage(match, target, bulletDamageFor(b, target), b.ownerId, { chargeShooter: false });
           b.hitIds.push(pid);
           continue;
@@ -5561,11 +5615,11 @@ function updateMatch(match, dt, now) {
 
     for (const turret of match.turrets) {
       if (!FRIENDLY_FIRE && turret.team === b.team) continue; // 아군 총알은 자신의 터렛을 통과함
-      if (b.boomerang && b.hitIds.includes(`t${turret.id}`)) continue;
+      if ((b.boomerang || b.bounce) && b.hitIds.includes(`t${turret.id}`)) continue;
 
       if (bulletDistTo(b, turret.x, turret.y) < turret.radius + b.radius) {
-        if (b.boomerang) {
-          // 부메랑은 터렛도 관통: 방향마다 한 번씩 피해
+        if (b.boomerang || b.bounce) {
+          // 부메랑/튕기는 고추는 터렛도 관통: 방향마다 한 번씩 피해
           turret.hp -= bulletDamageFor(b, turret) * getDamageMultiplier(match.players[b.ownerId]);
           b.hitIds.push(`t${turret.id}`);
           continue;
@@ -5598,9 +5652,9 @@ function updateMatch(match, dt, now) {
     for (const chicken of match.chickens) {
       if (chicken.hp <= 0) continue;
       if (!FRIENDLY_FIRE && chicken.team === b.team) continue;
-      if (b.boomerang && b.hitIds.includes(`c${chicken.id}`)) continue;
+      if ((b.boomerang || b.bounce) && b.hitIds.includes(`c${chicken.id}`)) continue;
       if (bulletDistTo(b, chicken.x, chicken.y) < chicken.radius + b.radius) {
-        if (b.boomerang) {
+        if (b.boomerang || b.bounce) {
           chicken.hp -= bulletDamageFor(b, chicken) * getDamageMultiplier(match.players[b.ownerId]);
           b.hitIds.push(`c${chicken.id}`);
           continue;
