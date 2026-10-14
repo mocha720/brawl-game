@@ -55,7 +55,7 @@ const GAME_MODES = {
   gatekeeper: { name: '문지기', desc: '상대 리스폰 근처에 있는 문을 먼저 공격해 파괴하면 승리' },
 };
 const MODE_VOTE_MS = 8000;        // 게임 종류 투표 시간 (모두 투표하면 바로 끝남)
-const GATE_HP = 15000;            // 문지기 모드: 문의 체력 (모든 공격이 문에 통함)
+const GATE_HP = 100000;           // 문지기 모드: 문의 체력 (모든 공격이 문에 통함)
 const GATE_RADIUS = 36;           // 문의 크기(피격 반경)
 const RESPAWN_INVINCIBLE_MS = 3000; // 리스폰 직후 무적 시간
 const MATCH_COUNTDOWN_MS = 4000; // 매칭 직후 상대 정보(캐릭터/트로피)를 보여주는 대결 화면 시간. 이 동안은 이동/공격/스킬 입력이 막힘
