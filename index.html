@@ -1337,7 +1337,7 @@ const CHARACTERS = [
     name: '슈',
     color: '#e67e22',
     maxHp: 6000,
-    basic: { name: '샷건 발사 (펠릿 10발, 사거리 짧음)', damage: 300 },
+    basic: { name: '샷건 발사 (펠릿 10발, 사거리 짧음)', damage: 350 },
     ultimate: { name: '메가 샷건', damage: 600, desc: '큰 총알 10발 발사, 사거리 더 짧음' },
     gadget: { name: '보호막', desc: '2,500 피해를 막아주는 보호막을 두름, 다 막으면 사라짐 (15초마다 사용 가능)' },
   },
@@ -1354,7 +1354,7 @@ const CHARACTERS = [
     id: 'byeongitong',
     name: '변기통',
     color: '#7f8c8d',
-    maxHp: 8000,
+    maxHp: 7200,
     basic: { name: '뚫어뻥 휘두르기', damage: 2000, desc: '전방 120도 부채꼴 범위를 뚫어뻥으로 휘둘러 2000 피해를 주고 뒤로 밀쳐냄' },
     ultimate: { name: '변기 돌진', desc: '바라보는 방향으로 매우 빠르게 돌진, 적을 관통하며 지나간 모든 적에게 2500 피해 + 1.5초 기절' },
   },
@@ -10367,6 +10367,7 @@ function drawAimRangeIndicator() {
       range = c.speed * c.lifetime;
     } else {
       range = me.basic.range || me.basic.distance || me.basic.speed * me.basic.lifetime; // 근접 공격(찌르기 등)은 range, 투척(나이)은 distance
+      if (me.hyperLeft > 0 && me.hyper && me.hyper.dashDistanceMultiplier) range *= me.hyper.dashDistanceMultiplier; // 하이퍼 차지 발동 중 돌진 거리 증가 (꽈리)
     }
     color = 'rgba(255, 255, 255, 0.6)';
   } else {
