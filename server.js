@@ -171,6 +171,73 @@ const MAP_LAYOUTS = [
       { x: ARENA_WIDTH / 2 - 30, y: ARENA_HEIGHT / 2 + 90, width: 60, height: 40 },
     ],
   },
+  {
+    id: 'pillars',
+    name: '기둥 숲',
+    walls: [
+      ...mirrorAcrossCenter([
+        { x: 150, y: 200, width: 30, height: 30 }, // 바깥쪽 기둥
+        { x: 250, y: 300, width: 30, height: 30 }, // 안쪽 기둥
+      ]),
+      { x: ARENA_WIDTH / 2 - 15, y: ARENA_HEIGHT / 2 - 15, width: 30, height: 30 }, // 중앙 기둥
+    ],
+    bushes: [
+      ...mirrorAcrossCenter([
+        { x: 30, y: 40, width: 70, height: 60 },   // 네 귀퉁이 덤불
+        { x: 20, y: 290, width: 50, height: 120 }, // 양쪽 가장자리 중앙 덤불
+      ]),
+    ],
+  },
+  {
+    id: 'bunkers',
+    name: '벙커',
+    walls: [
+      ...mirrorAcrossCenter([
+        { x: 170, y: 150, width: 110, height: 20 }, // ㄱ자 엄폐물의 가로 벽
+        { x: 170, y: 150, width: 20, height: 70 },  // ㄱ자 엄폐물의 세로 벽
+      ]),
+      { x: ARENA_WIDTH / 2 - 55, y: ARENA_HEIGHT / 2 - 8, width: 110, height: 16 }, // 중앙 가로 벽
+    ],
+    bushes: [
+      ...mirrorAcrossCenter([
+        { x: 300, y: 230, width: 60, height: 50 }, // 중앙 위아래 덤불
+        { x: 60, y: 300, width: 80, height: 100 }, // 양쪽 가장자리 덤불
+      ]),
+    ],
+  },
+  {
+    id: 'lanes',
+    name: '세 갈래 길',
+    walls: [
+      ...mirrorAcrossCenter([
+        { x: 200, y: 200, width: 18, height: 100 }, // 좌/우 길을 나누는 세로 벽 (위쪽 절반)
+      ]),
+      { x: ARENA_WIDTH / 2 - 9, y: ARENA_HEIGHT / 2 - 20, width: 18, height: 40 }, // 중앙 길 기둥
+    ],
+    bushes: [
+      ...mirrorAcrossCenter([
+        { x: 20, y: 20, width: 60, height: 50 },   // 네 귀퉁이 덤불
+        { x: 70, y: 260, width: 80, height: 180 }, // 바깥 길 덤불
+      ]),
+    ],
+  },
+  {
+    id: 'ring',
+    name: '고리',
+    walls: [
+      ...mirrorAcrossCenter([
+        { x: 90, y: 110, width: 70, height: 16 }, // 코너 쪽 가로 벽
+      ]),
+      { x: ARENA_WIDTH / 2 - 80, y: ARENA_HEIGHT / 2 - 80, width: 160, height: 16 }, // 중앙 고리 윗벽
+      { x: ARENA_WIDTH / 2 - 80, y: ARENA_HEIGHT / 2 + 64, width: 160, height: 16 }, // 중앙 고리 아랫벽
+    ],
+    bushes: [
+      ...mirrorAcrossCenter([
+        { x: 30, y: 250, width: 60, height: 90 }, // 양쪽 가장자리 덤불
+      ]),
+      { x: ARENA_WIDTH / 2 - 35, y: ARENA_HEIGHT / 2 - 50, width: 70, height: 100 }, // 고리 안쪽 덤불
+    ],
+  },
 ];
 
 // 매치 시작 시 이 중 하나를 무작위로 고르기 위한 함수
@@ -3327,6 +3394,44 @@ function checkGates(match) {
   setTimeout(() => endMatch(match.id), MATCH_CLEANUP_DELAY_MS);
 }
 
+// 맵 투표 집계: 맵 id -> 득표 수
+function mapVoteCounts(match) {
+  const counts = {};
+  MAP_LAYOUTS.forEach((m) => { counts[m.id] = 0; });
+  for (const sid in match.mapVotes) {
+    const v = match.mapVotes[sid];
+    if (counts[v] != null) counts[v] += 1;
+  }
+  return counts;
+}
+
+// 매치의 맵을 바꾸고, 모든 참가자를 새 맵의 자기 팀 스폰 위치로 옮긴다 (경기 시작 전, 투표가 끝난 직후에만 호출)
+function applyMapToMatch(match, map) {
+  match.mapId = map.id;
+  match.walls = map.walls;
+  match.bushes = map.bushes;
+  const teamSize = MODES[match.mode].teamSize;
+  for (const pid in match.players) {
+    const pl = match.players[pid];
+    const sp = teamSpawnPoint(match.walls, pl.team, pl.spawnSlot || 0, teamSize);
+    pl.x = sp.x;
+    pl.y = sp.y;
+  }
+}
+
+// 투표 현황(게임 모드 + 맵)을 매치 참가자 모두에게 알림
+function broadcastVoteUpdate(match) {
+  const counts = { knockout: 0, gatekeeper: 0 };
+  for (const sid in match.votes) counts[match.votes[sid]] += 1;
+  io.to(match.id).emit('modeVoteUpdate', { counts, mapCounts: mapVoteCounts(match) });
+}
+
+// 모든 사람이 게임 모드와 맵 둘 다 투표했으면 바로 결정
+function resolveVoteIfAllVoted(match) {
+  const humans = Object.values(match.players).filter((pl) => !pl.isBot);
+  if (humans.every((pl) => match.votes[pl.id] && match.mapVotes[pl.id])) resolveModeVote(match.id);
+}
+
 // 매칭된 사람들의 투표를 집계해서 이번 매치의 게임 종류를 정한다. 최다 득표 종류로 하고, 표가 같으면(아무도 투표 안 한 경우 포함) 무작위로 고른다.
 function resolveModeVote(matchId) {
   const match = matches[matchId];
@@ -3342,6 +3447,14 @@ function resolveModeVote(matchId) {
   const top = Object.keys(counts).filter((k) => counts[k] === max);
   const chosen = top[Math.floor(Math.random() * top.length)];
   match.gameMode = chosen;
+
+  // 맵 투표 집계: 최다 득표 맵으로 하고, 표가 같으면(아무도 투표 안 한 경우 포함) 무작위. 정해진 맵의 벽/덤불로 바꾸고 모두를 새 스폰 위치로 옮긴다 (문은 새 맵 기준으로 만들어야 해서 맵 적용 뒤에 생성)
+  const mapCounts = mapVoteCounts(match);
+  const mapMax = Math.max(...Object.values(mapCounts));
+  const mapTop = Object.keys(mapCounts).filter((k) => mapCounts[k] === mapMax);
+  const chosenMap = MAP_LAYOUTS.find((m) => m.id === mapTop[Math.floor(Math.random() * mapTop.length)]) || MAP_LAYOUTS[0];
+  applyMapToMatch(match, chosenMap);
+
   if (chosen === 'gatekeeper') createGates(match);
   match.startsAt = Date.now() + MATCH_COUNTDOWN_MS; // 결과를 보여준 뒤 카운트다운 시작
   io.to(matchId).emit('modeVoteResult', {
@@ -3349,6 +3462,12 @@ function resolveModeVote(matchId) {
     gameModeName: GAME_MODES[chosen].name,
     counts,
     tie: top.length > 1,
+    mapId: chosenMap.id,
+    mapName: chosenMap.name,
+    mapCounts,
+    mapTie: mapTop.length > 1,
+    walls: chosenMap.walls,
+    bushes: chosenMap.bushes,
     startsInMs: MATCH_COUNTDOWN_MS,
     winScore: match.winScore,
     gateHp: GATE_HP,
@@ -4152,6 +4271,7 @@ function startMatch(mode, entries, opts = {}) {
     gameMode: 'knockout',     // 게임 종류: 'knockout'(녹아우) 또는 'gatekeeper'(문지기). 매칭 직후 투표로 바뀔 수 있음 (AI 연습 대결은 항상 녹아우)
     gates: null,              // 문지기 모드의 문 { A: gate, B: gate }
     votes: {},                // socketId -> 투표한 게임 종류
+    mapVotes: {},             // socketId -> 투표한 맵 id (게임 종류 투표와 같은 시간에 진행. 투표 전의 맵은 임시로 무작위 맵을 보여줌)
     voteOpen: !opts.ai,       // 게임 종류 투표 진행 중 여부 (AI 연습 대결은 투표 없음)
     voteTimer: null,
     startsAt: Date.now() + (opts.ai ? 0 : MODE_VOTE_MS) + MATCH_COUNTDOWN_MS, // 이 시각 전까지는 대결/투표 화면 (이동/공격/스킬 불가). 투표가 끝나면 다시 정해짐
@@ -4212,7 +4332,7 @@ function startMatch(mode, entries, opts = {}) {
       roster,
       ai: !!opts.ai, // AI 연습 대결 여부 (트로피를 얻을 수 없음)
       gameMode: 'knockout',
-      vote: match.voteOpen ? { options: Object.keys(GAME_MODES).map((id) => ({ id, name: GAME_MODES[id].name, desc: GAME_MODES[id].desc })), endsInMs: MODE_VOTE_MS } : null,
+      vote: match.voteOpen ? { options: Object.keys(GAME_MODES).map((id) => ({ id, name: GAME_MODES[id].name, desc: GAME_MODES[id].desc })), maps: MAP_LAYOUTS.map((m) => ({ id: m.id, name: m.name, walls: m.walls, bushes: m.bushes })), endsInMs: MODE_VOTE_MS } : null,
       startsInMs: match.voteOpen ? MODE_VOTE_MS : MATCH_COUNTDOWN_MS,
     });
   });
@@ -4612,11 +4732,18 @@ function registerGameplayHandlers(socket) {
     const mode = data && data.mode;
     if (!GAME_MODES[mode]) return;
     match.votes[socket.id] = mode;
-    const counts = { knockout: 0, gatekeeper: 0 };
-    for (const sid in match.votes) counts[match.votes[sid]] += 1;
-    io.to(match.id).emit('modeVoteUpdate', { counts });
-    const humans = Object.values(match.players).filter((pl) => !pl.isBot);
-    if (humans.every((pl) => match.votes[pl.id])) resolveModeVote(match.id); // 모두 투표했으면 바로 결정
+    broadcastVoteUpdate(match);
+    resolveVoteIfAllVoted(match); // 모두 (모드 + 맵) 투표했으면 바로 결정
+  });
+  // 맵 투표: 게임 종류 투표와 같은 시간 동안만 유효. 한 사람당 한 표 (다시 누르면 변경)
+  socket.on('voteMap', (data) => {
+    const match = matches[socketToMatch[socket.id]];
+    if (!match || match.over || !match.voteOpen || !match.players[socket.id]) return;
+    const mapId = data && data.mapId;
+    if (!MAP_LAYOUTS.some((m) => m.id === mapId)) return;
+    match.mapVotes[socket.id] = mapId;
+    broadcastVoteUpdate(match);
+    resolveVoteIfAllVoted(match);
   });
   // 클라이언트가 매 프레임 자신의 위치/각도를 전송
   socket.on('playerUpdate', (data) => {
