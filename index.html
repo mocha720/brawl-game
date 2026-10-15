@@ -1281,7 +1281,7 @@ const DEVICE_ICON = { mobile: '📱', desktop: '💻' };
 const DEVICE_LABEL = { mobile: '📱 모바일', desktop: '💻 컴퓨터' };
 const matchDevices = {}; // 이번 매치 참가자의 기기 { socketId: 'mobile' | 'desktop' } (점수판 표시용)
 
-const socket = io({ auth: { device: MY_DEVICE } });
+const socket = io({ transports: ['websocket'], auth: { device: MY_DEVICE } }); // 웹소켓만 사용 (폴링 요청 절약)
 
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
@@ -3608,7 +3608,18 @@ function drawHpBar(cx, y, barW, barH, hp, maxHp) {
   ctx.restore();
 }
 
+// [트래픽 절약] 서버가 첫 상태에만 보내는 캐릭터 스펙(basic/ultimate/gadget/hyper)을 기억해뒀다가
+// 이후 상태에 다시 합쳐준다. (게임 코드는 예전과 똑같이 p.basic 등을 그대로 사용할 수 있음)
+const specCache = {};
 socket.on('state', (state) => {
+  for (const pid in state.players) {
+    const p = state.players[pid];
+    if (p.basic !== undefined) {
+      specCache[pid] = { basic: p.basic, ultimate: p.ultimate, gadget: p.gadget, hyper: p.hyper };
+    } else if (specCache[pid]) {
+      Object.assign(p, specCache[pid]);
+    }
+  }
   latestState = state;
   trackHpChanges(state);
   updateGateHud(state);
