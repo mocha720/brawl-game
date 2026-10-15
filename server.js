@@ -4791,6 +4791,9 @@ function registerGameplayHandlers(socket) {
     if (!match || match.over || Date.now() < match.startsAt) return; // 대결 화면(카운트다운) 중에는 입력 무시
     const p = match.players[socket.id];
     if (!p || !p.alive) return;
+    // 마우스가 가리키는 월드 좌표 (마우스 조준일 때만 옴. 조이스틱 조준이면 null). 시스템의 '돌진 후 공격'이 돌진이 끝난 위치에서 마우스 쪽으로 정확히 겨냥하는 데 사용
+    p.aimX = Number.isFinite(data.aimX) ? data.aimX : null;
+    p.aimY = Number.isFinite(data.aimY) ? data.aimY : null;
     if (p.dashing || p.knockbackTimeLeft > 0 || (p.stunnedUntil && Date.now() < p.stunnedUntil)) {
       if (p.dashing && p.comboAimLive && typeof data.angle === 'number') p.angle = data.angle; // 시스템의 공격 돌진 중에도 조준 방향은 따라감 (돌진 직후 그 방향으로 발사)
       p.lastServerControlAt = Date.now(); // 서버가 위치를 제어한 마지막 시각 (아래 '낡은 위치' 거르기에 사용)
@@ -4889,7 +4892,9 @@ function registerGameplayHandlers(socket) {
           if (s2.comboDashId === myComboDashId) s2.comboAimLive = false;
           if (!s2.alive || s2.comboDashId !== myComboDashId) return; // 죽었거나 새 공격으로 대체됨
           if (s2.leaping || s2.airborneTimeLeft > 0 || s2.knockbackTimeLeft > 0 || (s2.stunnedUntil && Date.now() < s2.stunnedUntil)) return; // 돌진하는 사이 기절/넉백/띄워졌으면 공격 취소
-          spawnProjectiles(m, s2, comboSpec, false); // 돌진이 끝난 시점의 조준 방향(s2.angle)으로 발사
+          // 돌진이 끝난 '새 위치'에서 마우스 쪽을 향한 각도로 발사 (마우스 조준이면 마우스 좌표로 직접 계산, 조이스틱이면 마지막으로 받은 방향)
+          if (s2.aimX != null && s2.aimY != null && (s2.aimX !== s2.x || s2.aimY !== s2.y)) s2.angle = Math.atan2(s2.aimY - s2.y, s2.aimX - s2.x);
+          spawnProjectiles(m, s2, comboSpec, false);
         }, fireDelayMs);
       } else {
         spawnProjectiles(match, p, comboSpec, false);
