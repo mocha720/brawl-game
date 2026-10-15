@@ -3953,6 +3953,13 @@ function collidesWithWalls(x, y, radius) {
   return WALLS.some((w) => circleIntersectsRect(x, y, radius, w));
 }
 
+// 마우스로 조준 중이면 마우스가 가리키는 월드 좌표를 같이 보낸다 (서버가 '그 순간 내 위치'에서 이 점을 향한 각도를 직접 계산할 수 있게).
+// 조이스틱 조준(터치)일 때는 방향만 있으므로 보내지 않는다.
+function aimPointPayload() {
+  if (touchAimActive) return {};
+  return { aimX: mouseX / cameraScale + camera.x, aimY: mouseY / cameraScale + camera.y };
+}
+
 // ===== 게임 루프 (클라이언트) =====
 let lastTime = performance.now();
 let wasServerControlled = false; // 직전 프레임에 서버가 내 위치를 직접 제어(돌진/기절/넉백/점프)하고 있었는지
@@ -3971,6 +3978,11 @@ function update(dt) {
     myX = me.x;
     myY = me.y;
     wasServerControlled = true;
+    if (me.dashing) {
+      // 돌진 중에도 조준 방향/마우스 위치는 서버에 계속 알림: 시스템처럼 '돌진한 뒤 현재 마우스 방향으로 공격'하는 캐릭터가 돌진이 끝난 위치 기준으로 정확히 겨냥하도록
+      myAngle = touchAimActive ? touchAimAngle : Math.atan2((mouseY / cameraScale + camera.y) - myY, (mouseX / cameraScale + camera.x) - myX);
+      socket.emit('playerUpdate', { x: myX, y: myY, angle: myAngle, ...aimPointPayload() });
+    }
     return;
   }
   if (wasServerControlled && me) {
@@ -4016,7 +4028,7 @@ function update(dt) {
   // mouseX/mouseY는 화면(캔버스) 기준 좌표이므로, 축소 배율을 나누고 카메라 오프셋을 더해 월드 좌표로 변환한 뒤 각도를 계산
   myAngle = touchAimActive ? touchAimAngle : Math.atan2((mouseY / cameraScale + camera.y) - myY, (mouseX / cameraScale + camera.x) - myX);
 
-  socket.emit('playerUpdate', { x: myX, y: myY, angle: myAngle });
+  socket.emit('playerUpdate', { x: myX, y: myY, angle: myAngle, ...aimPointPayload() });
 }
 
 // 11레벨(최고 레벨) 캐릭터의 아바타 주변에 보랏빛 불꽃을 두르는 래퍼.
