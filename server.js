@@ -19,13 +19,38 @@ const server = http.createServer(app);
 const io = new Server(server, {
   pingInterval: 8000,
   pingTimeout: 5000,
+  // [트래픽 절약] 256바이트 이상인 메시지만 압축. level 이 낮을수록 CPU를 덜 씀 (Render 무료 인스턴스는 CPU가 약함)
+  perMessageDeflate: {
+    threshold: 256,
+    zlibDeflateOptions: { level: 3 },
+  },
 });
 
 // Render 배포 환경에서는 PORT 환경변수를 사용해야 함
 const PORT = process.env.PORT || 3000;
 
+// [트래픽 절약] HTML/JS/JSON 등 텍스트 응답을 gzip 압축 (index.html 이 커서 효과가 큼)
+// 'compression' 패키지가 설치되어 있지 않아도 서버가 죽지 않도록 try/catch 로 감쌈
+try {
+  app.use(require('compression')());
+} catch (e) {
+  console.warn('compression 패키지가 없어 HTTP 압축을 건너뜁니다. (npm install compression)');
+}
+
+// [보안] 서버 소스/설정 파일이 정적 파일로 노출되지 않도록 차단
+app.use((req, res, next) => {
+  if (/^\/(server\.js|package(-lock)?\.json|node_modules|\.git|\.env)/i.test(req.path)) return res.status(404).end();
+  next();
+});
+
 // index.html 등 정적 파일을 같은 폴더에서 서빙
-app.use(express.static(path.join(__dirname)));
+// [트래픽 절약] html 은 매번 '바뀌었는지만' 확인(ETag → 304), 음악/이미지 등은 1일 동안 브라우저에 캐시
+app.use(express.static(path.join(__dirname), {
+  maxAge: '1d',
+  setHeaders(res, filePath) {
+    if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache');
+  },
+}));
 
 // ===== 게임 설정값 =====
 const ARENA_WIDTH = 770;    // 맵 크기 30% 추가 축소 (1100 → 770)
@@ -6557,6 +6582,26 @@ function startAiMatch(socket, characterId, userKey, level, trophies, skin, hyper
 // 진행 중인 모든 매치를 독립적으로 갱신하고, 각 매치의 상태는 그 매치에 속한 플레이어들에게만 전송한다
 // (덤불/은신 은닉을 위해 방 전체 브로드캐스트 대신 플레이어별로 필터링해서 개별 전송한다.
 // Socket.io는 각 소켓을 자신의 id와 같은 이름의 방에 기본으로 넣어주므로 io.to(pid)로 특정 플레이어에게만 보낼 수 있다.)
+// [트래픽 절약] 매 틱마다 똑같은 캐릭터 스펙(basic/ultimate/gadget/hyper)을 계속 보내던 것을 줄인다.
+// 매치가 시작된 뒤 각 시청자에게 '첫 상태'에만 전체 스펙을 싣고, 그 이후에는 빼서 보낸다.
+// 클라이언트가 첫 상태에서 스펙을 기억해뒀다가 다시 합쳐주므로 화면/게임 동작은 그대로다.
+// 위치/각도는 소수점 1자리/2자리로 반올림해서 숫자 길이도 줄인다.
+function slimPlayersForSend(match, viewerId, players) {
+  if (!match.specSentTo.has(viewerId)) {
+    match.specSentTo.add(viewerId);
+    return players; // 첫 전송: 전체 스펙 포함
+  }
+  const out = {};
+  for (const id in players) {
+    const { basic, ultimate, gadget, hyper, ...rest } = players[id];
+    if (typeof rest.x === 'number') rest.x = Math.round(rest.x * 10) / 10;
+    if (typeof rest.y === 'number') rest.y = Math.round(rest.y * 10) / 10;
+    if (typeof rest.angle === 'number') rest.angle = Math.round(rest.angle * 100) / 100;
+    out[id] = rest;
+  }
+  return out;
+}
+
 function gameLoop() {
   const dt = TICK_MS / 1000;
   const now = Date.now();
@@ -6569,10 +6614,12 @@ function gameLoop() {
     updateMatch(match, dt, now);
     checkGates(match); // 문지기 모드: 문이 부서졌는지 확인
 
+    if (!match.specSentTo) match.specSentTo = new Set();
     for (const pid in match.players) {
+      if (match.players[pid].isBot) continue; // AI 봇은 가짜 소켓이라 받을 사람이 없음 → 만들 필요 없음
       io.to(pid).emit('state', {
         gameMode: match.gameMode,
-        players: buildVisiblePlayers(match, pid),
+        players: slimPlayersForSend(match, pid, buildVisiblePlayers(match, pid)),
         bullets: buildVisibleBullets(match, pid),
         effects: match.effects,
         waterPools: match.waterPools,
