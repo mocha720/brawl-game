@@ -947,7 +947,7 @@ function describeBasic(b) {
       else if (c.pelletCount > 1) parts.push(`${i + 1}번째 탄창: ${c.name} ${c.pelletCount}개를 중심각 ${c.spreadDegrees}도 범위로 발사 (개당 ${fmtNum(c.damage)} 피해, 사거리 약 ${r})`);
       else parts.push(`${i + 1}번째 탄창: ${c.name} (${fmtNum(c.damage)} 피해, 사거리 약 ${r})`);
     });
-    if (b.dash) parts.push(`공격할 때마다 이동 중인 방향으로 약 ${fmtNum(Math.round(b.dash.speed * b.dash.duration))}px 돌진한 뒤 그 자리에서 공격 (가만히 서 있으면 돌진 없이 바로 공격)`);
+    if (b.dash) parts.push(`공격할 때마다 이동 중인 방향으로 약 ${fmtNum(Math.round(b.dash.speed * b.dash.duration))}px 돌진한 뒤 그 자리에서 현재 조준 방향으로 공격 (가만히 서 있으면 돌진 없이 바로 공격)`);
     if (b.reloadAllAtOnce) parts.push(`탄창 ${MAX_AMMO}개를 모두 사용하면 ${b.ammoRegenSeconds}초 뒤에 한꺼번에 재장전`);
   } else if (b.type === 'charge') {
     // 똥파리: 탄창 없이 누르고 있는 동안 충전하는 공격
@@ -4792,6 +4792,7 @@ function registerGameplayHandlers(socket) {
     const p = match.players[socket.id];
     if (!p || !p.alive) return;
     if (p.dashing || p.knockbackTimeLeft > 0 || (p.stunnedUntil && Date.now() < p.stunnedUntil)) {
+      if (p.dashing && p.comboAimLive && typeof data.angle === 'number') p.angle = data.angle; // 시스템의 공격 돌진 중에도 조준 방향은 따라감 (돌진 직후 그 방향으로 발사)
       p.lastServerControlAt = Date.now(); // 서버가 위치를 제어한 마지막 시각 (아래 '낡은 위치' 거르기에 사용)
       return; // 돌진/기절 중에는 서버가 위치를 제어하므로 클라이언트 입력을 무시
     }
@@ -4860,16 +4861,17 @@ function registerGameplayHandlers(socket) {
       // 가젯으로 탄창을 다시 채우면 다시 1번부터 시작한다.
       const phase = Math.max(0, Math.min(p.basic.combo.length - 1, p.maxAmmo - ammoBeforeShot));
       const comboSpec = p.basic.combo[phase];
-      // 공격할 때마다 '공격 버튼을 누른 순간 이동 중이던 방향'으로 먼저 돌진하고, 돌진이 끝난 자리에서 (누른 순간의 조준 방향으로) 공격한다.
+      // 공격할 때마다 '공격 버튼을 누른 순간 이동 중이던 방향'으로 먼저 돌진하고, 돌진이 끝난 자리에서 '그 시점의 조준 방향'으로 공격한다.
+      // (돌진 중에도 조준 방향은 계속 갱신됨: playerUpdate 가 comboAimLive 동안 angle 만 받아들임)
       // (최근 0.15초 안에 실제로 움직였을 때만. 서 있으면 돌진 없이 제자리에서 바로 공격)
       const comboBlocked = p.leaping || p.dashing || p.airborneTimeLeft > 0 || p.knockbackTimeLeft > 0 || (p.stunnedUntil && now < p.stunnedUntil);
       if (p.basic.dash && p.lastMoveAt && now - p.lastMoveAt <= 150 && !comboBlocked) {
         const dashSpec = p.basic.dash;
-        const aimAngle = p.angle; // 돌진 중에 조준이 바뀌어도 누른 순간의 방향으로 발사
         const dasherId = p.id;
         p.comboDashId = (p.comboDashId || 0) + 1;
         const myComboDashId = p.comboDashId;
         const matchId2 = match.id;
+        p.comboAimLive = true; // 돌진하는 동안에도 조준 각도는 계속 받음
         p.dashing = true;
         p.dashHarmless = true; // 피해/기절 없이 이동만 하는 돌진
         p.dashSpeed = dashSpec.speed;
@@ -4883,9 +4885,11 @@ function registerGameplayHandlers(socket) {
           const m = matches[matchId2];
           if (!m || m.over) return;
           const s2 = m.players[dasherId];
-          if (!s2 || !s2.alive || s2.comboDashId !== myComboDashId) return; // 죽었거나 새 공격으로 대체됨
+          if (!s2) return;
+          if (s2.comboDashId === myComboDashId) s2.comboAimLive = false;
+          if (!s2.alive || s2.comboDashId !== myComboDashId) return; // 죽었거나 새 공격으로 대체됨
           if (s2.leaping || s2.airborneTimeLeft > 0 || s2.knockbackTimeLeft > 0 || (s2.stunnedUntil && Date.now() < s2.stunnedUntil)) return; // 돌진하는 사이 기절/넉백/띄워졌으면 공격 취소
-          spawnProjectiles(m, s2, comboSpec, false, aimAngle);
+          spawnProjectiles(m, s2, comboSpec, false); // 돌진이 끝난 시점의 조준 방향(s2.angle)으로 발사
         }, fireDelayMs);
       } else {
         spawnProjectiles(match, p, comboSpec, false);
