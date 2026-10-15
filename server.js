@@ -60,7 +60,15 @@ const JINWOOPARK_GATE_DAMAGE = 3000; // 문지기 모드: 진우Park 하트(현�
 const GATE_RADIUS = 36;           // 문의 크기(피격 반경)
 const RESPAWN_INVINCIBLE_MS = 3000; // 리스폰 직후 무적 시간
 const MATCH_COUNTDOWN_MS = 4000; // 매칭 직후 상대 정보(캐릭터/트로피)를 보여주는 대결 화면 시간. 이 동안은 이동/공격/스킬 입력이 막힘
-const AI_COIN_REWARD = 20; // AI 연습 대결에서 점수로 이겼을 때 받는 코인 (트로피/전적/연승/미션은 기록하지 않음). 일반 1:1 승리 보상(45)보다 적게 설정
+const AI_COIN_REWARD = 20; // (옛 공지사항 문구에서만 쓰는 값. 실제 AI 보상은 아래 AI_DIFFICULTIES 를 따름)
+// AI 연습 대결 난이도: 점수로 이기면 코인 + 고정 트로피를 받는다 (진 경우/중도 이탈은 보상도 트로피 변화도 없음).
+// 전적(승/패), 연승, 미션은 기록하지 않으므로 AI 승리는 연승에 영향을 주지 않는다.
+const AI_DIFFICULTIES = {
+  easy: { id: 'easy', name: '쉬움', coinReward: 20, trophyReward: 10 },
+  hard: { id: 'hard', name: '어려움', coinReward: 50, trophyReward: 30 },
+};
+const AI_DEFAULT_DIFFICULTY = 'hard'; // 난이도를 보내지 않는 옛 클라이언트는 기존과 같은 '어려움'
+function aiDifficultyOf(id) { return AI_DIFFICULTIES[id] || AI_DIFFICULTIES[AI_DEFAULT_DIFFICULTY]; }
 const MATCH_CLEANUP_DELAY_MS = 600; // 승리 판정 후 마지막 상태를 한 번 더 보낸 뒤 방을 정리하기까지의 지연
 
 // ===== 개발자(관리자) 모드 =====
@@ -2157,6 +2165,18 @@ function createFileDb() {
       scheduleSave();
       return cloneUser(u);
     },
+    // AI 대결 승리 보상: 코인 + 해당 캐릭터 트로피만 올림 (승/패 전적, 연승, 미션은 건드리지 않음)
+    async addAiReward(key, coins, charId, trophies) {
+      const u = users[key];
+      if (!u) return null;
+      u.coins += coins;
+      if (trophies && CHARACTERS[charId]) {
+        u.trophies = u.trophies || {};
+        u.trophies[charId] = Math.max(0, (u.trophies[charId] || 0) + trophies);
+      }
+      scheduleSave();
+      return cloneUser(u);
+    },
     // 미션 진행도 누적 (날짜가 바뀌었으면 먼저 초기화). incs: { 미션id: 증가량 }
     async addMissionProgress(key, day, incs) {
       const u = users[key];
@@ -2425,6 +2445,12 @@ function createMongoDb(uri) {
     },
     async addCoins(key, coins) {
       return col.findOneAndUpdate({ key }, { $inc: { coins } }, { returnDocument: 'after', projection });
+    },
+    // AI 대결 승리 보상: 코인 + 해당 캐릭터 트로피만 올림 (승/패 전적, 연승, 미션은 건드리지 않음)
+    async addAiReward(key, coins, charId, trophies) {
+      const inc = { coins };
+      if (trophies && CHARACTERS[charId]) inc[`trophies.${charId}`] = trophies; // charId는 서버가 검증한 캐릭터 id만 들어옴
+      return col.findOneAndUpdate({ key }, { $inc: inc }, { returnDocument: 'after', projection });
     },
     // 날짜가 바뀐 계정의 미션 기록을 오늘 것으로 초기화 (이미 오늘 날짜면 아무 일도 하지 않음)
     async resetMissionsIfNewDay(key, day) {
@@ -3202,16 +3228,18 @@ function registerAuthHandlers(socket) {
 }
 
 // 매치 결과 정산: 승리 팀에는 코인 + 승수, 패배 팀에는 패수를 기록한다 (매치당 한 번만 실행)
-// AI 연습 대결 정산: 사람이 점수로 이겼을 때만 코인을 지급한다 (트로피/전적/연승/미션은 기록하지 않음)
+// AI 연습 대결 정산: 사람이 점수로 이겼을 때만 난이도별 코인 + 고정 트로피(쓴 캐릭터)를 지급한다.
+// 전적(승/패)과 연승, 미션은 기록하지 않으므로 AI 승리는 연승을 올리지도 끊지도 않는다. 졌을 때는 트로피가 깎이지 않는다.
 async function settleAiMatch(match, winnerTeam, reason) {
   if (reason !== 'scoreLimit') return;
+  const diff = aiDifficultyOf(match.aiDifficulty);
   for (const pid in match.players) {
     const p = match.players[pid];
     if (p.isBot || p.team !== winnerTeam) continue;
     const key = match.accounts[pid];
     if (!key) continue;
     try {
-      const user = await db.addCoins(key, AI_COIN_REWARD);
+      const user = await db.addAiReward(key, diff.coinReward, p.characterId, diff.trophyReward);
       const s = io.sockets.sockets.get(pid);
       if (s && user) s.emit('profileUpdate', publicProfile(user));
     } catch (e) {
@@ -3676,8 +3704,10 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
         reason: 'scoreLimit',
         winnerTeam: shooter.team,
         teamScore: match.teamScore,
-        coinReward: match.ai ? (shooter.isBot ? 0 : AI_COIN_REWARD) : (MODES[match.mode].coinReward || 0),
+        coinReward: match.ai ? (shooter.isBot ? 0 : aiDifficultyOf(match.aiDifficulty).coinReward) : (MODES[match.mode].coinReward || 0),
         ai: !!match.ai,
+        aiDifficultyName: match.ai ? aiDifficultyOf(match.aiDifficulty).name : undefined,
+        aiTrophyReward: match.ai && !shooter.isBot ? aiDifficultyOf(match.aiDifficulty).trophyReward : 0, // AI 대결 승리로 받는 고정 트로피 (진 경우 0)
       });
       settleMatch(match, shooter.team, 'scoreLimit');
       setTimeout(() => endMatch(match.id), MATCH_CLEANUP_DELAY_MS);
@@ -4286,6 +4316,7 @@ function startMatch(mode, entries, opts = {}) {
     settled: false,
   };
   if (opts.ai) {
+    match.aiDifficulty = aiDifficultyOf(opts.aiDifficulty).id; // 'easy' | 'hard'
     match.ai = true;       // AI 연습 대결: 트로피/전적/연승/미션은 기록하지 않음 (이기면 코인만 지급)
     match.settled = true;  // 일반 정산(트로피/전적)은 건너뜀. AI 보상은 settleAiMatch 가 따로 처리
     match.aiBots = {};     // botSocketId -> AI 상태
@@ -4304,7 +4335,7 @@ function startMatch(mode, entries, opts = {}) {
     if (e.isBot) {
       match.players[e.socket.id].isBot = true; // 클라이언트가 AI 상대의 탄창을 머리 위에 표시하는 데 사용
       registerGameplayHandlers(e.socket); // 봇의 가짜 소켓에도 사람과 같은 입력 핸들러를 등록
-      match.aiBots[e.socket.id] = createAiState(e.socket);
+      match.aiBots[e.socket.id] = createAiState(e.socket, match.aiDifficulty);
     }
   });
 
@@ -4337,7 +4368,8 @@ function startMatch(mode, entries, opts = {}) {
       teammateNames,
       opponentNames,
       roster,
-      ai: !!opts.ai, // AI 연습 대결 여부 (트로피를 얻을 수 없음)
+      ai: !!opts.ai, // AI 연습 대결 여부
+      aiDifficulty: opts.ai ? aiDifficultyOf(opts.aiDifficulty) : null, // { id, name, coinReward, trophyReward }
       gameMode: 'knockout',
       vote: match.voteOpen ? { options: Object.keys(GAME_MODES).map((id) => ({ id, name: GAME_MODES[id].name, desc: GAME_MODES[id].desc })), maps: MAP_LAYOUTS.map((m) => ({ id: m.id, name: m.name, walls: m.walls, bushes: m.bushes })), endsInMs: MODE_VOTE_MS } : null,
       startsInMs: match.voteOpen ? MODE_VOTE_MS : MATCH_COUNTDOWN_MS,
@@ -4643,7 +4675,7 @@ io.on('connection', (socket) => {
   });
 
   // AI 연습 대결: 대기열 없이 바로 AI 봇 1명과 1:1 매치를 시작한다.
-  // 트로피/코인/연승/미션 등 어떤 보상이나 기록도 남지 않는다 (match.settled 를 처음부터 true 로 둠).
+  // 전적/연승/미션은 기록되지 않고(match.settled 를 처음부터 true 로 둠), 이기면 난이도별 코인 + 고정 트로피만 받는다 (settleAiMatch).
   socket.on('findAiMatch', async (data) => {
     if (socketToMatch[socket.id]) return; // 이미 매치 중이면 무시
     if (isQueued(socket.id)) return;
@@ -4655,8 +4687,9 @@ io.on('connection', (socket) => {
       return;
     }
     const userKey = socket.data.userKey;
+    const difficulty = aiDifficultyOf(data && data.difficulty).id; // 쉬움/어려움 (모르는 값이면 어려움)
     let level = 1;
-    let trophies = 0; // 대결 화면에 보여주기만 하고, AI 대결로는 절대 변하지 않음
+    let trophies = 0; // 대결 화면에 보여주기만 함 (AI 대결에서 이기면 난이도별 고정 트로피를 받지만, 이 값은 시작 시점의 트로피)
     let skin = null;
     let hyper = false;
     try {
@@ -4671,7 +4704,7 @@ io.on('connection', (socket) => {
     if (!socket.connected || socket.data.userKey !== userKey) return;
     if (socketToMatch[socket.id] || isQueued(socket.id)) return;
     if (serverPause.on) { socket.emit('findMatchError', { message: serverPause.message }); return; }
-    startAiMatch(socket, requestedId, userKey, level, trophies, skin, hyper);
+    startAiMatch(socket, requestedId, userKey, level, trophies, skin, hyper, difficulty);
   });
 
   registerGameplayHandlers(socket); // 이동/공격/충전/가젯/궁극기 입력 처리 (AI 봇도 같은 함수를 써서 사람과 똑같은 규칙으로 행동함)
@@ -6090,6 +6123,28 @@ function buildVisibleBullets(match, viewerId) {
 const AI_MOVE_SPEED = 152; // 클라이언트의 MOVE_SPEED 와 같은 값 (px/초, 기존 190에서 20% 감소)
 let aiBotCounter = 0;
 
+// 난이도별 봇 성능. 어려움이 기존 AI와 똑같은 값이고, 쉬움은 조준이 부정확하고 반응이 느리며 덜 공격적이다.
+const AI_PROFILES = {
+  hard: {
+    aimErrRange: 0.26,      // 조준 오차 폭(라디안, 약 ±7도)
+    leadScale: 1,           // 움직이는 적을 예측해서 조준하는 정도 (1 = 기존 그대로)
+    reactionBaseMs: 450,    // 처음 적을 발견한 뒤 쏘기까지 반응 시간 (기본 + 무작위)
+    reactionVarMs: 400,
+    moveScale: 1,           // 이동 속도 배율
+    shotDelayScale: 1,      // 발사 간격 배율 (클수록 천천히 쏨)
+    abilityChance: 1,       // 궁극기/가젯을 쓸 수 있을 때 실제로 쓸 확률 배율
+  },
+  easy: {
+    aimErrRange: 0.75,      // 약 ±21도로 크게 빗나감
+    leadScale: 0.25,        // 적의 이동을 거의 예측하지 못함
+    reactionBaseMs: 1100,
+    reactionVarMs: 800,
+    moveScale: 0.8,
+    shotDelayScale: 1.7,
+    abilityChance: 0.45,
+  },
+};
+
 function createBotSocket(id) {
   const handlers = {};
   return {
@@ -6102,9 +6157,11 @@ function createBotSocket(id) {
   };
 }
 
-function createAiState(socket) {
+function createAiState(socket, difficulty) {
   return {
     socket,
+    difficulty: AI_PROFILES[difficulty] ? difficulty : 'hard',
+    profile: AI_PROFILES[difficulty] || AI_PROFILES.hard, // 난이도별 성능 (조준 오차/반응/이동속도/발사 간격/스킬 사용 확률)
     strafeDir: Math.random() < 0.5 ? 1 : -1,
     strafeUntil: 0,
     nextShotAt: 0,
@@ -6212,13 +6269,13 @@ function runAiBot(match, botId, ai, dt, now) {
     ai.prevTarget = { id: target.id, x: target.x, y: target.y };
     ai.lastSeen = { x: target.x, y: target.y };
     ai.seenAt = now;
-    if (!ai.hadTarget) ai.nextShotAt = Math.max(ai.nextShotAt, now + 450 + Math.random() * 400); // 처음 발견하면 반응 시간
+    if (!ai.hadTarget) ai.nextShotAt = Math.max(ai.nextShotAt, now + ai.profile.reactionBaseMs + Math.random() * ai.profile.reactionVarMs); // 처음 발견하면 반응 시간 (쉬움은 더 느림)
   } else {
     ai.prevTarget = null;
   }
   ai.hadTarget = !!target;
 
-  if (now >= ai.aimErrUntil) { ai.aimErr = (Math.random() - 0.5) * 0.26; ai.aimErrUntil = now + 350; } // 조준 오차 (약 ±7도)
+  if (now >= ai.aimErrUntil) { ai.aimErr = (Math.random() - 0.5) * ai.profile.aimErrRange; ai.aimErrUntil = now + 350; } // 조준 오차 (어려움 약 ±7도, 쉬움 약 ±21도)
 
   const basic = p.basic;
   const range = aiBasicRange(basic);
@@ -6275,6 +6332,7 @@ function runAiBot(match, botId, ai, dt, now) {
     let leadT = 0;
     if (basic.type === 'lob') leadT = (basic.flightTime || 2) * 0.6;
     else if (basic.speed) leadT = Math.min(0.9, dist / basic.speed) * 0.75;
+    leadT *= ai.profile.leadScale; // 쉬움은 움직이는 적을 잘 예측하지 못함
     const tx = target.x + ai.vx * leadT;
     const ty = target.y + ai.vy * leadT;
     aimAngle = Math.atan2(ty - p.y, tx - p.x) + ai.aimErr;
@@ -6364,7 +6422,7 @@ function runAiBot(match, botId, ai, dt, now) {
   }
 
   // 벽에 끼면 잠시 옆으로 빠져나옴
-  const step = AI_MOVE_SPEED * (p.speedMultiplier || 1) * dt;
+  const step = AI_MOVE_SPEED * ai.profile.moveScale * (p.speedMultiplier || 1) * dt;
   if (ai.lastX !== null && ai.intended) {
     const moved = Math.hypot(p.x - ai.lastX, p.y - ai.lastY);
     ai.stuckTicks = moved < step * 0.3 ? ai.stuckTicks + 1 : 0;
@@ -6403,7 +6461,7 @@ function runAiBot(match, botId, ai, dt, now) {
         const lastShotBefore = p.lastShotAt;
         h.chargeRelease({ angle: aimAngle });
         if (p.lastShotAt !== lastShotBefore) p.ammo = Math.max(0, p.ammo - 1); // 실제로 발사됐을 때만 탄창 1발 소모
-        ai.nextShotAt = now + (500 + Math.random() * 500) * rateScale;
+        ai.nextShotAt = now + (500 + Math.random() * 500) * rateScale * ai.profile.shotDelayScale;
       }
     } else if (now >= ai.nextShotAt && p.ammo > 0) {
       if (basic.type === 'lob') {
@@ -6413,7 +6471,7 @@ function runAiBot(match, botId, ai, dt, now) {
       } else {
         h.shoot();
       }
-      ai.nextShotAt = now + (p.ammo <= 1 ? 900 + Math.random() * 700 : 350 + Math.random() * 550) * rateScale; // 탄창이 1발 이하로 남으면 아껴서 쏨
+      ai.nextShotAt = now + (p.ammo <= 1 ? 900 + Math.random() * 700 : 350 + Math.random() * 550) * rateScale * ai.profile.shotDelayScale; // 탄창이 1발 이하로 남으면 아껴서 쏨 (쉬움은 더 천천히 쏨)
     }
   } else if (p.chargeStartAt && (!target || mode === 'flee')) {
     h.chargeCancel();
@@ -6438,7 +6496,7 @@ function runAiBot(match, botId, ai, dt, now) {
       arg = { distance: dist };
     } else if (ult.type === 'dash' || ult.type === 'burst') use = !!target && dist < ur * (mode === 'chase' ? 1.0 : 0.9);
     else use = !!target && dist < Math.min(ur, 350);
-    if (use && Math.random() < 0.6) h.ultimate(arg);
+    if (use && Math.random() < 0.6 * ai.profile.abilityChance) h.ultimate(arg);
   }
 
   const g = p.gadget;
@@ -6463,21 +6521,22 @@ function runAiBot(match, botId, ai, dt, now) {
         h.playerUpdate({ x: p.x, y: p.y, angle: Math.atan2(moveY, moveX) }); // 돌진은 바라보는 방향으로 나가므로, 도망 방향을 보고 사용
       }
     } else use = !!target && dist < 400;
-    if (use && Math.random() < 0.5) h.gadget();
+    if (use && Math.random() < 0.5 * ai.profile.abilityChance) h.gadget();
   }
 }
 
 // AI 연습 대결 시작: 사람 1명 + 무작위 캐릭터를 쓰는 AI 봇 1명의 1:1 매치. 대기열을 거치지 않고 바로 시작한다.
-function startAiMatch(socket, characterId, userKey, level, trophies, skin, hyper) {
+function startAiMatch(socket, characterId, userKey, level, trophies, skin, hyper, difficulty) {
+  const diff = aiDifficultyOf(difficulty);
   const ids = Object.keys(CHARACTERS);
   const botCharId = ids[Math.floor(Math.random() * ids.length)];
   aiBotCounter += 1;
   const botSocket = createBotSocket(`ai_${aiBotCounter}`);
   const entries = [
     { socket, name: socket.data.displayName, characterId, userKey, trophies: trophies || 0, level, skin: skin || null, hyper: !!hyper },
-    { socket: botSocket, name: `AI ${CHARACTERS[botCharId].name}`, characterId: botCharId, userKey: null, trophies: 0, level, isBot: true },
+    { socket: botSocket, name: `AI(${diff.name}) ${CHARACTERS[botCharId].name}`, characterId: botCharId, userKey: null, trophies: 0, level, isBot: true },
   ];
-  startMatch('1v1', entries, { ai: true });
+  startMatch('1v1', entries, { ai: true, aiDifficulty: diff.id });
 }
 
 // ===== 서버 게임 루프 =====
