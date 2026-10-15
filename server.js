@@ -810,7 +810,7 @@ const CHARACTERS = {
       combo: [
         { name: '원거리 구슬', damage: 1000, speed: 800, radius: 9, lifetime: 1.0, visual: 'sysOrb' },   // 사거리 약 800 (원거리)
         { name: '던지는 구슬', damage: 1500, speed: 480, radius: 14, lifetime: 1.0, visual: 'sysThrow' }, // 사거리 약 480 (중거리)
-        { name: '소용돌이', damage: 3000, pelletCount: 3, spreadDegrees: 90, speed: 300, radius: 18, lifetime: 0.5, visual: 'vortex' }, // 중심각 90도 범위로 3개, 개당 3000, 사거리 약 150
+        { name: '소용돌이', damage: 3000, speed: 300, radius: 55, lifetime: 0.5, pierceTargets: true, visual: 'vortex' }, // 큰 소용돌이 1개 (판정 반경 55px의 광역, 맞은 적을 관통해서 범위 안의 여러 명에게 각각 3000 피해), 사거리 약 150
       ],
     },
     ultimate: {
@@ -935,7 +935,8 @@ function describeBasic(b) {
     // 시스템: 탄창 3개가 각각 다른 공격 + 공격마다 이동 방향으로 돌진
     b.combo.forEach((c, i) => {
       const r = rangeOf(c);
-      if (c.pelletCount > 1) parts.push(`${i + 1}번째 탄창: ${c.name} ${c.pelletCount}개를 중심각 ${c.spreadDegrees}도 범위로 발사 (개당 ${fmtNum(c.damage)} 피해, 사거리 약 ${r})`);
+      if (c.pierceTargets) parts.push(`${i + 1}번째 탄창: ${c.name} 1개를 발사해 지나가는 범위 안의 모든 적에게 광역 피해 (한 명당 ${fmtNum(c.damage)} 피해, 사거리 약 ${r})`);
+      else if (c.pelletCount > 1) parts.push(`${i + 1}번째 탄창: ${c.name} ${c.pelletCount}개를 중심각 ${c.spreadDegrees}도 범위로 발사 (개당 ${fmtNum(c.damage)} 피해, 사거리 약 ${r})`);
       else parts.push(`${i + 1}번째 탄창: ${c.name} (${fmtNum(c.damage)} 피해, 사거리 약 ${r})`);
     });
     if (b.dash) parts.push(`공격할 때마다${b.dash.delay ? ` ${b.dash.delay}초 뒤에` : ''} 이동 중인 방향으로 약 ${fmtNum(Math.round(b.dash.speed * b.dash.duration))}px 돌진`);
@@ -3600,6 +3601,12 @@ function chargeGauges(shooter) {
 }
 
 // 총알이 대상에게 줄 기본 피해: 비율형 총알(하트)은 대상의 현재 체력 + 보호막의 비율, 그 외는 고정 피해
+// 적을 맞혀도 사라지지 않고 계속 날아가면서 대상마다 한 번씩 피해를 주는 총알인지: 부메랑 / 튕기는 고추 / 관통형 광역 총알(시스템의 3번째 소용돌이).
+// (띄우기 소용돌이(launchDuration)는 따로 처리하므로 제외)
+function isPiercingDamageBullet(b) {
+  return !!(b.boomerang || b.bounce || (b.pierceTargets && !(b.launchDuration > 0)));
+}
+
 function bulletDamageFor(b, target) {
   // 문지기 모드의 문: 비율형 총알(진우Park의 하트)은 비율 대신 고정 피해 (처형 판정도 문에는 적용하지 않음)
   if (target.isGate && b.currentHpRatio > 0) return JINWOOPARK_GATE_DAMAGE;
@@ -5700,9 +5707,10 @@ function updateMatch(match, dt, now) {
       }
 
       if (dist < PLAYER_RADIUS + b.radius) {
-        if (b.boomerang || b.bounce) {
-          // 부메랑/튕기는 고추(하이퍼 꽈리): 적을 맞혀도 사라지지 않고 계속 날아감. 한 방향(나가는 중/벽에 튕기기 전까지)에서는 한 대상을 한 번만 맞힘
-          applyDamage(match, target, bulletDamageFor(b, target), b.ownerId, { chargeShooter: false });
+        if (isPiercingDamageBullet(b)) {
+          // 부메랑/튕기는 고추(하이퍼 꽈리)/관통형 광역 총알(시스템 소용돌이): 적을 맞혀도 사라지지 않고 계속 날아감. 한 방향(나가는 중/벽에 튕기기 전까지)에서는 한 대상을 한 번만 맞힘
+          // 시스템의 소용돌이는 기본 공격이라 맞힐 때마다 궁극기 게이지가 참 (부메랑/고추는 기존대로 충전 안 함)
+          applyDamage(match, target, bulletDamageFor(b, target), b.ownerId, { chargeShooter: !b.boomerang && !b.bounce && !b.isUltimate });
           b.hitIds.push(pid);
           continue;
         }
@@ -5757,11 +5765,11 @@ function updateMatch(match, dt, now) {
 
     for (const turret of match.turrets) {
       if (!FRIENDLY_FIRE && turret.team === b.team) continue; // 아군 총알은 자신의 터렛을 통과함
-      if ((b.boomerang || b.bounce) && b.hitIds.includes(`t${turret.id}`)) continue;
+      if (isPiercingDamageBullet(b) && b.hitIds.includes(`t${turret.id}`)) continue;
 
       if (bulletDistTo(b, turret.x, turret.y) < turret.radius + b.radius) {
-        if (b.boomerang || b.bounce) {
-          // 부메랑/튕기는 고추는 터렛도 관통: 방향마다 한 번씩 피해
+        if (isPiercingDamageBullet(b)) {
+          // 부메랑/튕기는 고추/광역 소용돌이는 터렛도 관통: 방향마다 한 번씩 피해
           turret.hp -= bulletDamageFor(b, turret) * getDamageMultiplier(match.players[b.ownerId]);
           b.hitIds.push(`t${turret.id}`);
           continue;
@@ -5794,9 +5802,9 @@ function updateMatch(match, dt, now) {
     for (const chicken of match.chickens) {
       if (chicken.hp <= 0) continue;
       if (!FRIENDLY_FIRE && chicken.team === b.team) continue;
-      if ((b.boomerang || b.bounce) && b.hitIds.includes(`c${chicken.id}`)) continue;
+      if (isPiercingDamageBullet(b) && b.hitIds.includes(`c${chicken.id}`)) continue;
       if (bulletDistTo(b, chicken.x, chicken.y) < chicken.radius + b.radius) {
-        if (b.boomerang || b.bounce) {
+        if (isPiercingDamageBullet(b)) {
           chicken.hp -= bulletDamageFor(b, chicken) * getDamageMultiplier(match.players[b.ownerId]);
           b.hitIds.push(`c${chicken.id}`);
           continue;
