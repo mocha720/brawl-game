@@ -814,7 +814,7 @@ const CHARACTERS = {
       type: 'combo',         // 탄창 3개가 각각 다른 공격: 1번 원거리 구슬 -> 2번 던지는 구슬 -> 3번 소용돌이 3개
       reloadAllAtOnce: true, // 탄창 3개를 모두 쓴 뒤에야 재장전이 시작되고, ammoRegenSeconds 뒤에 한꺼번에 가득 참
       ammoRegenSeconds: 3,   // 3개를 모두 사용한 뒤 탄창이 리셋되기까지의 시간(초)
-      dash: { speed: 800, duration: 0.12, delay: 0.2 }, // 총알을 쏜 0.2초 뒤에, 쏘던 순간 이동 중이던 방향으로 이만큼 돌진 (약 96px). 가만히 서 있으면 돌진하지 않음
+      dash: { speed: 800, duration: 0.12 }, // 공격 버튼을 누르면 먼저 이동 중이던 방향으로 이만큼 돌진한 뒤(약 96px) 그 자리에서 공격. 가만히 서 있으면 돌진하지 않고 바로 공격
       combo: [
         { name: '원거리 구슬', damage: 1000, speed: 800, radius: 9, lifetime: 1.0, visual: 'sysOrb' },   // 사거리 약 800 (원거리)
         { name: '던지는 구슬', damage: 1500, speed: 480, radius: 14, lifetime: 1.0, visual: 'sysThrow' }, // 사거리 약 480 (중거리)
@@ -947,7 +947,7 @@ function describeBasic(b) {
       else if (c.pelletCount > 1) parts.push(`${i + 1}번째 탄창: ${c.name} ${c.pelletCount}개를 중심각 ${c.spreadDegrees}도 범위로 발사 (개당 ${fmtNum(c.damage)} 피해, 사거리 약 ${r})`);
       else parts.push(`${i + 1}번째 탄창: ${c.name} (${fmtNum(c.damage)} 피해, 사거리 약 ${r})`);
     });
-    if (b.dash) parts.push(`공격할 때마다${b.dash.delay ? ` ${b.dash.delay}초 뒤에` : ''} 이동 중인 방향으로 약 ${fmtNum(Math.round(b.dash.speed * b.dash.duration))}px 돌진`);
+    if (b.dash) parts.push(`공격할 때마다 이동 중인 방향으로 약 ${fmtNum(Math.round(b.dash.speed * b.dash.duration))}px 돌진한 뒤 그 자리에서 공격 (가만히 서 있으면 돌진 없이 바로 공격)`);
     if (b.reloadAllAtOnce) parts.push(`탄창 ${MAX_AMMO}개를 모두 사용하면 ${b.ammoRegenSeconds}초 뒤에 한꺼번에 재장전`);
   } else if (b.type === 'charge') {
     // 똥파리: 탄창 없이 누르고 있는 동안 충전하는 공격
@@ -4859,31 +4859,36 @@ function registerGameplayHandlers(socket) {
       // 시스템: 남은 탄창에 따라 1번(원거리 구슬) -> 2번(던지는 구슬) -> 3번(소용돌이 3개) 순서로 공격.
       // 가젯으로 탄창을 다시 채우면 다시 1번부터 시작한다.
       const phase = Math.max(0, Math.min(p.basic.combo.length - 1, p.maxAmmo - ammoBeforeShot));
-      spawnProjectiles(match, p, p.basic.combo[phase], false);
-      // 공격할 때마다 '발사하는 순간 이동 중이던 방향'으로 돌진하되, 총알을 쏜 뒤 dash.delay초 뒤에 시작한다.
-      // (최근 0.15초 안에 실제로 움직였을 때만. 서 있으면 돌진 없이 제자리에서 공격)
-      if (p.basic.dash && p.lastMoveAt && now - p.lastMoveAt <= 150) {
+      const comboSpec = p.basic.combo[phase];
+      // 공격할 때마다 '공격 버튼을 누른 순간 이동 중이던 방향'으로 먼저 돌진하고, 돌진이 끝난 자리에서 (누른 순간의 조준 방향으로) 공격한다.
+      // (최근 0.15초 안에 실제로 움직였을 때만. 서 있으면 돌진 없이 제자리에서 바로 공격)
+      const comboBlocked = p.leaping || p.dashing || p.airborneTimeLeft > 0 || p.knockbackTimeLeft > 0 || (p.stunnedUntil && now < p.stunnedUntil);
+      if (p.basic.dash && p.lastMoveAt && now - p.lastMoveAt <= 150 && !comboBlocked) {
         const dashSpec = p.basic.dash;
-        const dirX = p.moveDirX;
-        const dirY = p.moveDirY;
+        const aimAngle = p.angle; // 돌진 중에 조준이 바뀌어도 누른 순간의 방향으로 발사
         const dasherId = p.id;
         p.comboDashId = (p.comboDashId || 0) + 1;
         const myComboDashId = p.comboDashId;
         const matchId2 = match.id;
+        p.dashing = true;
+        p.dashHarmless = true; // 피해/기절 없이 이동만 하는 돌진
+        p.dashSpeed = dashSpec.speed;
+        p.dashDirX = p.moveDirX;
+        p.dashDirY = p.moveDirY;
+        p.dashTimeLeft = dashSpec.duration;
+        p.dashTotal = dashSpec.duration;
+        // 돌진이 끝난 뒤(서버 틱 단위로 올림) 그 자리에서 공격
+        const fireDelayMs = Math.ceil((dashSpec.duration * 1000) / TICK_MS) * TICK_MS;
         setTimeout(() => {
           const m = matches[matchId2];
           if (!m || m.over) return;
           const s2 = m.players[dasherId];
           if (!s2 || !s2.alive || s2.comboDashId !== myComboDashId) return; // 죽었거나 새 공격으로 대체됨
-          if (s2.leaping || s2.dashing || s2.airborneTimeLeft > 0 || s2.knockbackTimeLeft > 0 || (s2.stunnedUntil && Date.now() < s2.stunnedUntil)) return; // 그 사이 기절/넉백/띄워짐이면 돌진 취소
-          s2.dashing = true;
-          s2.dashHarmless = true; // 피해/기절 없이 이동만 하는 돌진
-          s2.dashSpeed = dashSpec.speed;
-          s2.dashDirX = dirX;
-          s2.dashDirY = dirY;
-          s2.dashTimeLeft = dashSpec.duration;
-          s2.dashTotal = dashSpec.duration;
-        }, (dashSpec.delay || 0) * 1000);
+          if (s2.leaping || s2.airborneTimeLeft > 0 || s2.knockbackTimeLeft > 0 || (s2.stunnedUntil && Date.now() < s2.stunnedUntil)) return; // 돌진하는 사이 기절/넉백/띄워졌으면 공격 취소
+          spawnProjectiles(m, s2, comboSpec, false, aimAngle);
+        }, fireDelayMs);
+      } else {
+        spawnProjectiles(match, p, comboSpec, false);
       }
     } else if ((p.basic.type === 'melee' || p.basic.type === 'quake') && p.basic.windup > 0) {
       // 업할의 망치 지진: 버튼을 누르면 windup초 동안 이동 불가 상태로 망치를 치켜들고, 시간이 지나면 그때의 조준 방향으로 지진 발동
