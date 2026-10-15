@@ -972,9 +972,13 @@
       <div class="mode-title">2 : 2</div>
       <div class="mode-desc">팀원과 함께 2대2 협동전</div>
     </div>
-    <div class="mode-card" data-mode="ai">
-      <div class="mode-title">🤖 AI</div>
-      <div class="mode-desc">접속자가 없어도 AI와 연습 대결<br>(트로피는 없고, 이기면 코인을 얻어요)</div>
+    <div class="mode-card" data-mode="ai" data-difficulty="easy">
+      <div class="mode-title">🤖 쉬움</div>
+      <div class="mode-desc">접속자가 없어도 AI와 대결 (쉬운 AI)<br>이기면 🪙 20코인 + 🏆 트로피 10<br>(전적·연승에는 영향이 없어요)</div>
+    </div>
+    <div class="mode-card" data-mode="ai" data-difficulty="hard">
+      <div class="mode-title">🤖 어려움</div>
+      <div class="mode-desc">접속자가 없어도 AI와 대결 (강한 AI)<br>이기면 🪙 50코인 + 🏆 트로피 30<br>(전적·연승에는 영향이 없어요)</div>
     </div>
   </div>
   <div id="eventList"></div>
@@ -2919,6 +2923,7 @@ socket.on('findMatchError', (data) => {
 });
 
 let selectedMode = '1v1';
+let selectedAiDifficulty = 'hard'; // AI 대결 난이도: 'easy'(쉬움) / 'hard'(어려움)
 
 function goToModeSelect() {
   document.getElementById('joinOverlay').style.display = 'none';
@@ -2938,6 +2943,7 @@ document.querySelectorAll('.mode-card').forEach((card) => {
   card.addEventListener('click', () => {
     if (serverPauseInfo.on) { alert(serverPauseInfo.message || '서버 점검 중입니다. 잠시 후 다시 시도해주세요.'); return; }
     selectedMode = card.getAttribute('data-mode');
+    if (selectedMode === 'ai') selectedAiDifficulty = card.getAttribute('data-difficulty') === 'easy' ? 'easy' : 'hard';
     goToCharacterSelect();
   });
 });
@@ -3142,7 +3148,8 @@ let matchWinScore = 5;  // 팀이 승리하는 데 필요한 누적 킬 수. mat
 let matchGameMode = 'knockout'; // 게임 종류: 'knockout'(녹아우) / 'gatekeeper'(문지기). 투표 결과(modeVoteResult)와 매 상태(state)로 갱신됨
 let voteState = null;           // 매칭 직후 게임 모드 투표 진행 상태 { resolved, myVote, counts }
 const GAME_MODE_NAMES = { knockout: '녹아우', gatekeeper: '문지기' };
-let matchIsAi = false;  // AI 연습 대결 여부 (트로피를 얻을 수 없음). matchFound에서 갱신됨
+let matchIsAi = false;  // AI 대결 여부. matchFound에서 갱신됨
+let matchAiInfo = null; // AI 대결 난이도 정보 { id, name, coinReward, trophyReward }. matchFound에서 갱신됨
 
 function doJoin() {
   myName = (currentProfile && currentProfile.username) || 'Player';
@@ -3154,9 +3161,9 @@ function doJoin() {
 function requestMatch() {
   document.getElementById('matchResultOverlay').classList.remove('open');
   document.getElementById('matchingStatus').textContent =
-    selectedMode === 'ai' ? 'AI 상대를 준비하는 중입니다...' : selectedMode === '2v2' ? '2:2 상대를 찾는 중입니다...' : '1:1 상대를 찾는 중입니다...';
+    selectedMode === 'ai' ? `AI(${selectedAiDifficulty === 'easy' ? '쉬움' : '어려움'}) 상대를 준비하는 중입니다...` : selectedMode === '2v2' ? '2:2 상대를 찾는 중입니다...' : '1:1 상대를 찾는 중입니다...';
   document.getElementById('matchingOverlay').classList.add('open');
-  if (selectedMode === 'ai') socket.emit('findAiMatch', { characterId: selectedCharacterId }); // AI 연습 대결: 대기열 없이 바로 시작, 트로피 없음
+  if (selectedMode === 'ai') socket.emit('findAiMatch', { characterId: selectedCharacterId, difficulty: selectedAiDifficulty }); // AI 대결: 대기열 없이 바로 시작. 이기면 난이도별 코인 + 고정 트로피
   else socket.emit('findMatch', { name: myName, characterId: selectedCharacterId, mode: selectedMode });
 }
 
@@ -3368,6 +3375,7 @@ socket.on('matchFound', (data) => {
   matchMode = data.mode || '1v1';
   matchWinScore = data.winScore || 5;
   matchIsAi = !!data.ai;
+  matchAiInfo = data.aiDifficulty || null;
   matchGameMode = data.gameMode || 'knockout';
   ARENA_WIDTH = data.arena.width;
   ARENA_HEIGHT = data.arena.height;
@@ -3403,7 +3411,7 @@ socket.on('matchFound', (data) => {
     addChatMessage({ id: 'system', name: '시스템', color: '#f1c40f', text: `팀원: ${teammate} / 상대: ${opponents}` });
   } else {
     const opponent = (data.opponentNames && data.opponentNames[0]) || '??';
-    addChatMessage({ id: 'system', name: '시스템', color: '#f1c40f', text: matchIsAi ? `상대: ${opponent} (AI 연습 대결 - 트로피를 얻을 수 없어요)` : `상대: ${opponent}` });
+    addChatMessage({ id: 'system', name: '시스템', color: '#f1c40f', text: matchIsAi ? `상대: ${opponent} (AI ${matchAiInfo ? matchAiInfo.name : ''} 대결 - 이기면 🪙 ${matchAiInfo ? matchAiInfo.coinReward : 0}코인 + 🏆 트로피 ${matchAiInfo ? matchAiInfo.trophyReward : 0}, 전적·연승에는 영향 없음)` : `상대: ${opponent}` });
   }
 
   joined = true;
@@ -3461,7 +3469,10 @@ socket.on('matchOver', (data) => {
   }
 
   if (iWon && data.coinReward) descEl.textContent += `  |  🪙 +${data.coinReward} 코인`;
-  if (data.ai) descEl.textContent += '  |  🤖 AI 대결은 트로피를 얻을 수 없어요';
+  if (data.ai) {
+    if (iWon && data.aiTrophyReward) descEl.textContent += `  |  🏆 +${data.aiTrophyReward} 트로피`;
+    descEl.textContent += `  |  🤖 AI ${data.aiDifficultyName || ''} 대결은 전적·연승에 영향이 없어요`;
+  }
 
   document.getElementById('matchResultOverlay').classList.add('open');
 
