@@ -1224,6 +1224,7 @@ function hasHyper(u, charId) {
 // 상점 칸을 하나 사면 그 칸은 다른 기어(등급 확률에 따라 무작위)로 바뀐다. 구매한 기어는 장착 캐릭터를 자유롭게 옮기거나 해제할 수 있다.
 const GEAR_MAX_PER_CHARACTER = 3;
 const GEAR_SHOP_SIZE = 4;
+const GEAR_SELL_RATIO = 0.5; // 보유 기어를 팔 때 돌려받는 비율 (구매 가격의 50%)
 // 등급: 가격 / 상점 칸에 나올 확률 가중치 (카탈로그에 기어가 있는 등급끼리만 비교)
 const GEAR_RARITIES = {
   super_rare: { id: 'super_rare', name: '초희귀', price: 100, weight: 50, color: '#3db8ff' },
@@ -1238,18 +1239,36 @@ const GEAR_RARITIES = {
 //  lowHpDamageBonus: 체력이 최대 체력의 GEAR_LOW_HP_RATIO(50%) 이하일 때 공격력 증가율 (0.15 = 15% 강화. 같은 기어를 여러 개 달면 0.15씩 더해짐)
 //  healBonus: 모든 회복량 증가율 (0.5 = 50% 증가. 자연 회복/가젯 회복/물웅덩이 회복에 적용. 같은 기어를 여러 개 달면 0.5씩 더해짐)
 //  startShield: 매치 시작 때 두르는 보호막 수치 (900 = 900 피해 흡수). 보호막이 사라진 뒤 체력이 가득 찬 채로 GEAR_SHIELD_REGEN_MS 동안 피해를 입지 않으면 다시 생김
+//  ultChargeBonus: 궁극기 충전 속도 증가율 (0.1 = 10% 더 빨리 참. 기본공격 적중 충전 + 가젯 충전 모두 적용)
+//  projectileSpeedBonus: 투사체(발사체)가 날아가는 속도 증가율 (0.1 = 10% 빨라짐. 사거리는 그대로)
+//  lowHpSpeedBonus: 체력이 최대 체력의 GEAR_LOW_HP_SPEED_RATIO(30%) 이하일 때 이동속도 증가율 (0.1 = 10% 빨라짐)
+//  chainDamageBonus: 기본공격(평타)을 한 뒤 GEAR_CHAIN_WINDOW_MS(1초) 안에 다시 기본공격을 하면 그 공격의 피해 증가율 (0.2 = 20%). 연속으로 공격해도 겹쳐서 커지지 않고 항상 20%만 적용됨
+//  damageTakenUltCharge: 체력이 깎이는 피해를 입으면 (잃은 체력 ÷ 최대 체력) × 100 × 이 값 만큼 궁극기 게이지(%)가 참 (0.3 이면 최대 체력의 50%를 잃을 때 게이지 15%). 보호막이 막은 피해는 제외
+//  gadgetCooldownSec: 가젯 재사용 대기시간(초)을 이 값으로 줄임 (기본 GADGET_COOLDOWN_SEC). 여러 개면 가장 짧은 값
+//  bandageHeal: 피해를 입고 체력이 최대 체력의 GEAR_BANDAGE_RATIO(20%) 이하가 되면 체력을 즉시 이만큼 회복 (살아 있는 상태에서만. 한 번 쓰면 죽었다가 부활할 때까지 다시 쓸 수 없음. 회복 기어의 회복량 증가 적용)
+const GEAR_BANDAGE_RATIO = 0.2;
+const GEAR_CHAIN_WINDOW_MS = 1000;
 const GEAR_LOW_HP_RATIO = 0.5;
+const GEAR_LOW_HP_SPEED_RATIO = 0.3;
 const GEAR_SHIELD_REGEN_MS = 5000; // 재생 보호막 기어: 체력이 가득 찬 상태로 피해 없이 버텨야 하는 시간
 const GEAR_FULL_AMMO = 3; // '탄창이 3개일 때' 기준 (쏘기 직전 탄창 수가 이 값 이상일 때 발동)
 const GEAR_CATALOG = [
   { id: 'long_shot', name: '풀탄창 사거리', rarity: 'super_rare', desc: '탄창이 3개일 때 사거리 20% 증가', effect: { fullAmmoRangeBonus: 0.2 } },
   { id: 'comeback_power', name: '위기의 힘', rarity: 'super_rare', desc: '체력이 50% 이하일 때 공격력 15% 강화', effect: { lowHpDamageBonus: 0.15 } },
   { id: 'heal_boost', name: '회복 기어', rarity: 'super_rare', desc: '모든 회복량 50% 증가', effect: { healBonus: 0.5 } },
+  { id: 'fast_ult', name: '궁극기 가속', rarity: 'super_rare', desc: '궁극기 충전 속도 10% 증가', effect: { ultChargeBonus: 0.1 } },
+  { id: 'fast_projectile', name: '빠른 투사체', rarity: 'epic', desc: '투사체가 날아가는 속도 10% 증가', effect: { projectileSpeedBonus: 0.1 } },
   { id: 'quick_reload', name: '빠른 재장전', rarity: 'epic', desc: '재장전 속도 10% 증가', effect: { reloadSpeed: 0.1 } },
   { id: 'regen_shield', name: '재생 보호막', rarity: 'epic', desc: '시작할 때 900 피해를 흡수하는 보호막을 두름. 보호막이 사라져도 체력이 가득 찬 채로 5초 동안 피해를 입지 않으면 다시 생김', effect: { startShield: 900 } },
+  { id: 'desperate_dash', name: '필사의 질주', rarity: 'mythic', desc: '체력이 30% 이하일 때 이동속도 10% 증가', effect: { lowHpSpeedBonus: 0.1 } },
+  { id: 'overwhelming', name: '파죽지세', rarity: 'legendary', desc: '기본공격 후 1초 안에 다시 기본공격을 하면 20% 추가 피해 (연속으로 공격해도 20%만 적용)', effect: { chainDamageBonus: 0.2 } },
+  { id: 'sacrifice', name: '희생 정신', rarity: 'epic', desc: '피해를 입으면 잃은 체력에 비례해 궁극기 게이지가 참 (최대 체력의 50%를 잃으면 게이지 15%)', effect: { damageTakenUltCharge: 0.3 } },
+  { id: 'quick_gadget', name: '빠른 가젯', rarity: 'epic', desc: '가젯 재사용 대기시간이 12초로 줄어듦', effect: { gadgetCooldownSec: 12 } },
+  { id: 'bandage', name: '붕대', rarity: 'legendary', desc: '체력이 20% 이하가 되면 체력을 즉시 2000 회복 (죽었다가 부활하면 다시 사용 가능)', effect: { bandageHeal: 2000 } },
   { id: 'full_hp_guard', name: '만땅 방어', rarity: 'mythic', desc: '체력이 가득 차 있을 때 받는 피해량 50% 감소', effect: { fullHpDamageReduction: 0.5 } },
 ];
 function gearById(id) { return GEAR_CATALOG.find((g) => g.id === id) || null; }
+function gearSellPriceOf(gearId) { return Math.floor(gearPriceOf(gearId) * GEAR_SELL_RATIO); }
 function gearPriceOf(gearId) { const g = gearById(gearId); return g ? GEAR_RARITIES[g.rarity].price : 0; }
 // 상점 칸에 새로 올릴 기어: 먼저 등급을 가중치로 뽑고, 그 등급의 기어 중 하나를 무작위로 고름
 function rollShopGear() {
@@ -1269,7 +1288,7 @@ function ownedGearsOf(u) {
 // 캐릭터에 장착된 기어들의 효과 합계 (최대 장착 수까지만 인정)
 function gearBonusOf(u, charId) {
   // reloadSpeed: 재장전 속도 증가율(덧셈) / fullHpTakenMult: 체력이 가득 찰 때 받는 피해 배율(곱셈, 1 = 효과 없음) / lowHpDamageBonus: 체력 50% 이하일 때 공격력 증가율(덧셈) / fullAmmoRangeBonus: 탄창이 가득(3개)일 때 사거리 증가율(덧셈)
-  const total = { reloadSpeed: 0, fullHpTakenMult: 1, lowHpDamageBonus: 0, fullAmmoRangeBonus: 0, healBonus: 0, startShield: 0 };
+  const total = { reloadSpeed: 0, fullHpTakenMult: 1, lowHpDamageBonus: 0, fullAmmoRangeBonus: 0, healBonus: 0, startShield: 0, ultChargeBonus: 0, projectileSpeedBonus: 0, lowHpSpeedBonus: 0, chainDamageBonus: 0, damageTakenUltCharge: 0, gadgetCooldownSec: 0, bandageHeal: 0 };
   const seenGearIds = new Set(); // 같은 기어는 한 캐릭터에 한 번만 효과 적용 (이전 데이터의 중복 장착 대비)
   for (const g of ownedGearsOf(u).filter((x) => x.charId === charId).filter((x) => !seenGearIds.has(x.gearId) && seenGearIds.add(x.gearId)).slice(0, GEAR_MAX_PER_CHARACTER)) {
     const eff = gearById(g.gearId).effect || {};
@@ -1279,6 +1298,13 @@ function gearBonusOf(u, charId) {
     total.fullAmmoRangeBonus += eff.fullAmmoRangeBonus || 0;
     total.healBonus += eff.healBonus || 0;
     total.startShield += eff.startShield || 0;
+    total.ultChargeBonus += eff.ultChargeBonus || 0;
+    total.projectileSpeedBonus += eff.projectileSpeedBonus || 0;
+    total.lowHpSpeedBonus += eff.lowHpSpeedBonus || 0;
+    total.bandageHeal = Math.max(total.bandageHeal, eff.bandageHeal || 0); // 한 번만 발동하므로 겹치지 않음
+    total.damageTakenUltCharge += eff.damageTakenUltCharge || 0;
+    if (eff.gadgetCooldownSec > 0) total.gadgetCooldownSec = total.gadgetCooldownSec > 0 ? Math.min(total.gadgetCooldownSec, eff.gadgetCooldownSec) : eff.gadgetCooldownSec;
+    total.chainDamageBonus = Math.max(total.chainDamageBonus, eff.chainDamageBonus || 0); // 겹쳐서 커지지 않음
   }
   return total;
 }
@@ -2091,7 +2117,7 @@ function publicProfile(u) {
   const equippedSkins = {};
   for (const id in CHARACTERS) { const sk = equippedSkinOf(u, id); if (sk) equippedSkins[id] = sk; }
   return { username: u.name, coins: u.coins, wins: u.wins || 0, losses: u.losses || 0, unlocked: effectiveUnlocked(u), prices: allPrices(),
-    skinCatalog: skinCatalogPublic(), skins: ownedSkinsOf(u), equippedSkins, hypers: ownedHypersOf(u), gears: ownedGearsOf(u), gearShop: gearShopView(u), gearCatalog: GEAR_CATALOG.map((g) => ({ id: g.id, name: g.name, rarity: g.rarity, desc: g.desc })), gearRarities: Object.values(GEAR_RARITIES), gearMax: GEAR_MAX_PER_CHARACTER, hyperPrice: HYPER_PRICE, hyperRequiredLevel: HYPER_REQUIRED_LEVEL, trophyRoad: trophyRoadView(u), trophies, streaks, missions: missionsView(u), repeatMissions: repeatMissionsView(u), ranks: TROPHY_RANKS, characters: buildCharacterInfo(levels), levels, levelTable: LEVEL_TABLE_PUBLIC, maxLevel: MAX_CHARACTER_LEVEL, isAdmin: u.key === ADMIN_KEY, announcements: allAnnouncements(), dailyDraw: dailyDrawView(u),
+    skinCatalog: skinCatalogPublic(), skins: ownedSkinsOf(u), equippedSkins, hypers: ownedHypersOf(u), gears: ownedGearsOf(u), gearShop: gearShopView(u), gearCatalog: GEAR_CATALOG.map((g) => ({ id: g.id, name: g.name, rarity: g.rarity, desc: g.desc })), gearRarities: Object.values(GEAR_RARITIES), gearMax: GEAR_MAX_PER_CHARACTER, gearSellRatio: GEAR_SELL_RATIO, hyperPrice: HYPER_PRICE, hyperRequiredLevel: HYPER_REQUIRED_LEVEL, trophyRoad: trophyRoadView(u), trophies, streaks, missions: missionsView(u), repeatMissions: repeatMissionsView(u), ranks: TROPHY_RANKS, characters: buildCharacterInfo(levels), levels, levelTable: LEVEL_TABLE_PUBLIC, maxLevel: MAX_CHARACTER_LEVEL, isAdmin: u.key === ADMIN_KEY, announcements: allAnnouncements(), dailyDraw: dailyDrawView(u),
     events: activeEvents().map((e) => ({ id: e.id, name: e.name, coins: e.coins, desc: e.desc, endsAt: e.endsAt || null, claimed: (u.redeemed || []).includes(eventClaimCode(e)) })) };
 }
 
@@ -2190,6 +2216,17 @@ function createFileDb() {
       u.gears = u.gears || [];
       u.gears.push({ uid, gearId: expectedGearId, charId: null });
       u.gearShop[slot] = newGearId;
+      scheduleSave();
+      return { ok: true, user: cloneUser(u) };
+    },
+    // 기어 판매: 보유 목록에서 uid 기어를 지우고 refund 코인을 돌려줌 (장착 중이어도 판매 가능). expectedGearId 는 서버가 계산한 환급액의 기준
+    async sellGear(key, uid, expectedGearId, refund) {
+      const u = users[key];
+      if (!u) return { ok: false, reason: 'noUser' };
+      const idx = (u.gears || []).findIndex((x) => x.uid === uid && x.gearId === expectedGearId);
+      if (idx < 0) return { ok: false, reason: 'notOwned', user: cloneUser(u) };
+      u.gears.splice(idx, 1);
+      u.coins = (u.coins || 0) + refund;
       scheduleSave();
       return { ok: true, user: cloneUser(u) };
     },
@@ -2499,6 +2536,18 @@ function createMongoDb(uri) {
       if (!user) return { ok: false, reason: 'noUser' };
       if (!Array.isArray(user.gearShop) || user.gearShop[slot] !== expectedGearId) return { ok: false, reason: 'stale', user };
       return { ok: false, reason: 'coins', user };
+    },
+    // 기어 판매: 보유 목록에서 uid 기어를 지우고 refund 코인을 돌려줌 (장착 중이어도 판매 가능)
+    async sellGear(key, uid, expectedGearId, refund) {
+      const updated = await col.findOneAndUpdate(
+        { key, gears: { $elemMatch: { uid, gearId: expectedGearId } } },
+        { $inc: { coins: refund }, $pull: { gears: { uid } } },
+        { returnDocument: 'after', projection }
+      );
+      if (updated) return { ok: true, user: updated };
+      const user = await col.findOne({ key }, { projection });
+      if (!user) return { ok: false, reason: 'noUser' };
+      return { ok: false, reason: 'notOwned', user };
     },
     // 기어 장착/해제/이동: charId 가 null 이면 해제. 한 캐릭터에 max개까지만
     async equipGear(key, uid, charId, max) {
@@ -3311,6 +3360,29 @@ function registerAuthHandlers(socket) {
   });
 
   // 기어 장착/해제/이동: characterId 를 보내면 그 캐릭터에 장착(다른 캐릭터에 달려 있으면 옮김), null 이면 해제. 한 캐릭터에 최대 3개.
+  socket.on('sellGear', async (data, ack) => {
+    if (typeof ack !== 'function') return;
+    try {
+      const key = socket.data.userKey;
+      if (!key) return ack({ ok: false, message: '로그인이 필요합니다.' });
+      if (socketToMatch[socket.id] || isQueued(socket.id)) return ack({ ok: false, message: '매치 중이거나 대기 중에는 판매할 수 없습니다.' });
+      const uid = data && data.uid;
+      if (typeof uid !== 'string') return ack({ ok: false, message: '잘못된 기어입니다.' });
+
+      const u = await db.findUser(key);
+      const owned = u && (u.gears || []).find((x) => x && x.uid === uid);
+      const gear = owned && gearById(owned.gearId);
+      if (!gear) return ack({ ok: false, message: '보유하지 않은 기어입니다.', profile: u ? publicProfile(u) : undefined });
+      const refund = gearSellPriceOf(gear.id);
+      const r = await db.sellGear(key, uid, gear.id, refund);
+      if (r.ok) return ack({ ok: true, message: `${GEAR_RARITIES[gear.rarity].name} 기어 '${gear.name}'을(를) 판매하고 🪙 ${refund.toLocaleString()} 코인을 받았어요.`, profile: publicProfile(r.user) });
+      ack({ ok: false, message: r.reason === 'notOwned' ? '보유하지 않은 기어입니다.' : '기어 판매에 실패했습니다.', profile: r.user ? publicProfile(r.user) : undefined });
+    } catch (e) {
+      console.error('sellGear 오류', e);
+      ack({ ok: false, message: '서버 오류가 발생했습니다.' });
+    }
+  });
+
   socket.on('equipGear', async (data, ack) => {
     if (typeof ack !== 'function') return;
     try {
@@ -3742,6 +3814,17 @@ function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hy
     gearRangeBonus: (gear && gear.fullAmmoRangeBonus) || 0, // 장착한 기어: 탄창이 3개일 때 발사체 기본공격 사거리 증가율 (0.2 = 20%). 클라이언트 조준선 표시에도 쓰임
     gearLowHpDamageBonus: (gear && gear.lowHpDamageBonus) || 0, // 장착한 기어: 체력이 50% 이하일 때 공격력 증가율 (0.15 = 15% 강화)
     gearFullHpTakenMult: (gear && gear.fullHpTakenMult) || 1, // 장착한 기어: 체력이 가득 차 있을 때 받는 피해 배율 (0.5 = 50% 감소)
+    gearUltChargeMult: 1 + ((gear && gear.ultChargeBonus) || 0),       // 장착한 기어: 궁극기 충전 속도 배율 (1.1 = 10% 빠름)
+    gearProjectileSpeedMult: 1 + ((gear && gear.projectileSpeedBonus) || 0), // 장착한 기어: 투사체 속도 배율 (1.1 = 10% 빠름)
+    gearLowHpSpeedBonus: (gear && gear.lowHpSpeedBonus) || 0,         // 장착한 기어: 체력 30% 이하일 때 이동속도 증가율
+    gearChainBonus: (gear && gear.chainDamageBonus) || 0, // 장착한 기어(파죽지세): 1초 안에 이어서 평타를 칠 때의 추가 피해율 (0.2 = 20%)
+    lastBasicAttackAt: 0,   // 마지막으로 기본공격을 한 시각(ms) - 파죽지세용
+    gearChainOn: false,     // 가장 최근 기본공격이 '1초 안에 이어진 공격'이었는지 - 파죽지세용
+    gearSacrificeCharge: (gear && gear.damageTakenUltCharge) || 0, // 장착한 기어(희생 정신): 잃은 체력 비율에 곱해 궁극기 게이지로 바꾸는 값
+    gearGadgetCooldown: (gear && gear.gadgetCooldownSec) || 0,    // 장착한 기어(빠른 가젯): 가젯 재사용 대기시간(초). 0이면 기본값
+    gadgetCooldownTotal: GADGET_COOLDOWN_SEC, // 이번 가젯 쿨다운의 전체 길이(초) - 클라이언트 버튼 표시용
+    gearBandageHeal: (gear && gear.bandageHeal) || 0, // 장착한 기어(붕대): 체력이 20% 이하가 될 때 즉시 회복하는 양
+    bandageUsed: false,                               // 이번 목숨에서 붕대를 이미 썼는지 (리스폰하면 다시 사용 가능)
     gearHealMult: 1 + ((gear && gear.healBonus) || 0), // 장착한 기어: 모든 회복량 배율 (1.5 = 50% 증가)
     gearShieldMax: (gear && gear.startShield) || 0,    // 장착한 기어: 재생 보호막 수치 (0이면 기어 없음)
     lastHitAt: Date.now(),  // 마지막으로 피해를 입은 시각 (보호막이 막은 피해 포함) - 재생 보호막 기어용
@@ -3839,7 +3922,7 @@ function getDamageTakenMultiplier(p) {
 function chargeGauges(shooter) {
   // 하이퍼 차지 발동 중 궁극기 충전량 증가 (모카): hyper.ultimateChargeMultiplier 배
   const hyperActive = shooter.hasHyper && shooter.hyperUntil && Date.now() < shooter.hyperUntil;
-  const ultGain = shooter.ultimateChargePerHit * (hyperActive && shooter.hyper && shooter.hyper.ultimateChargeMultiplier ? shooter.hyper.ultimateChargeMultiplier : 1);
+  const ultGain = shooter.ultimateChargePerHit * (shooter.gearUltChargeMult || 1) * (hyperActive && shooter.hyper && shooter.hyper.ultimateChargeMultiplier ? shooter.hyper.ultimateChargeMultiplier : 1);
   shooter.ultimateCharge = Math.min(100, shooter.ultimateCharge + ultGain);
   // 하이퍼 차지 게이지: 궁극기보다 적게 차고(chargeMultiplier × 전체 보너스), 발동 중에는 충전되지 않음
   if (shooter.hasHyper && !hyperActive) {
@@ -3882,14 +3965,24 @@ function launchTarget(match, target, b) {
   target.windupId = (target.windupId || 0) + 1;
 }
 
-function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
+// 기어 '파죽지세': 기본공격을 할 때마다 호출. 직전 기본공격 후 1초 안이면 이번 공격에 추가 피해가 붙음 (이전 공격이 빗나갔어도 상관없음)
+function markBasicAttack(p, now) {
+  p.gearChainOn = p.gearChainBonus > 0 && p.lastBasicAttackAt > 0 && now - p.lastBasicAttackAt <= GEAR_CHAIN_WINDOW_MS;
+  p.lastBasicAttackAt = now;
+}
+// chain 이 true 인 공격의 피해 배율 (한 번만 곱해지므로 연속 공격해도 20%만 증가)
+function gearChainMult(shooter, chain) {
+  return chain && shooter && shooter.gearChainBonus > 0 ? 1 + shooter.gearChainBonus : 1;
+}
+
+function applyDamage(match, target, damage, shooterId, { chargeShooter, chain } = {}) {
   if (!target.alive || match.over) return;
   if (target.leaping) return; // 점프 중(모카 궁극기)에는 모든 피해 무시
   if (target.airborneTimeLeft > 0) return; // 하늘에 떠 있는 동안(시스템 궁극기)에도 모든 피해 무시 (착지 피해는 airborneTimeLeft를 0으로 만든 뒤 적용)
   if (target.invincibleUntil && Date.now() < target.invincibleUntil) return; // 무적 상태(슈의 가젯)면 피해/궁극기 충전 모두 무시
 
   const shooter = match.players[shooterId];
-  damage = Math.round(damage * getDamageMultiplier(shooter) * getDamageTakenMultiplier(target)); // 공격력 증가(보배 가젯/하이퍼 차지) + 받는 피해 감소(하이퍼 차지) 효과 적용
+  damage = Math.round(damage * getDamageMultiplier(shooter) * gearChainMult(shooter, chain) * getDamageTakenMultiplier(target)); // 공격력 증가(보배 가젯/하이퍼 차지) + 받는 피해 감소(하이퍼 차지) 효과 적용
 
   if (damage > 0) target.lastHitAt = Date.now(); // 재생 보호막 기어: 보호막이 막은 피해도 '피해를 입은 것'으로 침
 
@@ -3901,7 +3994,17 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
   }
 
   if (damage > 0) {
+    // 기어 '희생 정신': 실제로 잃은 체력(보호막이 막은 만큼 제외)에 비례해 궁극기 게이지가 참
+    if (target.gearSacrificeCharge > 0 && target.maxHp > 0 && !target.isGate) {
+      const lost = Math.min(damage, Math.max(0, target.hp));
+      target.ultimateCharge = Math.min(100, (target.ultimateCharge || 0) + (lost / target.maxHp) * 100 * target.gearSacrificeCharge);
+    }
     target.hp -= damage;
+    // 기어 '붕대': 살아남은 채로 체력이 20% 이하가 되면 즉시 회복 (목숨당 1번)
+    if (target.gearBandageHeal > 0 && !target.bandageUsed && target.hp > 0 && target.hp <= target.maxHp * GEAR_BANDAGE_RATIO) {
+      target.bandageUsed = true;
+      target.hp = Math.min(target.maxHp, target.hp + target.gearBandageHeal * (target.gearHealMult || 1));
+    }
     target.lastDamageAt = Date.now(); // 무피격 회복 타이머 초기화 (보호막이 전부 막은 피해는 체력 회복을 끊지 않음)
   }
 
@@ -3948,6 +4051,7 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
       respawned.hp = respawned.maxHp;
       respawned.lastHitAt = Date.now(); // 재생 보호막 기어: 리스폰 후 5초 동안 피해를 입지 않으면 보호막이 다시 생김
       respawned.fullHpSince = Date.now();
+      respawned.bandageUsed = false; // 기어 '붕대': 부활하면 다시 사용 가능
       respawned.alive = true;
       respawned.invisible = false;
       respawned.stealthId = (respawned.stealthId || 0) + 1; // 진행 중이던 은신 타이머를 무효화
@@ -4036,7 +4140,7 @@ function explodePoopBomb(match, b) {
     const dx = target.x - b.x;
     const dy = target.y - b.y;
     if (Math.sqrt(dx * dx + dy * dy) >= PLAYER_RADIUS + b.explodeRadius) continue;
-    applyDamage(match, target, b.explodeDamage, b.ownerId, { chargeShooter: !!b.explodeChargesUlt }); // 가젯(폭탄 똥)은 궁극기 게이지를 충전하지 않고, 기본공격(실내화)은 충전함
+    applyDamage(match, target, b.explodeDamage, b.ownerId, { chargeShooter: !!b.explodeChargesUlt, chain: b.chain }); // 가젯(폭탄 똥)은 궁극기 게이지를 충전하지 않고, 기본공격(실내화)은 충전함
   }
   if (match.over) return;
 
@@ -4198,7 +4302,9 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
   const halfSpread = spreadRad / 2;
   // 하이퍼 차지 발동 중 사거리 증가 (슈): 속도는 그대로 두고 수명을 늘려서 더 멀리 날아가게 함 (기본공격/궁극기 모두 적용)
   const hyperRange = p.hasHyper && p.hyper && p.hyper.rangeMultiplier && p.hyperUntil && Date.now() < p.hyperUntil ? p.hyper.rangeMultiplier : 1;
-  const bulletLife = spec.lifetime * hyperRange;
+  // 기어: 투사체 속도 증가. 사거리는 그대로 두려고 수명은 같은 비율만큼 줄임
+  const gearProjSpeed = p.gearProjectileSpeedMult || 1;
+  const bulletLife = (spec.lifetime * hyperRange) / gearProjSpeed;
   // 하이퍼 차지 발동 중 시스템의 궁극기: 공격 범위(소용돌이 크기) 증가 + 띄운 적이 떨어질 때 기절
   const hyperUltOn = isUltimate && p.hasHyper && p.hyper && p.hyperUntil && Date.now() < p.hyperUntil;
   const hyperUltRadius = hyperUltOn && p.hyper.ultimateRadiusMultiplier ? p.hyper.ultimateRadiusMultiplier : 1;
@@ -4221,8 +4327,8 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
       sweep: !!spec.sweep, // 아주 빠른 발사체(성스럽다의 저격 사격): 이전 위치~현재 위치 선분 전체로 적중/벽 충돌을 판정
       prevX: spawnX,
       prevY: spawnY,
-      vx: Math.cos(angle) * spec.speed,
-      vy: Math.sin(angle) * spec.speed,
+      vx: Math.cos(angle) * spec.speed * gearProjSpeed,
+      vy: Math.sin(angle) * spec.speed * gearProjSpeed,
       ownerId: p.id,
       team: p.team,
       life: bounceTime > 0 ? bounceTime : bulletLife,
@@ -4232,6 +4338,7 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
       currentHpRatio: spec.currentHpRatio || 0, // 0보다 크면 고정 피해 대신 대상 현재 체력(+보호막)의 비율만큼 피해 (진우Park의 하트)
       radius: spec.radius * hyperUltRadius, // 하이퍼 차지 발동 중 궁극기(시스템)는 크기가 커짐
       isUltimate,
+      chain: !isUltimate && p.gadget !== spec && !!p.gearChainOn, // 파죽지세: 이 발사체가 '1초 안에 이어진 기본공격'에서 나왔는지 (궁극기/가젯 제외)
       visual: skinVisual(p, spec.visual), // 스킨이 있으면 발사체 모양만 바뀜 (피해/속도/사거리는 spec 그대로)
       launchDuration: spec.launchDuration || 0, // 0보다 크면 맞은 적을 이 시간(초) 동안 하늘로 띄움 (시스템의 궁극기)
       landDamage: spec.landDamage || 0,         // 띄워진 적이 땅에 떨어질 때 받는 피해
@@ -4241,8 +4348,8 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
       // 부메랑(하이퍼 차지 발동 중 미남의 궁극기): outLeft초 동안 앞으로 날아간 뒤 방향을 바꿔 시전자에게 돌아옴 (updateMatch 의 총알 이동에서 처리)
       boomerang: !!spec.boomerang,
       phase: spec.boomerang ? 'out' : null, // 'out'(나가는 중) / 'back'(돌아오는 중)
-      outLeft: spec.boomerang ? (spec.boomerangOutTime || 1.2) : 0,
-      baseSpeed: spec.speed,
+      outLeft: spec.boomerang ? (spec.boomerangOutTime || 1.2) / gearProjSpeed : 0,
+      baseSpeed: spec.speed * gearProjSpeed,
       bounce: bounceTime > 0, // true면 벽/맵 끝에 닿아도 사라지지 않고 튕김 (moveBouncingBullet)
       pierceWalls: !!spec.pierceWalls, // 성스럽다의 칼 던지기처럼 벽(장애물)을 무시하고 통과하는 발사체
       // 원효대사의 해골물 뿌리기처럼 벽/적에 닿으면 물웅덩이를 생성하는 발사체를 위한 부가 정보
@@ -4309,7 +4416,7 @@ function performMeleeAttack(match, p, spec, isUltimate, angle = p.angle, stabInd
     while (diff < -Math.PI) diff += Math.PI * 2;
     if (Math.abs(diff) > halfAngle + angleSlack(dist, PLAYER_RADIUS)) continue;
 
-    applyDamage(match, target, spec.damage, p.id, { chargeShooter: !isUltimate });
+    applyDamage(match, target, spec.damage, p.id, { chargeShooter: !isUltimate, chain: !isUltimate && p.gearChainOn });
     if (match.over) break;
 
     // 기절(업할의 지진): 점프 중이거나 무적인 대상은 피해와 마찬가지로 기절도 받지 않는다. 죽은 대상은 리스폰 시 기절이 초기화됨
@@ -5086,6 +5193,7 @@ function registerGameplayHandlers(socket) {
     const ammoBeforeShot = p.ammo;
     p.ammo -= 1;
     p.lastShotAt = now;
+    markBasicAttack(p, now); // 기어 '파죽지세': 직전 기본공격 후 1초 안인지 기록
     // 기어: 쏘기 직전 탄창이 3개 이상이었으면 발사체 기본공격의 사거리 증가 (속도는 그대로 두고 수명을 늘려서 더 멀리 날아가게 함. 근접/돌진/던지기/충전 공격에는 적용 안 됨)
     const gearRangeMult = p.gearRangeBonus > 0 && ammoBeforeShot >= GEAR_FULL_AMMO ? 1 + p.gearRangeBonus : 1;
     const withGearRange = (spec) => (gearRangeMult > 1 && spec.lifetime ? { ...spec, lifetime: spec.lifetime * gearRangeMult } : spec);
@@ -5233,6 +5341,7 @@ function registerGameplayHandlers(socket) {
     const ratio = Math.max(0, Math.min(1, heldSec / (spec.chargeTime || 3)));
     const damage = roundTo(spec.minDamage + (spec.maxDamage - spec.minDamage) * ratio, 5);
     p.lastShotAt = now;
+    markBasicAttack(p, now); // 기어 '파죽지세'
     spawnProjectiles(match, p, { ...spec, damage }, false);
   });
 
@@ -5353,7 +5462,9 @@ function registerGameplayHandlers(socket) {
       p.damageBoostMultiplier = gadget.damageMultiplier || 1.5;
     }
 
-    p.gadgetCooldownLeft = GADGET_COOLDOWN_SEC;
+    const gadgetCd = p.gearGadgetCooldown > 0 ? Math.min(GADGET_COOLDOWN_SEC, p.gearGadgetCooldown) : GADGET_COOLDOWN_SEC; // 기어 '빠른 가젯'
+    p.gadgetCooldownLeft = gadgetCd;
+    p.gadgetCooldownTotal = gadgetCd;
   });
 
   // 하이퍼 차지 발동 요청 (하이퍼 차지를 획득했고 게이지가 100%일 때만 발동. 이미 발동 중이면 무시)
@@ -5642,7 +5753,7 @@ function updateMatch(match, dt, now) {
           const ddy = target.y - p.y;
           if (Math.sqrt(ddx * ddx + ddy * ddy) < PLAYER_RADIUS * 2) {
             p.dashHitIds.push(tid);
-            applyDamage(match, target, p.dashDamage, pid, { chargeShooter: !!p.dashCharge });
+            applyDamage(match, target, p.dashDamage, pid, { chargeShooter: !!p.dashCharge, chain: !!p.dashCharge && p.gearChainOn });
             if (!match.over && p.dashStun > 0 && !(target.invincibleUntil && now < target.invincibleUntil)) target.stunnedUntil = now + p.dashStun * 1000;
           }
         }
@@ -5988,7 +6099,7 @@ function updateMatch(match, dt, now) {
         if (isPiercingDamageBullet(b)) {
           // 부메랑/튕기는 고추(하이퍼 꽈리)/관통형 광역 총알(시스템 소용돌이): 적을 맞혀도 사라지지 않고 계속 날아감. 한 방향(나가는 중/벽에 튕기기 전까지)에서는 한 대상을 한 번만 맞힘
           // 시스템의 소용돌이는 기본 공격이라 맞힐 때마다 궁극기 게이지가 참 (부메랑/고추는 기존대로 충전 안 함)
-          applyDamage(match, target, bulletDamageFor(b, target), b.ownerId, { chargeShooter: !b.boomerang && !b.bounce && !b.isUltimate });
+          applyDamage(match, target, bulletDamageFor(b, target), b.ownerId, { chargeShooter: !b.boomerang && !b.bounce && !b.isUltimate, chain: b.chain });
           b.hitIds.push(pid);
           continue;
         }
@@ -6010,7 +6121,7 @@ function updateMatch(match, dt, now) {
           spawnWaterPool(match, b);
           // 물이 퍼지기 전에 해골이 적에게 직접 적중하면 추가로 직접 대미지를 준다
           if (b.directDamage > 0) {
-            applyDamage(match, target, b.directDamage, b.ownerId, { chargeShooter: false });
+            applyDamage(match, target, b.directDamage, b.ownerId, { chargeShooter: false, chain: b.chain });
           }
           if (!b.isUltimate) {
             const shooter = match.players[b.ownerId];
@@ -6018,7 +6129,7 @@ function updateMatch(match, dt, now) {
           }
         } else {
           // 기본 공격만 궁극기 게이지를 충전시킴
-          applyDamage(match, target, bulletDamageFor(b, target), b.ownerId, { chargeShooter: !b.isUltimate });
+          applyDamage(match, target, bulletDamageFor(b, target), b.ownerId, { chargeShooter: !b.isUltimate, chain: b.chain });
           // 넉백(여똥이의 프링글스): 총알이 날아온 방향으로 밀쳐냄 (무적이거나 이미 죽었으면 밀리지 않음). 실제 이동은 넉백 처리 루프가 수행
           if (b.knockback > 0 && target.alive && !(target.invincibleUntil && Date.now() < target.invincibleUntil)) {
             const bs = Math.hypot(b.vx, b.vy) || 1;
@@ -6048,7 +6159,7 @@ function updateMatch(match, dt, now) {
       if (bulletDistTo(b, turret.x, turret.y) < turret.radius + b.radius) {
         if (isPiercingDamageBullet(b)) {
           // 부메랑/튕기는 고추/광역 소용돌이는 터렛도 관통: 방향마다 한 번씩 피해
-          turret.hp -= bulletDamageFor(b, turret) * getDamageMultiplier(match.players[b.ownerId]);
+          turret.hp -= bulletDamageFor(b, turret) * getDamageMultiplier(match.players[b.ownerId]) * gearChainMult(match.players[b.ownerId], b.chain);
           b.hitIds.push(`t${turret.id}`);
           continue;
         }
@@ -6063,7 +6174,7 @@ function updateMatch(match, dt, now) {
           spawnWaterPool(match, b);
           if (b.directDamage > 0) turret.hp -= b.directDamage; // 직접 적중 대미지
         } else {
-          turret.hp -= bulletDamageFor(b, turret) * getDamageMultiplier(match.players[b.ownerId]);
+          turret.hp -= bulletDamageFor(b, turret) * getDamageMultiplier(match.players[b.ownerId]) * gearChainMult(match.players[b.ownerId], b.chain);
         }
         break;
       }
@@ -6083,7 +6194,7 @@ function updateMatch(match, dt, now) {
       if (isPiercingDamageBullet(b) && b.hitIds.includes(`c${chicken.id}`)) continue;
       if (bulletDistTo(b, chicken.x, chicken.y) < chicken.radius + b.radius) {
         if (isPiercingDamageBullet(b)) {
-          chicken.hp -= bulletDamageFor(b, chicken) * getDamageMultiplier(match.players[b.ownerId]);
+          chicken.hp -= bulletDamageFor(b, chicken) * getDamageMultiplier(match.players[b.ownerId]) * gearChainMult(match.players[b.ownerId], b.chain);
           b.hitIds.push(`c${chicken.id}`);
           continue;
         }
@@ -6227,6 +6338,8 @@ function updateMatch(match, dt, now) {
   for (const pid in match.players) {
     const p = match.players[pid];
     if (p.speedBoostUntil && now < p.speedBoostUntil) p.speedMultiplier *= p.speedBoostMultiplier || 1;
+    // 기어: 체력이 30% 이하이면 이동속도 증가
+    if (p.gearLowHpSpeedBonus > 0 && p.alive && p.hp <= p.maxHp * GEAR_LOW_HP_SPEED_RATIO) p.speedMultiplier *= 1 + p.gearLowHpSpeedBonus;
     // 하이퍼 차지: 발동 중에는 이동속도 증가. 남은 시간(초)은 클라이언트 표시용으로 매 틱 갱신
     if (p.hasHyper) {
       if (p.hyperUntil && now < p.hyperUntil && p.alive) {
@@ -6264,7 +6377,7 @@ function updateMatch(match, dt, now) {
     if (!p.alive || !(p.ultGadgetLeft > 0)) continue;
     const used = Math.min(dt, p.ultGadgetLeft);
     p.ultGadgetLeft -= used;
-    p.ultimateCharge = Math.min(100, p.ultimateCharge + p.ultGadgetRate * used);
+    p.ultimateCharge = Math.min(100, p.ultimateCharge + p.ultGadgetRate * used * (p.gearUltChargeMult || 1));
   }
 
   // 가젯 재사용 대기시간 감소
