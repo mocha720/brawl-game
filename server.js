@@ -2297,6 +2297,8 @@ function createFileDb() {
       if (!u) return { ok: false, reason: 'noUser' };
       const g = (u.gears || []).find((x) => x.uid === uid);
       if (!g) return { ok: false, reason: 'notOwned', user: cloneUser(u) };
+      // 한 번 캐릭터에 장착한 기어는 다른 캐릭터로 옮기거나 해제할 수 없음 (같은 캐릭터로 다시 요청하면 그대로 성공)
+      if (g.charId) return g.charId === (charId || null) ? { ok: true, user: cloneUser(u) } : { ok: false, reason: 'locked', user: cloneUser(u) };
       if (charId && (u.gears || []).some((x) => x.charId === charId && x.uid !== uid && x.gearId === g.gearId)) return { ok: false, reason: 'duplicate', user: cloneUser(u) };
       if (charId && (u.gears || []).filter((x) => x.charId === charId && x.uid !== uid).length >= max) return { ok: false, reason: 'full', user: cloneUser(u) };
       g.charId = charId || null;
@@ -2640,16 +2642,20 @@ function createMongoDb(uri) {
       const user = await col.findOne({ key }, { projection });
       if (!user) return { ok: false, reason: 'noUser' };
       const gears = user.gears || [];
-      if (!gears.some((x) => x.uid === uid)) return { ok: false, reason: 'notOwned', user };
+      const owned = gears.find((x) => x.uid === uid);
+      if (!owned) return { ok: false, reason: 'notOwned', user };
+      // 한 번 캐릭터에 장착한 기어는 다른 캐릭터로 옮기거나 해제할 수 없음 (같은 캐릭터로 다시 요청하면 그대로 성공)
+      if (owned.charId) return owned.charId === (charId || null) ? { ok: true, user } : { ok: false, reason: 'locked', user };
       const target = gears.find((x) => x.uid === uid);
       if (charId && gears.some((x) => x.charId === charId && x.uid !== uid && x.gearId === target.gearId)) return { ok: false, reason: 'duplicate', user };
       if (charId && gears.filter((x) => x.charId === charId && x.uid !== uid).length >= max) return { ok: false, reason: 'full', user };
       const updated = await col.findOneAndUpdate(
-        { key },
+        { key, gears: { $elemMatch: { uid, charId: null } } }, // 아직 아무 캐릭터에도 장착하지 않은 기어일 때만 (동시에 두 번 눌러도 한 번만 장착됨)
         { $set: { 'gears.$[g].charId': charId || null } },
         { arrayFilters: [{ 'g.uid': uid }], returnDocument: 'after', projection }
       );
-      return { ok: true, user: updated || user };
+      if (!updated) return { ok: false, reason: 'locked', user: (await col.findOne({ key }, { projection })) || user };
+      return { ok: true, user: updated };
     },
     async buyHyper(key, charId, price, requiredLevel) {
       const levelPath = `levels.${charId}`;
@@ -3575,6 +3581,7 @@ function registerAuthHandlers(socket) {
       const r = await db.equipGear(key, uid, charId, GEAR_MAX_PER_CHARACTER);
       if (r.ok) return ack({ ok: true, profile: publicProfile(r.user) });
       const message = r.reason === 'full' ? `한 캐릭터에는 기어를 최대 ${GEAR_MAX_PER_CHARACTER}개까지 장착할 수 있어요.`
+        : r.reason === 'locked' ? '한 번 장착한 기어는 다른 캐릭터로 바꾸거나 해제할 수 없어요.'
         : r.reason === 'duplicate' ? '같은 기어는 한 캐릭터에 하나만 장착할 수 있어요.'
         : r.reason === 'notOwned' ? '보유하지 않은 기어입니다.'
         : '기어 장착에 실패했습니다.';
