@@ -238,7 +238,7 @@
   #joinOverlay > :last-child, #modeOverlay > :last-child { margin-bottom: auto; }
 
   /* ----- 창(모달) 메뉴 (계정 설정 / 랭킹 / 미션 / 코드 입력) 과 대기·결과·대결 화면: 게임 화면 위에 어둡게 깔린다 ----- */
-  #accountOverlay, #rankingOverlay, #missionOverlay, #trophyRoadOverlay, #codeOverlay, #adminOverlay, #noticeOverlay,
+  #accountOverlay, #rankingOverlay, #missionOverlay, #trophyRoadOverlay, #gearShopOverlay, #codeOverlay, #adminOverlay, #noticeOverlay,
   #matchingOverlay, #matchResultOverlay, #versusOverlay {
     position: fixed; inset: 0; display: none;
     flex-direction: column; align-items: center; justify-content: flex-start;
@@ -247,13 +247,30 @@
     background: rgba(10, 11, 30, 0.86);
     -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
   }
-  #accountOverlay, #rankingOverlay, #missionOverlay, #trophyRoadOverlay, #codeOverlay, #adminOverlay, #noticeOverlay { z-index: 40; }
+  #accountOverlay, #rankingOverlay, #missionOverlay, #trophyRoadOverlay, #gearShopOverlay, #codeOverlay, #adminOverlay, #noticeOverlay { z-index: 40; }
   #matchingOverlay, #matchResultOverlay { z-index: 10; }
   #versusOverlay { z-index: 30; background: rgba(10, 11, 30, 0.92); justify-content: center; }
-  #accountOverlay.open, #rankingOverlay.open, #missionOverlay.open, #trophyRoadOverlay.open, #codeOverlay.open, #adminOverlay.open, #noticeOverlay.open,
+  #accountOverlay.open, #rankingOverlay.open, #missionOverlay.open, #trophyRoadOverlay, #gearShopOverlay.open, #codeOverlay.open, #adminOverlay.open, #noticeOverlay.open,
   #matchingOverlay.open, #matchResultOverlay.open, #versusOverlay.open { display: flex; }
-  #accountOverlay > .panel, #rankingOverlay > .panel, #missionOverlay > .panel, #trophyRoadOverlay > .panel, #codeOverlay > .panel, #adminOverlay > .panel, #noticeOverlay > .panel,
+  #accountOverlay > .panel, #rankingOverlay > .panel, #missionOverlay > .panel, #trophyRoadOverlay, #gearShopOverlay > .panel, #codeOverlay > .panel, #adminOverlay > .panel, #noticeOverlay > .panel,
   #matchingOverlay > .panel, #matchResultOverlay > .panel { margin: auto; }
+
+  /* ----- 기어 상점 ----- */
+  #gearShopOverlay > .panel { width: min(560px, 100%); }
+  .gear-section-title { margin: 14px 0 8px; font-family: var(--font-display); font-size: 18px; color: var(--sun); text-align: left; }
+  .gear-section-title small { margin-left: 8px; font-family: inherit; font-size: 12px; opacity: 0.75; }
+  #gearCoins { font-weight: 700; color: var(--sun); }
+  #gearOffers { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .gear-card { box-sizing: border-box; padding: 10px; border-radius: 14px; border: 3px solid var(--gear-color, var(--lift)); background: var(--dusk); text-align: center; display: flex; flex-direction: column; gap: 4px; }
+  .gear-rarity { display: inline-block; align-self: center; padding: 1px 10px; border-radius: 999px; background: var(--gear-color, #888); color: #14162b; font-size: 12px; font-weight: 800; }
+  .gear-name { font-family: var(--font-display); font-size: 17px; }
+  .gear-desc { font-size: 13px; opacity: 0.9; min-height: 18px; }
+  .gear-card .btn { margin-top: 4px; }
+  #gearOwned { display: flex; flex-direction: column; gap: 8px; }
+  .gear-owned-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 12px; border-left: 6px solid var(--gear-color, #888); background: var(--dusk); text-align: left; }
+  .gear-owned-row .gear-info { flex: 1; min-width: 0; }
+  .gear-owned-row select { max-width: 48%; padding: 6px 8px; border-radius: 8px; border: 2px solid var(--lift); background: #14162b; color: var(--paper); font: inherit; font-size: 13px; }
+  .gear-empty { font-size: 13px; opacity: 0.75; padding: 8px 0; }
 
   /* ----- 공지사항 ----- */
   #noticeOverlay > .panel { width: min(480px, 100%); text-align: left; }
@@ -996,6 +1013,7 @@
     <button id="openDrawBtn" class="btn btn-ghost">🎁 일일 뽑기</button>
     <button id="openRankingBtn" class="btn btn-ghost">랭킹</button>
     <button id="openMissionBtn" class="btn btn-ghost">미션</button>
+    <button id="openGearShopBtn" class="btn btn-ghost">🛠 기어 상점</button>
     <button id="openTrophyRoadBtn" class="btn btn-ghost">🏆 트로피 로드</button>
     <button id="openCodeBtn" class="btn btn-ghost">코드 입력</button>
     <button id="openAccountBtn" class="btn btn-ghost">계정 설정</button>
@@ -1127,6 +1145,20 @@
     <div id="trophyRoadList"></div>
     <div id="trophyRoadMsg" class="panel-msg"></div>
     <button id="trophyRoadCloseBtn" class="btn btn-ghost">닫기</button>
+  </div>
+</div>
+
+<div id="gearShopOverlay">
+  <div class="panel">
+    <h2 class="panel-title">🛠 기어 상점</h2>
+    <p class="panel-sub">기어를 사서 캐릭터에 장착하면 능력치가 올라요. 한 캐릭터에 최대 <span id="gearMaxText">3</span>개까지 장착할 수 있고, 하나를 사면 그 칸은 다른 기어로 바뀌어요.</p>
+    <div class="profile-line"></div>
+    <div class="gear-section-title">상점 <small id="gearCoins"></small></div>
+    <div id="gearOffers"></div>
+    <div class="gear-section-title">내 기어 <small>캐릭터를 골라 장착하세요</small></div>
+    <div id="gearOwned"></div>
+    <div id="gearMsg" class="panel-msg"></div>
+    <button id="gearShopCloseBtn" class="btn btn-ghost">닫기</button>
   </div>
 </div>
 
@@ -1281,7 +1313,7 @@ const DEVICE_ICON = { mobile: '📱', desktop: '💻' };
 const DEVICE_LABEL = { mobile: '📱 모바일', desktop: '💻 컴퓨터' };
 const matchDevices = {}; // 이번 매치 참가자의 기기 { socketId: 'mobile' | 'desktop' } (점수판 표시용)
 
-const socket = io({ transports: ['websocket'], auth: { device: MY_DEVICE } }); // 웹소켓만 사용 (폴링 요청 절약)
+const socket = io({ auth: { device: MY_DEVICE } });
 
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
@@ -1920,6 +1952,99 @@ function openMissionDialog() {
 function closeMissionDialog() { document.getElementById('missionOverlay').classList.remove('open'); }
 document.getElementById('openMissionBtn').addEventListener('click', openMissionDialog);
 document.getElementById('missionCloseBtn').addEventListener('click', closeMissionDialog);
+
+// ===== 기어 상점 =====
+// 상점 칸/가격/보유/장착 가능 여부는 전부 서버가 판단하고, 클라이언트는 profile 의 gearShop / gears 를 보여주고 요청만 보낸다
+function gearInfoOf(id) { return ((currentProfile && currentProfile.gearCatalog) || []).find((g) => g.id === id) || null; }
+function gearRarityOf(id) { return ((currentProfile && currentProfile.gearRarities) || []).find((r) => r.id === id) || { name: '', color: '#888', price: 0 }; }
+function setGearMsg(text, ok) {
+  const el = document.getElementById('gearMsg');
+  el.textContent = text || '';
+  el.classList.toggle('ok', !!ok);
+}
+function renderGearShop() {
+  const p = currentProfile;
+  if (!p) return;
+  const max = p.gearMax || 3;
+  document.getElementById('gearMaxText').textContent = String(max);
+  document.getElementById('gearCoins').textContent = `내 코인 🪙 ${(p.coins || 0).toLocaleString()}`;
+
+  const offersEl = document.getElementById('gearOffers');
+  const shop = p.gearShop || [];
+  offersEl.innerHTML = shop.length ? shop.map((o) => {
+    const g = gearInfoOf(o.gearId);
+    if (!g) return '';
+    const r = gearRarityOf(g.rarity);
+    const can = (p.coins || 0) >= o.price;
+    return `<div class="gear-card" style="--gear-color:${escapeHtml(r.color)}">
+      <span class="gear-rarity">${escapeHtml(r.name)}</span>
+      <div class="gear-name">${escapeHtml(g.name)}</div>
+      <div class="gear-desc">${escapeHtml(g.desc)}</div>
+      <button class="btn btn-sm" data-gear-buy="${o.slot}" ${can ? '' : 'disabled'}>🪙 ${o.price.toLocaleString()}${can ? '' : ' (코인 부족)'}</button>
+    </div>`;
+  }).join('') : '<div class="gear-empty">상점을 불러오는 중...</div>';
+
+  const ownedEl = document.getElementById('gearOwned');
+  const gears = p.gears || [];
+  const myChars = CHARACTERS.filter((c) => (p.unlocked || []).includes(c.id));
+  ownedEl.innerHTML = gears.length ? gears.map((g) => {
+    const info = gearInfoOf(g.gearId);
+    if (!info) return '';
+    const r = gearRarityOf(info.rarity);
+    const opts = myChars.map((c) => {
+      const n = gears.filter((x) => x.charId === c.id).length; // 이 캐릭터에 지금 장착된 기어 수 (이 기어 포함)
+      const full = n >= max && g.charId !== c.id;
+      return `<option value="${escapeHtml(c.id)}" ${g.charId === c.id ? 'selected' : ''} ${full ? 'disabled' : ''}>${escapeHtml(c.name)} (${n}/${max})</option>`;
+    }).join('');
+    return `<div class="gear-owned-row" style="--gear-color:${escapeHtml(r.color)}">
+      <div class="gear-info"><div class="gear-name">${escapeHtml(info.name)} <span class="gear-rarity">${escapeHtml(r.name)}</span></div><div class="gear-desc">${escapeHtml(info.desc)}</div></div>
+      <select data-gear-uid="${escapeHtml(g.uid)}"><option value="">미장착</option>${opts}</select>
+    </div>`;
+  }).join('') : '<div class="gear-empty">아직 가진 기어가 없어요. 상점에서 구매해 보세요!</div>';
+
+  offersEl.querySelectorAll('button[data-gear-buy]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const slot = Number(btn.getAttribute('data-gear-buy'));
+      const o = (currentProfile.gearShop || []).find((x) => x.slot === slot);
+      const g = o && gearInfoOf(o.gearId);
+      if (!o || !g) return;
+      if (!confirm(`${gearRarityOf(g.rarity).name} 기어 '${g.name}'을(를) 🪙 ${o.price.toLocaleString()} 코인으로 구매할까요?\n${g.desc}\n(구매하면 이 칸은 다른 기어로 바뀌어요)`)) return;
+      btn.disabled = true;
+      socket.timeout(8000).emit('buyGear', { slot }, (err, res) => {
+        if (err || !res) { setGearMsg('서버 응답이 없습니다. 잠시 후 다시 시도해주세요.'); renderGearShop(); return; }
+        if (res.profile) { currentProfile = res.profile; updateProfileUI(); }
+        setGearMsg(res.message || (res.ok ? '구매 완료!' : '기어 구매에 실패했습니다.'), !!res.ok);
+        renderGearShop();
+      });
+    });
+  });
+  ownedEl.querySelectorAll('select[data-gear-uid]').forEach((sel) => {
+    sel.addEventListener('change', () => {
+      sel.disabled = true;
+      socket.timeout(8000).emit('equipGear', { uid: sel.getAttribute('data-gear-uid'), characterId: sel.value || null }, (err, res) => {
+        if (err || !res) { setGearMsg('서버 응답이 없습니다. 잠시 후 다시 시도해주세요.'); renderGearShop(); return; }
+        if (res.profile) { currentProfile = res.profile; updateProfileUI(); }
+        setGearMsg(res.ok ? '' : (res.message || '기어 장착에 실패했습니다.'), false);
+        renderGearShop();
+      });
+    });
+  });
+}
+function openGearShop() {
+  setGearMsg('');
+  document.getElementById('gearShopOverlay').classList.add('open');
+  renderGearShop();
+  // 상점 칸이 아직 없으면 서버가 만들어 줌 (이미 있으면 그대로)
+  socket.timeout(8000).emit('gearShopInit', {}, (err, res) => {
+    if (err || !res || !res.ok) { setGearMsg((res && res.message) || '서버 응답이 없습니다. 잠시 후 다시 시도해주세요.'); return; }
+    currentProfile = res.profile;
+    updateProfileUI();
+    renderGearShop();
+  });
+}
+function closeGearShop() { document.getElementById('gearShopOverlay').classList.remove('open'); }
+document.getElementById('openGearShopBtn').addEventListener('click', openGearShop);
+document.getElementById('gearShopCloseBtn').addEventListener('click', closeGearShop);
 
 // ===== 트로피 로드 =====
 // 트로피 총합/달성/수령 여부는 전부 서버가 판단하고, 클라이언트는 profile.trophyRoad 를 그대로 보여주기만 한다
@@ -2994,6 +3119,10 @@ function renderCharacterList() {
     const cur = table[lv - 1];
     const next = lv < maxLv ? table[lv] : null;
     const bonusLine = owned && cur && lv > 1 ? `<div class="bonus-line">💪 강화 보너스: 체력 ${fmtPct(cur.hp)} · 공격력 ${fmtPct(cur.atk)}</div>` : '';
+    const equippedGears = owned ? ((currentProfile && currentProfile.gears) || []).filter((g) => g.charId === c.id) : [];
+    const gearLine = equippedGears.length
+      ? `<div class="bonus-line">⚙️ 기어 (${equippedGears.length}/${(currentProfile && currentProfile.gearMax) || 3}): ${equippedGears.map((g) => { const gi = gearInfoOf(g.gearId); return gi ? escapeHtml(gi.name) : ''; }).filter(Boolean).join(', ')}</div>`
+      : '';
     const upgradeBtn = !owned || !table.length ? ''
       : next
         ? `<button class="upgrade-btn" data-upgrade-id="${c.id}" ${currentProfile.coins >= next.cost ? '' : 'disabled'}>⬆ 강화 Lv.${lv} → ${lv + 1} · 🪙 ${next.cost.toLocaleString()}${currentProfile.coins >= next.cost ? '' : ' (코인 부족)'}</button>`
@@ -3040,6 +3169,7 @@ function renderCharacterList() {
       <h3>${escapeHtml(c.name)}${lvBadge}</h3>
       ${trophyLine}
       ${bonusLine}
+      ${gearLine}
       <div class="stat-line">❤️ 체력: ${c.maxHp.toLocaleString()}</div>
       <div class="stat-line">🎯 ${escapeHtml(c.basic.name)}${c.basic.damage ? `: ${c.basic.damage.toLocaleString()}` : ''}${c.basic.desc ? ` (${escapeHtml(c.basic.desc)})` : ''}</div>
       <div class="stat-line">✨ ${escapeHtml(c.ultimate.name)}${c.ultimate.damage ? `: ${c.ultimate.damage.toLocaleString()}` : ''}${c.ultimate.desc ? ` (${escapeHtml(c.ultimate.desc)})` : ''}</div>
@@ -3608,18 +3738,7 @@ function drawHpBar(cx, y, barW, barH, hp, maxHp) {
   ctx.restore();
 }
 
-// [트래픽 절약] 서버가 첫 상태에만 보내는 캐릭터 스펙(basic/ultimate/gadget/hyper)을 기억해뒀다가
-// 이후 상태에 다시 합쳐준다. (게임 코드는 예전과 똑같이 p.basic 등을 그대로 사용할 수 있음)
-const specCache = {};
 socket.on('state', (state) => {
-  for (const pid in state.players) {
-    const p = state.players[pid];
-    if (p.basic !== undefined) {
-      specCache[pid] = { basic: p.basic, ultimate: p.ultimate, gadget: p.gadget, hyper: p.hyper };
-    } else if (specCache[pid]) {
-      Object.assign(p, specCache[pid]);
-    }
-  }
   latestState = state;
   trackHpChanges(state);
   updateGateHud(state);
