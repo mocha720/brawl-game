@@ -1234,9 +1234,12 @@ const GEAR_RARITIES = {
 // 기어 목록. effect 에 적힌 값들이 합산(덧셈)되어 장착한 캐릭터에 적용된다.
 //  reloadSpeed: 재장전 속도 증가율 (0.1 = 10% 빨라짐. 같은 기어를 여러 개 달면 0.1씩 더해짐)
 //  fullHpDamageReduction: 체력이 가득 차 있을 때 받는 피해 감소율 (0.5 = 50% 감소. 같은 기어를 여러 개 달면 각각 곱해져서 100%를 넘지 않음: 2개면 75% 감소)
+//  fullAmmoRangeBonus: 탄창이 GEAR_FULL_AMMO(3)개일 때 쏘는 발사체 기본공격의 사거리 증가율 (0.2 = 20% 증가. 같은 기어를 여러 개 달면 0.2씩 더해짐)
 //  lowHpDamageBonus: 체력이 최대 체력의 GEAR_LOW_HP_RATIO(50%) 이하일 때 공격력 증가율 (0.15 = 15% 강화. 같은 기어를 여러 개 달면 0.15씩 더해짐)
 const GEAR_LOW_HP_RATIO = 0.5;
+const GEAR_FULL_AMMO = 3; // '탄창이 3개일 때' 기준 (쏘기 직전 탄창 수가 이 값 이상일 때 발동)
 const GEAR_CATALOG = [
+  { id: 'long_shot', name: '풀탄창 사거리', rarity: 'super_rare', desc: '탄창이 3개일 때 사거리 20% 증가', effect: { fullAmmoRangeBonus: 0.2 } },
   { id: 'comeback_power', name: '위기의 힘', rarity: 'super_rare', desc: '체력이 50% 이하일 때 공격력 15% 강화', effect: { lowHpDamageBonus: 0.15 } },
   { id: 'quick_reload', name: '빠른 재장전', rarity: 'epic', desc: '재장전 속도 10% 증가', effect: { reloadSpeed: 0.1 } },
   { id: 'full_hp_guard', name: '만땅 방어', rarity: 'mythic', desc: '체력이 가득 차 있을 때 받는 피해량 50% 감소', effect: { fullHpDamageReduction: 0.5 } },
@@ -1260,13 +1263,14 @@ function ownedGearsOf(u) {
 }
 // 캐릭터에 장착된 기어들의 효과 합계 (최대 장착 수까지만 인정)
 function gearBonusOf(u, charId) {
-  // reloadSpeed: 재장전 속도 증가율(덧셈) / fullHpTakenMult: 체력이 가득 찰 때 받는 피해 배율(곱셈, 1 = 효과 없음) / lowHpDamageBonus: 체력 50% 이하일 때 공격력 증가율(덧셈)
-  const total = { reloadSpeed: 0, fullHpTakenMult: 1, lowHpDamageBonus: 0 };
+  // reloadSpeed: 재장전 속도 증가율(덧셈) / fullHpTakenMult: 체력이 가득 찰 때 받는 피해 배율(곱셈, 1 = 효과 없음) / lowHpDamageBonus: 체력 50% 이하일 때 공격력 증가율(덧셈) / fullAmmoRangeBonus: 탄창이 가득(3개)일 때 사거리 증가율(덧셈)
+  const total = { reloadSpeed: 0, fullHpTakenMult: 1, lowHpDamageBonus: 0, fullAmmoRangeBonus: 0 };
   for (const g of ownedGearsOf(u).filter((x) => x.charId === charId).slice(0, GEAR_MAX_PER_CHARACTER)) {
     const eff = gearById(g.gearId).effect || {};
     total.reloadSpeed += eff.reloadSpeed || 0;
     if (eff.fullHpDamageReduction) total.fullHpTakenMult *= 1 - eff.fullHpDamageReduction;
     total.lowHpDamageBonus += eff.lowHpDamageBonus || 0;
+    total.fullAmmoRangeBonus += eff.fullAmmoRangeBonus || 0;
   }
   return total;
 }
@@ -3723,6 +3727,7 @@ function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hy
     dashHitIds: [],      // 이번 돌진(관통)에서 이미 피해를 준 대상 id 목록
     dashCharge: false,   // true면 이 돌진의 적중이 궁극기 게이지를 채움 (기본공격 돌진)
     gearReloadBonus: (gear && gear.reloadSpeed) || 0, // 장착한 기어의 재장전 속도 증가율 (0.1 = 10% 빨라짐). 가젯의 재장전 가속과 곱해져서 적용됨
+    gearRangeBonus: (gear && gear.fullAmmoRangeBonus) || 0, // 장착한 기어: 탄창이 3개일 때 발사체 기본공격 사거리 증가율 (0.2 = 20%). 클라이언트 조준선 표시에도 쓰임
     gearLowHpDamageBonus: (gear && gear.lowHpDamageBonus) || 0, // 장착한 기어: 체력이 50% 이하일 때 공격력 증가율 (0.15 = 15% 강화)
     gearFullHpTakenMult: (gear && gear.fullHpTakenMult) || 1, // 장착한 기어: 체력이 가득 차 있을 때 받는 피해 배율 (0.5 = 50% 감소)
     reloadBoostUntil: 0,       // 이 시각(ms) 전까지 재장전 속도 증가 (꽈리의 가젯 '재장전 가속')
@@ -5061,12 +5066,15 @@ function registerGameplayHandlers(socket) {
     const ammoBeforeShot = p.ammo;
     p.ammo -= 1;
     p.lastShotAt = now;
+    // 기어: 쏘기 직전 탄창이 3개 이상이었으면 발사체 기본공격의 사거리 증가 (속도는 그대로 두고 수명을 늘려서 더 멀리 날아가게 함. 근접/돌진/던지기/충전 공격에는 적용 안 됨)
+    const gearRangeMult = p.gearRangeBonus > 0 && ammoBeforeShot >= GEAR_FULL_AMMO ? 1 + p.gearRangeBonus : 1;
+    const withGearRange = (spec) => (gearRangeMult > 1 && spec.lifetime ? { ...spec, lifetime: spec.lifetime * gearRangeMult } : spec);
 
     if (p.basic.type === 'combo') {
       // 시스템: 남은 탄창에 따라 1번(원거리 구슬) -> 2번(던지는 구슬) -> 3번(소용돌이 3개) 순서로 공격.
       // 가젯으로 탄창을 다시 채우면 다시 1번부터 시작한다.
       const phase = Math.max(0, Math.min(p.basic.combo.length - 1, p.maxAmmo - ammoBeforeShot));
-      const comboSpec = p.basic.combo[phase];
+      const comboSpec = withGearRange(p.basic.combo[phase]);
       // 공격할 때마다 '공격 버튼을 누른 순간 이동 중이던 방향'으로 먼저 돌진하고, 돌진이 끝난 자리에서 '그 시점의 조준 방향'으로 공격한다.
       // (돌진 중에도 조준 방향은 계속 갱신됨: playerUpdate 가 comboAimLive 동안 angle 만 받아들임)
       // (최근 0.15초 안에 실제로 움직였을 때만. 서 있으면 돌진 없이 제자리에서 바로 공격)
@@ -5164,7 +5172,7 @@ function registerGameplayHandlers(socket) {
       // 나이의 실내화 던지기: 조준한 거리(클라이언트가 보낸 distance, 서버가 범위 제한)만큼 포물선으로 던짐
       spawnLob(match, p, p.basic, data && data.distance);
     } else {
-      spawnProjectiles(match, p, p.basic, false);
+      spawnProjectiles(match, p, withGearRange(p.basic), false);
     }
   });
 
