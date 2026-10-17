@@ -1642,6 +1642,54 @@ const TROPHY_REWARDS = [
   { id: 'tr_50000', trophies: 50000, coins: 10000 },
 ];
 function trophyRewardCode(r) { return `TROPHYROAD:${r.id}`; }
+
+// ===== 트로피 로드+ (캐릭터별 티어 보상) =====
+// 기준: 캐릭터 하나하나의 트로피. 그 캐릭터의 티어(TROPHY_RANKS: 실버/골드/다이아/마스터1·2·3...)가 올라갈 때마다 코인과 보석을 한 번씩 받을 수 있다.
+// 받은 기록은 redeemed 에 `TRPLUS:캐릭터id:티어id` 로 저장되고, 트로피가 줄어도 유지된다. (캐릭터마다 따로 받음)
+// 보상을 바꾸려면 아래 표/식만 고치면 된다. (티어 id 는 한 번 정하면 바꾸지 말 것: 받은 기록의 기준이 됨)
+const TROPHY_PLUS_MASTER_LEVELS = 20; // 마스터 몇 단계까지 보상을 줄지 (마스터20 = 트로피 20,000)
+const TROPHY_PLUS_REWARD_BY_RANK = {
+  '실버': { coins: 200, gems: 2 },
+  '골드': { coins: 400, gems: 3 },
+  '다이아': { coins: 700, gems: 5 },
+};
+function trophyPlusMasterReward(level) { return { coins: 1000 + 200 * (level - 1), gems: 8 + level }; } // 마스터1: 🪙1,000 💎9 → 마스터20: 🪙4,800 💎28
+const TROPHY_PLUS_TIERS = (() => {
+  const out = [];
+  TROPHY_RANKS.forEach((rk, idx) => {
+    if (!(rk.min > 0)) return; // 브론즈(0)는 시작 등급이라 보상 없음
+    if (rk.step) {
+      for (let lv = 1; lv <= TROPHY_PLUS_MASTER_LEVELS; lv++) {
+        out.push({ id: `r${idx}_${lv}`, name: `${rk.name}${lv}`, icon: rk.icon, trophies: rk.min + rk.step * (lv - 1), ...trophyPlusMasterReward(lv) });
+      }
+    } else {
+      const rw = TROPHY_PLUS_REWARD_BY_RANK[rk.name] || { coins: Math.round(rk.min * 0.7), gems: 3 };
+      out.push({ id: `r${idx}`, name: rk.name, icon: rk.icon, trophies: rk.min, coins: rw.coins, gems: rw.gems });
+    }
+  });
+  return out;
+})();
+function trophyPlusCode(charId, tier) { return `TRPLUS:${charId}:${tier.id}`; }
+function trophyRoadPlusView(u) {
+  const redeemed = new Set(u.redeemed || []);
+  const chars = [];
+  for (const id of effectiveUnlocked(u)) {
+    if (!CHARACTERS[id]) continue;
+    chars.push({ id, trophies: (u.trophies && u.trophies[id]) || 0, claimed: TROPHY_PLUS_TIERS.filter((t) => redeemed.has(trophyPlusCode(id, t))).map((t) => t.id) });
+  }
+  return { tiers: TROPHY_PLUS_TIERS, chars };
+}
+// 지금 받을 수 있는(달성했고 아직 안 받은) [캐릭터id, 티어] 목록. charId 를 주면 그 캐릭터만
+function trophyPlusClaimable(u, charId) {
+  const redeemed = new Set(u.redeemed || []);
+  const out = [];
+  for (const id of effectiveUnlocked(u)) {
+    if (!CHARACTERS[id] || (charId && id !== charId)) continue;
+    const tr = (u.trophies && u.trophies[id]) || 0;
+    for (const t of TROPHY_PLUS_TIERS) if (tr >= t.trophies && !redeemed.has(trophyPlusCode(id, t))) out.push({ charId: id, tier: t });
+  }
+  return out;
+}
 function trophyRoadView(u) {
   const redeemed = u.redeemed || [];
   return {
@@ -2120,7 +2168,7 @@ function publicProfile(u) {
   const equippedSkins = {};
   for (const id in CHARACTERS) { const sk = equippedSkinOf(u, id); if (sk) equippedSkins[id] = sk; }
   return { username: u.name, coins: u.coins, gems: u.gems || 0, gemResetCost: GEM_SHOP_RESET_COST, wins: u.wins || 0, losses: u.losses || 0, unlocked: effectiveUnlocked(u), prices: allPrices(),
-    skinCatalog: skinCatalogPublic(), skins: ownedSkinsOf(u), equippedSkins, hypers: ownedHypersOf(u), gears: ownedGearsOf(u), gearShop: gearShopView(u), gearCatalog: GEAR_CATALOG.map((g) => ({ id: g.id, name: g.name, rarity: g.rarity, desc: g.desc })), gearRarities: Object.values(GEAR_RARITIES), gearMax: GEAR_MAX_PER_CHARACTER, gearSellRatio: GEAR_SELL_RATIO, hyperPrice: HYPER_PRICE, hyperRequiredLevel: HYPER_REQUIRED_LEVEL, trophyRoad: trophyRoadView(u), trophies, streaks, missions: missionsView(u), repeatMissions: repeatMissionsView(u), ranks: TROPHY_RANKS, characters: buildCharacterInfo(levels), levels, levelTable: LEVEL_TABLE_PUBLIC, maxLevel: MAX_CHARACTER_LEVEL, isAdmin: u.key === ADMIN_KEY, announcements: allAnnouncements(), dailyDraw: dailyDrawView(u),
+    skinCatalog: skinCatalogPublic(), skins: ownedSkinsOf(u), equippedSkins, hypers: ownedHypersOf(u), gears: ownedGearsOf(u), gearShop: gearShopView(u), gearCatalog: GEAR_CATALOG.map((g) => ({ id: g.id, name: g.name, rarity: g.rarity, desc: g.desc })), gearRarities: Object.values(GEAR_RARITIES), gearMax: GEAR_MAX_PER_CHARACTER, gearSellRatio: GEAR_SELL_RATIO, hyperPrice: HYPER_PRICE, hyperRequiredLevel: HYPER_REQUIRED_LEVEL, trophyRoad: trophyRoadView(u), trophyRoadPlus: trophyRoadPlusView(u), trophies, streaks, missions: missionsView(u), repeatMissions: repeatMissionsView(u), ranks: TROPHY_RANKS, characters: buildCharacterInfo(levels), levels, levelTable: LEVEL_TABLE_PUBLIC, maxLevel: MAX_CHARACTER_LEVEL, isAdmin: u.key === ADMIN_KEY, announcements: allAnnouncements(), dailyDraw: dailyDrawView(u),
     events: activeEvents().map((e) => ({ id: e.id, name: e.name, coins: e.coins || 0, gems: e.gems || 0, desc: e.desc, endsAt: e.endsAt || null, claimed: (u.redeemed || []).includes(eventClaimCode(e)) })) };
 }
 
@@ -2285,6 +2333,18 @@ function createFileDb() {
       u.coins -= cost;
       u.levels = u.levels || {};
       u.levels[charId] = fromLevel + 1;
+      scheduleSave();
+      return { ok: true, user: cloneUser(u) };
+    },
+    // 여러 보상을 한꺼번에 받기: codes 중 하나라도 이미 받았으면 아무것도 지급하지 않고 'used' (호출한 쪽이 목록을 다시 계산해서 재시도)
+    async redeemCodes(key, codes, coins, gems = 0) {
+      const u = users[key];
+      if (!u) return { ok: false, reason: 'noUser' };
+      u.redeemed = u.redeemed || [];
+      if (codes.some((c) => u.redeemed.includes(c))) return { ok: false, reason: 'used', user: cloneUser(u) };
+      u.redeemed.push(...codes);
+      u.coins += coins;
+      if (gems) u.gems = (u.gems || 0) + gems;
       scheduleSave();
       return { ok: true, user: cloneUser(u) };
     },
@@ -2632,6 +2692,18 @@ function createMongoDb(uri) {
       if (!user) return { ok: false, reason: 'noUser' };
       if (levelOf(user, charId) !== fromLevel) return { ok: false, reason: 'level', user };
       return { ok: false, reason: 'coins', user };
+    },
+    async redeemCodes(key, codes, coins, gems = 0) {
+      // 모두 아직 안 받은 상태일 때만 한 번에 지급 + 기록 (원자적)
+      const updated = await col.findOneAndUpdate(
+        { key, redeemed: { $nin: codes } },
+        { $inc: gems ? { coins, gems } : { coins }, $push: { redeemed: { $each: codes } } },
+        { returnDocument: 'after', projection }
+      );
+      if (updated) return { ok: true, user: updated };
+      const user = await col.findOne({ key }, { projection });
+      if (!user) return { ok: false, reason: 'noUser' };
+      return { ok: false, reason: 'used', user };
     },
     async redeemCode(key, code, coins, gems = 0) {
       // 사용 기록 확인과 코인 지급을 한 번의 원자적 연산으로 처리 (동시에 여러 번 눌러도 한 번만 지급됨)
@@ -3244,6 +3316,65 @@ function registerAuthHandlers(socket) {
       ack({ ok: false, message, profile: r.user ? publicProfile(r.user) : undefined });
     } catch (e) {
       console.error('claimTrophyReward 오류', e);
+      ack({ ok: false, message: '서버 오류가 발생했습니다.' });
+    }
+  });
+
+  // 트로피 로드+: 캐릭터 한 명의 티어 보상 하나 받기
+  socket.on('claimTrophyPlus', async (data, ack) => {
+    if (typeof ack !== 'function') return;
+    try {
+      const key = socket.data.userKey;
+      if (!key) return ack({ ok: false, message: '로그인이 필요합니다.' });
+      const charId = data && data.characterId;
+      const tier = TROPHY_PLUS_TIERS.find((t) => t.id === (data && data.tierId));
+      if (typeof charId !== 'string' || !CHARACTERS[charId] || !tier) return ack({ ok: false, message: '존재하지 않는 보상입니다.' });
+
+      const before = await db.findUser(key);
+      if (!before) return ack({ ok: false, message: '계정을 찾을 수 없습니다.' });
+      if (!effectiveUnlocked(before).includes(charId)) return ack({ ok: false, message: '잠금해제한 캐릭터만 받을 수 있습니다.', profile: publicProfile(before) });
+      if ((before.redeemed || []).includes(trophyPlusCode(charId, tier))) return ack({ ok: false, message: '이미 받은 보상입니다.', profile: publicProfile(before) });
+      if (((before.trophies && before.trophies[charId]) || 0) < tier.trophies) return ack({ ok: false, message: '아직 트로피가 부족합니다.', profile: publicProfile(before) });
+
+      const r = await db.redeemCode(key, trophyPlusCode(charId, tier), tier.coins, tier.gems);
+      if (r.ok) {
+        console.log(`[트로피 로드+] ${socket.data.displayName}: ${CHARACTERS[charId].name} ${tier.name} 보상 ${tier.coins}코인 ${tier.gems}보석 수령`);
+        return ack({ ok: true, message: `🎉 ${CHARACTERS[charId].name} ${tier.name} 달성 보상! 🪙 ${tier.coins.toLocaleString()} + 💎 ${tier.gems.toLocaleString()} 을(를) 받았습니다!`, profile: publicProfile(r.user) });
+      }
+      ack({ ok: false, message: r.reason === 'used' ? '이미 받은 보상입니다.' : '보상 받기에 실패했습니다.', profile: r.user ? publicProfile(r.user) : undefined });
+    } catch (e) {
+      console.error('claimTrophyPlus 오류', e);
+      ack({ ok: false, message: '서버 오류가 발생했습니다.' });
+    }
+  });
+
+  // 트로피 로드+: 받을 수 있는 보상을 전부(또는 characterId 를 주면 그 캐릭터 것만) 한 번에 받기
+  socket.on('claimTrophyPlusAll', async (data, ack) => {
+    if (typeof ack !== 'function') return;
+    try {
+      const key = socket.data.userKey;
+      if (!key) return ack({ ok: false, message: '로그인이 필요합니다.' });
+      const onlyChar = data && typeof data.characterId === 'string' && CHARACTERS[data.characterId] ? data.characterId : null;
+      let user = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const before = await db.findUser(key);
+        if (!before) return ack({ ok: false, message: '계정을 찾을 수 없습니다.' });
+        user = before;
+        const list = trophyPlusClaimable(before, onlyChar);
+        if (!list.length) return ack({ ok: false, message: '지금 받을 수 있는 보상이 없어요.', profile: publicProfile(before) });
+        const coins = list.reduce((a, x) => a + x.tier.coins, 0);
+        const gems = list.reduce((a, x) => a + x.tier.gems, 0);
+        const r = await db.redeemCodes(key, list.map((x) => trophyPlusCode(x.charId, x.tier)), coins, gems);
+        if (r.ok) {
+          console.log(`[트로피 로드+] ${socket.data.displayName}: 보상 ${list.length}개 한 번에 수령 (${coins}코인 ${gems}보석)`);
+          return ack({ ok: true, message: `🎉 보상 ${list.length}개를 받았어요! 🪙 ${coins.toLocaleString()} + 💎 ${gems.toLocaleString()}`, profile: publicProfile(r.user) });
+        }
+        if (r.reason !== 'used') break; // 동시에 다른 곳에서 받은 경우에만 목록을 다시 계산해서 재시도
+        user = r.user || before;
+      }
+      ack({ ok: false, message: '보상 받기에 실패했습니다. 잠시 후 다시 시도해주세요.', profile: user ? publicProfile(user) : undefined });
+    } catch (e) {
+      console.error('claimTrophyPlusAll 오류', e);
       ack({ ok: false, message: '서버 오류가 발생했습니다.' });
     }
   });
