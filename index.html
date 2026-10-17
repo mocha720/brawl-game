@@ -1996,6 +1996,9 @@ function renderGearShop() {
   const gears = p.gears || [];
   const myChars = CHARACTERS.filter((c) => (p.unlocked || []).includes(c.id));
   const sellRatio = p.gearSellRatio != null ? p.gearSellRatio : 0.5;
+  const lvOf = (id) => (p.levels && p.levels[id]) || 1; // 캐릭터의 현재 레벨
+  const maxLv = p.maxLevel || 0;
+  const lvText = (id) => `Lv.${lvOf(id)}${maxLv && lvOf(id) >= maxLv ? ' MAX' : ''}`;
   const rarityOrder = (currentProfile.gearRarities || []).map((r) => r.id);
   const gearRow = (g) => {
     const info = gearInfoOf(g.gearId);
@@ -2006,7 +2009,7 @@ function renderGearShop() {
       const n = gears.filter((x) => x.charId === c.id).length; // 이 캐릭터에 지금 장착된 기어 수 (이 기어 포함)
       const dup = gears.some((x) => x.charId === c.id && x.uid !== g.uid && x.gearId === g.gearId); // 같은 기어가 이미 장착됨
       const full = (n >= max && g.charId !== c.id) || dup;
-      return `<option value="${escapeHtml(c.id)}" ${g.charId === c.id ? 'selected' : ''} ${full ? 'disabled' : ''}>${escapeHtml(c.name)} (${n}/${max})</option>`;
+      return `<option value="${escapeHtml(c.id)}" ${g.charId === c.id ? 'selected' : ''} ${full ? 'disabled' : ''}>${escapeHtml(c.name)} ${lvText(c.id)} (${n}/${max})</option>`;
     }).join('');
     return `<div class="gear-owned-row" style="--gear-color:${escapeHtml(r.color)}">
       <div class="gear-info"><div class="gear-name">${escapeHtml(info.name)} <span class="gear-rarity">${escapeHtml(r.name)}</span></div><div class="gear-desc">${escapeHtml(info.desc)}</div></div>
@@ -2030,7 +2033,7 @@ function renderGearShop() {
     let html = groupHtml('📦 미장착', `${unequipped.length}개`, unequipped, '미장착 기어가 없어요');
     for (const c of groupChars) {
       const list = gears.filter((g) => g.charId === c.id);
-      html += groupHtml(escapeHtml(c.name), `${list.length}/${max}`, list, '장착한 기어가 없어요');
+      html += groupHtml(`${escapeHtml(c.name)} <small>${lvText(c.id)}</small>`, `${list.length}/${max}`, list, '장착한 기어가 없어요');
     }
     ownedEl.innerHTML = html;
   }
