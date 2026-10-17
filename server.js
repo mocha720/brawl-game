@@ -19,38 +19,13 @@ const server = http.createServer(app);
 const io = new Server(server, {
   pingInterval: 8000,
   pingTimeout: 5000,
-  // [트래픽 절약] 256바이트 이상인 메시지만 압축. level 이 낮을수록 CPU를 덜 씀 (Render 무료 인스턴스는 CPU가 약함)
-  perMessageDeflate: {
-    threshold: 256,
-    zlibDeflateOptions: { level: 3 },
-  },
 });
 
 // Render 배포 환경에서는 PORT 환경변수를 사용해야 함
 const PORT = process.env.PORT || 3000;
 
-// [트래픽 절약] HTML/JS/JSON 등 텍스트 응답을 gzip 압축 (index.html 이 커서 효과가 큼)
-// 'compression' 패키지가 설치되어 있지 않아도 서버가 죽지 않도록 try/catch 로 감쌈
-try {
-  app.use(require('compression')());
-} catch (e) {
-  console.warn('compression 패키지가 없어 HTTP 압축을 건너뜁니다. (npm install compression)');
-}
-
-// [보안] 서버 소스/설정 파일이 정적 파일로 노출되지 않도록 차단
-app.use((req, res, next) => {
-  if (/^\/(server\.js|package(-lock)?\.json|node_modules|\.git|\.env)/i.test(req.path)) return res.status(404).end();
-  next();
-});
-
 // index.html 등 정적 파일을 같은 폴더에서 서빙
-// [트래픽 절약] html 은 매번 '바뀌었는지만' 확인(ETag → 304), 음악/이미지 등은 1일 동안 브라우저에 캐시
-app.use(express.static(path.join(__dirname), {
-  maxAge: '1d',
-  setHeaders(res, filePath) {
-    if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'no-cache');
-  },
-}));
+app.use(express.static(path.join(__dirname)));
 
 // ===== 게임 설정값 =====
 const ARENA_WIDTH = 770;    // 맵 크기 30% 추가 축소 (1100 → 770)
@@ -1244,6 +1219,63 @@ function hasHyper(u, charId) {
   return !!(CHARACTERS[charId] && CHARACTERS[charId].hyper && u && (u.hypers || []).includes(charId));
 }
 
+// ===== 기어 =====
+// 기어 상점(유저마다 4칸)에서 코인으로 구매해 보유 기어가 되고, 원하는 캐릭터에 장착해서 능력치를 올린다. 한 캐릭터에 최대 GEAR_MAX_PER_CHARACTER개까지 장착.
+// 상점 칸을 하나 사면 그 칸은 다른 기어(등급 확률에 따라 무작위)로 바뀐다. 구매한 기어는 장착 캐릭터를 자유롭게 옮기거나 해제할 수 있다.
+const GEAR_MAX_PER_CHARACTER = 3;
+const GEAR_SHOP_SIZE = 4;
+// 등급: 가격 / 상점 칸에 나올 확률 가중치 (카탈로그에 기어가 있는 등급끼리만 비교)
+const GEAR_RARITIES = {
+  super_rare: { id: 'super_rare', name: '초희귀', price: 100, weight: 50, color: '#3db8ff' },
+  epic: { id: 'epic', name: '영웅', price: 200, weight: 30, color: '#b06bff' },
+  mythic: { id: 'mythic', name: '신화', price: 500, weight: 15, color: '#ff5a5a' },
+  legendary: { id: 'legendary', name: '전설', price: 1000, weight: 5, color: '#ffc933' },
+};
+// 기어 목록. effect 에 적힌 값들이 합산(덧셈)되어 장착한 캐릭터에 적용된다.
+//  reloadSpeed: 재장전 속도 증가율 (0.1 = 10% 빨라짐. 같은 기어를 여러 개 달면 0.1씩 더해짐)
+//  fullHpDamageReduction: 체력이 가득 차 있을 때 받는 피해 감소율 (0.5 = 50% 감소. 같은 기어를 여러 개 달면 각각 곱해져서 100%를 넘지 않음: 2개면 75% 감소)
+//  lowHpDamageBonus: 체력이 최대 체력의 GEAR_LOW_HP_RATIO(50%) 이하일 때 공격력 증가율 (0.15 = 15% 강화. 같은 기어를 여러 개 달면 0.15씩 더해짐)
+const GEAR_LOW_HP_RATIO = 0.5;
+const GEAR_CATALOG = [
+  { id: 'comeback_power', name: '위기의 힘', rarity: 'super_rare', desc: '체력이 50% 이하일 때 공격력 15% 강화', effect: { lowHpDamageBonus: 0.15 } },
+  { id: 'quick_reload', name: '빠른 재장전', rarity: 'epic', desc: '재장전 속도 10% 증가', effect: { reloadSpeed: 0.1 } },
+  { id: 'full_hp_guard', name: '만땅 방어', rarity: 'mythic', desc: '체력이 가득 차 있을 때 받는 피해량 50% 감소', effect: { fullHpDamageReduction: 0.5 } },
+];
+function gearById(id) { return GEAR_CATALOG.find((g) => g.id === id) || null; }
+function gearPriceOf(gearId) { const g = gearById(gearId); return g ? GEAR_RARITIES[g.rarity].price : 0; }
+// 상점 칸에 새로 올릴 기어: 먼저 등급을 가중치로 뽑고, 그 등급의 기어 중 하나를 무작위로 고름
+function rollShopGear() {
+  const rarities = Object.values(GEAR_RARITIES).filter((r) => GEAR_CATALOG.some((g) => g.rarity === r.id));
+  const total = rarities.reduce((a, r) => a + r.weight, 0);
+  let roll = Math.random() * total;
+  let picked = rarities[rarities.length - 1];
+  for (const r of rarities) { roll -= r.weight; if (roll < 0) { picked = r; break; } }
+  const pool = GEAR_CATALOG.filter((g) => g.rarity === picked.id);
+  return pool[Math.floor(Math.random() * pool.length)].id;
+}
+function newGearShopSlots() { return Array.from({ length: GEAR_SHOP_SIZE }, () => rollShopGear()); }
+// 보유 기어 목록 [{ uid, gearId, charId|null }] (카탈로그에 없는 기어는 무시)
+function ownedGearsOf(u) {
+  return ((u && u.gears) || []).filter((g) => g && typeof g.uid === 'string' && gearById(g.gearId)).map((g) => ({ uid: g.uid, gearId: g.gearId, charId: g.charId && CHARACTERS[g.charId] ? g.charId : null }));
+}
+// 캐릭터에 장착된 기어들의 효과 합계 (최대 장착 수까지만 인정)
+function gearBonusOf(u, charId) {
+  // reloadSpeed: 재장전 속도 증가율(덧셈) / fullHpTakenMult: 체력이 가득 찰 때 받는 피해 배율(곱셈, 1 = 효과 없음) / lowHpDamageBonus: 체력 50% 이하일 때 공격력 증가율(덧셈)
+  const total = { reloadSpeed: 0, fullHpTakenMult: 1, lowHpDamageBonus: 0 };
+  for (const g of ownedGearsOf(u).filter((x) => x.charId === charId).slice(0, GEAR_MAX_PER_CHARACTER)) {
+    const eff = gearById(g.gearId).effect || {};
+    total.reloadSpeed += eff.reloadSpeed || 0;
+    if (eff.fullHpDamageReduction) total.fullHpTakenMult *= 1 - eff.fullHpDamageReduction;
+    total.lowHpDamageBonus += eff.lowHpDamageBonus || 0;
+  }
+  return total;
+}
+function gearShopView(u) {
+  const slots = u && Array.isArray(u.gearShop) ? u.gearShop : [];
+  if (slots.length !== GEAR_SHOP_SIZE || !slots.every((id) => gearById(id))) return []; // 아직 만들어지지 않음 (상점을 처음 열 때 gearShopInit 으로 만들어짐)
+  return slots.map((gearId, slot) => ({ slot, gearId, price: gearPriceOf(gearId) }));
+}
+
 const characterInfoCache = new Map();
 function buildCharacterInfo(levels) {
   const out = {};
@@ -2047,7 +2079,7 @@ function publicProfile(u) {
   const equippedSkins = {};
   for (const id in CHARACTERS) { const sk = equippedSkinOf(u, id); if (sk) equippedSkins[id] = sk; }
   return { username: u.name, coins: u.coins, wins: u.wins || 0, losses: u.losses || 0, unlocked: effectiveUnlocked(u), prices: allPrices(),
-    skinCatalog: skinCatalogPublic(), skins: ownedSkinsOf(u), equippedSkins, hypers: ownedHypersOf(u), hyperPrice: HYPER_PRICE, hyperRequiredLevel: HYPER_REQUIRED_LEVEL, trophyRoad: trophyRoadView(u), trophies, streaks, missions: missionsView(u), repeatMissions: repeatMissionsView(u), ranks: TROPHY_RANKS, characters: buildCharacterInfo(levels), levels, levelTable: LEVEL_TABLE_PUBLIC, maxLevel: MAX_CHARACTER_LEVEL, isAdmin: u.key === ADMIN_KEY, announcements: allAnnouncements(), dailyDraw: dailyDrawView(u),
+    skinCatalog: skinCatalogPublic(), skins: ownedSkinsOf(u), equippedSkins, hypers: ownedHypersOf(u), gears: ownedGearsOf(u), gearShop: gearShopView(u), gearCatalog: GEAR_CATALOG.map((g) => ({ id: g.id, name: g.name, rarity: g.rarity, desc: g.desc })), gearRarities: Object.values(GEAR_RARITIES), gearMax: GEAR_MAX_PER_CHARACTER, hyperPrice: HYPER_PRICE, hyperRequiredLevel: HYPER_REQUIRED_LEVEL, trophyRoad: trophyRoadView(u), trophies, streaks, missions: missionsView(u), repeatMissions: repeatMissionsView(u), ranks: TROPHY_RANKS, characters: buildCharacterInfo(levels), levels, levelTable: LEVEL_TABLE_PUBLIC, maxLevel: MAX_CHARACTER_LEVEL, isAdmin: u.key === ADMIN_KEY, announcements: allAnnouncements(), dailyDraw: dailyDrawView(u),
     events: activeEvents().map((e) => ({ id: e.id, name: e.name, coins: e.coins, desc: e.desc, endsAt: e.endsAt || null, claimed: (u.redeemed || []).includes(eventClaimCode(e)) })) };
 }
 
@@ -2059,7 +2091,7 @@ const USERS_FILE = process.env.USERS_FILE || path.join(os.tmpdir(), 'brawl-users
 const ANNOUNCE_FILE = process.env.ANNOUNCE_FILE || path.join(os.tmpdir(), 'brawl-announcements.json'); // 개발자 모드로 올린 공지 (MongoDB를 쓰면 DB에 저장됨)
 
 function cloneUser(u) {
-  return u ? { ...u, unlocked: [...(u.unlocked || [])], skins: [...(u.skins || [])], hypers: [...(u.hypers || [])], equippedSkins: { ...(u.equippedSkins || {}) }, trophies: { ...(u.trophies || {}) }, streaks: { ...(u.streaks || {}) }, levels: { ...(u.levels || {}) }, redeemed: [...(u.redeemed || [])], missions: u.missions ? { day: u.missions.day, progress: { ...(u.missions.progress || {}) }, claimed: [...(u.missions.claimed || [])] } : undefined, repeatMissions: u.repeatMissions ? JSON.parse(JSON.stringify(u.repeatMissions)) : undefined, dailyDraw: u.dailyDraw ? { ...u.dailyDraw } : undefined } : null;
+  return u ? { ...u, unlocked: [...(u.unlocked || [])], skins: [...(u.skins || [])], hypers: [...(u.hypers || [])], gears: (u.gears || []).map((g) => ({ ...g })), gearShop: [...(u.gearShop || [])], equippedSkins: { ...(u.equippedSkins || {}) }, trophies: { ...(u.trophies || {}) }, streaks: { ...(u.streaks || {}) }, levels: { ...(u.levels || {}) }, redeemed: [...(u.redeemed || [])], missions: u.missions ? { day: u.missions.day, progress: { ...(u.missions.progress || {}) }, claimed: [...(u.missions.claimed || [])] } : undefined, repeatMissions: u.repeatMissions ? JSON.parse(JSON.stringify(u.repeatMissions)) : undefined, dailyDraw: u.dailyDraw ? { ...u.dailyDraw } : undefined } : null;
 }
 
 function createFileDb() {
@@ -2129,6 +2161,37 @@ function createFileDb() {
       return { ok: true, user: cloneUser(u) };
     },
     // 하이퍼 차지 구매: 최고 레벨 + 코인 차감 + 지급을 한 번에 처리
+    // 기어 상점 칸이 아직 없으면 만들어 줌
+    async ensureGearShop(key, slots) {
+      const u = users[key];
+      if (!u) return null;
+      if (!Array.isArray(u.gearShop) || u.gearShop.length !== GEAR_SHOP_SIZE || !u.gearShop.every((id) => gearById(id))) { u.gearShop = slots; scheduleSave(); }
+      return cloneUser(u);
+    },
+    // 기어 구매: slot 칸에 expectedGearId 가 그대로 있고 코인이 충분할 때만. 칸은 newGearId 로 바뀌고, 산 기어는 보유 목록에 추가됨(장착 캐릭터 없음)
+    async buyGear(key, slot, expectedGearId, price, newGearId, uid) {
+      const u = users[key];
+      if (!u) return { ok: false, reason: 'noUser' };
+      if (!Array.isArray(u.gearShop) || u.gearShop[slot] !== expectedGearId) return { ok: false, reason: 'stale', user: cloneUser(u) };
+      if (u.coins < price) return { ok: false, reason: 'coins', user: cloneUser(u) };
+      u.coins -= price;
+      u.gears = u.gears || [];
+      u.gears.push({ uid, gearId: expectedGearId, charId: null });
+      u.gearShop[slot] = newGearId;
+      scheduleSave();
+      return { ok: true, user: cloneUser(u) };
+    },
+    // 기어 장착/해제/이동: charId 가 null 이면 해제. 한 캐릭터에 max개까지만
+    async equipGear(key, uid, charId, max) {
+      const u = users[key];
+      if (!u) return { ok: false, reason: 'noUser' };
+      const g = (u.gears || []).find((x) => x.uid === uid);
+      if (!g) return { ok: false, reason: 'notOwned', user: cloneUser(u) };
+      if (charId && (u.gears || []).filter((x) => x.charId === charId && x.uid !== uid).length >= max) return { ok: false, reason: 'full', user: cloneUser(u) };
+      g.charId = charId || null;
+      scheduleSave();
+      return { ok: true, user: cloneUser(u) };
+    },
     async buyHyper(key, charId, price, requiredLevel) {
       const u = users[key];
       if (!u) return { ok: false, reason: 'noUser' };
@@ -2401,6 +2464,43 @@ function createMongoDb(uri) {
       return { ok: false, reason: 'coins', user };
     },
     // 하이퍼 차지 구매: 레벨 확인 + 코인 차감 + 지급을 한 번의 원자적 연산으로 처리 (중복 클릭/동시 요청으로 이중 차감되지 않음)
+    // 기어 상점 칸이 아직 없으면 만들어 줌
+    async ensureGearShop(key, slots) {
+      const updated = await col.findOneAndUpdate(
+        { key, $or: [{ gearShop: { $exists: false } }, { [`gearShop.${GEAR_SHOP_SIZE - 1}`]: { $exists: false } }] },
+        { $set: { gearShop: slots } },
+        { returnDocument: 'after', projection }
+      );
+      return updated || col.findOne({ key }, { projection });
+    },
+    // 기어 구매: slot 칸에 expectedGearId 가 그대로 있고 코인이 충분할 때만 한 번에(원자적으로) 처리
+    async buyGear(key, slot, expectedGearId, price, newGearId, uid) {
+      const slotPath = `gearShop.${slot}`; // slot 은 서버가 0~3 정수로 검증한 값
+      const updated = await col.findOneAndUpdate(
+        { key, coins: { $gte: price }, [slotPath]: expectedGearId },
+        { $inc: { coins: -price }, $push: { gears: { uid, gearId: expectedGearId, charId: null } }, $set: { [slotPath]: newGearId } },
+        { returnDocument: 'after', projection }
+      );
+      if (updated) return { ok: true, user: updated };
+      const user = await col.findOne({ key }, { projection });
+      if (!user) return { ok: false, reason: 'noUser' };
+      if (!Array.isArray(user.gearShop) || user.gearShop[slot] !== expectedGearId) return { ok: false, reason: 'stale', user };
+      return { ok: false, reason: 'coins', user };
+    },
+    // 기어 장착/해제/이동: charId 가 null 이면 해제. 한 캐릭터에 max개까지만
+    async equipGear(key, uid, charId, max) {
+      const user = await col.findOne({ key }, { projection });
+      if (!user) return { ok: false, reason: 'noUser' };
+      const gears = user.gears || [];
+      if (!gears.some((x) => x.uid === uid)) return { ok: false, reason: 'notOwned', user };
+      if (charId && gears.filter((x) => x.charId === charId && x.uid !== uid).length >= max) return { ok: false, reason: 'full', user };
+      const updated = await col.findOneAndUpdate(
+        { key },
+        { $set: { 'gears.$[g].charId': charId || null } },
+        { arrayFilters: [{ 'g.uid': uid }], returnDocument: 'after', projection }
+      );
+      return { ok: true, user: updated || user };
+    },
     async buyHyper(key, charId, price, requiredLevel) {
       const levelPath = `levels.${charId}`;
       const updated = await col.findOneAndUpdate(
@@ -3153,6 +3253,73 @@ function registerAuthHandlers(socket) {
     }
   });
 
+  // 기어 상점 열기: 내 상점 4칸이 아직 없으면 만들어서 프로필을 돌려준다
+  socket.on('gearShopInit', async (data, ack) => {
+    if (typeof ack !== 'function') return;
+    try {
+      const key = socket.data.userKey;
+      if (!key) return ack({ ok: false, message: '로그인이 필요합니다.' });
+      const user = await db.ensureGearShop(key, newGearShopSlots());
+      if (!user) return ack({ ok: false, message: '계정 정보를 찾을 수 없습니다.' });
+      ack({ ok: true, profile: publicProfile(user) });
+    } catch (e) {
+      console.error('gearShopInit 오류', e);
+      ack({ ok: false, message: '서버 오류가 발생했습니다.' });
+    }
+  });
+
+  // 기어 구매: 상점 slot(0~3)번 칸의 기어를 등급 가격만큼의 코인으로 산다. 산 칸은 다른 기어로 바뀐다.
+  socket.on('buyGear', async (data, ack) => {
+    if (typeof ack !== 'function') return;
+    try {
+      const key = socket.data.userKey;
+      if (!key) return ack({ ok: false, message: '로그인이 필요합니다.' });
+      if (socketToMatch[socket.id] || isQueued(socket.id)) return ack({ ok: false, message: '매치 중이거나 대기 중에는 구매할 수 없습니다.' });
+      const slot = data && data.slot;
+      if (!Number.isInteger(slot) || slot < 0 || slot >= GEAR_SHOP_SIZE) return ack({ ok: false, message: '잘못된 상점 칸입니다.' });
+
+      const u = await db.findUser(key);
+      const shop = gearShopView(u);
+      if (!shop.length) return ack({ ok: false, message: '기어 상점을 다시 열어주세요.', profile: u ? publicProfile(u) : undefined });
+      const gear = gearById(shop[slot].gearId);
+      const r = await db.buyGear(key, slot, gear.id, GEAR_RARITIES[gear.rarity].price, rollShopGear(), crypto.randomBytes(8).toString('hex'));
+      if (r.ok) return ack({ ok: true, message: `${GEAR_RARITIES[gear.rarity].name} 기어 '${gear.name}'을(를) 구매했어요! 보유 기어에서 캐릭터에 장착하세요.`, profile: publicProfile(r.user) });
+
+      const message = r.reason === 'coins' ? '코인이 부족합니다.'
+        : r.reason === 'stale' ? '상점이 갱신되었어요. 다시 확인해주세요.'
+        : '기어 구매에 실패했습니다.';
+      ack({ ok: false, message, profile: r.user ? publicProfile(r.user) : undefined });
+    } catch (e) {
+      console.error('buyGear 오류', e);
+      ack({ ok: false, message: '서버 오류가 발생했습니다.' });
+    }
+  });
+
+  // 기어 장착/해제/이동: characterId 를 보내면 그 캐릭터에 장착(다른 캐릭터에 달려 있으면 옮김), null 이면 해제. 한 캐릭터에 최대 3개.
+  socket.on('equipGear', async (data, ack) => {
+    if (typeof ack !== 'function') return;
+    try {
+      const key = socket.data.userKey;
+      if (!key) return ack({ ok: false, message: '로그인이 필요합니다.' });
+      if (socketToMatch[socket.id] || isQueued(socket.id)) return ack({ ok: false, message: '매치 중이거나 대기 중에는 바꿀 수 없습니다.' });
+      const uid = data && data.uid;
+      const charId = data && data.characterId != null ? data.characterId : null;
+      if (typeof uid !== 'string') return ack({ ok: false, message: '잘못된 기어입니다.' });
+      if (charId !== null && (typeof charId !== 'string' || !CHARACTERS[charId])) return ack({ ok: false, message: '잘못된 캐릭터입니다.' });
+      if (charId !== null && !socket.data.unlocked.has(charId)) return ack({ ok: false, message: '잠금해제한 캐릭터에만 장착할 수 있습니다.' });
+
+      const r = await db.equipGear(key, uid, charId, GEAR_MAX_PER_CHARACTER);
+      if (r.ok) return ack({ ok: true, profile: publicProfile(r.user) });
+      const message = r.reason === 'full' ? `한 캐릭터에는 기어를 최대 ${GEAR_MAX_PER_CHARACTER}개까지 장착할 수 있어요.`
+        : r.reason === 'notOwned' ? '보유하지 않은 기어입니다.'
+        : '기어 장착에 실패했습니다.';
+      ack({ ok: false, message, profile: r.user ? publicProfile(r.user) : undefined });
+    } catch (e) {
+      console.error('equipGear 오류', e);
+      ack({ ok: false, message: '서버 오류가 발생했습니다.' });
+    }
+  });
+
   // 스킨 장착/해제: skinId 를 보내면 장착, null 이면 기본 스킨으로 되돌린다. 보유한 스킨만 장착할 수 있다.
   socket.on('equipSkin', async (data, ack) => {
     if (typeof ack !== 'function') return;
@@ -3528,7 +3695,7 @@ function resolveModeVote(matchId) {
   });
 }
 
-function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hyperOwned) {
+function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hyperOwned, gear) {
   const character = getLeveledCharacter(characterId, level); // 레벨에 맞게 체력/대미지가 강화된 스펙 (1레벨은 기본 스펙)
   return {
     level: clampLevel(level),
@@ -3555,6 +3722,9 @@ function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hy
     dashStun: 0,         // 이번 돌진이 주는 기절 시간(초)
     dashHitIds: [],      // 이번 돌진(관통)에서 이미 피해를 준 대상 id 목록
     dashCharge: false,   // true면 이 돌진의 적중이 궁극기 게이지를 채움 (기본공격 돌진)
+    gearReloadBonus: (gear && gear.reloadSpeed) || 0, // 장착한 기어의 재장전 속도 증가율 (0.1 = 10% 빨라짐). 가젯의 재장전 가속과 곱해져서 적용됨
+    gearLowHpDamageBonus: (gear && gear.lowHpDamageBonus) || 0, // 장착한 기어: 체력이 50% 이하일 때 공격력 증가율 (0.15 = 15% 강화)
+    gearFullHpTakenMult: (gear && gear.fullHpTakenMult) || 1, // 장착한 기어: 체력이 가득 차 있을 때 받는 피해 배율 (0.5 = 50% 감소)
     reloadBoostUntil: 0,       // 이 시각(ms) 전까지 재장전 속도 증가 (꽈리의 가젯 '재장전 가속')
     reloadBoostMultiplier: 1,
     stunnedUntil: 0,   // 이 시각(ms, Date.now() 기준) 전까지는 기절 상태 (이동/공격 불가)
@@ -3633,12 +3803,16 @@ function getDamageMultiplier(p) {
   let mult = 1;
   if (p.damageBoostUntil && now >= p.damageBoostFrom && now < p.damageBoostUntil) mult *= p.damageBoostMultiplier || 1;
   if (p.hyperUntil && now < p.hyperUntil && p.hyper) mult *= p.hyper.damageMultiplier || 1; // 하이퍼 차지: 공격력 강화
+  if (p.gearLowHpDamageBonus > 0 && p.hp <= p.maxHp * GEAR_LOW_HP_RATIO) mult *= 1 + p.gearLowHpDamageBonus; // 기어: 체력이 50% 이하일 때 공격력 강화
   return mult;
 }
 // 받는 피해 배율 (하이퍼 차지 발동 중에는 받는 피해 감소)
 function getDamageTakenMultiplier(p) {
-  if (p && p.hyperUntil && Date.now() < p.hyperUntil && p.hyper) return p.hyper.damageTakenMultiplier || 1;
-  return 1;
+  let mult = 1;
+  if (p && p.hyperUntil && Date.now() < p.hyperUntil && p.hyper) mult *= p.hyper.damageTakenMultiplier || 1;
+  // 기어: 체력이 가득 차 있을 때(이 공격을 받기 직전 기준) 받는 피해 감소. 하이퍼 차지 감소와 곱해져서 적용됨
+  if (p && p.gearFullHpTakenMult < 1 && p.hp >= p.maxHp) mult *= p.gearFullHpTakenMult;
+  return mult;
 }
 // 기본공격이 적중했을 때 궁극기 게이지와 하이퍼 차지 게이지를 함께 채움
 function chargeGauges(shooter) {
@@ -4354,7 +4528,7 @@ function startMatch(mode, entries, opts = {}) {
     const team = idx < cfg.teamSize ? 'A' : 'B';
     const slot = slotCount[team];
     slotCount[team] += 1;
-    match.players[e.socket.id] = buildPlayer(e.socket.id, e.name, e.characterId, team, teamSpawnPoint(match.walls, team, slot, cfg.teamSize), e.level, e.skin, e.hyper);
+    match.players[e.socket.id] = buildPlayer(e.socket.id, e.name, e.characterId, team, teamSpawnPoint(match.walls, team, slot, cfg.teamSize), e.level, e.skin, e.hyper, e.gear);
     match.players[e.socket.id].spawnSlot = slot; // 리스폰할 때 같은 자리를 쓰기 위해 기억
     match.accounts[e.socket.id] = e.userKey;
     if (e.isBot) {
@@ -4671,12 +4845,14 @@ io.on('connection', (socket) => {
     let level = 1;
     let skin = null; // 장착 중인 스킨 (서버 저장소 기준, 외형만 바뀜)
     let hyper = false; // 하이퍼 차지 보유 여부 (서버 저장소 기준)
+    let gear = null; // 장착한 기어들의 효과 합계 { reloadSpeed, fullHpTakenMult } (서버 저장소 기준)
     try {
       const u = await db.findUser(userKey);
       trophies = (u && u.trophies && u.trophies[characterId]) || 0;
       level = levelOf(u, characterId);
       skin = equippedSkinOf(u, characterId);
       hyper = hasHyper(u, characterId);
+      gear = gearBonusOf(u, characterId);
     } catch (e) {
       console.error('트로피 조회 실패', userKey, e);
     }
@@ -4686,7 +4862,7 @@ io.on('connection', (socket) => {
     if (socketToMatch[socket.id] || isQueued(socket.id)) return;
     if (serverPause.on) { socket.emit('findMatchError', { message: serverPause.message }); return; } // 조회하는 사이에 일시정지가 켜진 경우
 
-    queues[mode].push({ socket, name, characterId, userKey, trophies, level, skin, hyper });
+    queues[mode].push({ socket, name, characterId, userKey, trophies, level, skin, hyper, gear });
     // 이 모드에서 이미 기다리고 있던 사람들에게도 갱신된 인원수를 함께 알림
     broadcastQueueStatus(mode);
 
@@ -4717,19 +4893,21 @@ io.on('connection', (socket) => {
     let trophies = 0; // 대결 화면에 보여주기만 함 (AI 대결에서 이기면 난이도별 고정 트로피를 받지만, 이 값은 시작 시점의 트로피)
     let skin = null;
     let hyper = false;
+    let gear = null;
     try {
       const u = await db.findUser(userKey);
       trophies = (u && u.trophies && u.trophies[requestedId]) || 0;
       level = levelOf(u, requestedId);
       skin = equippedSkinOf(u, requestedId);
       hyper = hasHyper(u, requestedId);
+      gear = gearBonusOf(u, requestedId);
     } catch (e) {
       console.error('캐릭터 레벨 조회 실패', userKey, e);
     }
     if (!socket.connected || socket.data.userKey !== userKey) return;
     if (socketToMatch[socket.id] || isQueued(socket.id)) return;
     if (serverPause.on) { socket.emit('findMatchError', { message: serverPause.message }); return; }
-    startAiMatch(socket, requestedId, userKey, level, trophies, skin, hyper, difficulty);
+    startAiMatch(socket, requestedId, userKey, level, trophies, skin, hyper, difficulty, gear);
   });
 
   registerGameplayHandlers(socket); // 이동/공격/충전/가젯/궁극기 입력 처리 (AI 봇도 같은 함수를 써서 사람과 똑같은 규칙으로 행동함)
@@ -6094,7 +6272,7 @@ function updateMatch(match, dt, now) {
     if (p.reloadAllAtOnce) {
       // 시스템: 탄창을 전부 쓴 뒤에야 재장전이 시작되고, 시간이 다 차면 한꺼번에 가득 참 (중간에는 한 발씩 차지 않음)
       if (p.ammo <= 0) {
-        p.ammoRegenElapsed += dt * (p.reloadBoostUntil && now < p.reloadBoostUntil ? p.reloadBoostMultiplier || 1 : 1);
+        p.ammoRegenElapsed += dt * (1 + (p.gearReloadBonus || 0)) * (p.reloadBoostUntil && now < p.reloadBoostUntil ? p.reloadBoostMultiplier || 1 : 1);
         if (p.ammoRegenElapsed >= (p.ammoRegenSeconds || AMMO_REGEN_SECONDS)) {
           p.ammo = p.maxAmmo;
           p.ammoRegenElapsed = 0;
@@ -6104,7 +6282,7 @@ function updateMatch(match, dt, now) {
       }
     } else if (p.ammo < p.maxAmmo) {
       // 탄창이 가득 차지 않았으면 시간이 지날 때마다 한 발씩 채워짐
-      p.ammoRegenElapsed += dt * (p.reloadBoostUntil && now < p.reloadBoostUntil ? p.reloadBoostMultiplier || 1 : 1);
+      p.ammoRegenElapsed += dt * (1 + (p.gearReloadBonus || 0)) * (p.reloadBoostUntil && now < p.reloadBoostUntil ? p.reloadBoostMultiplier || 1 : 1);
       if (p.ammoRegenElapsed >= (p.ammoRegenSeconds || AMMO_REGEN_SECONDS)) {
         p.ammo = Math.min(p.maxAmmo, p.ammo + 1);
         p.ammoRegenElapsed = 0;
@@ -6565,14 +6743,14 @@ function runAiBot(match, botId, ai, dt, now) {
 }
 
 // AI 연습 대결 시작: 사람 1명 + 무작위 캐릭터를 쓰는 AI 봇 1명의 1:1 매치. 대기열을 거치지 않고 바로 시작한다.
-function startAiMatch(socket, characterId, userKey, level, trophies, skin, hyper, difficulty) {
+function startAiMatch(socket, characterId, userKey, level, trophies, skin, hyper, difficulty, gear) {
   const diff = aiDifficultyOf(difficulty);
   const ids = Object.keys(CHARACTERS);
   const botCharId = ids[Math.floor(Math.random() * ids.length)];
   aiBotCounter += 1;
   const botSocket = createBotSocket(`ai_${aiBotCounter}`);
   const entries = [
-    { socket, name: socket.data.displayName, characterId, userKey, trophies: trophies || 0, level, skin: skin || null, hyper: !!hyper },
+    { socket, name: socket.data.displayName, characterId, userKey, trophies: trophies || 0, level, skin: skin || null, hyper: !!hyper, gear: gear || null },
     { socket: botSocket, name: `AI(${diff.name}) ${CHARACTERS[botCharId].name}`, characterId: botCharId, userKey: null, trophies: 0, level, isBot: true },
   ];
   startMatch('1v1', entries, { ai: true, aiDifficulty: diff.id });
@@ -6582,26 +6760,6 @@ function startAiMatch(socket, characterId, userKey, level, trophies, skin, hyper
 // 진행 중인 모든 매치를 독립적으로 갱신하고, 각 매치의 상태는 그 매치에 속한 플레이어들에게만 전송한다
 // (덤불/은신 은닉을 위해 방 전체 브로드캐스트 대신 플레이어별로 필터링해서 개별 전송한다.
 // Socket.io는 각 소켓을 자신의 id와 같은 이름의 방에 기본으로 넣어주므로 io.to(pid)로 특정 플레이어에게만 보낼 수 있다.)
-// [트래픽 절약] 매 틱마다 똑같은 캐릭터 스펙(basic/ultimate/gadget/hyper)을 계속 보내던 것을 줄인다.
-// 매치가 시작된 뒤 각 시청자에게 '첫 상태'에만 전체 스펙을 싣고, 그 이후에는 빼서 보낸다.
-// 클라이언트가 첫 상태에서 스펙을 기억해뒀다가 다시 합쳐주므로 화면/게임 동작은 그대로다.
-// 위치/각도는 소수점 1자리/2자리로 반올림해서 숫자 길이도 줄인다.
-function slimPlayersForSend(match, viewerId, players) {
-  if (!match.specSentTo.has(viewerId)) {
-    match.specSentTo.add(viewerId);
-    return players; // 첫 전송: 전체 스펙 포함
-  }
-  const out = {};
-  for (const id in players) {
-    const { basic, ultimate, gadget, hyper, ...rest } = players[id];
-    if (typeof rest.x === 'number') rest.x = Math.round(rest.x * 10) / 10;
-    if (typeof rest.y === 'number') rest.y = Math.round(rest.y * 10) / 10;
-    if (typeof rest.angle === 'number') rest.angle = Math.round(rest.angle * 100) / 100;
-    out[id] = rest;
-  }
-  return out;
-}
-
 function gameLoop() {
   const dt = TICK_MS / 1000;
   const now = Date.now();
@@ -6614,12 +6772,10 @@ function gameLoop() {
     updateMatch(match, dt, now);
     checkGates(match); // 문지기 모드: 문이 부서졌는지 확인
 
-    if (!match.specSentTo) match.specSentTo = new Set();
     for (const pid in match.players) {
-      if (match.players[pid].isBot) continue; // AI 봇은 가짜 소켓이라 받을 사람이 없음 → 만들 필요 없음
       io.to(pid).emit('state', {
         gameMode: match.gameMode,
-        players: slimPlayersForSend(match, pid, buildVisiblePlayers(match, pid)),
+        players: buildVisiblePlayers(match, pid),
         bullets: buildVisibleBullets(match, pid),
         effects: match.effects,
         waterPools: match.waterPools,
