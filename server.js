@@ -1236,12 +1236,17 @@ const GEAR_RARITIES = {
 //  fullHpDamageReduction: 체력이 가득 차 있을 때 받는 피해 감소율 (0.5 = 50% 감소. 같은 기어를 여러 개 달면 각각 곱해져서 100%를 넘지 않음: 2개면 75% 감소)
 //  fullAmmoRangeBonus: 탄창이 GEAR_FULL_AMMO(3)개일 때 쏘는 발사체 기본공격의 사거리 증가율 (0.2 = 20% 증가. 같은 기어를 여러 개 달면 0.2씩 더해짐)
 //  lowHpDamageBonus: 체력이 최대 체력의 GEAR_LOW_HP_RATIO(50%) 이하일 때 공격력 증가율 (0.15 = 15% 강화. 같은 기어를 여러 개 달면 0.15씩 더해짐)
+//  healBonus: 모든 회복량 증가율 (0.5 = 50% 증가. 자연 회복/가젯 회복/물웅덩이 회복에 적용. 같은 기어를 여러 개 달면 0.5씩 더해짐)
+//  startShield: 매치 시작 때 두르는 보호막 수치 (900 = 900 피해 흡수). 보호막이 사라진 뒤 체력이 가득 찬 채로 GEAR_SHIELD_REGEN_MS 동안 피해를 입지 않으면 다시 생김
 const GEAR_LOW_HP_RATIO = 0.5;
+const GEAR_SHIELD_REGEN_MS = 5000; // 재생 보호막 기어: 체력이 가득 찬 상태로 피해 없이 버텨야 하는 시간
 const GEAR_FULL_AMMO = 3; // '탄창이 3개일 때' 기준 (쏘기 직전 탄창 수가 이 값 이상일 때 발동)
 const GEAR_CATALOG = [
   { id: 'long_shot', name: '풀탄창 사거리', rarity: 'super_rare', desc: '탄창이 3개일 때 사거리 20% 증가', effect: { fullAmmoRangeBonus: 0.2 } },
   { id: 'comeback_power', name: '위기의 힘', rarity: 'super_rare', desc: '체력이 50% 이하일 때 공격력 15% 강화', effect: { lowHpDamageBonus: 0.15 } },
+  { id: 'heal_boost', name: '회복 기어', rarity: 'super_rare', desc: '모든 회복량 50% 증가', effect: { healBonus: 0.5 } },
   { id: 'quick_reload', name: '빠른 재장전', rarity: 'epic', desc: '재장전 속도 10% 증가', effect: { reloadSpeed: 0.1 } },
+  { id: 'regen_shield', name: '재생 보호막', rarity: 'epic', desc: '시작할 때 900 피해를 흡수하는 보호막을 두름. 보호막이 사라져도 체력이 가득 찬 채로 5초 동안 피해를 입지 않으면 다시 생김', effect: { startShield: 900 } },
   { id: 'full_hp_guard', name: '만땅 방어', rarity: 'mythic', desc: '체력이 가득 차 있을 때 받는 피해량 50% 감소', effect: { fullHpDamageReduction: 0.5 } },
 ];
 function gearById(id) { return GEAR_CATALOG.find((g) => g.id === id) || null; }
@@ -1264,13 +1269,16 @@ function ownedGearsOf(u) {
 // 캐릭터에 장착된 기어들의 효과 합계 (최대 장착 수까지만 인정)
 function gearBonusOf(u, charId) {
   // reloadSpeed: 재장전 속도 증가율(덧셈) / fullHpTakenMult: 체력이 가득 찰 때 받는 피해 배율(곱셈, 1 = 효과 없음) / lowHpDamageBonus: 체력 50% 이하일 때 공격력 증가율(덧셈) / fullAmmoRangeBonus: 탄창이 가득(3개)일 때 사거리 증가율(덧셈)
-  const total = { reloadSpeed: 0, fullHpTakenMult: 1, lowHpDamageBonus: 0, fullAmmoRangeBonus: 0 };
-  for (const g of ownedGearsOf(u).filter((x) => x.charId === charId).slice(0, GEAR_MAX_PER_CHARACTER)) {
+  const total = { reloadSpeed: 0, fullHpTakenMult: 1, lowHpDamageBonus: 0, fullAmmoRangeBonus: 0, healBonus: 0, startShield: 0 };
+  const seenGearIds = new Set(); // 같은 기어는 한 캐릭터에 한 번만 효과 적용 (이전 데이터의 중복 장착 대비)
+  for (const g of ownedGearsOf(u).filter((x) => x.charId === charId).filter((x) => !seenGearIds.has(x.gearId) && seenGearIds.add(x.gearId)).slice(0, GEAR_MAX_PER_CHARACTER)) {
     const eff = gearById(g.gearId).effect || {};
     total.reloadSpeed += eff.reloadSpeed || 0;
     if (eff.fullHpDamageReduction) total.fullHpTakenMult *= 1 - eff.fullHpDamageReduction;
     total.lowHpDamageBonus += eff.lowHpDamageBonus || 0;
     total.fullAmmoRangeBonus += eff.fullAmmoRangeBonus || 0;
+    total.healBonus += eff.healBonus || 0;
+    total.startShield += eff.startShield || 0;
   }
   return total;
 }
@@ -2191,6 +2199,7 @@ function createFileDb() {
       if (!u) return { ok: false, reason: 'noUser' };
       const g = (u.gears || []).find((x) => x.uid === uid);
       if (!g) return { ok: false, reason: 'notOwned', user: cloneUser(u) };
+      if (charId && (u.gears || []).some((x) => x.charId === charId && x.uid !== uid && x.gearId === g.gearId)) return { ok: false, reason: 'duplicate', user: cloneUser(u) };
       if (charId && (u.gears || []).filter((x) => x.charId === charId && x.uid !== uid).length >= max) return { ok: false, reason: 'full', user: cloneUser(u) };
       g.charId = charId || null;
       scheduleSave();
@@ -2497,6 +2506,8 @@ function createMongoDb(uri) {
       if (!user) return { ok: false, reason: 'noUser' };
       const gears = user.gears || [];
       if (!gears.some((x) => x.uid === uid)) return { ok: false, reason: 'notOwned', user };
+      const target = gears.find((x) => x.uid === uid);
+      if (charId && gears.some((x) => x.charId === charId && x.uid !== uid && x.gearId === target.gearId)) return { ok: false, reason: 'duplicate', user };
       if (charId && gears.filter((x) => x.charId === charId && x.uid !== uid).length >= max) return { ok: false, reason: 'full', user };
       const updated = await col.findOneAndUpdate(
         { key },
@@ -3315,6 +3326,7 @@ function registerAuthHandlers(socket) {
       const r = await db.equipGear(key, uid, charId, GEAR_MAX_PER_CHARACTER);
       if (r.ok) return ack({ ok: true, profile: publicProfile(r.user) });
       const message = r.reason === 'full' ? `한 캐릭터에는 기어를 최대 ${GEAR_MAX_PER_CHARACTER}개까지 장착할 수 있어요.`
+        : r.reason === 'duplicate' ? '같은 기어는 한 캐릭터에 하나만 장착할 수 있어요.'
         : r.reason === 'notOwned' ? '보유하지 않은 기어입니다.'
         : '기어 장착에 실패했습니다.';
       ack({ ok: false, message, profile: r.user ? publicProfile(r.user) : undefined });
@@ -3730,6 +3742,10 @@ function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hy
     gearRangeBonus: (gear && gear.fullAmmoRangeBonus) || 0, // 장착한 기어: 탄창이 3개일 때 발사체 기본공격 사거리 증가율 (0.2 = 20%). 클라이언트 조준선 표시에도 쓰임
     gearLowHpDamageBonus: (gear && gear.lowHpDamageBonus) || 0, // 장착한 기어: 체력이 50% 이하일 때 공격력 증가율 (0.15 = 15% 강화)
     gearFullHpTakenMult: (gear && gear.fullHpTakenMult) || 1, // 장착한 기어: 체력이 가득 차 있을 때 받는 피해 배율 (0.5 = 50% 감소)
+    gearHealMult: 1 + ((gear && gear.healBonus) || 0), // 장착한 기어: 모든 회복량 배율 (1.5 = 50% 증가)
+    gearShieldMax: (gear && gear.startShield) || 0,    // 장착한 기어: 재생 보호막 수치 (0이면 기어 없음)
+    lastHitAt: Date.now(),  // 마지막으로 피해를 입은 시각 (보호막이 막은 피해 포함) - 재생 보호막 기어용
+    fullHpSince: 0,         // 체력이 가득 찬 상태가 시작된 시각 (가득 차 있지 않으면 0) - 재생 보호막 기어용
     reloadBoostUntil: 0,       // 이 시각(ms) 전까지 재장전 속도 증가 (꽈리의 가젯 '재장전 가속')
     reloadBoostMultiplier: 1,
     stunnedUntil: 0,   // 이 시각(ms, Date.now() 기준) 전까지는 기절 상태 (이동/공격 불가)
@@ -3769,8 +3785,8 @@ function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hy
     ultGadgetRate: 0,      // 초당 채워지는 게이지(%)
     reflectUntil: 0,       // 이 시각(ms) 전까지 반사 방어막이 켜져 있음 (나이의 가젯 '반사 방어막')
     invincibleUntil: 0,    // 이 시각(ms, Date.now() 기준) 전까지는 무적 상태 (현재 사용하는 캐릭터는 없지만 'invincible' 가젯용으로 남겨둠)
-    shieldHp: 0,           // 남은 보호막 수치 (슈의 가젯). 0이면 보호막 없음
-    shieldMax: 0,          // 이번에 발동한 보호막의 최대치 (화면 표시용)
+    shieldHp: (gear && gear.startShield) || 0, // 남은 보호막 수치 (슈의 가젯 / 재생 보호막 기어). 0이면 보호막 없음 (기어가 있으면 시작할 때 이미 두르고 있음)
+    shieldMax: (gear && gear.startShield) || 0, // 이번에 발동한 보호막의 최대치 (화면 표시용)
     speedMultiplier: 1,     // 이동속도 배율. 매 틱 1로 초기화된 뒤 보배 폭탄 범위 등에 의해 낮아질 수 있음
     speedBoostUntil: 0,      // 이 시각(ms) 전까지 이동속도 증가 (원효대사의 가젯 '초인적인 힘')
     speedBoostMultiplier: 1,
@@ -3875,6 +3891,8 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
   const shooter = match.players[shooterId];
   damage = Math.round(damage * getDamageMultiplier(shooter) * getDamageTakenMultiplier(target)); // 공격력 증가(보배 가젯/하이퍼 차지) + 받는 피해 감소(하이퍼 차지) 효과 적용
 
+  if (damage > 0) target.lastHitAt = Date.now(); // 재생 보호막 기어: 보호막이 막은 피해도 '피해를 입은 것'으로 침
+
   // 보호막(슈의 가젯): 남은 보호막 수치만큼 피해를 대신 흡수하고, 넘치는 피해만 체력에 적용
   if (target.shieldHp > 0) {
     const absorbed = Math.min(target.shieldHp, damage);
@@ -3928,6 +3946,8 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter } = {}) {
       respawned.x = spawn.x;
       respawned.y = spawn.y;
       respawned.hp = respawned.maxHp;
+      respawned.lastHitAt = Date.now(); // 재생 보호막 기어: 리스폰 후 5초 동안 피해를 입지 않으면 보호막이 다시 생김
+      respawned.fullHpSince = Date.now();
       respawned.alive = true;
       respawned.invisible = false;
       respawned.stealthId = (respawned.stealthId || 0) + 1; // 진행 중이던 은신 타이머를 무효화
@@ -5259,7 +5279,7 @@ function registerGameplayHandlers(socket) {
       match.effects.push({ id: effectIdCounter, type: 'poopLaunch', x: p.x + Math.cos(p.angle) * (PLAYER_RADIUS + 5), y: p.y + Math.sin(p.angle) * (PLAYER_RADIUS + 5), angle: p.angle, life: 0.3, maxLife: 0.3 }); // 발사 연기 연출
     } else if (gadget.type === 'heal') {
       // 진우Park의 소다 마시기: 체력을 즉시 healAmount만큼 회복 (최대 체력 초과 불가)
-      p.hp = Math.min(p.maxHp, p.hp + (gadget.healAmount || 0));
+      p.hp = Math.min(p.maxHp, p.hp + (gadget.healAmount || 0) * (p.gearHealMult || 1)); // 회복 기어: 회복량 증가
     } else if (gadget.type === 'reloadAmmo') {
       p.ammo = p.maxAmmo;
       p.ammoRegenElapsed = 0;
@@ -6111,7 +6131,7 @@ function updateMatch(match, dt, now) {
 
         if (target.team === pool.team) {
           // 물을 만든 사람의 아군(자신 포함) -> 체력 회복
-          target.hp = Math.min(target.maxHp, target.hp + pool.heal);
+          target.hp = Math.min(target.maxHp, target.hp + pool.heal * (target.gearHealMult || 1)); // 회복 기어: 회복받는 쪽의 회복량 증가
         } else {
           // 적 -> 대미지 (궁극기 게이지는 충전하지 않음)
           applyDamage(match, target, pool.damage, pool.ownerId, { chargeShooter: false });
@@ -6301,7 +6321,20 @@ function updateMatch(match, dt, now) {
 
     // 일정 시간 피격당하지 않으면 체력이 서서히 회복
     if (p.hp < p.maxHp && now - p.lastDamageAt >= HP_REGEN_DELAY_MS) {
-      p.hp = Math.min(p.maxHp, p.hp + p.maxHp * HP_REGEN_PERCENT_PER_SEC * dt);
+      p.hp = Math.min(p.maxHp, p.hp + p.maxHp * HP_REGEN_PERCENT_PER_SEC * dt * (p.gearHealMult || 1)); // 회복 기어: 회복량 증가
+    }
+
+    // 재생 보호막 기어: 보호막이 없고 체력이 가득 찬 채로 GEAR_SHIELD_REGEN_MS 동안 피해를 입지 않으면 보호막이 다시 생김
+    if (p.gearShieldMax > 0) {
+      if (p.hp >= p.maxHp) {
+        if (!p.fullHpSince) p.fullHpSince = now;
+      } else {
+        p.fullHpSince = 0;
+      }
+      if (p.shieldHp <= 0 && p.fullHpSince && now - Math.max(p.fullHpSince, p.lastHitAt) >= GEAR_SHIELD_REGEN_MS) {
+        p.shieldHp = p.gearShieldMax;
+        p.shieldMax = p.gearShieldMax;
+      }
     }
   }
 }
