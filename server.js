@@ -1228,9 +1228,9 @@ const GEAR_SELL_RATIO = 0.5; // 보유 기어를 팔 때 돌려받는 비율 (�
 // 등급: 가격 / 상점 칸에 나올 확률 가중치 (카탈로그에 기어가 있는 등급끼리만 비교)
 const GEAR_RARITIES = {
   super_rare: { id: 'super_rare', name: '초희귀', price: 100, weight: 50, color: '#3db8ff' },
-  epic: { id: 'epic', name: '영웅', price: 200, weight: 30, color: '#b06bff' },
+  epic: { id: 'epic', name: '영웅', price: 200, weight: 25, color: '#b06bff' },
   mythic: { id: 'mythic', name: '신화', price: 500, weight: 15, color: '#ff5a5a' },
-  legendary: { id: 'legendary', name: '전설', price: 1000, weight: 5, color: '#ffc933' },
+  legendary: { id: 'legendary', name: '전설', price: 1000, weight: 10, color: '#ffc933' },
 };
 // 기어 목록. effect 에 적힌 값들이 합산(덧셈)되어 장착한 캐릭터에 적용된다.
 //  reloadSpeed: 재장전 속도 증가율 (0.1 = 10% 빨라짐. 같은 기어를 여러 개 달면 0.1씩 더해짐)
@@ -1357,7 +1357,10 @@ function normalizeCode(raw) {
 // 진행 중인 이벤트는 메인화면에 카드로 뜨고, 계정마다 한 번씩 코인을 받을 수 있다. (신규 가입자도 가입 후 받을 수 있음)
 // 이벤트를 끝내려면: enabled 를 false 로 바꾸거나, endsAt 에 종료 시각(예: new Date('2026-10-31T23:59:59+09:00').getTime())을 넣고 재배포.
 // 새 이벤트를 추가하려면 id 가 겹치지 않게 항목을 하나 더 적으면 된다. (이미 받은 기록은 id 기준으로 저장되어, id 를 바꾸면 모두 다시 받을 수 있게 됨)
+// 보석(gems): 코인과 별개의 재화. 이벤트(gems 항목)로 받고, 지금은 기어 상점 리셋에 쓴다. 이벤트 한 개에 coins 와 gems 를 함께 줄 수 있다.
+const GEM_SHOP_RESET_COST = 5; // 기어 상점 리셋 비용(보석)
 const EVENTS = [
+  { id: 'gem_100', enabled: true, name: '보석 대방출', coins: 0, gems: 100, desc: '모든 유저에게 보석 100개를 무료로 드려요! 보석 5개로 기어 상점을 리셋할 수 있어요.', endsAt: null },
   { id: 'anggimochi', enabled: false, name: '앙기모찌', coins: 2000, desc: '모든 유저에게 2,000코인을 무료로 드려요!', endsAt: null },
 ];
 function eventClaimCode(ev) { return `EVENT:${ev.id}`; } // 받은 기록은 쿠폰 사용 기록(redeemed)에 함께 저장 (유저가 코드창에 직접 입력해서 받을 수는 없음)
@@ -2116,9 +2119,9 @@ function publicProfile(u) {
   for (const id in CHARACTERS) levels[id] = levelOf(u, id);
   const equippedSkins = {};
   for (const id in CHARACTERS) { const sk = equippedSkinOf(u, id); if (sk) equippedSkins[id] = sk; }
-  return { username: u.name, coins: u.coins, wins: u.wins || 0, losses: u.losses || 0, unlocked: effectiveUnlocked(u), prices: allPrices(),
+  return { username: u.name, coins: u.coins, gems: u.gems || 0, gemResetCost: GEM_SHOP_RESET_COST, wins: u.wins || 0, losses: u.losses || 0, unlocked: effectiveUnlocked(u), prices: allPrices(),
     skinCatalog: skinCatalogPublic(), skins: ownedSkinsOf(u), equippedSkins, hypers: ownedHypersOf(u), gears: ownedGearsOf(u), gearShop: gearShopView(u), gearCatalog: GEAR_CATALOG.map((g) => ({ id: g.id, name: g.name, rarity: g.rarity, desc: g.desc })), gearRarities: Object.values(GEAR_RARITIES), gearMax: GEAR_MAX_PER_CHARACTER, gearSellRatio: GEAR_SELL_RATIO, hyperPrice: HYPER_PRICE, hyperRequiredLevel: HYPER_REQUIRED_LEVEL, trophyRoad: trophyRoadView(u), trophies, streaks, missions: missionsView(u), repeatMissions: repeatMissionsView(u), ranks: TROPHY_RANKS, characters: buildCharacterInfo(levels), levels, levelTable: LEVEL_TABLE_PUBLIC, maxLevel: MAX_CHARACTER_LEVEL, isAdmin: u.key === ADMIN_KEY, announcements: allAnnouncements(), dailyDraw: dailyDrawView(u),
-    events: activeEvents().map((e) => ({ id: e.id, name: e.name, coins: e.coins, desc: e.desc, endsAt: e.endsAt || null, claimed: (u.redeemed || []).includes(eventClaimCode(e)) })) };
+    events: activeEvents().map((e) => ({ id: e.id, name: e.name, coins: e.coins || 0, gems: e.gems || 0, desc: e.desc, endsAt: e.endsAt || null, claimed: (u.redeemed || []).includes(eventClaimCode(e)) })) };
 }
 
 // ----- 저장소 -----
@@ -2219,6 +2222,16 @@ function createFileDb() {
       scheduleSave();
       return { ok: true, user: cloneUser(u) };
     },
+    // 기어 상점 리셋: 보석 cost 개를 쓰고 상점 칸 전체를 새 기어(newSlots)로 바꿈
+    async resetGearShop(key, cost, newSlots) {
+      const u = users[key];
+      if (!u) return { ok: false, reason: 'noUser' };
+      if ((u.gems || 0) < cost) return { ok: false, reason: 'gems', user: cloneUser(u) };
+      u.gems -= cost;
+      u.gearShop = [...newSlots];
+      scheduleSave();
+      return { ok: true, user: cloneUser(u) };
+    },
     // 기어 판매: 보유 목록에서 uid 기어를 지우고 refund 코인을 돌려줌 (장착 중이어도 판매 가능). expectedGearId 는 서버가 계산한 환급액의 기준
     async sellGear(key, uid, expectedGearId, refund) {
       const u = users[key];
@@ -2275,13 +2288,14 @@ function createFileDb() {
       scheduleSave();
       return { ok: true, user: cloneUser(u) };
     },
-    async redeemCode(key, code, coins) {
+    async redeemCode(key, code, coins, gems = 0) {
       const u = users[key];
       if (!u) return { ok: false, reason: 'noUser' };
       u.redeemed = u.redeemed || [];
       if (u.redeemed.includes(code)) return { ok: false, reason: 'used', user: cloneUser(u) };
       u.redeemed.push(code);
       u.coins += coins;
+      if (gems) u.gems = (u.gems || 0) + gems;
       scheduleSave();
       return { ok: true, user: cloneUser(u) };
     },
@@ -2537,6 +2551,18 @@ function createMongoDb(uri) {
       if (!Array.isArray(user.gearShop) || user.gearShop[slot] !== expectedGearId) return { ok: false, reason: 'stale', user };
       return { ok: false, reason: 'coins', user };
     },
+    // 기어 상점 리셋: 보석이 충분할 때만 보석 cost 개를 쓰고 상점 칸 전체를 새 기어로 바꿈 (원자적)
+    async resetGearShop(key, cost, newSlots) {
+      const updated = await col.findOneAndUpdate(
+        { key, gems: { $gte: cost } },
+        { $inc: { gems: -cost }, $set: { gearShop: newSlots } },
+        { returnDocument: 'after', projection }
+      );
+      if (updated) return { ok: true, user: updated };
+      const user = await col.findOne({ key }, { projection });
+      if (!user) return { ok: false, reason: 'noUser' };
+      return { ok: false, reason: 'gems', user };
+    },
     // 기어 판매: 보유 목록에서 uid 기어를 지우고 refund 코인을 돌려줌 (장착 중이어도 판매 가능)
     async sellGear(key, uid, expectedGearId, refund) {
       const updated = await col.findOneAndUpdate(
@@ -2607,11 +2633,11 @@ function createMongoDb(uri) {
       if (levelOf(user, charId) !== fromLevel) return { ok: false, reason: 'level', user };
       return { ok: false, reason: 'coins', user };
     },
-    async redeemCode(key, code, coins) {
+    async redeemCode(key, code, coins, gems = 0) {
       // 사용 기록 확인과 코인 지급을 한 번의 원자적 연산으로 처리 (동시에 여러 번 눌러도 한 번만 지급됨)
       const updated = await col.findOneAndUpdate(
         { key, redeemed: { $ne: code } },
-        { $inc: { coins }, $push: { redeemed: code } },
+        { $inc: gems ? { coins, gems } : { coins }, $push: { redeemed: code } },
         { returnDocument: 'after', projection }
       );
       if (updated) return { ok: true, user: updated };
@@ -3231,10 +3257,13 @@ function registerAuthHandlers(socket) {
       const ev = activeEvents().find((e) => e.id === (data && data.eventId));
       if (!ev) { hitRate('redeemFail', key); return ack({ ok: false, message: '진행 중인 이벤트가 아닙니다.' }); }
 
-      const r = await db.redeemCode(key, eventClaimCode(ev), ev.coins);
+      const evCoins = ev.coins || 0;
+      const evGems = ev.gems || 0;
+      const r = await db.redeemCode(key, eventClaimCode(ev), evCoins, evGems);
       if (r.ok) {
-        console.log(`[이벤트] ${ev.name}: ${socket.data.displayName} 님이 ${ev.coins}코인 수령`);
-        return ack({ ok: true, message: `🎉 ${ev.name} 이벤트! ${ev.coins.toLocaleString()}코인을 받았습니다!`, profile: publicProfile(r.user) });
+        const rewardText = [evCoins ? `${evCoins.toLocaleString()}코인` : '', evGems ? `보석 ${evGems.toLocaleString()}개` : ''].filter(Boolean).join(' + ');
+        console.log(`[이벤트] ${ev.name}: ${socket.data.displayName} 님이 ${rewardText} 수령`);
+        return ack({ ok: true, message: `🎉 ${ev.name} 이벤트! ${rewardText}를 받았습니다!`, profile: publicProfile(r.user) });
       }
       const message = r.reason === 'used' ? '이미 이 이벤트의 보상을 받았습니다.' : '보상을 받지 못했습니다.';
       ack({ ok: false, message, profile: r.user ? publicProfile(r.user) : undefined });
@@ -3328,6 +3357,23 @@ function registerAuthHandlers(socket) {
       ack({ ok: true, profile: publicProfile(user) });
     } catch (e) {
       console.error('gearShopInit 오류', e);
+      ack({ ok: false, message: '서버 오류가 발생했습니다.' });
+    }
+  });
+
+  // 기어 상점 리셋: 보석 GEM_SHOP_RESET_COST 개를 내고 상점 4칸을 모두 새로 뽑는다
+  socket.on('resetGearShop', async (data, ack) => {
+    if (typeof ack !== 'function') return;
+    try {
+      const key = socket.data.userKey;
+      if (!key) return ack({ ok: false, message: '로그인이 필요합니다.' });
+      if (socketToMatch[socket.id] || isQueued(socket.id)) return ack({ ok: false, message: '매치 중이거나 대기 중에는 리셋할 수 없습니다.' });
+      const r = await db.resetGearShop(key, GEM_SHOP_RESET_COST, newGearShopSlots());
+      if (r.ok) return ack({ ok: true, message: `보석 ${GEM_SHOP_RESET_COST}개를 써서 기어 상점을 새로 고쳤어요!`, profile: publicProfile(r.user) });
+      const message = r.reason === 'gems' ? '보석이 부족합니다.' : '상점을 리셋하지 못했습니다.';
+      ack({ ok: false, message, profile: r.user ? publicProfile(r.user) : undefined });
+    } catch (e) {
+      console.error('resetGearShop 오류', e);
       ack({ ok: false, message: '서버 오류가 발생했습니다.' });
     }
   });
