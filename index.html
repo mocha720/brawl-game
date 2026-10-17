@@ -238,7 +238,7 @@
   #joinOverlay > :last-child, #modeOverlay > :last-child { margin-bottom: auto; }
 
   /* ----- 창(모달) 메뉴 (계정 설정 / 랭킹 / 미션 / 코드 입력) 과 대기·결과·대결 화면: 게임 화면 위에 어둡게 깔린다 ----- */
-  #accountOverlay, #rankingOverlay, #missionOverlay, #trophyRoadOverlay, #gearShopOverlay, #codeOverlay, #adminOverlay, #noticeOverlay,
+  #accountOverlay, #rankingOverlay, #missionOverlay, #trophyRoadOverlay, #trophyPlusOverlay, #gearShopOverlay, #codeOverlay, #adminOverlay, #noticeOverlay,
   #matchingOverlay, #matchResultOverlay, #versusOverlay {
     position: fixed; inset: 0; display: none;
     flex-direction: column; align-items: center; justify-content: flex-start;
@@ -247,12 +247,12 @@
     background: rgba(10, 11, 30, 0.86);
     -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
   }
-  #accountOverlay, #rankingOverlay, #missionOverlay, #trophyRoadOverlay, #gearShopOverlay, #codeOverlay, #adminOverlay, #noticeOverlay { z-index: 40; }
+  #accountOverlay, #rankingOverlay, #missionOverlay, #trophyRoadOverlay, #trophyPlusOverlay, #gearShopOverlay, #codeOverlay, #adminOverlay, #noticeOverlay { z-index: 40; }
   #matchingOverlay, #matchResultOverlay { z-index: 10; }
   #versusOverlay { z-index: 30; background: rgba(10, 11, 30, 0.92); justify-content: center; }
-  #accountOverlay.open, #rankingOverlay.open, #missionOverlay.open, #trophyRoadOverlay.open, #gearShopOverlay.open, #codeOverlay.open, #adminOverlay.open, #noticeOverlay.open,
+  #accountOverlay.open, #rankingOverlay.open, #missionOverlay.open, #trophyRoadOverlay.open, #trophyPlusOverlay.open, #gearShopOverlay.open, #codeOverlay.open, #adminOverlay.open, #noticeOverlay.open,
   #matchingOverlay.open, #matchResultOverlay.open, #versusOverlay.open { display: flex; }
-  #accountOverlay > .panel, #rankingOverlay > .panel, #missionOverlay > .panel, #trophyRoadOverlay > .panel, #gearShopOverlay > .panel, #codeOverlay > .panel, #adminOverlay > .panel, #noticeOverlay > .panel,
+  #accountOverlay > .panel, #rankingOverlay > .panel, #missionOverlay > .panel, #trophyRoadOverlay > .panel, #trophyPlusOverlay > .panel, #gearShopOverlay > .panel, #codeOverlay > .panel, #adminOverlay > .panel, #noticeOverlay > .panel,
   #matchingOverlay > .panel, #matchResultOverlay > .panel { margin: auto; }
 
   /* ----- 기어 상점 ----- */
@@ -533,6 +533,12 @@
   .mission-item button { min-height: 34px; padding: 4px 14px; font-size: 14px; border-radius: 11px; }
 
   /* ----- 트로피 로드 ----- */
+  #trophyPlusOverlay > .panel { width: min(440px, 100%); }
+  #trophyPlusChar { width: 100%; padding: 8px 10px; border-radius: 10px; border: 2px solid var(--lift); background: #14162b; color: var(--paper); font: inherit; font-size: 15px; margin-bottom: 10px; }
+  #trophyPlusSummary { margin: 0 0 10px; font-size: 14px; line-height: 1.6; color: #d5d7f2; }
+  #trophyPlusSummary b { color: var(--sun); font-family: var(--font-display); font-weight: 400; font-size: 20px; }
+  #trophyPlusList { display: flex; flex-direction: column; gap: 10px; max-height: 44vh; overflow-y: auto; padding: 2px; -webkit-overflow-scrolling: touch; }
+  #trophyPlusAllBtn { margin: 0 0 10px; }
   #trophyRoadOverlay > .panel { width: min(420px, 100%); }
   #trophyRoadSummary { margin: 0 0 12px; font-size: 14px; line-height: 1.6; color: #d5d7f2; }
   #trophyRoadSummary b { color: var(--sun); font-family: var(--font-display); font-weight: 400; font-size: 20px; }
@@ -1024,6 +1030,7 @@
     <button id="openMissionBtn" class="btn btn-ghost">미션</button>
     <button id="openGearShopBtn" class="btn btn-ghost">🛠 기어 상점</button>
     <button id="openTrophyRoadBtn" class="btn btn-ghost">🏆 트로피 로드</button>
+    <button id="openTrophyPlusBtn" class="btn btn-ghost">🏆 트로피 로드+</button>
     <button id="openCodeBtn" class="btn btn-ghost">코드 입력</button>
     <button id="openAccountBtn" class="btn btn-ghost">계정 설정</button>
     <button id="logoutBtn" class="btn btn-ghost">로그아웃</button>
@@ -1142,6 +1149,20 @@
     </div>
     <div id="missionMsg" class="panel-msg"></div>
     <button id="missionCloseBtn" class="btn btn-ghost">닫기</button>
+  </div>
+</div>
+
+<div id="trophyPlusOverlay">
+  <div class="panel">
+    <h2 class="panel-title">🏆 트로피 로드+</h2>
+    <p class="panel-sub">캐릭터마다 티어(실버·골드·다이아·마스터…)가 올라갈 때마다 코인과 보석을 한 번씩 받을 수 있어요. 받은 보상은 트로피가 줄어도 유지돼요.</p>
+    <div class="profile-line"></div>
+    <select id="trophyPlusChar"></select>
+    <div id="trophyPlusSummary"></div>
+    <button id="trophyPlusAllBtn" class="btn btn-sm">모두 받기</button>
+    <div id="trophyPlusList"></div>
+    <div id="trophyPlusMsg" class="panel-msg"></div>
+    <button id="trophyPlusCloseBtn" class="btn btn-ghost">닫기</button>
   </div>
 </div>
 
@@ -1859,6 +1880,7 @@ function updateProfileUI() {
   renderEventCards();
   updateMissionUI();
   updateTrophyRoadUI();
+  updateTrophyPlusUI();
   updateNoticeBadge();
 }
 
@@ -2177,6 +2199,100 @@ function openTrophyRoadDialog() {
   if (item) listEl.scrollTop = Math.max(0, item.offsetTop - listEl.offsetTop - 4);
 }
 function closeTrophyRoadDialog() { document.getElementById('trophyRoadOverlay').classList.remove('open'); }
+
+// ===== 트로피 로드+ (캐릭터별 티어 보상) =====
+// 캐릭터별 트로피/달성/수령 여부는 전부 서버가 판단하고, 클라이언트는 profile.trophyRoadPlus 를 그대로 보여주기만 한다
+let trophyPlusSel = null; // 지금 보고 있는 캐릭터 id
+function trophyPlusRewardText(t) { return `${t.coins ? `🪙 ${t.coins.toLocaleString()}` : ''}${t.coins && t.gems ? ' · ' : ''}${t.gems ? `💎 ${t.gems.toLocaleString()}` : ''}`; }
+function setTrophyPlusMsg(text, ok) {
+  const el = document.getElementById('trophyPlusMsg');
+  el.textContent = text || '';
+  el.classList.toggle('ok', !!ok);
+}
+function updateTrophyPlusUI() {
+  const road = (currentProfile && currentProfile.trophyRoadPlus) || { tiers: [], chars: [] };
+  const claimableAny = road.chars.some((c) => road.tiers.some((t) => c.trophies >= t.trophies && !c.claimed.includes(t.id)));
+  const openBtn = document.getElementById('openTrophyPlusBtn');
+  if (openBtn) openBtn.classList.toggle('has-claim', claimableAny); // 받을 보상이 있으면 버튼 모서리에 빨간 점
+
+  const selEl = document.getElementById('trophyPlusChar');
+  const sumEl = document.getElementById('trophyPlusSummary');
+  const listEl = document.getElementById('trophyPlusList');
+  const allBtn = document.getElementById('trophyPlusAllBtn');
+  if (!selEl || !sumEl || !listEl) return;
+  if (!road.chars.length) { selEl.innerHTML = ''; sumEl.textContent = ''; listEl.innerHTML = ''; allBtn.style.display = 'none'; return; }
+  if (!road.chars.some((c) => c.id === trophyPlusSel)) trophyPlusSel = road.chars[0].id;
+  const nameOf = (id) => { const c = CHARACTERS.find((x) => x.id === id); return c ? c.name : id; };
+  const canClaim = (c) => road.tiers.filter((t) => c.trophies >= t.trophies && !c.claimed.includes(t.id)).length;
+  selEl.innerHTML = road.chars.map((c) => { const n = canClaim(c); return `<option value="${escapeHtml(c.id)}" ${c.id === trophyPlusSel ? 'selected' : ''}>${escapeHtml(nameOf(c.id))} · 🏆 ${c.trophies.toLocaleString()}${n ? ` · 🎁 ${n}` : ''}</option>`; }).join('');
+
+  const cur = road.chars.find((c) => c.id === trophyPlusSel);
+  const rk = rankInfo(cur.trophies);
+  const next = road.tiers.find((t) => cur.trophies < t.trophies);
+  sumEl.innerHTML = `${escapeHtml(nameOf(cur.id))} 트로피 <b>🏆 ${cur.trophies.toLocaleString()}</b> · ${rk.cur.icon || ''} ${escapeHtml(rk.cur.name || '')}`
+    + (next ? `<br>다음 티어 ${next.icon} ${escapeHtml(next.name)}까지 🏆 ${(next.trophies - cur.trophies).toLocaleString()} 남았어요` : '<br>모든 티어 보상을 달성했어요! 🎉');
+  const myClaimable = canClaim(cur);
+  allBtn.style.display = '';
+  allBtn.disabled = !myClaimable;
+  allBtn.textContent = myClaimable ? `🎁 ${nameOf(cur.id)} 보상 모두 받기 (${myClaimable})` : '받을 수 있는 보상이 없어요';
+
+  const prevScroll = listEl.scrollTop;
+  listEl.innerHTML = road.tiers.map((t) => {
+    const reached = cur.trophies >= t.trophies;
+    const claimed = cur.claimed.includes(t.id);
+    const pct = Math.round((Math.min(cur.trophies, t.trophies) / t.trophies) * 100);
+    const btn = claimed
+      ? '<button disabled>✅ 수령 완료</button>'
+      : `<button data-tplus-tier="${escapeHtml(t.id)}" ${reached ? '' : 'disabled'}>${reached ? '🎁 보상 받기' : '🔒 잠김'}</button>`;
+    return `<div class="mission-item${reached ? ' done' : ''}${claimed ? ' claimed' : ''}">
+      <div class="mission-row"><span>${t.icon} ${escapeHtml(t.name)} · 🏆 ${t.trophies.toLocaleString()}</span><span class="mission-reward">${trophyPlusRewardText(t)}</span></div>
+      <div class="mission-bar"><div style="width:${pct}%"></div></div>
+      <div class="mission-foot"><span>${Math.min(cur.trophies, t.trophies).toLocaleString()} / ${t.trophies.toLocaleString()}</span>${btn}</div>
+    </div>`;
+  }).join('');
+  listEl.scrollTop = prevScroll;
+
+  listEl.querySelectorAll('button[data-tplus-tier]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      btn.disabled = true;
+      socket.timeout(8000).emit('claimTrophyPlus', { characterId: trophyPlusSel, tierId: btn.getAttribute('data-tplus-tier') }, (err, res) => {
+        if (err || !res) { setTrophyPlusMsg('서버 응답이 없습니다. 잠시 후 다시 시도해주세요.'); updateTrophyPlusUI(); return; }
+        if (res.profile) { currentProfile = res.profile; updateProfileUI(); }
+        setTrophyPlusMsg(res.message || (res.ok ? '완료!' : '실패했습니다.'), res.ok);
+      });
+    });
+  });
+}
+document.getElementById('trophyPlusChar').addEventListener('change', (e) => { trophyPlusSel = e.target.value; document.getElementById('trophyPlusList').scrollTop = 0; updateTrophyPlusUI(); scrollTrophyPlusToNext(); });
+document.getElementById('trophyPlusAllBtn').addEventListener('click', () => {
+  const btn = document.getElementById('trophyPlusAllBtn');
+  btn.disabled = true;
+  socket.timeout(8000).emit('claimTrophyPlusAll', { characterId: trophyPlusSel }, (err, res) => {
+    if (err || !res) { setTrophyPlusMsg('서버 응답이 없습니다. 잠시 후 다시 시도해주세요.'); updateTrophyPlusUI(); return; }
+    if (res.profile) { currentProfile = res.profile; updateProfileUI(); }
+    setTrophyPlusMsg(res.message || (res.ok ? '완료!' : '실패했습니다.'), res.ok);
+  });
+});
+function scrollTrophyPlusToNext() {
+  const listEl = document.getElementById('trophyPlusList');
+  const road = (currentProfile && currentProfile.trophyRoadPlus) || { tiers: [], chars: [] };
+  const cur = road.chars.find((c) => c.id === trophyPlusSel);
+  if (!cur) return;
+  let idx = road.tiers.findIndex((t) => cur.trophies >= t.trophies && !cur.claimed.includes(t.id)); // 받을 수 있는 첫 보상
+  if (idx < 0) idx = road.tiers.findIndex((t) => cur.trophies < t.trophies); // 없으면 다음 목표
+  if (idx < 0) idx = road.tiers.length - 1;
+  const item = listEl.children[idx];
+  if (item) listEl.scrollTop = Math.max(0, item.offsetTop - listEl.offsetTop - 4);
+}
+function openTrophyPlusDialog() {
+  setTrophyPlusMsg('');
+  updateProfileUI();
+  document.getElementById('trophyPlusOverlay').classList.add('open');
+  scrollTrophyPlusToNext();
+}
+function closeTrophyPlusDialog() { document.getElementById('trophyPlusOverlay').classList.remove('open'); }
+document.getElementById('openTrophyPlusBtn').addEventListener('click', openTrophyPlusDialog);
+document.getElementById('trophyPlusCloseBtn').addEventListener('click', closeTrophyPlusDialog);
 document.getElementById('openTrophyRoadBtn').addEventListener('click', openTrophyRoadDialog);
 document.getElementById('trophyRoadCloseBtn').addEventListener('click', closeTrophyRoadDialog);
 
@@ -3056,6 +3172,7 @@ document.getElementById('logoutBtn').addEventListener('click', () => {
     closeCodeDialog();
     closeMissionDialog();
     closeTrophyRoadDialog();
+    closeTrophyPlusDialog();
     closeAccountDialog();
     closeRankingDialog();
     closeNoticeDialog();
@@ -3076,6 +3193,7 @@ function forceReLogin(message) {
   closeCodeDialog();
   closeMissionDialog();
   closeTrophyRoadDialog();
+  closeTrophyPlusDialog();
   closeAccountDialog();
   closeRankingDialog();
   closeNoticeDialog();
