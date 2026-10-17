@@ -279,6 +279,7 @@
   .gear-owned-row .gear-sell:hover { border-color: #ffc933; }
   .gear-owned-row .gear-sell:disabled { opacity: 0.5; cursor: default; }
   .gear-reset-btn { margin: 8px 0 4px; }
+  .gear-locked { font-size: 12px; font-weight: 700; padding: 6px 8px; border-radius: 8px; background: rgba(255,255,255,0.08); white-space: nowrap; }
   .gear-empty { font-size: 13px; opacity: 0.75; padding: 8px 0; }
 
   /* ----- 공지사항 ----- */
@@ -1181,12 +1182,12 @@
 <div id="gearShopOverlay">
   <div class="panel">
     <h2 class="panel-title">🛠 기어 상점</h2>
-    <p class="panel-sub">기어를 사서 캐릭터에 장착하면 능력치가 올라요. 한 캐릭터에 최대 <span id="gearMaxText">3</span>개까지 장착할 수 있고, 하나를 사면 그 칸은 다른 기어로 바뀌어요.</p>
+    <p class="panel-sub">기어를 사서 캐릭터에 장착하면 능력치가 올라요. 한 캐릭터에 최대 <span id="gearMaxText">3</span>개까지 장착할 수 있어요. 한 번 장착한 기어는 다른 캐릭터로 바꿀 수 없으니 신중하게 고르세요! 하나를 사면 그 칸은 다른 기어로 바뀌어요.</p>
     <div class="profile-line"></div>
     <div class="gear-section-title">상점 <small id="gearCoins"></small></div>
     <div id="gearOffers"></div>
     <button id="gearResetBtn" class="btn btn-sm gear-reset-btn">🔄 상점 리셋 💎5</button>
-    <div class="gear-section-title">내 기어 <small>캐릭터를 골라 장착하거나 구매가의 50%에 팔 수 있어요</small></div>
+    <div class="gear-section-title">내 기어 <small>캐릭터를 골라 장착하세요 (한 번 장착하면 변경 불가) · 구매가의 50%에 팔 수도 있어요</small></div>
     <div id="gearOwned"></div>
     <div id="gearMsg" class="panel-msg"></div>
     <button id="gearShopCloseBtn" class="btn btn-ghost">닫기</button>
@@ -2042,7 +2043,9 @@ function renderGearShop() {
     }).join('');
     return `<div class="gear-owned-row" style="--gear-color:${escapeHtml(r.color)}">
       <div class="gear-info"><div class="gear-name">${escapeHtml(info.name)} <span class="gear-rarity">${escapeHtml(r.name)}</span></div><div class="gear-desc">${escapeHtml(info.desc)}</div></div>
-      <select data-gear-uid="${escapeHtml(g.uid)}"><option value="">미장착</option>${opts}</select>
+      ${g.charId
+        ? `<span class="gear-locked" title="한 번 장착한 기어는 바꿀 수 없어요">🔒 ${escapeHtml((CHARACTERS.find((c) => c.id === g.charId) || {}).name || '')} 고정</span>`
+        : `<select data-gear-uid="${escapeHtml(g.uid)}"><option value="">미장착</option>${opts}</select>`}
       <button class="gear-sell" data-gear-sell="${escapeHtml(g.uid)}">판매 🪙${sellPrice.toLocaleString()}</button>
     </div>`;
   };
@@ -2102,6 +2105,10 @@ function renderGearShop() {
   });
   ownedEl.querySelectorAll('select[data-gear-uid]').forEach((sel) => {
     sel.addEventListener('change', () => {
+      if (sel.value) {
+        const cname = (CHARACTERS.find((c) => c.id === sel.value) || {}).name || '이 캐릭터';
+        if (!confirm(`이 기어를 '${cname}'에 장착할까요?\n한 번 장착하면 다른 캐릭터로 옮기거나 해제할 수 없어요! (판매는 가능해요)`)) { renderGearShop(); return; }
+      }
       sel.disabled = true;
       socket.timeout(8000).emit('equipGear', { uid: sel.getAttribute('data-gear-uid'), characterId: sel.value || null }, (err, res) => {
         if (err || !res) { setGearMsg('서버 응답이 없습니다. 잠시 후 다시 시도해주세요.'); renderGearShop(); return; }
