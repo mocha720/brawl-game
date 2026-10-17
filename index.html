@@ -270,6 +270,14 @@
   .gear-owned-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 12px; border-left: 6px solid var(--gear-color, #888); background: var(--dusk); text-align: left; }
   .gear-owned-row .gear-info { flex: 1; min-width: 0; }
   .gear-owned-row select { max-width: 48%; padding: 6px 8px; border-radius: 8px; border: 2px solid var(--lift); background: #14162b; color: var(--paper); font: inherit; font-size: 13px; }
+  .gear-group { display: flex; flex-direction: column; gap: 6px; }
+  .gear-group + .gear-group { margin-top: 6px; }
+  .gear-group-title { font-size: 13px; font-weight: 700; padding: 4px 2px; border-bottom: 1px solid var(--lift); display: flex; justify-content: space-between; align-items: baseline; }
+  .gear-group-title small { font-weight: 400; opacity: 0.7; }
+  .gear-group-empty { font-size: 12px; opacity: 0.55; padding: 2px 4px; }
+  .gear-owned-row .gear-sell { padding: 6px 8px; border-radius: 8px; border: 2px solid var(--lift); background: transparent; color: var(--paper); font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
+  .gear-owned-row .gear-sell:hover { border-color: #ffc933; }
+  .gear-owned-row .gear-sell:disabled { opacity: 0.5; cursor: default; }
   .gear-empty { font-size: 13px; opacity: 0.75; padding: 8px 0; }
 
   /* ----- 공지사항 ----- */
@@ -1155,7 +1163,7 @@
     <div class="profile-line"></div>
     <div class="gear-section-title">상점 <small id="gearCoins"></small></div>
     <div id="gearOffers"></div>
-    <div class="gear-section-title">내 기어 <small>캐릭터를 골라 장착하세요</small></div>
+    <div class="gear-section-title">내 기어 <small>캐릭터를 골라 장착하거나 구매가의 50%에 팔 수 있어요</small></div>
     <div id="gearOwned"></div>
     <div id="gearMsg" class="panel-msg"></div>
     <button id="gearShopCloseBtn" class="btn btn-ghost">닫기</button>
@@ -1987,20 +1995,45 @@ function renderGearShop() {
   const ownedEl = document.getElementById('gearOwned');
   const gears = p.gears || [];
   const myChars = CHARACTERS.filter((c) => (p.unlocked || []).includes(c.id));
-  ownedEl.innerHTML = gears.length ? gears.map((g) => {
+  const sellRatio = p.gearSellRatio != null ? p.gearSellRatio : 0.5;
+  const rarityOrder = (currentProfile.gearRarities || []).map((r) => r.id);
+  const gearRow = (g) => {
     const info = gearInfoOf(g.gearId);
     if (!info) return '';
     const r = gearRarityOf(info.rarity);
+    const sellPrice = Math.floor((r.price || 0) * sellRatio);
     const opts = myChars.map((c) => {
       const n = gears.filter((x) => x.charId === c.id).length; // 이 캐릭터에 지금 장착된 기어 수 (이 기어 포함)
-      const full = n >= max && g.charId !== c.id;
+      const dup = gears.some((x) => x.charId === c.id && x.uid !== g.uid && x.gearId === g.gearId); // 같은 기어가 이미 장착됨
+      const full = (n >= max && g.charId !== c.id) || dup;
       return `<option value="${escapeHtml(c.id)}" ${g.charId === c.id ? 'selected' : ''} ${full ? 'disabled' : ''}>${escapeHtml(c.name)} (${n}/${max})</option>`;
     }).join('');
     return `<div class="gear-owned-row" style="--gear-color:${escapeHtml(r.color)}">
       <div class="gear-info"><div class="gear-name">${escapeHtml(info.name)} <span class="gear-rarity">${escapeHtml(r.name)}</span></div><div class="gear-desc">${escapeHtml(info.desc)}</div></div>
       <select data-gear-uid="${escapeHtml(g.uid)}"><option value="">미장착</option>${opts}</select>
+      <button class="gear-sell" data-gear-sell="${escapeHtml(g.uid)}">판매 🪙${sellPrice.toLocaleString()}</button>
     </div>`;
-  }).join('') : '<div class="gear-empty">아직 가진 기어가 없어요. 상점에서 구매해 보세요!</div>';
+  };
+  // 보기 좋게 정렬: 미장착 묶음 → 캐릭터 순서대로 묶음. 묶음 안에서는 높은 등급 → 이름 순
+  const sortGears = (list) => list.slice().sort((a, b) => {
+    const ia = gearInfoOf(a.gearId), ib = gearInfoOf(b.gearId);
+    const ra = ia ? rarityOrder.indexOf(ia.rarity) : 99, rb = ib ? rarityOrder.indexOf(ib.rarity) : 99;
+    return (rb - ra) || String(ia ? ia.name : '').localeCompare(String(ib ? ib.name : ''), 'ko');
+  });
+  const knownIds = new Set(CHARACTERS.map((c) => c.id));
+  const groupChars = CHARACTERS.filter((c) => (p.unlocked || []).includes(c.id) || gears.some((g) => g.charId === c.id));
+  const groupHtml = (title, count, list, emptyText) => `<div class="gear-group"><div class="gear-group-title"><span>${title}</span><small>${count}</small></div>${list.length ? sortGears(list).map(gearRow).join('') : `<div class="gear-group-empty">${emptyText}</div>`}</div>`;
+  if (!gears.length) {
+    ownedEl.innerHTML = '<div class="gear-empty">아직 가진 기어가 없어요. 상점에서 구매해 보세요!</div>';
+  } else {
+    const unequipped = gears.filter((g) => !g.charId || !knownIds.has(g.charId) || !groupChars.some((c) => c.id === g.charId));
+    let html = groupHtml('📦 미장착', `${unequipped.length}개`, unequipped, '미장착 기어가 없어요');
+    for (const c of groupChars) {
+      const list = gears.filter((g) => g.charId === c.id);
+      html += groupHtml(escapeHtml(c.name), `${list.length}/${max}`, list, '장착한 기어가 없어요');
+    }
+    ownedEl.innerHTML = html;
+  }
 
   offersEl.querySelectorAll('button[data-gear-buy]').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -2014,6 +2047,23 @@ function renderGearShop() {
         if (err || !res) { setGearMsg('서버 응답이 없습니다. 잠시 후 다시 시도해주세요.'); renderGearShop(); return; }
         if (res.profile) { currentProfile = res.profile; updateProfileUI(); }
         setGearMsg(res.message || (res.ok ? '구매 완료!' : '기어 구매에 실패했습니다.'), !!res.ok);
+        renderGearShop();
+      });
+    });
+  });
+  ownedEl.querySelectorAll('button[data-gear-sell]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const uid = btn.getAttribute('data-gear-sell');
+      const g = (currentProfile.gears || []).find((x) => x.uid === uid);
+      const info = g && gearInfoOf(g.gearId);
+      if (!info) return;
+      const refund = Math.floor((gearRarityOf(info.rarity).price || 0) * (currentProfile.gearSellRatio != null ? currentProfile.gearSellRatio : 0.5));
+      if (!confirm(`${gearRarityOf(info.rarity).name} 기어 '${info.name}'을(를) 판매할까요?\n🪙 ${refund.toLocaleString()} 코인을 돌려받아요 (구매 가격의 ${Math.round((currentProfile.gearSellRatio != null ? currentProfile.gearSellRatio : 0.5) * 100)}%).`)) return;
+      btn.disabled = true;
+      socket.timeout(8000).emit('sellGear', { uid }, (err, res) => {
+        if (err || !res) { setGearMsg('서버 응답이 없습니다. 잠시 후 다시 시도해주세요.'); renderGearShop(); return; }
+        if (res.profile) { currentProfile = res.profile; updateProfileUI(); }
+        setGearMsg(res.message || (res.ok ? '판매 완료!' : '기어 판매에 실패했습니다.'), !!res.ok);
         renderGearShop();
       });
     });
@@ -4031,7 +4081,7 @@ function updateGadgetButton() {
 
   const left = me.gadgetCooldownLeft || 0;
   if (left > 0 || !me.alive) gadgetArmed = false; // 쿨다운 중이거나 사망 시 장전 불가
-  const progress = Math.round((1 - left / GADGET_COOLDOWN_SEC) * 100);
+  const progress = Math.round((1 - left / (me.gadgetCooldownTotal || GADGET_COOLDOWN_SEC)) * 100); // 기어(빠른 가젯)로 쿨다운이 달라질 수 있어 서버가 보낸 전체 길이를 우선 사용
   btn.style.background = `conic-gradient(#003580 ${progress}%, rgba(255,255,255,0.15) ${progress}%)`;
   btn.classList.toggle('ready', left <= 0);
   btn.classList.toggle('armed', gadgetArmed);
