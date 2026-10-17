@@ -10558,8 +10558,10 @@ function drawAimRangeIndicator() {
       const ph = Math.max(0, Math.min(me.basic.combo.length - 1, (me.maxAmmo || 3) - me.ammo));
       const c = me.basic.combo[ph];
       range = c.speed * c.lifetime;
+      if (me.gearRangeBonus > 0 && me.ammo >= 3) range *= 1 + me.gearRangeBonus; // 기어: 탄창이 3개일 때 사거리 증가
     } else {
       range = me.basic.range || me.basic.distance || me.basic.speed * me.basic.lifetime; // 근접 공격(찌르기 등)은 range, 투척(나이)은 distance
+      if (me.gearRangeBonus > 0 && me.ammo >= 3 && !me.basic.range && !me.basic.distance && me.basic.speed && me.basic.lifetime) range *= 1 + me.gearRangeBonus; // 기어: 탄창이 3개일 때 발사체 기본공격 사거리 증가
       if (me.hyperLeft > 0 && me.hyper && me.hyper.dashDistanceMultiplier) range *= me.hyper.dashDistanceMultiplier; // 하이퍼 차지 발동 중 돌진 거리 증가 (꽈리)
     }
     color = 'rgba(255, 255, 255, 0.6)';
