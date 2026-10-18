@@ -256,31 +256,72 @@
   #matchingOverlay > .panel, #matchResultOverlay > .panel { margin: auto; }
 
   /* ----- 기어 상점 ----- */
-  #gearShopOverlay > .panel { width: min(560px, 100%); }
-  .gear-section-title { margin: 14px 0 8px; font-family: var(--font-display); font-size: 18px; color: var(--sun); text-align: left; }
-  .gear-section-title small { margin-left: 8px; font-family: inherit; font-size: 12px; opacity: 0.75; }
-  #gearCoins { font-weight: 700; color: var(--sun); }
-  #gearOffers { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
-  .gear-card { box-sizing: border-box; padding: 10px; border-radius: 14px; border: 3px solid var(--gear-color, var(--lift)); background: var(--dusk); text-align: center; display: flex; flex-direction: column; gap: 4px; }
-  .gear-rarity { display: inline-block; align-self: center; padding: 1px 10px; border-radius: 999px; background: var(--gear-color, #888); color: #14162b; font-size: 12px; font-weight: 800; }
-  .gear-name { font-family: var(--font-display); font-size: 17px; }
-  .gear-desc { font-size: 13px; opacity: 0.9; min-height: 18px; }
-  .gear-card .btn { margin-top: 4px; }
-  #gearOwned { display: flex; flex-direction: column; gap: 8px; }
-  .gear-owned-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 12px; border-left: 6px solid var(--gear-color, #888); background: var(--dusk); text-align: left; }
+  /* ----- 기어 상점 ----- */
+  #gearShopOverlay > .panel { width: min(620px, 100%); position: relative; overflow: hidden; background: radial-gradient(120% 70% at 50% -10%, #3a3f93 0%, var(--night) 55%); }
+  #gearShopOverlay > .panel::before { content: ''; position: absolute; inset: 0 0 auto 0; height: 4px; background: linear-gradient(90deg, #3db8ff, #b06bff, #ff5a5a, #ffc933); }
+  .gear-hero { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+  .gear-hero .panel-title { margin: 0; text-shadow: 0 0 18px rgba(255, 201, 40, 0.45); }
+  #gearCoins { display: flex; gap: 6px; flex-wrap: wrap; }
+  .gear-chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 12px; border-radius: 999px; background: var(--ink); border: 2px solid var(--lift); font-family: var(--font-display); font-size: 15px; }
+  .gear-chip.coin { color: var(--sun); border-color: #7a5f12; }
+  .gear-chip.gem { color: #7fe3ff; border-color: #1d6b86; }
+  .gear-sub { margin: 6px 0 10px; font-size: 12.5px; line-height: 1.55; color: var(--mute); text-align: left; }
+  .gear-sub b { color: var(--paper); }
+  .gear-tabs { display: flex; gap: 6px; padding: 5px; margin: 0 0 12px; border-radius: 16px; background: var(--ink); }
+  .gear-tab { flex: 1; position: relative; padding: 9px 6px; border: 0; border-radius: 12px; background: transparent; color: var(--mute); font-family: var(--font-display); font-size: 16px; cursor: pointer; transition: background .15s, color .15s; }
+  .gear-tab:hover { color: var(--paper); }
+  .gear-tab.active { background: linear-gradient(180deg, #ffd95a, var(--sun)); color: #2a2100; box-shadow: 0 3px 0 var(--sun-deep); }
+  .gear-tab .badge { display: inline-block; min-width: 18px; margin-left: 6px; padding: 0 6px; border-radius: 999px; background: var(--berry); color: #fff; font-family: var(--font-body); font-size: 11px; font-weight: 700; line-height: 18px; }
+  .gear-odds { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+  .gear-odds span { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 999px; background: rgba(0,0,0,0.28); font-size: 12px; }
+  .gear-odds i { width: 9px; height: 9px; border-radius: 50%; background: var(--gear-color); box-shadow: 0 0 8px var(--gear-color); }
+  #gearOffers { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .gear-card { position: relative; overflow: hidden; box-sizing: border-box; padding: 16px 12px 12px; border-radius: 18px; border: 3px solid var(--gear-color, var(--lift)); background: var(--dusk); background: linear-gradient(165deg, color-mix(in srgb, var(--gear-color) 30%, #1b1e45) 0%, #1b1e45 68%); box-shadow: 0 5px 0 var(--ink), 0 0 22px -8px var(--gear-color); text-align: center; display: flex; flex-direction: column; align-items: center; gap: 6px; transition: transform .15s; }
+  .gear-card:hover { transform: translateY(-3px); }
+  .gear-card .gear-ribbon { position: absolute; top: 0; left: 0; padding: 2px 12px 3px 10px; border-radius: 0 0 14px 0; background: var(--gear-color); color: #14162b; font-size: 12px; font-weight: 800; letter-spacing: .5px; }
+  .gear-icon { display: grid; place-items: center; width: 58px; height: 58px; margin-top: 6px; border-radius: 50%; font-size: 29px; background: radial-gradient(circle at 35% 30%, color-mix(in srgb, var(--gear-color) 70%, #fff) 0%, var(--gear-color) 45%, color-mix(in srgb, var(--gear-color) 55%, #000) 100%); box-shadow: 0 0 0 3px rgba(0,0,0,.35), 0 0 20px -2px var(--gear-color); }
+  .gear-icon.sm { width: 42px; height: 42px; margin: 0; font-size: 21px; box-shadow: 0 0 0 2px rgba(0,0,0,.35), 0 0 12px -3px var(--gear-color); flex: none; }
+  .gear-name { font-family: var(--font-display); font-size: 18px; line-height: 1.2; }
+  .gear-desc { font-size: 12.5px; line-height: 1.45; color: #d9dbf5; min-height: 36px; }
+  .gear-buy { width: 100%; margin-top: 4px; }
+  .gear-buy.cant { filter: grayscale(.4); }
+  .gear-card.r-mythic { animation: gearPulse 2.6s ease-in-out infinite; }
+  .gear-card.r-legendary { animation: gearPulse 2.2s ease-in-out infinite; }
+  .gear-card.r-legendary::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(115deg, transparent 38%, rgba(255,255,255,.28) 50%, transparent 62%); transform: translateX(-120%); animation: gearShine 3.2s ease-in-out infinite; }
+  @keyframes gearPulse { 0%, 100% { box-shadow: 0 5px 0 var(--ink), 0 0 20px -8px var(--gear-color); } 50% { box-shadow: 0 5px 0 var(--ink), 0 0 34px -2px var(--gear-color); } }
+  @keyframes gearShine { 0% { transform: translateX(-120%); } 55%, 100% { transform: translateX(120%); } }
+  .gear-reset-btn { display: block; width: 100%; margin: 14px 0 2px; }
+  .gear-reset-note { margin: 4px 0 0; font-size: 12px; color: var(--mute); text-align: center; }
+  #gearOwned { display: flex; flex-direction: column; gap: 12px; }
+  .gear-group { border-radius: 16px; overflow: hidden; background: rgba(0,0,0,0.22); border: 2px solid var(--lift); }
+  .gear-group.unequipped { border-style: dashed; }
+  .gear-group-title { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: linear-gradient(90deg, var(--lift), rgba(63,69,146,.25)); font-family: var(--font-display); font-size: 17px; }
+  .gear-group-title .lv { padding: 1px 8px; border-radius: 999px; background: var(--ink); color: var(--sun); font-family: var(--font-body); font-size: 11.5px; font-weight: 700; }
+  .gear-pips { display: inline-flex; gap: 4px; margin-left: auto; }
+  .gear-pips i { width: 12px; height: 12px; border-radius: 4px; border: 2px solid var(--mute); }
+  .gear-pips i.on { background: var(--sun); border-color: var(--sun); box-shadow: 0 0 8px rgba(255,201,40,.7); }
+  .gear-group-count { margin-left: auto; font-family: var(--font-body); font-size: 12px; color: var(--mute); }
+  .gear-group-body { display: flex; flex-direction: column; gap: 6px; padding: 8px; }
+  .gear-owned-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 12px; border-left: 5px solid var(--gear-color, #888); background: var(--dusk); text-align: left; }
   .gear-owned-row .gear-info { flex: 1; min-width: 0; }
-  .gear-owned-row select { max-width: 48%; padding: 6px 8px; border-radius: 8px; border: 2px solid var(--lift); background: #14162b; color: var(--paper); font: inherit; font-size: 13px; }
-  .gear-group { display: flex; flex-direction: column; gap: 6px; }
-  .gear-group + .gear-group { margin-top: 6px; }
-  .gear-group-title { font-size: 13px; font-weight: 700; padding: 4px 2px; border-bottom: 1px solid var(--lift); display: flex; justify-content: space-between; align-items: baseline; }
-  .gear-group-title small { font-weight: 400; opacity: 0.7; }
-  .gear-group-empty { font-size: 12px; opacity: 0.55; padding: 2px 4px; }
-  .gear-owned-row .gear-sell { padding: 6px 8px; border-radius: 8px; border: 2px solid var(--lift); background: transparent; color: var(--paper); font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
-  .gear-owned-row .gear-sell:hover { border-color: #ffc933; }
+  .gear-owned-row .gear-name { font-size: 15px; }
+  .gear-owned-row .gear-desc { min-height: 0; font-size: 12px; }
+  .gear-rarity { display: inline-block; margin-left: 4px; padding: 0 8px; border-radius: 999px; background: var(--gear-color, #888); color: #14162b; font-family: var(--font-body); font-size: 10.5px; font-weight: 800; vertical-align: middle; }
+  .gear-actions { display: flex; flex-direction: column; align-items: stretch; gap: 5px; flex: none; width: 138px; }
+  #gearOwned .gear-actions select { box-sizing: border-box; width: 100%; height: 34px; padding: 4px 8px; margin: 0; border-radius: 8px; border: 2px solid var(--sun); background: #14162b; color: var(--paper); font-family: var(--font-body); font-size: 12.5px; }
+  .gear-locked { text-align: center; font-size: 12px; font-weight: 700; padding: 6px 8px; border-radius: 8px; background: rgba(255,255,255,0.08); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .gear-owned-row .gear-sell { padding: 5px 8px; border-radius: 8px; border: 2px solid var(--lift); background: transparent; color: var(--paper); font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
+  .gear-owned-row .gear-sell:hover { border-color: var(--sun); color: var(--sun); }
   .gear-owned-row .gear-sell:disabled { opacity: 0.5; cursor: default; }
-  .gear-reset-btn { margin: 8px 0 4px; }
-  .gear-locked { font-size: 12px; font-weight: 700; padding: 6px 8px; border-radius: 8px; background: rgba(255,255,255,0.08); white-space: nowrap; }
-  .gear-empty { font-size: 13px; opacity: 0.75; padding: 8px 0; }
+  .gear-group-empty { font-size: 12px; opacity: 0.55; padding: 6px 4px; text-align: center; }
+  .gear-empty { font-size: 13px; opacity: 0.75; padding: 18px 0; text-align: center; }
+  @media (max-width: 460px) {
+    #gearOffers { gap: 8px; }
+    .gear-owned-row { flex-wrap: wrap; }
+    .gear-actions { width: 100%; flex-direction: row; }
+    .gear-actions > * { flex: 1; }
+  }
+  @media (prefers-reduced-motion: reduce) { .gear-card, .gear-card::after { animation: none !important; transition: none; } }
 
   /* ----- 공지사항 ----- */
   #noticeOverlay > .panel { width: min(480px, 100%); text-align: left; }
@@ -1181,14 +1222,24 @@
 
 <div id="gearShopOverlay">
   <div class="panel">
-    <h2 class="panel-title">🛠 기어 상점</h2>
-    <p class="panel-sub">기어를 사서 캐릭터에 장착하면 능력치가 올라요. 한 캐릭터에 최대 <span id="gearMaxText">3</span>개까지 장착할 수 있어요. 한 번 장착한 기어는 다른 캐릭터로 바꿀 수 없으니 신중하게 고르세요! 하나를 사면 그 칸은 다른 기어로 바뀌어요.</p>
-    <div class="profile-line"></div>
-    <div class="gear-section-title">상점 <small id="gearCoins"></small></div>
-    <div id="gearOffers"></div>
-    <button id="gearResetBtn" class="btn btn-sm gear-reset-btn">🔄 상점 리셋 💎5</button>
-    <div class="gear-section-title">내 기어 <small>캐릭터를 골라 장착하세요 (한 번 장착하면 변경 불가) · 구매가의 50%에 팔 수도 있어요</small></div>
-    <div id="gearOwned"></div>
+    <div class="gear-hero">
+      <h2 class="panel-title">🛠 기어 상점</h2>
+      <div id="gearCoins"></div>
+    </div>
+    <p class="gear-sub">기어를 장착하면 능력치가 올라요. 한 캐릭터에 최대 <b><span id="gearMaxText">3</span>개</b>, 같은 기어는 하나만 달 수 있어요. <b>한 번 장착하면 바꿀 수 없으니</b> 신중하게 골라요!</p>
+    <div class="gear-tabs">
+      <button class="gear-tab active" data-gear-tab="shop">🛒 상점</button>
+      <button class="gear-tab" data-gear-tab="owned">🎒 내 기어<span class="badge" id="gearOwnedBadge" style="display:none"></span></button>
+    </div>
+    <div id="gearTabShop">
+      <div id="gearOdds" class="gear-odds"></div>
+      <div id="gearOffers"></div>
+      <button id="gearResetBtn" class="btn btn-ghost btn-sm gear-reset-btn">🔄 상점 리셋 💎5</button>
+      <p class="gear-reset-note">하나를 사면 그 칸은 새 기어로 바뀌어요</p>
+    </div>
+    <div id="gearTabOwned" style="display:none">
+      <div id="gearOwned"></div>
+    </div>
     <div id="gearMsg" class="panel-msg"></div>
     <button id="gearShopCloseBtn" class="btn btn-ghost">닫기</button>
   </div>
@@ -1432,7 +1483,7 @@ const CHARACTERS = [
     id: 'byeongitong',
     name: '변기통',
     color: '#7f8c8d',
-    maxHp: 7200,
+    maxHp: 6800,
     basic: { name: '뚫어뻥 휘두르기', damage: 2000, desc: '전방 120도 부채꼴 범위를 뚫어뻥으로 휘둘러 2000 피해를 주고 뒤로 밀쳐냄' },
     ultimate: { name: '변기 돌진', desc: '바라보는 방향으로 매우 빠르게 돌진, 적을 관통하며 지나간 모든 적에게 2500 피해 + 1.5초 기절' },
   },
@@ -1484,7 +1535,7 @@ const CHARACTERS = [
     id: 'mocha',
     name: '모카',
     color: '#6c5ce7',
-    maxHp: 4500,
+    maxHp: 4800,
     basic: { name: '양손 찌르기', damage: 450, desc: '양손으로 4번 빠르게 찌름 (한 번당 450 피해, 사거리 짧음, 재장전 속도 50% 빠름)' },
     ultimate: { name: '도약 강습', desc: '조준한 방향으로 벽을 무시하고 점프, 거리는 조준으로 100~304px 조절 (PC: 마우스 위치 / 모바일: 스틱을 당긴 정도), 착지 지점 주변 적에게 1,000 피해' },
     gadget: { name: '기합 충전', desc: '4초에 걸쳐 궁극기 게이지를 50%만큼 천천히 채움 (15초마다 사용 가능)' },
@@ -1989,6 +2040,9 @@ document.getElementById('missionCloseBtn').addEventListener('click', closeMissio
 // ===== 기어 상점 =====
 // 상점 칸/가격/보유/장착 가능 여부는 전부 서버가 판단하고, 클라이언트는 profile 의 gearShop / gears 를 보여주고 요청만 보낸다
 function gearInfoOf(id) { return ((currentProfile && currentProfile.gearCatalog) || []).find((g) => g.id === id) || null; }
+const GEAR_ICONS = { long_shot: '🎯', comeback_power: '🔥', heal_boost: '💚', fast_ult: '⚡', fast_projectile: '🚀', quick_reload: '🔄', regen_shield: '🛡️', quick_gadget: '🧰', desperate_dash: '👟', overwhelming: '⚔️', sacrifice: '🩸', bandage: '🩹', full_hp_guard: '🏰', assassin: '🥷' };
+function gearIconOf(id) { return GEAR_ICONS[id] || '⚙️'; }
+let gearTab = 'shop'; // 'shop' | 'owned'
 function gearRarityOf(id) { return ((currentProfile && currentProfile.gearRarities) || []).find((r) => r.id === id) || { name: '', color: '#888', price: 0 }; }
 function setGearMsg(text, ok) {
   const el = document.getElementById('gearMsg');
@@ -2000,7 +2054,14 @@ function renderGearShop() {
   if (!p) return;
   const max = p.gearMax || 3;
   document.getElementById('gearMaxText').textContent = String(max);
-  document.getElementById('gearCoins').textContent = `내 코인 🪙 ${(p.coins || 0).toLocaleString()} · 보석 💎 ${(p.gems || 0).toLocaleString()}`;
+  document.getElementById('gearCoins').innerHTML = `<span class="gear-chip coin">🪙 ${(p.coins || 0).toLocaleString()}</span><span class="gear-chip gem">💎 ${(p.gems || 0).toLocaleString()}</span>`;
+  document.getElementById('gearTabShop').style.display = gearTab === 'shop' ? '' : 'none';
+  document.getElementById('gearTabOwned').style.display = gearTab === 'owned' ? '' : 'none';
+  document.querySelectorAll('.gear-tab').forEach((b) => b.classList.toggle('active', b.getAttribute('data-gear-tab') === gearTab));
+  // 등급별 등장 확률 (카탈로그에 기어가 있는 등급끼리만 비교)
+  const catRarities = (p.gearRarities || []).filter((r) => (p.gearCatalog || []).some((g) => g.rarity === r.id));
+  const wSum = catRarities.reduce((a, r) => a + (r.weight || 0), 0) || 1;
+  document.getElementById('gearOdds').innerHTML = catRarities.map((r) => `<span style="--gear-color:${escapeHtml(r.color)}"><i></i>${escapeHtml(r.name)} ${Math.round(((r.weight || 0) / wSum) * 100)}%</span>`).join('');
   const resetCost = p.gemResetCost || 5;
   const resetBtn = document.getElementById('gearResetBtn');
   resetBtn.textContent = `🔄 상점 리셋 💎${resetCost}`;
@@ -2014,11 +2075,12 @@ function renderGearShop() {
     if (!g) return '';
     const r = gearRarityOf(g.rarity);
     const can = (p.coins || 0) >= o.price;
-    return `<div class="gear-card" style="--gear-color:${escapeHtml(r.color)}">
-      <span class="gear-rarity">${escapeHtml(r.name)}</span>
+    return `<div class="gear-card r-${escapeHtml(g.rarity)}" style="--gear-color:${escapeHtml(r.color)}">
+      <span class="gear-ribbon">${escapeHtml(r.name)}</span>
+      <div class="gear-icon">${gearIconOf(g.id)}</div>
       <div class="gear-name">${escapeHtml(g.name)}</div>
       <div class="gear-desc">${escapeHtml(g.desc)}</div>
-      <button class="btn btn-sm" data-gear-buy="${o.slot}" ${can ? '' : 'disabled'}>🪙 ${o.price.toLocaleString()}${can ? '' : ' (코인 부족)'}</button>
+      <button class="btn btn-sm gear-buy${can ? '' : ' cant'}" data-gear-buy="${o.slot}" ${can ? '' : 'disabled'}>🪙 ${o.price.toLocaleString()}${can ? '' : ' (코인 부족)'}</button>
     </div>`;
   }).join('') : '<div class="gear-empty">상점을 불러오는 중...</div>';
 
@@ -2042,11 +2104,14 @@ function renderGearShop() {
       return `<option value="${escapeHtml(c.id)}" ${g.charId === c.id ? 'selected' : ''} ${full ? 'disabled' : ''}>${escapeHtml(c.name)} ${lvText(c.id)} (${n}/${max})</option>`;
     }).join('');
     return `<div class="gear-owned-row" style="--gear-color:${escapeHtml(r.color)}">
-      <div class="gear-info"><div class="gear-name">${escapeHtml(info.name)} <span class="gear-rarity">${escapeHtml(r.name)}</span></div><div class="gear-desc">${escapeHtml(info.desc)}</div></div>
-      ${g.charId
-        ? `<span class="gear-locked" title="한 번 장착한 기어는 바꿀 수 없어요">🔒 ${escapeHtml((CHARACTERS.find((c) => c.id === g.charId) || {}).name || '')} 고정</span>`
-        : `<select data-gear-uid="${escapeHtml(g.uid)}"><option value="">미장착</option>${opts}</select>`}
-      <button class="gear-sell" data-gear-sell="${escapeHtml(g.uid)}">판매 🪙${sellPrice.toLocaleString()}</button>
+      <div class="gear-icon sm">${gearIconOf(info.id)}</div>
+      <div class="gear-info"><div class="gear-name">${escapeHtml(info.name)}<span class="gear-rarity">${escapeHtml(r.name)}</span></div><div class="gear-desc">${escapeHtml(info.desc)}</div></div>
+      <div class="gear-actions">
+        ${g.charId
+          ? `<span class="gear-locked" title="한 번 장착한 기어는 바꿀 수 없어요">🔒 ${escapeHtml((CHARACTERS.find((c) => c.id === g.charId) || {}).name || '')} 고정</span>`
+          : `<select data-gear-uid="${escapeHtml(g.uid)}"><option value="">캐릭터 선택</option>${opts}</select>`}
+        <button class="gear-sell" data-gear-sell="${escapeHtml(g.uid)}">판매 🪙${sellPrice.toLocaleString()}</button>
+      </div>
     </div>`;
   };
   // 보기 좋게 정렬: 미장착 묶음 → 캐릭터 순서대로 묶음. 묶음 안에서는 높은 등급 → 이름 순
@@ -2057,18 +2122,24 @@ function renderGearShop() {
   });
   const knownIds = new Set(CHARACTERS.map((c) => c.id));
   const groupChars = CHARACTERS.filter((c) => (p.unlocked || []).includes(c.id) || gears.some((g) => g.charId === c.id));
-  const groupHtml = (title, count, list, emptyText) => `<div class="gear-group"><div class="gear-group-title"><span>${title}</span><small>${count}</small></div>${list.length ? sortGears(list).map(gearRow).join('') : `<div class="gear-group-empty">${emptyText}</div>`}</div>`;
+  // right: 묶음 제목 오른쪽 표시 (캐릭터는 장착 칸 표시, 미장착은 개수)
+  const groupHtml = (title, right, list, emptyText, cls = '') => `<div class="gear-group ${cls}"><div class="gear-group-title">${title}${right}</div><div class="gear-group-body">${list.length ? sortGears(list).map(gearRow).join('') : `<div class="gear-group-empty">${emptyText}</div>`}</div></div>`;
   if (!gears.length) {
     ownedEl.innerHTML = '<div class="gear-empty">아직 가진 기어가 없어요. 상점에서 구매해 보세요!</div>';
   } else {
     const unequipped = gears.filter((g) => !g.charId || !knownIds.has(g.charId) || !groupChars.some((c) => c.id === g.charId));
-    let html = groupHtml('📦 미장착', `${unequipped.length}개`, unequipped, '미장착 기어가 없어요');
+    let html = groupHtml('📦 미장착', `<span class="gear-group-count">${unequipped.length}개</span>`, unequipped, '미장착 기어가 없어요', 'unequipped');
     for (const c of groupChars) {
       const list = gears.filter((g) => g.charId === c.id);
-      html += groupHtml(`${escapeHtml(c.name)} <small>${lvText(c.id)}</small>`, `${list.length}/${max}`, list, '장착한 기어가 없어요');
+      const pips = `<span class="gear-pips" title="장착 ${list.length}/${max}">${Array.from({ length: max }, (_, i) => `<i class="${i < list.length ? 'on' : ''}"></i>`).join('')}</span>`;
+      html += groupHtml(`${escapeHtml(c.name)}<span class="lv">${lvText(c.id)}</span>`, pips, list, '장착한 기어가 없어요');
     }
     ownedEl.innerHTML = html;
   }
+  const badge = document.getElementById('gearOwnedBadge');
+  const unequippedCount = gears.filter((g) => !g.charId).length; // 아직 장착하지 않은 기어 수를 탭에 표시
+  badge.textContent = String(unequippedCount);
+  badge.style.display = unequippedCount ? '' : 'none';
 
   offersEl.querySelectorAll('button[data-gear-buy]').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -2120,6 +2191,7 @@ function renderGearShop() {
   });
 }
 function openGearShop() {
+  gearTab = 'shop';
   setGearMsg('');
   document.getElementById('gearShopOverlay').classList.add('open');
   renderGearShop();
@@ -2132,6 +2204,7 @@ function openGearShop() {
   });
 }
 function closeGearShop() { document.getElementById('gearShopOverlay').classList.remove('open'); }
+document.querySelectorAll('.gear-tab').forEach((b) => b.addEventListener('click', () => { gearTab = b.getAttribute('data-gear-tab'); renderGearShop(); }));
 document.getElementById('openGearShopBtn').addEventListener('click', openGearShop);
 document.getElementById('gearResetBtn').addEventListener('click', () => {
   const cost = (currentProfile && currentProfile.gemResetCost) || 5;
