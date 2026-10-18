@@ -454,7 +454,7 @@ const CHARACTERS = {
   byeongitong: {
     id: 'byeongitong',
     name: '변기통',
-    maxHp: 7200, // 1레벨 기준 (기존 7500에서 너프)
+    maxHp: 6800, // 1레벨 기준 (기존 7200에서 너프, 그전 7500)
     basic: {
       name: '뚫어뻥 휘두르기',
       type: 'melee',        // 발사체가 아니라 즉시 판정되는 근접 공격
@@ -695,7 +695,7 @@ const CHARACTERS = {
   mocha: {
     id: 'mocha',
     name: '모카',
-    maxHp: 4500, // 기존 5500에서 너프
+    maxHp: 4800, // 1레벨 기준 (기존 4500에서 버프, 그전 5500)
     // 찌르기 4번이 한 번에 나가므로, 다른 캐릭터와 같은 충전량을 쓰면 궁극기가 너무 빨리 참.
     // 그래서 슈처럼 '찌르기 1번 적중당' 충전량을 낮게 따로 설정함 (콤보 4번 전부 적중 = 약 20%)
     ultimateChargePerHit: 5,
@@ -861,7 +861,7 @@ const CHARACTERS = {
       minDamage: 800,          // 충전 없이 바로 쐈을 때 피해 (1레벨 기준)
       maxDamage: 3000,         // 완전히 충전했을 때 피해 (1레벨 기준)
       chargeTime: 2,           // 완전 충전까지 걸리는 시간(초) (기존 3초에서 단축)
-      chargeSpeedMultiplier: 0.9, // 충전하는 동안 이동속도 배율 (0.9 = 10% 감소) (기존 0.7)
+      chargeSpeedMultiplier: 0.85, // 충전하는 동안 이동속도 배율 (0.85 = 15% 감소) (기존 0.9, 그전 0.7)
       fireCooldown: 1.5,       // 똥을 발사한 뒤 다음 똥을 발사할 수 있기까지 걸리는 시간(초)
       speed: 560,
       radius: 10,              // 충전 없이 쐈을 때 똥 크기
@@ -1242,11 +1242,12 @@ const GEAR_RARITIES = {
 //  ultChargeBonus: 궁극기 충전 속도 증가율 (0.1 = 10% 더 빨리 참. 기본공격 적중 충전 + 가젯 충전 모두 적용)
 //  projectileSpeedBonus: 투사체(발사체)가 날아가는 속도 증가율 (0.1 = 10% 빨라짐. 사거리는 그대로)
 //  lowHpSpeedBonus: 체력이 최대 체력의 GEAR_LOW_HP_SPEED_RATIO(30%) 이하일 때 이동속도 증가율 (0.1 = 10% 빨라짐)
-//  chainDamageBonus: 기본공격(평타)을 한 뒤 GEAR_CHAIN_WINDOW_MS(1초) 안에 다시 기본공격을 하면 그 공격의 피해 증가율 (0.2 = 20%). 연속으로 공격해도 겹쳐서 커지지 않고 항상 20%만 적용됨
+//  chainDamageBonus: 기본공격(평타)을 한 뒤 GEAR_CHAIN_WINDOW_MS(1초) 안에 다시 기본공격을 하면 그 공격의 피해 증가율 (0.25 = 25%). 연속으로 공격해도 겹쳐서 커지지 않고 항상 25%만 적용됨
 //  damageTakenUltCharge: 체력이 깎이는 피해를 입으면 (잃은 체력 ÷ 최대 체력) × 100 × 이 값 만큼 궁극기 게이지(%)가 참 (0.3 이면 최대 체력의 50%를 잃을 때 게이지 15%). 보호막이 막은 피해는 제외
 //  gadgetCooldownSec: 가젯 재사용 대기시간(초)을 이 값으로 줄임 (기본 GADGET_COOLDOWN_SEC). 여러 개면 가장 짧은 값
 //  bandageHeal: 피해를 입고 체력이 최대 체력의 GEAR_BANDAGE_RATIO(20%) 이하가 되면 체력을 즉시 이만큼 회복 (살아 있는 상태에서만. 한 번 쓰면 죽었다가 부활할 때까지 다시 쓸 수 없음. 회복 기어의 회복량 증가 적용)
 const GEAR_BANDAGE_RATIO = 0.2;
+//  ultStealthSec: 궁극기를 쓰면 이 시간(초) 동안 은신 (적에게 보이지 않음. 원효대사처럼 은신 자체가 궁극기인 캐릭터에는 효과 없음). 여러 개면 가장 긴 값
 const GEAR_CHAIN_WINDOW_MS = 1000;
 const GEAR_LOW_HP_RATIO = 0.5;
 const GEAR_LOW_HP_SPEED_RATIO = 0.3;
@@ -1261,10 +1262,11 @@ const GEAR_CATALOG = [
   { id: 'quick_reload', name: '빠른 재장전', rarity: 'epic', desc: '재장전 속도 10% 증가', effect: { reloadSpeed: 0.1 } },
   { id: 'regen_shield', name: '재생 보호막', rarity: 'epic', desc: '시작할 때 900 피해를 흡수하는 보호막을 두름. 보호막이 사라져도 체력이 가득 찬 채로 5초 동안 피해를 입지 않으면 다시 생김', effect: { startShield: 900 } },
   { id: 'desperate_dash', name: '필사의 질주', rarity: 'mythic', desc: '체력이 30% 이하일 때 이동속도 10% 증가', effect: { lowHpSpeedBonus: 0.1 } },
-  { id: 'overwhelming', name: '파죽지세', rarity: 'legendary', desc: '기본공격 후 1초 안에 다시 기본공격을 하면 20% 추가 피해 (연속으로 공격해도 20%만 적용)', effect: { chainDamageBonus: 0.2 } },
+  { id: 'overwhelming', name: '파죽지세', rarity: 'legendary', desc: '기본공격 후 1초 안에 다시 기본공격을 하면 25% 추가 피해 (연속으로 공격해도 25%만 적용)', effect: { chainDamageBonus: 0.25 } },
   { id: 'sacrifice', name: '희생 정신', rarity: 'epic', desc: '피해를 입으면 잃은 체력에 비례해 궁극기 게이지가 참 (최대 체력의 50%를 잃으면 게이지 15%)', effect: { damageTakenUltCharge: 0.3 } },
   { id: 'quick_gadget', name: '빠른 가젯', rarity: 'epic', desc: '가젯 재사용 대기시간이 12초로 줄어듦', effect: { gadgetCooldownSec: 12 } },
-  { id: 'bandage', name: '붕대', rarity: 'legendary', desc: '체력이 20% 이하가 되면 체력을 즉시 2000 회복 (죽었다가 부활하면 다시 사용 가능)', effect: { bandageHeal: 2000 } },
+  { id: 'bandage', name: '붕대', rarity: 'legendary', desc: '체력이 20% 이하가 되면 체력을 즉시 3000 회복 (죽었다가 부활하면 다시 사용 가능)', effect: { bandageHeal: 3000 } },
+  { id: 'assassin', name: '암살자', rarity: 'mythic', desc: '궁극기를 사용하면 1.5초 동안 은신', effect: { ultStealthSec: 1.5 } },
   { id: 'full_hp_guard', name: '만땅 방어', rarity: 'mythic', desc: '체력이 가득 차 있을 때 받는 피해량 50% 감소', effect: { fullHpDamageReduction: 0.5 } },
 ];
 function gearById(id) { return GEAR_CATALOG.find((g) => g.id === id) || null; }
@@ -1288,7 +1290,7 @@ function ownedGearsOf(u) {
 // 캐릭터에 장착된 기어들의 효과 합계 (최대 장착 수까지만 인정)
 function gearBonusOf(u, charId) {
   // reloadSpeed: 재장전 속도 증가율(덧셈) / fullHpTakenMult: 체력이 가득 찰 때 받는 피해 배율(곱셈, 1 = 효과 없음) / lowHpDamageBonus: 체력 50% 이하일 때 공격력 증가율(덧셈) / fullAmmoRangeBonus: 탄창이 가득(3개)일 때 사거리 증가율(덧셈)
-  const total = { reloadSpeed: 0, fullHpTakenMult: 1, lowHpDamageBonus: 0, fullAmmoRangeBonus: 0, healBonus: 0, startShield: 0, ultChargeBonus: 0, projectileSpeedBonus: 0, lowHpSpeedBonus: 0, chainDamageBonus: 0, damageTakenUltCharge: 0, gadgetCooldownSec: 0, bandageHeal: 0 };
+  const total = { reloadSpeed: 0, fullHpTakenMult: 1, lowHpDamageBonus: 0, fullAmmoRangeBonus: 0, healBonus: 0, startShield: 0, ultChargeBonus: 0, projectileSpeedBonus: 0, lowHpSpeedBonus: 0, chainDamageBonus: 0, damageTakenUltCharge: 0, gadgetCooldownSec: 0, bandageHeal: 0, ultStealthSec: 0 };
   const seenGearIds = new Set(); // 같은 기어는 한 캐릭터에 한 번만 효과 적용 (이전 데이터의 중복 장착 대비)
   for (const g of ownedGearsOf(u).filter((x) => x.charId === charId).filter((x) => !seenGearIds.has(x.gearId) && seenGearIds.add(x.gearId)).slice(0, GEAR_MAX_PER_CHARACTER)) {
     const eff = gearById(g.gearId).effect || {};
@@ -1301,6 +1303,7 @@ function gearBonusOf(u, charId) {
     total.ultChargeBonus += eff.ultChargeBonus || 0;
     total.projectileSpeedBonus += eff.projectileSpeedBonus || 0;
     total.lowHpSpeedBonus += eff.lowHpSpeedBonus || 0;
+    total.ultStealthSec = Math.max(total.ultStealthSec, eff.ultStealthSec || 0);
     total.bandageHeal = Math.max(total.bandageHeal, eff.bandageHeal || 0); // 한 번만 발동하므로 겹치지 않음
     total.damageTakenUltCharge += eff.damageTakenUltCharge || 0;
     if (eff.gadgetCooldownSec > 0) total.gadgetCooldownSec = total.gadgetCooldownSec > 0 ? Math.min(total.gadgetCooldownSec, eff.gadgetCooldownSec) : eff.gadgetCooldownSec;
@@ -4001,7 +4004,7 @@ function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hy
     gearUltChargeMult: 1 + ((gear && gear.ultChargeBonus) || 0),       // 장착한 기어: 궁극기 충전 속도 배율 (1.1 = 10% 빠름)
     gearProjectileSpeedMult: 1 + ((gear && gear.projectileSpeedBonus) || 0), // 장착한 기어: 투사체 속도 배율 (1.1 = 10% 빠름)
     gearLowHpSpeedBonus: (gear && gear.lowHpSpeedBonus) || 0,         // 장착한 기어: 체력 30% 이하일 때 이동속도 증가율
-    gearChainBonus: (gear && gear.chainDamageBonus) || 0, // 장착한 기어(파죽지세): 1초 안에 이어서 평타를 칠 때의 추가 피해율 (0.2 = 20%)
+    gearChainBonus: (gear && gear.chainDamageBonus) || 0, // 장착한 기어(파죽지세): 1초 안에 이어서 평타를 칠 때의 추가 피해율 (0.25 = 25%)
     lastBasicAttackAt: 0,   // 마지막으로 기본공격을 한 시각(ms) - 파죽지세용
     gearChainOn: false,     // 가장 최근 기본공격이 '1초 안에 이어진 공격'이었는지 - 파죽지세용
     gearSacrificeCharge: (gear && gear.damageTakenUltCharge) || 0, // 장착한 기어(희생 정신): 잃은 체력 비율에 곱해 궁극기 게이지로 바꾸는 값
@@ -4009,6 +4012,7 @@ function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hy
     gadgetCooldownTotal: GADGET_COOLDOWN_SEC, // 이번 가젯 쿨다운의 전체 길이(초) - 클라이언트 버튼 표시용
     gearBandageHeal: (gear && gear.bandageHeal) || 0, // 장착한 기어(붕대): 체력이 20% 이하가 될 때 즉시 회복하는 양
     bandageUsed: false,                               // 이번 목숨에서 붕대를 이미 썼는지 (리스폰하면 다시 사용 가능)
+    gearUltStealthSec: (gear && gear.ultStealthSec) || 0, // 장착한 기어(암살자): 궁극기를 쓰면 이 시간(초) 동안 은신
     gearHealMult: 1 + ((gear && gear.healBonus) || 0), // 장착한 기어: 모든 회복량 배율 (1.5 = 50% 증가)
     gearShieldMax: (gear && gear.startShield) || 0,    // 장착한 기어: 재생 보호막 수치 (0이면 기어 없음)
     lastHitAt: Date.now(),  // 마지막으로 피해를 입은 시각 (보호막이 막은 피해 포함) - 재생 보호막 기어용
@@ -4149,12 +4153,27 @@ function launchTarget(match, target, b) {
   target.windupId = (target.windupId || 0) + 1;
 }
 
+// 은신: seconds 초 동안 적에게 보이지 않는 상태가 됨 (다시 은신하면 마지막 은신 기준으로 끝남)
+function startStealth(match, p, seconds) {
+  p.invisible = true;
+  p.stealthId = (p.stealthId || 0) + 1;
+  const myStealthId = p.stealthId;
+  const stealthTargetId = p.id;
+  setTimeout(() => {
+    const m = matches[match.id];
+    if (!m) return;
+    const player = m.players[stealthTargetId];
+    if (!player) return;
+    if (player.stealthId !== myStealthId) return; // 이미 새 은신/리스폰으로 대체된 타이머는 무시
+    player.invisible = false;
+  }, seconds * 1000);
+}
 // 기어 '파죽지세': 기본공격을 할 때마다 호출. 직전 기본공격 후 1초 안이면 이번 공격에 추가 피해가 붙음 (이전 공격이 빗나갔어도 상관없음)
 function markBasicAttack(p, now) {
   p.gearChainOn = p.gearChainBonus > 0 && p.lastBasicAttackAt > 0 && now - p.lastBasicAttackAt <= GEAR_CHAIN_WINDOW_MS;
   p.lastBasicAttackAt = now;
 }
-// chain 이 true 인 공격의 피해 배율 (한 번만 곱해지므로 연속 공격해도 20%만 증가)
+// chain 이 true 인 공격의 피해 배율 (한 번만 곱해지므로 연속 공격해도 25%만 증가)
 function gearChainMult(shooter, chain) {
   return chain && shooter && shooter.gearChainBonus > 0 ? 1 + shooter.gearChainBonus : 1;
 }
@@ -5715,18 +5734,7 @@ function registerGameplayHandlers(socket) {
       }
     } else if (ult.type === 'stealth') {
       // 조준 불필요: 즉시 일정 시간 동안 적에게 보이지 않는 은신 상태가 됨
-      p.invisible = true;
-      p.stealthId = (p.stealthId || 0) + 1;
-      const myStealthId = p.stealthId;
-      const stealthTargetId = p.id;
-      setTimeout(() => {
-        const m = matches[match.id];
-        if (!m) return;
-        const player = m.players[stealthTargetId];
-        if (!player) return;
-        if (player.stealthId !== myStealthId) return; // 이미 새 은신/리스폰으로 대체된 타이머는 무시
-        player.invisible = false;
-      }, (ult.duration || 5) * 1000);
+      startStealth(match, p, ult.duration || 5);
     } else if (ult.type === 'dash') {
       // 변기통의 돌진: 바라보는 방향으로 매우 빠르게 이동하며, 이후 updateMatch 틱에서
       // 실제 이동/벽 충돌/적 관통(대미지+기절) 판정을 수행한다
@@ -5820,6 +5828,8 @@ function registerGameplayHandlers(socket) {
       }
     }
 
+    // 기어 '암살자': 궁극기를 쓰면 잠깐 은신 (은신이 궁극기인 캐릭터는 이미 은신하므로 제외)
+    if (p.gearUltStealthSec > 0 && ult.type !== 'stealth' && p.alive && !match.over) startStealth(match, p, p.gearUltStealthSec);
     if (!match.over) p.ultimateCharge = 0;
   });
 }
