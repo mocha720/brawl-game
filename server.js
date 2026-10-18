@@ -53,11 +53,22 @@ const MODES = {
 const GAME_MODES = {
   knockout: { name: '녹아우', desc: '상대를 먼저 쓰러뜨려 목표 킬 수에 도달하면 승리' },
   gatekeeper: { name: '문지기', desc: '상대 리스폰 근처에 있는 문을 먼저 공격해 파괴하면 승리' },
+  gemgrab: { name: '쨍그랩', desc: '중앙 구멍에서 나오는 보석을 모아 팀 보석 20개를 먼저 채우면 승리' },
 };
 const MODE_VOTE_MS = 8000;        // 게임 종류 투표 시간 (모두 투표하면 바로 끝남)
 const GATE_HP = 100000;           // 문지기 모드: 문의 체력 (모든 공격이 문에 통함)
 const JINWOOPARK_GATE_DAMAGE = 3000; // 문지기 모드: 진우Park 하트(현재 체력 비율 피해)가 문에 주는 피해. 문은 체력이 매우 커서 비율 피해가 과하게 들어가므로 3000으로 고정
 const GATE_RADIUS = 36;           // 문의 크기(피격 반경)
+
+// ===== 쨍그랩 모드 설정 =====
+const GEM_WIN_COUNT = 20;      // 팀이 가진 보석이 이 수에 도달하면 승리
+const GEM_SPAWN_MS = 5000;     // 중앙 구멍에서 보석이 나오는 간격
+const GEM_RADIUS = 11;         // 보석 크기(획득 판정 계산용)
+const GEM_PICKUP_EXTRA = 6;    // 플레이어가 보석에 이만큼 더 가까이 닿으면 획득 (여유 판정)
+const GEM_LAND_MS = 450;       // 보석이 구멍에서 튀어나와 땅에 떨어지는 시간 (이 동안은 획득 불가)
+const GEM_HOLE_RADIUS = 46;    // 중앙 구멍 반지름
+const GEM_MAX_ON_GROUND = 80;  // 바닥에 있는 보석이 이 수 이상이면 새 보석은 잠시 안 나옴 (죽어서 떨어뜨린 보석은 제한 없음)
+let gemIdCounter = 0;
 const RESPAWN_INVINCIBLE_MS = 3000; // 리스폰 직후 무적 시간
 const MATCH_COUNTDOWN_MS = 4000; // 매칭 직후 상대 정보(캐릭터/트로피)를 보여주는 대결 화면 시간. 이 동안은 이동/공격/스킬 입력이 막힘
 const AI_COIN_REWARD = 20; // (옛 공지사항 문구에서만 쓰는 값. 실제 AI 보상은 아래 AI_DIFFICULTIES 를 따름)
@@ -1804,6 +1815,18 @@ function repeatMissionsView(u) {
 // id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
+  {
+    id: '2026-10-18-gemgrab-mode',
+    date: '2026-10-18',
+    tag: 'new',
+    title: '새 게임 모드 [쨍그랩] 추가!',
+    items: [
+      '매칭이 되면 [녹아우], [문지기], [쨍그랩] 중 어떤 모드로 할지 투표해요. 표가 같으면 무작위로 정해져요.',
+      '[쨍그랩]: 맵 중앙의 구멍에서 5초에 한 번 보라색 보석이 나와요. 보석에 닿으면 획득하고, 머리 위에 가진 보석 수가 보여요.',
+      '죽으면 가지고 있던 보석을 모두 떨구고 죽어요. 떨어진 보석은 누구나 주울 수 있어요.',
+      '우리 팀이 가진 보석이 합쳐서 20개가 되면 승리해요!',
+    ],
+  },
   {
     id: '2026-10-14-gatekeeper-mode',
     date: '2026-10-14',
@@ -3698,7 +3721,7 @@ function registerAuthHandlers(socket) {
 // AI 연습 대결 정산: 사람이 점수로 이겼을 때만 난이도별 코인 + 고정 트로피(쓴 캐릭터)를 지급한다.
 // 전적(승/패)과 연승, 미션은 기록하지 않으므로 AI 승리는 연승을 올리지도 끊지도 않는다. 졌을 때는 트로피가 깎이지 않는다.
 async function settleAiMatch(match, winnerTeam, reason) {
-  if (reason !== 'scoreLimit') return;
+  if (reason !== 'scoreLimit' && reason !== 'gateDestroyed' && reason !== 'gemsCollected') return; // 모드와 상관없이 정상적으로 승부가 난 경우에만 보상
   const diff = aiDifficultyOf(match.aiDifficulty);
   for (const pid in match.players) {
     const p = match.players[pid];
@@ -3735,7 +3758,7 @@ async function settleMatch(match, winnerTeam, reason, leaverId) {
     const p = match.players[pid];
     const won = p.team === winnerTeam;
     // 패배 페널티: 점수로 져서 끝난 매치는 패배한 팀 전원, 중도 이탈로 끝난 매치는 나간 사람만 (남은 팀원은 깎이지 않음)
-    const penalized = !won && (reason === 'scoreLimit' || reason === 'gateDestroyed' || pid === leaverId);
+    const penalized = !won && (reason === 'scoreLimit' || reason === 'gateDestroyed' || reason === 'gemsCollected' || pid === leaverId);
     try {
       // 연승 계산: 이 매치에서 쓴 캐릭터의 직전 연승 수를 서버 저장소에서 읽는다
       let previousStreak = 0;
@@ -3749,7 +3772,7 @@ async function settleMatch(match, winnerTeam, reason, leaverId) {
       // 승리: 연승 +1 / 페널티 받는 패배: 연승 0 / 페널티 없는 패배(팀원 이탈 등): 연승 유지
       const newStreak = won ? previousStreak + 1 : (penalized ? 0 : null);
       // 미션 진행도 누적 (정상 종료된 매치만). addResult보다 먼저 해서 아래 profileUpdate에 최신 진행도가 담기게 함
-      if (reason === 'scoreLimit' || reason === 'gateDestroyed') {
+      if (reason === 'scoreLimit' || reason === 'gateDestroyed' || reason === 'gemsCollected') {
         await db.addMissionProgress(key, missionDay(), missionIncrements(won, match.mode, p.score || 0));
         await db.addRepeatProgress(key, repeatIncrements(won, match.mode, p.score || 0)); // 무한 미션도 같은 조건으로 누적
       }
@@ -3869,6 +3892,14 @@ function createGates(match) {
   }
 }
 
+// AI 연습 대결에서 문 파괴/보석 승리로 끝났을 때 matchOver 에 담을 보상 정보 (사람이 이겼을 때만 난이도별 코인/트로피)
+function aiOverExtras(match, winnerTeam) {
+  if (!match.ai) return { coinReward: MODES[match.mode].coinReward || 0, ai: false };
+  const diff = aiDifficultyOf(match.aiDifficulty);
+  const humanWon = Object.values(match.players).some((pl) => !pl.isBot && pl.team === winnerTeam);
+  return { coinReward: humanWon ? diff.coinReward : 0, ai: true, aiDifficultyName: diff.name, aiTrophyReward: humanWon ? diff.trophyReward : 0 };
+}
+
 // 문이 부서졌는지 확인해서, 부서졌다면 상대 팀 승리로 매치를 끝낸다
 function checkGates(match) {
   if (match.over || match.gameMode !== 'gatekeeper' || !match.gates) return;
@@ -3883,11 +3914,125 @@ function checkGates(match) {
     winnerTeam,
     brokenTeam,
     teamScore: match.teamScore,
-    coinReward: match.ai ? 0 : (MODES[match.mode].coinReward || 0),
-    ai: !!match.ai,
+    ...aiOverExtras(match, winnerTeam),
   });
   settleMatch(match, winnerTeam, 'gateDestroyed');
   setTimeout(() => endMatch(match.id), MATCH_CLEANUP_DELAY_MS);
+}
+
+// ===== 쨍그랩 모드 =====
+// 맵 한가운데 구멍에서 5초마다 보라색 보석이 튀어나온다. 살아있는 플레이어가 닿으면 획득(머리 위에 보유 수 표시),
+// 죽으면 가진 보석을 모두 그 자리 근처에 떨군다. 팀원이 가진 보석을 합쳐서 GEM_WIN_COUNT개가 되면 그 팀이 승리한다.
+function gemHole() {
+  return { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT / 2, r: GEM_HOLE_RADIUS };
+}
+
+// 구멍 자리에 있는 벽(중앙 기둥 등)은 치운다. 원본 맵(MAP_LAYOUTS)은 건드리지 않고 새 배열을 돌려줌
+function carveGemHole(walls) {
+  const h = gemHole();
+  return walls.filter((w) => !circleIntersectsRect(h.x, h.y, h.r + 14, w));
+}
+
+// (cx, cy) 주변 minD~maxD 거리에서 벽과 겹치지 않는 보석 착지 위치를 찾는다 (못 찾으면 null)
+function pickGemLanding(match, cx, cy, minD, maxD) {
+  for (let i = 0; i < 16; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const d = minD + Math.random() * (maxD - minD);
+    const x = cx + Math.cos(a) * d;
+    const y = cy + Math.sin(a) * d;
+    const m = GEM_RADIUS + 4;
+    if (x < m || x > ARENA_WIDTH - m || y < m || y > ARENA_HEIGHT - m) continue;
+    if (collidesWithWalls(match.walls, x, y, GEM_RADIUS + 2)) continue;
+    return { x, y };
+  }
+  return null;
+}
+
+function addGem(match, fromX, fromY, land) {
+  gemIdCounter += 1;
+  match.gems.push({
+    id: gemIdCounter,
+    x: Math.round(land.x), y: Math.round(land.y),     // 착지 위치
+    fx: Math.round(fromX), fy: Math.round(fromY),     // 튀어나오기 시작한 위치 (클라이언트가 이 사이를 포물선으로 그림)
+    pickableAt: Date.now() + GEM_LAND_MS,
+  });
+  match.gemsDirty = true;
+}
+
+// 죽은 플레이어가 가진 보석을 전부 주변에 떨군다
+function dropGems(match, p) {
+  const n = p.gems || 0;
+  if (!n || !match.gems) return;
+  p.gems = 0;
+  for (let i = 0; i < n; i++) {
+    const land = pickGemLanding(match, p.x, p.y, 15, 85) || { x: p.x, y: p.y };
+    addGem(match, p.x, p.y, land);
+  }
+}
+
+function gemTeamTotals(match) {
+  const t = { A: 0, B: 0 };
+  for (const pid in match.players) {
+    const p = match.players[pid];
+    t[p.team] += p.gems || 0;
+  }
+  return t;
+}
+
+function endGemMatch(match, winnerTeam) {
+  match.over = true;
+  io.to(match.id).emit('matchOver', {
+    reason: 'gemsCollected',
+    winnerTeam,
+    teamScore: match.teamScore,
+    gemTotals: gemTeamTotals(match),
+    ...aiOverExtras(match, winnerTeam),
+  });
+  settleMatch(match, winnerTeam, 'gemsCollected');
+  setTimeout(() => endMatch(match.id), MATCH_CLEANUP_DELAY_MS);
+}
+
+// 매 틱: 보석 생성 + 획득 + 승리 판정 (쨍그랩 모드가 아니면 아무것도 안 함)
+function updateGemGrab(match, now) {
+  if (match.over || match.gameMode !== 'gemgrab' || !match.gems) return;
+  if (now < match.startsAt) return; // 대결/투표 화면 동안은 보석이 안 나옴
+
+  // 5초마다 구멍에서 보석 1개
+  if (now >= match.gemNextAt) {
+    match.gemNextAt += GEM_SPAWN_MS;
+    if (match.gemNextAt <= now) match.gemNextAt = now + GEM_SPAWN_MS;
+    if (match.gems.length < GEM_MAX_ON_GROUND) {
+      const h = gemHole();
+      const land = pickGemLanding(match, h.x, h.y, 40, 115) || { x: h.x, y: h.y + 20 };
+      addGem(match, h.x, h.y, land);
+    }
+  }
+
+  // 획득: 살아있고 공중(점프)에 있지 않은 플레이어가 보석에 닿으면 가져감
+  for (const pid in match.players) {
+    const p = match.players[pid];
+    if (!p.alive || p.leaping || p.airborneTimeLeft > 0) continue;
+    for (let i = match.gems.length - 1; i >= 0; i--) {
+      const g = match.gems[i];
+      if (now < g.pickableAt) continue;
+      if (Math.hypot(g.x - p.x, g.y - p.y) > PLAYER_RADIUS + GEM_RADIUS + GEM_PICKUP_EXTRA) continue;
+      match.gems.splice(i, 1);
+      p.gems = (p.gems || 0) + 1;
+      match.gemsDirty = true;
+      const totals = gemTeamTotals(match);
+      if (totals[p.team] >= GEM_WIN_COUNT) { endGemMatch(match, p.team); return; }
+    }
+  }
+}
+
+// 보석 목록이 바뀐 틱에만 방 전체에 보낸다 (매 틱 state 에 싣지 않아서 트래픽을 아낌)
+function flushGems(match) {
+  if (!match.gems || !match.gemsDirty) return;
+  match.gemsDirty = false;
+  io.to(match.id).emit('gems', {
+    list: match.gems.map((g) => [g.id, g.x, g.y, g.fx, g.fy]),
+    nextInMs: Math.max(0, match.gemNextAt - Date.now()),
+  });
 }
 
 // 맵 투표 집계: 맵 id -> 득표 수
@@ -3917,8 +4062,9 @@ function applyMapToMatch(match, map) {
 
 // 투표 현황(게임 모드 + 맵)을 매치 참가자 모두에게 알림
 function broadcastVoteUpdate(match) {
-  const counts = { knockout: 0, gatekeeper: 0 };
-  for (const sid in match.votes) counts[match.votes[sid]] += 1;
+  const counts = {};
+  Object.keys(GAME_MODES).forEach((k) => { counts[k] = 0; });
+  for (const sid in match.votes) { if (counts[match.votes[sid]] != null) counts[match.votes[sid]] += 1; }
   io.to(match.id).emit('modeVoteUpdate', { counts, mapCounts: mapVoteCounts(match) });
 }
 
@@ -3934,12 +4080,13 @@ function resolveModeVote(matchId) {
   if (!match || match.over || !match.voteOpen) return;
   match.voteOpen = false;
   if (match.voteTimer) { clearTimeout(match.voteTimer); match.voteTimer = null; }
-  const counts = { knockout: 0, gatekeeper: 0 };
+  const counts = {};
+  Object.keys(GAME_MODES).forEach((k) => { counts[k] = 0; });
   for (const sid in match.votes) {
     const v = match.votes[sid];
     if (counts[v] != null) counts[v] += 1;
   }
-  const max = Math.max(counts.knockout, counts.gatekeeper);
+  const max = Math.max(...Object.values(counts));
   const top = Object.keys(counts).filter((k) => counts[k] === max);
   const chosen = top[Math.floor(Math.random() * top.length)];
   match.gameMode = chosen;
@@ -3952,7 +4099,13 @@ function resolveModeVote(matchId) {
   applyMapToMatch(match, chosenMap);
 
   if (chosen === 'gatekeeper') createGates(match);
+  if (chosen === 'gemgrab') match.walls = carveGemHole(match.walls); // 중앙 구멍 자리의 벽은 치움
   match.startsAt = Date.now() + MATCH_COUNTDOWN_MS; // 결과를 보여준 뒤 카운트다운 시작
+  if (chosen === 'gemgrab') {
+    match.gems = [];
+    match.gemNextAt = match.startsAt + GEM_SPAWN_MS; // 경기가 시작되고 5초 뒤에 첫 보석
+    match.gemsDirty = true;                          // 다음 틱에 빈 목록 + 다음 보석까지 남은 시간을 한 번 보냄
+  }
   io.to(matchId).emit('modeVoteResult', {
     gameMode: chosen,
     gameModeName: GAME_MODES[chosen].name,
@@ -3962,11 +4115,13 @@ function resolveModeVote(matchId) {
     mapName: chosenMap.name,
     mapCounts,
     mapTie: mapTop.length > 1,
-    walls: chosenMap.walls,
+    walls: match.walls, // 쨍그랩이면 중앙 구멍 자리의 벽이 빠진 목록
     bushes: chosenMap.bushes,
     startsInMs: MATCH_COUNTDOWN_MS,
     winScore: match.winScore,
     gateHp: GATE_HP,
+    gemWin: GEM_WIN_COUNT,
+    hole: chosen === 'gemgrab' ? gemHole() : null,
   });
 }
 
@@ -3984,6 +4139,7 @@ function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hy
     hp: character.maxHp,
     maxHp: character.maxHp,
     alive: true,
+    gems: 0, // 쨍그랩 모드: 현재 가지고 있는 보석 수 (죽으면 모두 떨굼)
     invisible: false, // 은신 궁극기 사용 중이면 true (적에게는 보이지 않음)
     inBush: false,     // 덤불 안에 있으면 true (같은 덤불에 있는 적을 제외하고는 보이지 않음)
     stealthId: 0,      // 은신 발동 회차 (타이머가 중첩될 때 오래된 타이머가 새 은신을 끄지 않도록 함)
@@ -4219,6 +4375,7 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter, chain } 
   if (target.hp <= 0) {
     target.hp = 0;
     target.alive = false;
+    if (match.gameMode === 'gemgrab') dropGems(match, target); // 쨍그랩: 가지고 있던 보석을 모두 떨구고 죽음
 
     if (shooter) {
       shooter.score += 1;
@@ -4226,7 +4383,7 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter, chain } 
     }
 
     // 먼저 팀 누적 킬 수가 승리 점수에 도달하면 즉시 매치 종료 (1:1은 곧 개인 킬 수와 동일)
-    if (shooter && match.gameMode !== 'gatekeeper' && match.teamScore[shooter.team] >= match.winScore) {
+    if (shooter && match.gameMode === 'knockout' && match.teamScore[shooter.team] >= match.winScore) {
       match.over = true;
       io.to(match.id).emit('matchOver', {
         reason: 'scoreLimit',
@@ -4839,13 +4996,16 @@ function startMatch(mode, entries, opts = {}) {
     teamScore: { A: 0, B: 0 },
     winScore: cfg.winScore,
     over: false,
-    gameMode: 'knockout',     // 게임 종류: 'knockout'(녹아우) 또는 'gatekeeper'(문지기). 매칭 직후 투표로 바뀔 수 있음 (AI 연습 대결은 항상 녹아우)
+    gameMode: 'knockout',     // 게임 종류: 'knockout'(녹아우) 또는 'gatekeeper'(문지기). 매칭 직후 투표로 바뀔 수 있음 (AI 연습 대결도 투표로 정함)
     gates: null,              // 문지기 모드의 문 { A: gate, B: gate }
+    gems: null,               // 쨍그랩 모드: 바닥에 있는 보석들
+    gemNextAt: 0,             // 쨍그랩 모드: 다음 보석이 나올 시각
+    gemsDirty: false,         // 쨍그랩 모드: 보석 목록이 바뀌어서 클라이언트에 다시 보내야 하면 true
     votes: {},                // socketId -> 투표한 게임 종류
     mapVotes: {},             // socketId -> 투표한 맵 id (게임 종류 투표와 같은 시간에 진행. 투표 전의 맵은 임시로 무작위 맵을 보여줌)
-    voteOpen: !opts.ai,       // 게임 종류 투표 진행 중 여부 (AI 연습 대결은 투표 없음)
+    voteOpen: true,           // 게임 종류/맵 투표 진행 중 여부 (AI 연습 대결도 사람 1명이 투표해서 정함. 봇은 투표하지 않음)
     voteTimer: null,
-    startsAt: Date.now() + (opts.ai ? 0 : MODE_VOTE_MS) + MATCH_COUNTDOWN_MS, // 이 시각 전까지는 대결/투표 화면 (이동/공격/스킬 불가). 투표가 끝나면 다시 정해짐
+    startsAt: Date.now() + MODE_VOTE_MS + MATCH_COUNTDOWN_MS, // 이 시각 전까지는 대결/투표 화면 (이동/공격/스킬 불가). 투표가 끝나면 다시 정해짐
     accounts: {},   // socketId -> 계정 키 (코인 정산용, 클라이언트에는 전송하지 않음)
     settled: false,
   };
@@ -6750,6 +6910,7 @@ function createAiState(socket, difficulty) {
     corneredMs: 0,
     feintUntil: 0, nextFeintAt: 0, // 페인트(물러나는 척)
     lastHp: null,
+    lastMyGateHp: null, gateHitAt: 0, // 문지기: 우리 문이 마지막으로 맞은 시각 (맞고 있으면 지키러 돌아옴)
   };
 }
 
@@ -6803,6 +6964,43 @@ function setAiMode(match, p, ai, mode, now, fromX, fromY) {
   if (mode === 'desperate') ai.modeUntil = now + 2800;
 }
 
+// AI 봇이 주울 보석을 고른다 (쨍그랩). 가까운 보석이 좋지만, 적이 먼저 가져갈 보석/적 바로 옆의 보석은 피하고, 여러 개가 모여 있는 곳은 선호한다
+function aiPickGem(match, p, target) {
+  const now = Date.now();
+  let best = null;
+  let bestScore = Infinity;
+  for (const g of match.gems || []) {
+    if (now < g.pickableAt - 150) continue; // 아직 날아오는 중
+    const d = Math.hypot(g.x - p.x, g.y - p.y);
+    let score = d;
+    if (target && typeof target.x === 'number') {
+      const de = Math.hypot(g.x - target.x, g.y - target.y);
+      if (de < d * 0.7 && de < 260) continue; // 적이 먼저 도착하는 보석은 포기 (괜히 가다가 맞음)
+      score += Math.max(0, 200 - de) * 0.6;   // 적 가까이에 있는 보석은 덜 선호
+    }
+    let cluster = 0;
+    for (const o of match.gems) if (o !== g && Math.hypot(o.x - g.x, o.y - g.y) < 70) cluster += 1;
+    score -= cluster * 25; // 한 번에 여러 개 주울 수 있는 곳 선호
+    if (score < bestScore) { bestScore = score; best = g; }
+  }
+  return best;
+}
+
+// 보석이 없을 때 기다릴 자리: 구멍과 가장 가까운 덤불(매복) → 없으면 구멍 가장자리
+function aiGemCampSpot(match) {
+  const h = gemHole();
+  let best = null;
+  let bd = Infinity;
+  for (const bu of match.bushes || []) {
+    const cx = bu.x + bu.width / 2;
+    const cy = bu.y + bu.height / 2;
+    const d = Math.hypot(cx - h.x, cy - h.y);
+    if (d < bd) { bd = d; best = { x: cx, y: cy }; }
+  }
+  if (best && bd < 230) return best;
+  return { x: h.x, y: h.y + h.r + 30 };
+}
+
 function runAiBot(match, botId, ai, dt, now) {
   if (match.over || now < match.startsAt) return;
   const p = match.players[botId];
@@ -6848,7 +7046,13 @@ function runAiBot(match, botId, ai, dt, now) {
   // ===== 2) 심리전: 체력 상황에 따라 행동 모드 결정 =====
   const myR = p.hp / (p.maxHp || 1);
   const enR = target ? target.hp / (target.maxHp || 1) : null;
-  const fleeAt = 0.3 * ai.bravery;                    // 이 비율보다 체력이 낮아지면 도망 (봇마다 약간 다름)
+  let fleeAt = 0.3 * ai.bravery;                      // 이 비율보다 체력이 낮아지면 도망 (봇마다 약간 다름)
+  if (match.gameMode === 'gemgrab') {
+    // 쨍그랩: 보석을 많이 들고 있을수록 죽으면 손해가 크니 더 일찍 도망. 반대로 상대 팀이 이기기 직전이면 끝까지 물고 늘어짐
+    const heldGems = p.gems || 0;
+    fleeAt += Math.min(0.28, heldGems * 0.03);
+    if (gemTeamTotals(match)[p.team === 'A' ? 'B' : 'A'] >= 12 && heldGems < 8) fleeAt = Math.min(fleeAt, 0.15);
+  }
   const losing = enR === null || enR >= myR * 0.85;   // 적이 나보다 크게 약하지 않음 (적이 훨씬 약하면 끝장을 보려고 계속 싸움)
   const fromX = target ? target.x : (ai.lastSeen ? ai.lastSeen.x : ARENA_WIDTH / 2);
   const fromY = target ? target.y : (ai.lastSeen ? ai.lastSeen.y : ARENA_HEIGHT / 2);
@@ -6879,6 +7083,7 @@ function runAiBot(match, botId, ai, dt, now) {
     default:
       ai.mode = 'fight';
   }
+  if (match.gameMode === 'gemgrab' && target && ai.mode === 'fight' && gemTeamTotals(match)[p.team === 'A' ? 'B' : 'A'] >= 12 && (p.gems || 0) < 8) ai.mode = 'chase'; // 상대 팀 보석이 많으면(= 곧 승리) 적극적으로 쫓아가서 쓰러뜨려 보석을 떨구게 함
   const mode = ai.mode;
   p.aiMode = mode; // 클라이언트가 AI의 상태(도망/추격 등)를 머리 위 이모지로 보여주는 데 사용
 
@@ -6937,7 +7142,7 @@ function runAiBot(match, botId, ai, dt, now) {
     } else {
       // fight: 사거리의 중간 거리를 유지하며 좌우로 움직임. 체력이 앞서면 더 바짝, 뒤지면 더 멀리서 싸움
       const edge = Math.max(-1, Math.min(1, myR - (enR === null ? myR : enR)));
-      const bandScale = 1 - 0.25 * edge;
+      const bandScale = (1 - 0.25 * edge) * ((match.gameMode === 'gemgrab' && (p.gems || 0) >= 8) ? 1.35 : 1); // 보석을 많이 들고 있으면 적과 더 멀리서 싸움
       const near = Math.max(60, range * 0.4 * bandScale);
       const far = Math.max(90, range * 0.75 * bandScale);
 
@@ -6986,6 +7191,62 @@ function runAiBot(match, botId, ai, dt, now) {
     moveX = dx / d; moveY = dy / d; aimAngle = Math.atan2(dy, dx);
   }
 
+  // ===== 모드별 목표 =====
+  // 문지기: 우리 문이 위험하면 지키고, 아니면 상대 문을 부순다 / 쨍그랩: 안전하게 보석을 줍고, 많이 들고 있으면 조심하고, 상대가 많이 들고 있으면 쓰러뜨린다
+  let gateAtk = null;   // 문지기: 지금 공격할 상대 문
+  let gateDist = 0;
+  const objectiveOK = mode !== 'flee' && mode !== 'desperate'; // 도망 중이거나 몰렸을 땐 생존이 우선
+  if (match.gameMode === 'gatekeeper' && match.gates) {
+    const myGate = match.gates[p.team];
+    const enGate = match.gates[p.team === 'A' ? 'B' : 'A'];
+    if (myGate) { // 우리 문이 맞고 있는지 추적
+      if (ai.lastMyGateHp != null && myGate.hp < ai.lastMyGateHp - 1) ai.gateHitAt = now;
+      ai.lastMyGateHp = myGate.hp;
+    }
+    if (objectiveOK) {
+      const underAttack = now - ai.gateHitAt < 3000;
+      const myGateR = myGate ? myGate.hp / myGate.maxHp : 1;
+      const enGateR = enGate ? enGate.hp / enGate.maxHp : 1;
+      const racing = enGateR <= 0.25 && enGateR < myGateR; // 상대 문이 거의 부서졌고 우리 문이 더 튼튼하면 방어보다 끝장내기
+      const enemyAtGate = !!(target && myGate && Math.hypot(target.x - myGate.x, target.y - myGate.y) < 380);
+      if (myGate && !racing && (underAttack || enemyAtGate)) {
+        // 방어: 적이 보이면 아래 기존 전투 로직이 적을 상대하고, 안 보이는데 문이 맞고 있으면(덤불에 숨은 적) 문 쪽으로 돌아와 경계
+        if (!target) {
+          const gd = Math.hypot(myGate.x - p.x, myGate.y - p.y) || 1;
+          if (gd > 110) { moveX = (myGate.x - p.x) / gd; moveY = (myGate.y - p.y) / gd; }
+          else { moveX = -((myGate.y - p.y) / gd) * ai.strafeDir * 0.6; moveY = ((myGate.x - p.x) / gd) * ai.strafeDir * 0.6; }
+          aimAngle = ai.lastSeen ? Math.atan2(ai.lastSeen.y - p.y, ai.lastSeen.x - p.x) : Math.atan2(ARENA_HEIGHT / 2 - p.y, ARENA_WIDTH / 2 - p.x);
+        }
+      } else if (enGate && enGate.hp > 0 && (!target || dist > range * 1.3)) {
+        // 공격: 적이 안 보이거나 멀면 상대 문으로 가서 사거리 안에서 계속 때림 (가까운 적이 있으면 그 적과 먼저 싸움)
+        gateAtk = enGate;
+        gateDist = Math.hypot(enGate.x - p.x, enGate.y - p.y);
+        const toX = (enGate.x - p.x) / (gateDist || 1), toY = (enGate.y - p.y) / (gateDist || 1);
+        aimAngle = Math.atan2(enGate.y - p.y, enGate.x - p.x);
+        aimDist = gateDist;
+        if (gateDist > range * 0.8) { moveX = toX; moveY = toY; }
+        else { moveX = -toY * ai.strafeDir * 0.4; moveY = toX * ai.strafeDir * 0.4; } // 사거리 안이면 살짝 좌우로 움직이며 때림
+      }
+    }
+  } else if (match.gameMode === 'gemgrab' && match.gems && objectiveOK) {
+    const hunting = gemTeamTotals(match)[p.team === 'A' ? 'B' : 'A'] >= 12 && (p.gems || 0) < 8;
+    const huntFresh = hunting && (target || (ai.lastSeen && now - ai.seenAt < 4000)); // 적을 쫓는 중이면 기존 추격 이동을 유지
+    if (!target || dist > range * 1.1) {
+      const gem = aiPickGem(match, p, target);
+      const gemD = gem ? Math.hypot(gem.x - p.x, gem.y - p.y) : Infinity;
+      if (gem && (!huntFresh || gemD < 90)) {
+        moveX = (gem.x - p.x) / (gemD || 1); moveY = (gem.y - p.y) / (gemD || 1);
+        if (!target) aimAngle = Math.atan2(gem.y - p.y, gem.x - p.x);
+      } else if (!gem && !target && !huntFresh) {
+        // 보석이 없으면 구멍 근처(덤불이 있으면 덤불에 숨어서)에서 다음 보석을 기다림
+        const spot = aiGemCampSpot(match);
+        const sd = Math.hypot(spot.x - p.x, spot.y - p.y) || 1;
+        if (sd > 28) { moveX = (spot.x - p.x) / sd; moveY = (spot.y - p.y) / sd; aimAngle = Math.atan2(spot.y - p.y, spot.x - p.x); }
+        else { moveX = 0; moveY = 0; }
+      }
+    }
+  }
+
   // 벽에 끼면 잠시 옆으로 빠져나옴
   const step = AI_MOVE_SPEED * ai.profile.moveScale * (p.speedMultiplier || 1) * dt;
   if (ai.lastX !== null && ai.intended) {
@@ -7012,7 +7273,7 @@ function runAiBot(match, botId, ai, dt, now) {
 
   // ===== 4) 기본 공격 =====
   // 모드별 공격 성향: 도망 중에는 가끔 뒤돌아 반격, 숨어 있을 땐 가까이 온 적만 기습, 추격 중에는 더 자주 발사
-  let canAttack = target && dist <= range * 1.02 + 10 && now >= ai.feintUntil;
+  let canAttack = (target && dist <= range * 1.02 + 10 && now >= ai.feintUntil) || (gateAtk && gateDist <= range * 0.95); // 문지기 모드: 보이는 적이 없으면 사거리 안의 상대 문을 공격
   if (mode === 'flee') canAttack = canAttack && basic.type !== 'charge' && Math.random() < 0.5;
   if (mode === 'hide') canAttack = canAttack && dist < 230;
   const rateScale = mode === 'chase' ? 0.7 : mode === 'flee' ? 1.4 : 1;
@@ -7119,6 +7380,8 @@ function gameLoop() {
     if (match.aiBots) updateAiBots(match, dt, now); // AI 연습 대결의 봇 행동
     updateMatch(match, dt, now);
     checkGates(match); // 문지기 모드: 문이 부서졌는지 확인
+    updateGemGrab(match, now); // 쨍그랩 모드: 보석 생성/획득/승리 판정
+    if (!match.over) flushGems(match);
 
     for (const pid in match.players) {
       io.to(pid).emit('state', {
