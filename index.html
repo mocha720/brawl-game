@@ -258,6 +258,9 @@
   /* ----- 기어 상점 ----- */
   /* ----- 기어 상점 ----- */
   #gearShopOverlay > .panel { width: min(620px, 100%); position: relative; overflow: hidden; background: radial-gradient(120% 70% at 50% -10%, #3a3f93 0%, var(--night) 55%); }
+  /* 스크롤 수정: 패널이 화면 높이만큼 줄어들어(flex-shrink) 안쪽이 overflow:hidden 으로 잘리던 문제 → 패널은 내용 높이를 유지하고, 바깥 오버레이가 스크롤되게 함 (PC: 마우스 휠 / 모바일: 드래그) */
+  #gearShopOverlay { overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; touch-action: pan-y; }
+  #gearShopOverlay > .panel { flex: 0 0 auto; }
   #gearShopOverlay > .panel::before { content: ''; position: absolute; inset: 0 0 auto 0; height: 4px; background: linear-gradient(90deg, #3db8ff, #b06bff, #ff5a5a, #ffc933); }
   .gear-hero { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
   .gear-hero .panel-title { margin: 0; text-shadow: 0 0 18px rgba(255, 201, 40, 0.45); }
@@ -506,8 +509,8 @@
   #vsVote { display: none; margin-top: 18px; width: min(520px, 100%); }
   #vsVote.open { display: block; }
   .vote-title { font-family: var(--font-display); font-size: 20px; color: var(--sun); margin-bottom: 8px; }
-  .vote-options { display: flex; gap: 10px; }
-  .vote-btn { flex: 1; box-sizing: border-box; padding: 10px 8px; border-radius: 14px; border: 3px solid var(--lift); background: var(--dusk); color: var(--paper); cursor: pointer; font: inherit; text-align: center; }
+  .vote-options { display: flex; gap: 10px; flex-wrap: wrap; }
+  .vote-btn { flex: 1 1 130px; box-sizing: border-box; padding: 10px 8px; border-radius: 14px; border: 3px solid var(--lift); background: var(--dusk); color: var(--paper); cursor: pointer; font: inherit; text-align: center; }
   .vote-btn .vote-name { display: block; font-family: var(--font-display); font-size: 20px; }
   .vote-btn .vote-desc { display: block; font-size: 12px; opacity: 0.8; margin-top: 2px; }
   .vote-btn .vote-count { display: block; margin-top: 6px; font-size: 16px; font-weight: 700; color: var(--sun); }
@@ -545,6 +548,7 @@
   #gateHud .gate-bar-fill { height: 100%; }
   #gateHud .gate-bar.mine .gate-bar-fill { background: #2ecc71; }
   #gateHud .gate-bar.enemy .gate-bar-fill { background: #e74c3c; }
+  #gateHud .gate-bar.gemb .gate-bar-fill { background: linear-gradient(90deg, #c58bff, #8e44ff); } /* 쨍그랩: 팀 보석 진행바는 보라색 */
   #vsCountdown { margin-top: 24px; font-family: var(--font-display); font-size: 64px; line-height: 1; text-shadow: 0 5px 0 var(--ink); }
   @media (max-width: 560px) {
     .vs-card { width: 124px; padding: 10px 6px; }
@@ -1648,6 +1652,7 @@ const SFX = (() => {
     ultimate() { beep({ freq: 200, freqEnd: 850, duration: 0.35, type: 'sawtooth', volume: 0.18 }); noiseBurst({ duration: 0.3, volume: 0.08 }); },
     hit() { noiseBurst({ duration: 0.1, volume: 0.22 }); beep({ freq: 160, freqEnd: 70, duration: 0.1, type: 'square', volume: 0.12 }); },
     death() { beep({ freq: 420, freqEnd: 50, duration: 0.6, type: 'sawtooth', volume: 0.22 }); },
+    gem() { beep({ freq: 880, duration: 0.07, type: 'triangle', volume: 0.16 }); beep({ freq: 1320, duration: 0.12, type: 'triangle', volume: 0.16, delay: 0.07 }); },
     kill() { beep({ freq: 520, duration: 0.1, type: 'square', volume: 0.18 }); beep({ freq: 780, duration: 0.16, type: 'square', volume: 0.18, delay: 0.1 }); },
     gadget() { beep({ freq: 500, freqEnd: 950, duration: 0.14, type: 'triangle', volume: 0.16 }); },
     ultimateReady() { beep({ freq: 600, duration: 0.1, type: 'sine', volume: 0.12 }); beep({ freq: 900, duration: 0.15, type: 'sine', volume: 0.12, delay: 0.1 }); },
@@ -3547,7 +3552,14 @@ let matchMode = '1v1';  // 'matchFound'에서 서버가 알려주는 실제 매�
 let matchWinScore = 5;  // 팀이 승리하는 데 필요한 누적 킬 수. matchFound에서 갱신됨
 let matchGameMode = 'knockout'; // 게임 종류: 'knockout'(녹아우) / 'gatekeeper'(문지기). 투표 결과(modeVoteResult)와 매 상태(state)로 갱신됨
 let voteState = null;           // 매칭 직후 게임 모드 투표 진행 상태 { resolved, myVote, counts }
-const GAME_MODE_NAMES = { knockout: '녹아우', gatekeeper: '문지기' };
+const GAME_MODE_NAMES = { knockout: '녹아우', gatekeeper: '문지기', gemgrab: '쨍그랩' };
+// 쨍그랩 모드: 중앙 구멍에서 5초마다 나오는 보라색 보석. 서버가 바뀔 때만 'gems' 이벤트로 목록을 보내준다
+let matchGemWin = 20;   // 팀 보석이 이 수가 되면 승리 (modeVoteResult 로 서버가 알려줌)
+let matchHole = null;   // 중앙 구멍 { x, y, r }
+let gemList = [];       // 바닥에 있는 보석들 { id, x, y, fx, fy } (x,y=착지 위치, fx,fy=튀어나온 위치)
+let gemNextAt = 0;      // 다음 보석이 나올 시각 (클라이언트 시계 기준)
+const gemSeen = {};     // 보석 id -> 처음 본 시각 (튀어나오는 연출용)
+let prevMyGems = 0;     // 내 보석 수가 늘었을 때 효과음을 내기 위한 기록
 let matchIsAi = false;  // AI 대결 여부. matchFound에서 갱신됨
 let matchAiInfo = null; // AI 대결 난이도 정보 { id, name, coinReward, trophyReward }. matchFound에서 갱신됨
 
@@ -3635,6 +3647,7 @@ function showVersusScreen(data) {
       if (voteState && !voteState.resolved) { cdEl.textContent = '집계 중...'; return; } // 투표 결과가 도착할 때까지 기다림
       cdEl.textContent = 'START!';
       if (matchGameMode === 'gatekeeper' && joined) showStartBanner('문을 지키고, 상대를 쥑이뿌세요!!'); // 문지기 모드 시작 안내
+      if (matchGameMode === 'gemgrab' && joined) showStartBanner(`보라색 보석 ${matchGemWin}개를 먼저 모으세요!`); // 쨍그랩 모드 시작 안내
       clearInterval(vsTimer); vsTimer = null;
       setTimeout(() => { if (!vsTimer) document.getElementById('versusOverlay').classList.remove('open'); }, 400);
       return;
@@ -3665,7 +3678,7 @@ function setupVoteUi(vote) {
     el.innerHTML = '';
     return;
   }
-  voteState = { resolved: false, myVote: null, counts: { knockout: 0, gatekeeper: 0 }, options: vote.options || [], mapOptions: vote.maps || [], myMapVote: null, mapCounts: {} };
+  voteState = { resolved: false, myVote: null, counts: { knockout: 0, gatekeeper: 0, gemgrab: 0 }, options: vote.options || [], mapOptions: vote.maps || [], myMapVote: null, mapCounts: {} };
   el.classList.add('open');
   renderVoteUi();
 }
@@ -3729,9 +3742,20 @@ socket.on('modeVoteUpdate', (data) => {
   renderVoteUi();
 });
 
+// 쨍그랩: 바닥에 있는 보석 목록 (서버는 보석이 생기거나/주워지거나/떨어졌을 때만 보내줌)
+socket.on('gems', (data) => {
+  gemList = (data.list || []).map((g) => ({ id: g[0], x: g[1], y: g[2], fx: g[3], fy: g[4] }));
+  gemNextAt = Date.now() + (data.nextInMs || 0);
+  const alive = {};
+  for (const g of gemList) { alive[g.id] = true; if (!gemSeen[g.id]) gemSeen[g.id] = Date.now(); }
+  for (const id in gemSeen) if (!alive[id]) delete gemSeen[id];
+});
+
 socket.on('modeVoteResult', (data) => {
   matchGameMode = data.gameMode || 'knockout';
   if (data.winScore) matchWinScore = data.winScore;
+  matchGemWin = data.gemWin || 20;
+  matchHole = data.hole || null;
   // 투표로 정해진 맵으로 교체: 벽/덤불을 바꾸고, 서버가 옮겨준 새 스폰 위치로 내 위치도 다시 맞춘다
   if (data.walls) WALLS = data.walls;
   if (data.bushes) BUSHES = data.bushes;
@@ -3752,7 +3776,18 @@ function updateGateHud(state) {
   if (!joined || !myTeam) { el.style.display = 'none'; return; }
   const mode = state.gameMode || matchGameMode;
   matchGameMode = mode;
-  let html = `<div class="gate-mode">${mode === 'gatekeeper' ? '🚪 문지기 — 상대 문을 먼저 부수면 승리!' : `⚔ 녹아우 — ${matchWinScore}킬 선취`}</div>`;
+  const modeLabel = mode === 'gatekeeper' ? '🚪 문지기 — 상대 문을 먼저 부수면 승리!'
+    : mode === 'gemgrab' ? `💎 쨍그랩 — 팀 보석 ${matchGemWin}개를 먼저 모으면 승리!`
+    : `⚔ 녹아우 — ${matchWinScore}킬 선취`;
+  let html = `<div class="gate-mode">${modeLabel}</div>`;
+  if (mode === 'gemgrab') {
+    // 팀원이 가진 보석을 합친 수 (죽으면 떨구므로 0이 됨)
+    const totals = { A: 0, B: 0 };
+    for (const pid in (state.players || {})) { const pl = state.players[pid]; if (totals[pl.team] != null) totals[pl.team] += pl.gems || 0; }
+    const enemyTeam = myTeam === 'A' ? 'B' : 'A';
+    const gbar = (n, label, cls) => `<div class="gate-bar ${cls} gemb"><div class="gate-bar-label"><span>${label}</span><span>💎 ${n} / ${matchGemWin}</span></div><div class="gate-bar-track"><div class="gate-bar-fill" style="width:${Math.max(0, Math.min(100, (n / matchGemWin) * 100))}%"></div></div></div>`;
+    html += `<div class="gate-bars">${gbar(totals[myTeam] || 0, '우리 팀', 'mine')}${gbar(totals[enemyTeam] || 0, '상대 팀', 'enemy')}</div>`;
+  }
   if (mode === 'gatekeeper') {
     const gates = (state.turrets || []).filter((t) => t.isGate);
     const mine = gates.find((g) => g.team === myTeam);
@@ -3777,6 +3812,8 @@ socket.on('matchFound', (data) => {
   matchIsAi = !!data.ai;
   matchAiInfo = data.aiDifficulty || null;
   matchGameMode = data.gameMode || 'knockout';
+  matchHole = null; gemList = []; gemNextAt = 0; prevMyGems = 0; // 쨍그랩 상태 초기화
+  for (const k in gemSeen) delete gemSeen[k];
   ARENA_WIDTH = data.arena.width;
   ARENA_HEIGHT = data.arena.height;
   PLAYER_RADIUS = data.playerRadius;
@@ -3858,6 +3895,10 @@ socket.on('matchOver', (data) => {
     titleEl.textContent = iWon ? '상대가 나갔습니다' : '매치 종료';
     titleEl.classList.add(iWon ? 'win' : 'lose');
     descEl.textContent = '상대방의 연결이 끊어져 매치가 종료되었습니다.';
+  } else if (data.reason === 'gemsCollected') {
+    titleEl.textContent = iWon ? '승리!' : '패배';
+    titleEl.classList.add(iWon ? 'win' : 'lose');
+    descEl.textContent = iWon ? `💎 보석 ${matchGemWin}개를 모았어요!` : `💎 상대 팀이 보석 ${matchGemWin}개를 먼저 모았어요...`;
   } else if (data.reason === 'gateDestroyed') {
     titleEl.textContent = iWon ? '승리!' : '패배';
     titleEl.classList.add(iWon ? 'win' : 'lose');
@@ -4032,6 +4073,11 @@ socket.on('state', (state) => {
 
     // 처치 수(score)가 늘었을 때
     if (prevMyScore !== null && me.score > prevMyScore) SFX.kill();
+
+    // 쨍그랩: 내 보석이 늘었으면(보석을 주웠으면) 효과음
+    const myGemsNow = me.gems || 0;
+    if (myGemsNow > prevMyGems) SFX.gem();
+    prevMyGems = myGemsNow;
 
     // 궁극기 게이지가 이번에 막 100%가 되었을 때
     const ultimateReady = me.ultimateCharge >= 100;
@@ -6559,6 +6605,9 @@ function drawPlayer(p, isMe) {
   ctx.textAlign = 'center';
   ctx.fillStyle = '#fff';
   ctx.fillText(p.name, p.x, p.y - PLAYER_RADIUS - 24);
+
+  // 쨍그랩: 머리 위에 현재 가지고 있는 보석 수
+  if (matchGameMode === 'gemgrab') drawGemCount(p);
 
   // 충전 표시 (똥파리): 몸 주변에 충전 링이 차오르고, 손에 든 똥이 충전할수록 커진다
   if (p.chargeRatio > 0) {
@@ -10554,6 +10603,151 @@ function drawStabEffect(e) {
 }
 
 // 맵을 둘러싸는 경계 벽 - 안(플레이 가능 구역)과 밖을 명확하게 구분해주는 두꺼운 벽 테두리
+
+// ===== 쨍그랩 모드 그리기 =====
+// 보라색 보석 한 개 (cx, cy = 중심, s = 크기). 위쪽 면이 있는 클래식 보석 모양
+function drawGemShape(cx, cy, s) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  // 은은한 보라색 후광
+  const halo = ctx.createRadialGradient(0, 0, s * 0.3, 0, 0, s * 2.1);
+  halo.addColorStop(0, 'rgba(190, 120, 255, 0.55)');
+  halo.addColorStop(1, 'rgba(190, 120, 255, 0)');
+  ctx.fillStyle = halo;
+  ctx.beginPath();
+  ctx.arc(0, 0, s * 2.1, 0, Math.PI * 2);
+  ctx.fill();
+  // 본체
+  const pts = [[-0.55, -0.85], [0.55, -0.85], [1, -0.15], [0, 1], [-1, -0.15]];
+  const grad = ctx.createLinearGradient(-s, -s, s, s);
+  grad.addColorStop(0, '#e6c2ff');
+  grad.addColorStop(0.5, '#a15cff');
+  grad.addColorStop(1, '#6a22d6');
+  ctx.beginPath();
+  pts.forEach((pt, i) => { if (i === 0) ctx.moveTo(pt[0] * s, pt[1] * s); else ctx.lineTo(pt[0] * s, pt[1] * s); });
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+  ctx.lineWidth = Math.max(1.2, s * 0.14);
+  ctx.strokeStyle = '#3b1275';
+  ctx.stroke();
+  // 면 선 + 반짝이는 하이라이트
+  ctx.lineWidth = Math.max(1, s * 0.08);
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+  ctx.beginPath();
+  ctx.moveTo(-1 * s, -0.15 * s); ctx.lineTo(1 * s, -0.15 * s);
+  ctx.moveTo(-0.55 * s, -0.85 * s); ctx.lineTo(-0.3 * s, -0.15 * s); ctx.lineTo(0, 1 * s);
+  ctx.moveTo(0.55 * s, -0.85 * s); ctx.lineTo(0.3 * s, -0.15 * s); ctx.lineTo(0, 1 * s);
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+  ctx.beginPath();
+  ctx.ellipse(-0.42 * s, -0.55 * s, s * 0.16, s * 0.09, -0.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+// 맵 한가운데의 구멍: 어두운 구덩이 + 보라빛 가장자리. 가장자리 호가 차오르다가 가득 차면 보석이 튀어나옴
+function drawGemHole() {
+  const hole = matchHole || { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT / 2, r: 46 };
+  const now = Date.now();
+  const left = Math.max(0, gemNextAt - now);
+  const prog = gemNextAt ? 1 - Math.min(1, left / 5000) : 0;
+  const pulse = 0.5 + 0.5 * Math.sin(now / 280);
+  const soon = gemNextAt && left < 700; // 곧 나올 때 구멍이 번쩍임
+  ctx.save();
+  ctx.translate(hole.x, hole.y);
+  // 바깥 돌 테두리
+  ctx.beginPath();
+  ctx.arc(0, 0, hole.r + 9, 0, Math.PI * 2);
+  ctx.fillStyle = '#4a4f86';
+  ctx.fill();
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = '#0c0d24';
+  ctx.stroke();
+  // 구덩이 (가운데가 가장 깊고 검음)
+  const pit = ctx.createRadialGradient(0, 0, hole.r * 0.1, 0, 0, hole.r);
+  pit.addColorStop(0, '#000000');
+  pit.addColorStop(0.7, '#12052a');
+  pit.addColorStop(1, soon ? '#6b2bc4' : '#2a0f55');
+  ctx.beginPath();
+  ctx.arc(0, 0, hole.r, 0, Math.PI * 2);
+  ctx.fillStyle = pit;
+  ctx.fill();
+  // 안쪽에서 맴도는 보랏빛
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = `rgba(190, 120, 255, ${0.25 + 0.25 * pulse + (soon ? 0.3 : 0)})`;
+  for (let i = 0; i < 3; i++) {
+    const a0 = now / 700 + (i * Math.PI * 2) / 3;
+    ctx.beginPath();
+    ctx.arc(0, 0, hole.r * (0.35 + 0.2 * i), a0, a0 + 1.3);
+    ctx.stroke();
+  }
+  // 다음 보석까지 차오르는 가장자리 호
+  if (prog > 0) {
+    ctx.beginPath();
+    ctx.arc(0, 0, hole.r + 4.5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * prog);
+    ctx.lineWidth = 5;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = soon ? '#f0d9ff' : '#b36bff';
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// 바닥에 있는 보석들. 처음 보이면 구멍(또는 죽은 자리)에서 포물선을 그리며 튀어나옴
+function drawGems() {
+  const now = Date.now();
+  const T = 450;
+  for (const g of gemList) {
+    const born = gemSeen[g.id] || now;
+    const age = now - born;
+    let x = g.x, y = g.y, lift = 0, sc = 1;
+    if (age < T) {
+      const t = age / T;
+      const e = 1 - (1 - t) * (1 - t);
+      x = g.fx + (g.x - g.fx) * e;
+      y = g.fy + (g.y - g.fy) * e;
+      lift = Math.sin(t * Math.PI) * 38;
+      sc = 0.45 + 0.55 * e;
+    } else {
+      lift = 3 + Math.sin(now / 260 + g.id) * 2.5; // 가만히 둥실둥실
+    }
+    // 바닥 그림자
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+    ctx.beginPath();
+    ctx.ellipse(x, y + 6, 9 * sc, 3.5 * sc, 0, 0, Math.PI * 2);
+    ctx.fill();
+    drawGemShape(x, y - lift, 10 * sc);
+  }
+}
+
+// 머리 위 보석 수 표시: 이름 위에 [💎 숫자] 알약 모양
+function drawGemCount(p) {
+  const n = p.gems || 0;
+  const cx = p.x;
+  const cy = p.y - PLAYER_RADIUS - 66;
+  ctx.save();
+  ctx.font = 'bold 14px sans-serif';
+  const label = String(n);
+  const tw = ctx.measureText(label).width;
+  const w = 24 + tw + 12;
+  const hgt = 20;
+  ctx.globalAlpha = n > 0 ? 1 : 0.6;
+  ctx.beginPath();
+  if (ctx.roundRect) ctx.roundRect(cx - w / 2, cy - hgt / 2, w, hgt, 10); else ctx.rect(cx - w / 2, cy - hgt / 2, w, hgt);
+  ctx.fillStyle = 'rgba(25, 8, 55, 0.8)';
+  ctx.fill();
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = n > 0 ? '#c58bff' : 'rgba(197, 139, 255, 0.5)';
+  ctx.stroke();
+  drawGemShape(cx - w / 2 + 13, cy - 1, 6.5);
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#fff';
+  ctx.fillText(label, cx - w / 2 + 24, cy + 1);
+  ctx.restore();
+}
+
 function drawArenaBoundary() {
   const t = 26; // 경계 벽 두께
   ctx.fillStyle = '#3a3f78';
@@ -10668,6 +10862,7 @@ function render() {
   drawArenaBoundary();
   drawWalls();
   drawBushes();
+  if (matchGameMode === 'gemgrab') { drawGemHole(); drawGems(); } // 쨍그랩: 중앙 구멍과 바닥의 보석 (플레이어보다 아래에 그림)
 
   const poolsArr = Array.isArray(latestState.waterPools) ? latestState.waterPools : [];
   for (const wp of poolsArr) drawWaterPool(wp);
