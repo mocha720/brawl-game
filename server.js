@@ -7191,11 +7191,20 @@ function runAiBot(match, botId, ai, dt, now) {
     moveX = dx / d; moveY = dy / d; aimAngle = Math.atan2(dy, dx);
   }
 
-  // ===== 모드별 목표 =====
-  // 문지기: 우리 문이 위험하면 지키고, 아니면 상대 문을 부순다 / 쨍그랩: 안전하게 보석을 줍고, 많이 들고 있으면 조심하고, 상대가 많이 들고 있으면 쓰러뜨린다
-  let gateAtk = null;   // 문지기: 지금 공격할 상대 문
+  // ===== 모드별 목표 (싸우면서 동시에 수행) =====
+  // 한 가지 역할만 하지 않는다. 이동은 '전투 이동'과 '목표 이동(보석 줍기 / 상대 문 공격 / 우리 문 방어)'을 섞어서 정하고,
+  // 공격은 사거리 안에 있는 것을 쏜다 (적이 사거리 안이면 적, 아니면 상대 문). 그래서 적과 싸우는 도중에도 보석 쪽/문 쪽으로 나아간다.
+  let gateAtk = null;   // 문지기: 지금 사거리 안에 있는 상대 문
   let gateDist = 0;
+  let objX = 0, objY = 0, wObj = 0; // 목표 방향(objX, objY)과 그쪽으로 얼마나 가는지(0~1). 나머지는 전투 이동
   const objectiveOK = mode !== 'flee' && mode !== 'desperate'; // 도망 중이거나 몰렸을 땐 생존이 우선
+  // 적과의 거리에 따라 목표 비중 조절: 적이 코앞이면 전투 이동을 더 따르고, 사거리 안이면 쏘면서 목표로 이동, 멀거나 안 보이면 목표로 곧장 감
+  const objWeight = (base) => {
+    if (!target) return 1;
+    if (dist <= range * 0.5) return base * 0.4;
+    if (dist <= range * 1.1) return base * 0.7;
+    return base;
+  };
   if (match.gameMode === 'gatekeeper' && match.gates) {
     const myGate = match.gates[p.team];
     const enGate = match.gates[p.team === 'A' ? 'B' : 'A'];
@@ -7208,43 +7217,60 @@ function runAiBot(match, botId, ai, dt, now) {
       const myGateR = myGate ? myGate.hp / myGate.maxHp : 1;
       const enGateR = enGate ? enGate.hp / enGate.maxHp : 1;
       const racing = enGateR <= 0.25 && enGateR < myGateR; // 상대 문이 거의 부서졌고 우리 문이 더 튼튼하면 방어보다 끝장내기
-      const enemyAtGate = !!(target && myGate && Math.hypot(target.x - myGate.x, target.y - myGate.y) < 380);
+      const enemyAtGate = !!(target && myGate && Math.hypot(target.x - myGate.x, target.y - myGate.y) < 240); // 적이 우리 문 코앞까지 왔을 때만 방어 (그 전에는 싸우면서 상대 문을 공격)
       if (myGate && !racing && (underAttack || enemyAtGate)) {
-        // 방어: 적이 보이면 아래 기존 전투 로직이 적을 상대하고, 안 보이는데 문이 맞고 있으면(덤불에 숨은 적) 문 쪽으로 돌아와 경계
+        // 방어: 적이 보이면 전투 이동(적에게 다가가 싸움)이 곧 방어. 안 보이는데 문이 맞고 있으면(덤불에 숨은 적) 문 쪽으로 돌아와 경계
         if (!target) {
           const gd = Math.hypot(myGate.x - p.x, myGate.y - p.y) || 1;
-          if (gd > 110) { moveX = (myGate.x - p.x) / gd; moveY = (myGate.y - p.y) / gd; }
-          else { moveX = -((myGate.y - p.y) / gd) * ai.strafeDir * 0.6; moveY = ((myGate.x - p.x) / gd) * ai.strafeDir * 0.6; }
+          if (gd > 110) { objX = (myGate.x - p.x) / gd; objY = (myGate.y - p.y) / gd; }
+          else { objX = -((myGate.y - p.y) / gd) * ai.strafeDir * 0.6; objY = ((myGate.x - p.x) / gd) * ai.strafeDir * 0.6; }
+          wObj = 1;
           aimAngle = ai.lastSeen ? Math.atan2(ai.lastSeen.y - p.y, ai.lastSeen.x - p.x) : Math.atan2(ARENA_HEIGHT / 2 - p.y, ARENA_WIDTH / 2 - p.x);
         }
-      } else if (enGate && enGate.hp > 0 && (!target || dist > range * 1.3)) {
-        // 공격: 적이 안 보이거나 멀면 상대 문으로 가서 사거리 안에서 계속 때림 (가까운 적이 있으면 그 적과 먼저 싸움)
-        gateAtk = enGate;
+      } else if (enGate && enGate.hp > 0) {
+        // 공격: 적과 싸우는 중이어도 상대 문 쪽으로 나아가고, 사거리 안에 들어오면 (적이 사거리 밖일 때) 문을 때림
         gateDist = Math.hypot(enGate.x - p.x, enGate.y - p.y);
         const toX = (enGate.x - p.x) / (gateDist || 1), toY = (enGate.y - p.y) / (gateDist || 1);
-        aimAngle = Math.atan2(enGate.y - p.y, enGate.x - p.x);
-        aimDist = gateDist;
-        if (gateDist > range * 0.8) { moveX = toX; moveY = toY; }
-        else { moveX = -toY * ai.strafeDir * 0.4; moveY = toX * ai.strafeDir * 0.4; } // 사거리 안이면 살짝 좌우로 움직이며 때림
+        if (gateDist > range * 0.8) { objX = toX; objY = toY; }
+        else { objX = -toY * ai.strafeDir * 0.5; objY = toX * ai.strafeDir * 0.5; } // 사거리 안이면 살짝 좌우로 움직이며 때림
+        wObj = objWeight(0.9);
+        if (mode === 'chase') wObj *= 0.4; // 거의 죽은 적을 쫓는 중에는 마무리 우선
+        if (gateDist <= range * 0.95) gateAtk = enGate;
+        const enemyInRange = !!(target && dist <= range * 1.02 + 10);
+        if (!enemyInRange) { aimAngle = Math.atan2(enGate.y - p.y, enGate.x - p.x); aimDist = gateDist; }
       }
     }
   } else if (match.gameMode === 'gemgrab' && match.gems && objectiveOK) {
     const hunting = gemTeamTotals(match)[p.team === 'A' ? 'B' : 'A'] >= 12 && (p.gems || 0) < 8;
-    const huntFresh = hunting && (target || (ai.lastSeen && now - ai.seenAt < 4000)); // 적을 쫓는 중이면 기존 추격 이동을 유지
-    if (!target || dist > range * 1.1) {
-      const gem = aiPickGem(match, p, target);
-      const gemD = gem ? Math.hypot(gem.x - p.x, gem.y - p.y) : Infinity;
-      if (gem && (!huntFresh || gemD < 90)) {
-        moveX = (gem.x - p.x) / (gemD || 1); moveY = (gem.y - p.y) / (gemD || 1);
-        if (!target) aimAngle = Math.atan2(gem.y - p.y, gem.x - p.x);
-      } else if (!gem && !target && !huntFresh) {
-        // 보석이 없으면 구멍 근처(덤불이 있으면 덤불에 숨어서)에서 다음 보석을 기다림
-        const spot = aiGemCampSpot(match);
-        const sd = Math.hypot(spot.x - p.x, spot.y - p.y) || 1;
-        if (sd > 28) { moveX = (spot.x - p.x) / sd; moveY = (spot.y - p.y) / sd; aimAngle = Math.atan2(spot.y - p.y, spot.x - p.x); }
-        else { moveX = 0; moveY = 0; }
+    const huntFresh = hunting && (target || (ai.lastSeen && now - ai.seenAt < 4000)); // 상대가 이기기 직전이면 보석보다 적을 쫓음
+    const gem = aiPickGem(match, p, target);
+    if (gem) {
+      const gemD = Math.hypot(gem.x - p.x, gem.y - p.y) || 1;
+      objX = (gem.x - p.x) / gemD; objY = (gem.y - p.y) / gemD;
+      if (gemD < 90) {
+        wObj = target && dist < 60 ? 0.8 : 1; // 바로 앞의 보석은 싸우는 중이어도 챙김
+      } else {
+        wObj = objWeight(0.9);
+        if (huntFresh) wObj = Math.min(wObj, 0.15);
+        else if (target && (target.gems || 0) >= 6) wObj *= 0.6; // 보석을 많이 든 적은 쓰러뜨리면 보석이 쏟아지니 싸움을 우선
+        if (mode === 'chase') wObj *= 0.4;
       }
+      if (!target) aimAngle = Math.atan2(gem.y - p.y, gem.x - p.x);
+    } else if (!target && !huntFresh) {
+      // 보석이 없으면 구멍 근처(덤불이 있으면 덤불에 숨어서)에서 다음 보석을 기다림
+      const spot = aiGemCampSpot(match);
+      const sd = Math.hypot(spot.x - p.x, spot.y - p.y) || 1;
+      if (sd > 28) { objX = (spot.x - p.x) / sd; objY = (spot.y - p.y) / sd; aimAngle = Math.atan2(spot.y - p.y, spot.x - p.x); }
+      wObj = 1;
     }
+  }
+  if (wObj > 0) {
+    const cl = Math.hypot(moveX, moveY);
+    const cvx = cl > 0.01 ? moveX / cl : 0, cvy = cl > 0.01 ? moveY / cl : 0;
+    let bx = cvx * (1 - wObj) + objX * wObj;
+    let by = cvy * (1 - wObj) + objY * wObj;
+    if (Math.hypot(bx, by) < 0.35 && Math.hypot(objX, objY) > 0.01) { bx = objX; by = objY; } // 전투 이동과 목표 방향이 정반대라 상쇄되면 목표 우선
+    moveX = bx; moveY = by;
   }
 
   // 벽에 끼면 잠시 옆으로 빠져나옴
