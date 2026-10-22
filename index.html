@@ -1419,6 +1419,17 @@ const camera = { x: 0, y: 0 };
 // 화면(캔버스) 크기가 얼마든 맵 전체가 항상 한 화면에 다 보이도록 하는 축소 배율.
 // (모바일 세로화면처럼 가로폭이 좁아도 맵이 잘리지 않고 전체가 축소되어 보임)
 let cameraScale = 1;
+// ===== 2.5D 카메라 (브롤스타즈처럼 비스듬히 내려다보는 시점) =====
+// 바닥(맵/장판/이펙트)은 세로로 TILT 배 눌러서 그리고, 캐릭터·벽·터렛은 눌리지 않게 '세워서' 그린다.
+// camera.y 는 '눌린 화면 좌표' 기준 값이므로, 화면 -> 월드 y 로 바꿀 때는 TILT 로 나눠야 한다.
+const TILT = 0.72;      // 바닥의 세로 압축 비율 (작을수록 더 낮은 각도에서 보는 느낌)
+const WALL_H = 26;      // 벽 높이 (화면 픽셀)
+// 눌린(바닥) 좌표계 안에서 y 지점을 기준으로 눌림을 풀어 '세워서' 그리기 위한 변환 (ctx.save/restore 로 감싸서 사용)
+function uprightAt(y) { ctx.translate(0, y); ctx.scale(1, 1 / TILT); ctx.translate(0, -y); }
+// 월드 방향각을 화면에 보이는 방향각으로 변환 (세워 그린 캐릭터의 조준선 방향용)
+function projAngle(a) { return Math.atan2(Math.sin(a) * TILT, Math.cos(a)); }
+// 마우스(화면) 세로 좌표 -> 월드 y
+function mouseWorldY() { return mouseWorldY() / TILT; }
 
 // 캔버스 실제 해상도를 맵 크기가 아니라 '화면에 보이는 크기'로 맞춘다 (넓은 맵을 한눈에 다 보여주지 않기 위함)
 function resizeCanvas() {
@@ -1436,11 +1447,11 @@ function clamp(value, min, max) {
 // 가로/세로 중 더 많이 축소해야 하는 쪽에 맞춰 배율을 정해서, 화면 비율(모바일/PC 어느 쪽이든)과
 // 상관없이 맵 전체(경계 포함)가 항상 한 화면 안에 들어오도록 한다.
 function updateCamera() {
-  cameraScale = Math.min(canvas.width / ARENA_WIDTH, canvas.height / ARENA_HEIGHT);
+  cameraScale = Math.min(canvas.width / ARENA_WIDTH, canvas.height / (ARENA_HEIGHT * TILT + WALL_H + 12));
   const viewW = canvas.width / cameraScale;
   const viewH = canvas.height / cameraScale;
   camera.x = (ARENA_WIDTH - viewW) / 2;
-  camera.y = (ARENA_HEIGHT - viewH) / 2;
+  camera.y = (ARENA_HEIGHT * TILT - WALL_H) / 2 - viewH / 2; // 벽이 위로 솟은 높이까지 감안해 화면 중앙에 맞춤
 }
 
 let latestState = { players: {}, bullets: [], effects: [], waterPools: [], turrets: [], bombs: [], chickens: [] };
@@ -1758,7 +1769,7 @@ function getAimDistanceFor(me, u) {
   const minD = Math.min(maxD, u.minDistance || 0);
   if (touchAimActive) return minD + Math.max(0, Math.min(1, touchAimMag)) * (maxD - minD);
   const worldMouseX = mouseX / cameraScale + camera.x;
-  const worldMouseY = mouseY / cameraScale + camera.y;
+  const worldMouseY = mouseWorldY();
   const d = Math.hypot(worldMouseX - me.x, worldMouseY - me.y);
   return Math.max(minD, Math.min(maxD, d));
 }
@@ -1907,7 +1918,7 @@ setupStick('rightStick', 'rightNub',
     if (Math.abs(dx) < 4 && Math.abs(dy) < 4) return;
     touchAimActive = true;
     rightStickDragged = true;
-    touchAimAngle = Math.atan2(dy, dx);
+    touchAimAngle = Math.atan2(dy / TILT, dx); // 화면 방향 -> 월드 방향
     touchAimMag = Math.min(1, Math.hypot(nx, ny));
   },
   () => {
@@ -4010,6 +4021,8 @@ function drawFloatTexts() {
   ctx.textBaseline = 'middle';
   ctx.lineJoin = 'round';
   for (const f of floatTexts) {
+    ctx.save();
+    uprightAt(f.y); // 글자는 눌리지 않게 세워서 그림
     const t = (now - f.born) / FLOAT_LIFE_MS;
     const rise = 42 * (1 - (1 - t) * (1 - t)); // 처음엔 빠르게 올라가고 점점 느려짐
     const pop = t < 0.12 ? 0.6 + 0.4 * (t / 0.12) : 1; // 나타날 때 살짝 커지는 효과
@@ -4020,6 +4033,7 @@ function drawFloatTexts() {
     ctx.strokeText(f.text, f.x, f.y - rise);
     ctx.fillStyle = colors[f.kind] || '#fff';
     ctx.fillText(f.text, f.x, f.y - rise);
+    ctx.restore();
   }
   ctx.restore();
 }
@@ -4172,6 +4186,7 @@ function drawChatBubble(p) {
   if (Date.now() > bubble.expiresAt) { delete chatBubbles[p.id]; return; }
 
   ctx.save();
+  uprightAt(p.y);
   ctx.font = '12px sans-serif';
   const paddingX = 9, bh = 22;
   const textWidth = ctx.measureText(bubble.text).width;
@@ -4403,7 +4418,7 @@ function collidesWithWalls(x, y, radius) {
 // 조이스틱 조준(터치)일 때는 방향만 있으므로 보내지 않는다.
 function aimPointPayload() {
   if (touchAimActive) return {};
-  return { aimX: mouseX / cameraScale + camera.x, aimY: mouseY / cameraScale + camera.y };
+  return { aimX: mouseX / cameraScale + camera.x, aimY: mouseWorldY() };
 }
 
 // ===== 게임 루프 (클라이언트) =====
@@ -4419,14 +4434,14 @@ function update(dt) {
   }
   const me = latestState.players[myId];
   if (me && !me.alive) return; // 사망 중에는 이동 불가
-  if (me && (me.dashing || (me.stunnedUntil && Date.now() < me.stunnedUntil) || (me.knockbackTimeLeft && me.knockbackTimeLeft > 0))) {
+  if (me && (me.dashing || me.ejecting || (me.stunnedUntil && Date.now() < me.stunnedUntil) || (me.knockbackTimeLeft && me.knockbackTimeLeft > 0))) {
     // 돌진 중이거나 기절/넉백 상태면 서버가 위치를 직접 제어하므로, 로컬 입력을 무시하고 서버 위치를 그대로 따라간다
     myX = me.x;
     myY = me.y;
     wasServerControlled = true;
     if (me.dashing) {
       // 돌진 중에도 조준 방향/마우스 위치는 서버에 계속 알림: 시스템처럼 '돌진한 뒤 현재 마우스 방향으로 공격'하는 캐릭터가 돌진이 끝난 위치 기준으로 정확히 겨냥하도록
-      myAngle = touchAimActive ? touchAimAngle : Math.atan2((mouseY / cameraScale + camera.y) - myY, (mouseX / cameraScale + camera.x) - myX);
+      myAngle = touchAimActive ? touchAimAngle : Math.atan2(mouseWorldY() - myY, (mouseX / cameraScale + camera.x) - myX);
       socket.emit('playerUpdate', { x: myX, y: myY, angle: myAngle, ...aimPointPayload() });
     }
     return;
@@ -4463,8 +4478,9 @@ function update(dt) {
     const nextY = myY + (dy / len) * magnitude * MOVE_SPEED * speedMultiplier * dt;
 
     // 벽에 닿아도 옆으로는 미끄러지듯 이동하도록 축별로 검사
-    if (!collidesWithWalls(nextX, myY, PLAYER_RADIUS)) myX = nextX;
-    if (!collidesWithWalls(myX, nextY, PLAYER_RADIUS)) myY = nextY;
+    const passWalls = !!(me && me.wallPass); // 하이퍼 은신 중에는 벽 통과
+    if (passWalls || !collidesWithWalls(nextX, myY, PLAYER_RADIUS)) myX = nextX;
+    if (passWalls || !collidesWithWalls(myX, nextY, PLAYER_RADIUS)) myY = nextY;
   }
 
   myX = Math.max(PLAYER_RADIUS, Math.min(ARENA_WIDTH - PLAYER_RADIUS, myX));
@@ -4472,7 +4488,7 @@ function update(dt) {
 
   // 오른쪽 조이스틱으로 조준 중이면 그 방향을, 아니면 마우스 방향을 바라봄
   // mouseX/mouseY는 화면(캔버스) 기준 좌표이므로, 축소 배율을 나누고 카메라 오프셋을 더해 월드 좌표로 변환한 뒤 각도를 계산
-  myAngle = touchAimActive ? touchAimAngle : Math.atan2((mouseY / cameraScale + camera.y) - myY, (mouseX / cameraScale + camera.x) - myX);
+  myAngle = touchAimActive ? touchAimAngle : Math.atan2(mouseWorldY() - myY, (mouseX / cameraScale + camera.x) - myX);
 
   socket.emit('playerUpdate', { x: myX, y: myY, angle: myAngle, ...aimPointPayload() });
 }
@@ -6553,9 +6569,21 @@ function drawPlayer(p, isMe) {
   if (p.skin && SKIN_LOOKS[p.skin] && SKIN_LOOKS[p.skin].drawFx) SKIN_LOOKS[p.skin].drawFx(p);
   // 하이퍼 차지 발동 중: 몸 주위에서 보랏빛 불꽃이 타오름 (몸통보다 먼저 그려서 뒤에 깔림)
   if (p.alive && p.hyperLeft > 0) drawHyperAura(p);
+  // 2.5D: 바닥에 둥근 그림자를 깔고, 이 아래부터는 캐릭터를 눌리지 않게 세워서 그림
+  if (p.alive) {
+    ctx.save();
+    ctx.globalAlpha = 0.32;
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, PLAYER_RADIUS * 0.95 * (1 - lift / 260), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  ctx.save();
+  uprightAt(p.y);
   // 몸통
   ctx.save();
-  ctx.translate(p.x, p.y - lift);
+  ctx.translate(p.x, p.y - lift - PLAYER_RADIUS * 0.45); // 발은 바닥, 몸은 살짝 위
 
   if (!p.alive) {
     ctx.globalAlpha = 0.25; // 사망 상태는 반투명 처리
@@ -6573,9 +6601,28 @@ function drawPlayer(p, isMe) {
   }
 
   const skinLook = p.skin && SKIN_LOOKS[p.skin] ? SKIN_LOOKS[p.skin] : null; // 장착한 스킨의 외형 (없으면 기본 모습)
+  const bodyCol = (skinLook && skinLook.body) || p.color || '#3498db';
+  const R3 = PLAYER_RADIUS;
+  // 입체감: 아래쪽 받침(원기둥 느낌) -> 구 모양 몸통(왼쪽 위 빛) 순서로 그림
   ctx.beginPath();
-  ctx.arc(0, 0, PLAYER_RADIUS, 0, Math.PI * 2);
-  ctx.fillStyle = (skinLook && skinLook.body) || p.color || '#3498db';
+  ctx.ellipse(0, R3 * 0.5, R3 * 0.9, R3 * 0.4, 0, 0, Math.PI * 2);
+  ctx.rect(-R3 * 0.9, 0, R3 * 1.8, R3 * 0.5);
+  ctx.fillStyle = bodyCol;
+  ctx.fill();
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(0, 0, R3, 0, Math.PI * 2);
+  ctx.fillStyle = bodyCol;
+  ctx.fill();
+  const shade = ctx.createRadialGradient(-R3 * 0.4, -R3 * 0.45, R3 * 0.1, 0, 0, R3 * 1.05);
+  shade.addColorStop(0, 'rgba(255,255,255,0.5)');
+  shade.addColorStop(0.35, 'rgba(255,255,255,0.08)');
+  shade.addColorStop(0.75, 'rgba(0,0,0,0.12)');
+  shade.addColorStop(1, 'rgba(0,0,0,0.5)');
+  ctx.beginPath();
+  ctx.arc(0, 0, R3, 0, Math.PI * 2);
+  ctx.fillStyle = shade;
   ctx.fill();
   ctx.lineWidth = isMe ? 3 : 1.5;
   ctx.strokeStyle = isMe ? '#fff' : '#222';
@@ -6586,7 +6633,7 @@ function drawPlayer(p, isMe) {
   if (skinLook && skinLook.draw && skinLook.upright) skinLook.draw(PLAYER_RADIUS, p);
 
   // 바라보는 방향 표시
-  ctx.rotate(p.angle);
+  ctx.rotate(projAngle(p.angle));
   if (skinLook && skinLook.draw && !skinLook.upright) skinLook.draw(PLAYER_RADIUS, p);
   ctx.beginPath();
   ctx.moveTo(skinLook && skinLook.upright ? PLAYER_RADIUS * 0.9 : 0, 0); // 얼굴을 가리지 않도록 upright 스킨은 몸 가장자리에서부터 조준선을 그림
@@ -6598,7 +6645,7 @@ function drawPlayer(p, isMe) {
   ctx.restore();
   ctx.globalAlpha = 1;
 
-  if (!p.alive) return; // 사망 중에는 이름/HP 표시 생략
+  if (!p.alive) { ctx.restore(); return; } // 사망 중에는 이름/HP 표시 생략
 
   // 닉네임
   ctx.font = 'bold 13px sans-serif';
@@ -6786,6 +6833,7 @@ function drawPlayer(p, isMe) {
       ctx.stroke();
     }
   }
+  ctx.restore(); // uprightAt 해제
 }
 
 function drawVortexShape(x, y, r, spin, color, arms) {
@@ -10748,37 +10796,42 @@ function drawGemCount(p) {
   ctx.restore();
 }
 
-function drawArenaBoundary() {
-  const t = 26; // 경계 벽 두께
-  ctx.fillStyle = '#3a3f78';
-  ctx.strokeStyle = '#0c0d24';
-  ctx.lineWidth = 3;
-  const frame = [
-    { x: -t, y: -t, width: ARENA_WIDTH + t * 2, height: t },                  // 위쪽
-    { x: -t, y: ARENA_HEIGHT, width: ARENA_WIDTH + t * 2, height: t },        // 아래쪽
-    { x: -t, y: 0, width: t, height: ARENA_HEIGHT },                          // 왼쪽
-    { x: ARENA_WIDTH, y: 0, width: t, height: ARENA_HEIGHT },                 // 오른쪽
-  ];
-  for (const r of frame) {
-    ctx.fillRect(r.x, r.y, r.width, r.height);
-    ctx.strokeRect(r.x, r.y, r.width, r.height);
-  }
+// 2.5D 상자: 바닥 사각형(x,y,w,h)을 높이 hgt(화면 픽셀)만큼 세워서, 윗면 + 앞면(아래쪽 면)을 그린다. (눌린 바닥 좌표계 안에서 호출)
+function drawBox(x, y, w, h, hgt, topColor, frontColor, edge, alpha) {
+  const up = hgt / TILT; // 눌린 좌표계에서 화면 hgt 픽셀에 해당하는 길이
+  ctx.save();
+  if (alpha != null) ctx.globalAlpha = alpha;
+  ctx.fillStyle = frontColor;
+  ctx.fillRect(x, y + h - up, w, up);                    // 앞면
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  ctx.fillRect(x, y + h - up * 0.35, w, up * 0.35);      // 앞면 아래쪽을 살짝 어둡게
+  ctx.fillStyle = topColor;
+  ctx.fillRect(x, y - up, w, h);                         // 윗면
+  ctx.fillStyle = 'rgba(255,255,255,0.16)';
+  ctx.fillRect(x, y - up, w, Math.min(6, h / 2));        // 윗면 윗쪽 하이라이트
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = edge;
+  ctx.strokeRect(x, y - up, w, h + up);                  // 바깥 윤곽
+  ctx.beginPath();
+  ctx.moveTo(x, y + h - up);
+  ctx.lineTo(x + w, y + h - up);                         // 윗면/앞면 경계선
+  ctx.stroke();
+  ctx.restore();
 }
-
-function drawWalls() {
-  ctx.lineWidth = 3;
-  for (const w of WALLS) {
-    ctx.fillStyle = '#4a4f8a';
-    ctx.fillRect(w.x, w.y, w.width, w.height);
-    ctx.fillStyle = 'rgba(255,255,255,0.14)';                       // 윗면 하이라이트
-    ctx.fillRect(w.x, w.y, w.width, Math.min(8, w.height / 2));
-    const sh = Math.min(10, w.height / 3);
-    ctx.fillStyle = 'rgba(0,0,0,0.28)';                             // 아랫면 그림자
-    ctx.fillRect(w.x, w.y + w.height - sh, w.width, sh);
-    ctx.strokeStyle = '#0c0d24';
-    ctx.strokeRect(w.x, w.y, w.width, w.height);
-  }
+const BOUNDARY_T = 26; // 경계 벽 두께
+const BOUNDARY_H = WALL_H * 0.7;
+function boundaryFrames() {
+  const t = BOUNDARY_T;
+  return {
+    top: { x: -t, y: -t, w: ARENA_WIDTH + t * 2, h: t },
+    bottom: { x: -t, y: ARENA_HEIGHT, w: ARENA_WIDTH + t * 2, h: t },
+    left: { x: -t, y: 0, w: t, h: ARENA_HEIGHT },
+    right: { x: ARENA_WIDTH, y: 0, w: t, h: ARENA_HEIGHT },
+  };
 }
+function drawFrameBox(r) { drawBox(r.x, r.y, r.w, r.h, BOUNDARY_H, '#555ca8', '#2c3068', '#0c0d24'); }
+function drawWallBox(w) { drawBox(w.x, w.y, w.width, w.height, WALL_H, '#6a70b8', '#3d4280', '#0c0d24'); }
+function drawBushBox(b) { drawBox(b.x, b.y, b.width, b.height, 20, 'rgb(70,200,115)', 'rgb(28,128,70)', 'rgba(10,80,45,0.9)', 0.6); }
 
 // 은신 가능한 덤불 - 벽과 달리 이동/총알은 막지 않고, 그 안에 들어가면 적에게 보이지 않게 됨
 function drawBushes() {
@@ -10834,7 +10887,7 @@ function render() {
 
   ctx.save();
   ctx.scale(cameraScale, cameraScale); // 화면 크기에 맞춰 맵 전체가 한 화면에 들어오도록 축소/확대
-  ctx.translate(-camera.x, -camera.y); // 이 지점부터는 전부 '월드 좌표'로 그리면 카메라 위치에 맞게 화면에 표시됨
+  ctx.translate(-camera.x, -camera.y); // 화면(눌린) 좌표 기준 카메라 이동
 
   // 화면에 실제로 보이는 영역의 가로/세로 폭(월드 좌표 기준)
   const viewW = canvas.width / cameraScale;
@@ -10843,6 +10896,7 @@ function render() {
   // 맵 밖(플레이 불가 구역)은 어둡게, 맵 안은 기존 배경색으로 채워서 안/밖을 명확히 구분
   ctx.fillStyle = '#0c0d24';
   ctx.fillRect(camera.x, camera.y, viewW, viewH);
+  ctx.scale(1, TILT); // 여기부터 '바닥' 좌표계: 월드 좌표로 그리면 세로로 눌려 비스듬히 내려다본 모습이 됨
   ctx.fillStyle = '#2b3158';
   ctx.fillRect(0, 0, ARENA_WIDTH, ARENA_HEIGHT);
 
@@ -10850,8 +10904,8 @@ function render() {
   const tile = 100;
   const tx0 = Math.max(0, Math.floor(camera.x / tile) * tile);
   const tx1 = Math.min(ARENA_WIDTH, camera.x + viewW);
-  const ty0 = Math.max(0, Math.floor(camera.y / tile) * tile);
-  const ty1 = Math.min(ARENA_HEIGHT, camera.y + viewH);
+  const ty0 = 0;
+  const ty1 = ARENA_HEIGHT;
   ctx.fillStyle = 'rgba(255,255,255,0.04)';
   for (let x = tx0; x < tx1; x += tile) {
     for (let y = ty0; y < ty1; y += tile) {
@@ -10859,9 +10913,7 @@ function render() {
     }
   }
 
-  drawArenaBoundary();
-  drawWalls();
-  drawBushes();
+  drawBushes(); // 덤불 바닥(납작한 부분). 솟아오른 잎은 아래에서 깊이 순서대로 그림
   if (matchGameMode === 'gemgrab') { drawGemHole(); drawGems(); } // 쨍그랩: 중앙 구멍과 바닥의 보석 (플레이어보다 아래에 그림)
 
   const poolsArr = Array.isArray(latestState.waterPools) ? latestState.waterPools : [];
@@ -10870,18 +10922,22 @@ function render() {
   const effectsArr = Array.isArray(latestState.effects) ? latestState.effects : [];
   for (const e of effectsArr) drawEffect(e);
 
-  const turretsArr = Array.isArray(latestState.turrets) ? latestState.turrets : [];
-  for (const t of turretsArr) drawTurret(t);
-
-  const chickensArr = Array.isArray(latestState.chickens) ? latestState.chickens : [];
-  for (const c of chickensArr) drawChicken(c);
-
   const bombsArr = Array.isArray(latestState.bombs) ? latestState.bombs : [];
   for (const bomb of bombsArr) drawBomb(bomb);
 
-  const bullets = Array.isArray(latestState.bullets) ? latestState.bullets : [];
-  for (const b of bullets) drawBullet(b);
-
+  // 세워서 그리는 것들(벽/덤불/터렛/닭/캐릭터)은 발밑 y 기준으로 정렬해서 그려야 앞뒤 가림이 자연스럽다
+  const upright = [];
+  const fr = boundaryFrames();
+  upright.push({ y: -1e6, fn: () => drawFrameBox(fr.top) });
+  upright.push({ y: -1e6 + 1, fn: () => drawFrameBox(fr.left) });
+  upright.push({ y: -1e6 + 1, fn: () => drawFrameBox(fr.right) });
+  upright.push({ y: 1e6, fn: () => drawFrameBox(fr.bottom) });
+  for (const w of WALLS) upright.push({ y: w.y + w.height, fn: () => drawWallBox(w) });
+  for (const bu of BUSHES) upright.push({ y: bu.y + bu.height + 1, fn: () => drawBushBox(bu) });
+  const turretsArr = Array.isArray(latestState.turrets) ? latestState.turrets : [];
+  for (const t of turretsArr) upright.push({ y: t.y, fn: () => { ctx.save(); uprightAt(t.y); drawTurret(t); ctx.restore(); } });
+  const chickensArr = Array.isArray(latestState.chickens) ? latestState.chickens : [];
+  for (const c of chickensArr) upright.push({ y: c.y, fn: () => { ctx.save(); uprightAt(c.y); drawChicken(c); ctx.restore(); } });
   const playersObj = latestState.players || {};
   for (const pid in playersObj) {
     const p = playersObj[pid];
@@ -10889,8 +10945,18 @@ function render() {
     if (typeof p.x !== 'number' || typeof p.y !== 'number') continue;
     const rp = renderPos[pid];
     const pv = rp ? Object.assign({}, p, { x: rp.x, y: rp.y }) : p; // 부드럽게 보정된 위치로 그림
-    drawPlayer(pv, pid === myId);
-    drawChatBubble(pv);
+    upright.push({ y: pv.y, fn: () => { drawPlayer(pv, pid === myId); drawChatBubble(pv); } });
+  }
+  upright.sort((a, b) => a.y - b.y);
+  for (const it of upright) it.fn();
+
+  // 날아가는 투사체: 바닥보다 살짝 위(화면 16px)에 떠서 날아가도록 그림
+  {
+    const bullets = Array.isArray(latestState.bullets) ? latestState.bullets : [];
+    ctx.save();
+    ctx.translate(0, -16 / TILT);
+    for (const b of bullets) drawBullet(b);
+    ctx.restore();
   }
 
   drawFloatTexts(); // 데미지(빨강)/회복(초록)/보호막 흡수(파랑) 숫자
@@ -10914,7 +10980,7 @@ function drawLobIndicator(me) {
   const spec = me.basic;
   const angle = touchAimActive
     ? touchAimAngle
-    : Math.atan2((mouseY / cameraScale + camera.y) - me.y, (mouseX / cameraScale + camera.x) - me.x);
+    : Math.atan2(mouseWorldY() - me.y, (mouseX / cameraScale + camera.x) - me.x);
   const dist = getAimDistanceFor(me, spec);
   const lx = Math.max(0, Math.min(ARENA_WIDTH, me.x + Math.cos(angle) * dist));
   const ly = Math.max(0, Math.min(ARENA_HEIGHT, me.y + Math.sin(angle) * dist));
@@ -10963,7 +11029,7 @@ function drawLeapIndicator(me) {
   const u = me.ultimate;
   const angle = touchAimActive
     ? touchAimAngle
-    : Math.atan2((mouseY / cameraScale + camera.y) - me.y, (mouseX / cameraScale + camera.x) - me.x);
+    : Math.atan2(mouseWorldY() - me.y, (mouseX / cameraScale + camera.x) - me.x);
   const dist = getLeapAimDistance(me);
   const lx = Math.max(PLAYER_RADIUS, Math.min(ARENA_WIDTH - PLAYER_RADIUS, me.x + Math.cos(angle) * dist));
   const ly = Math.max(PLAYER_RADIUS, Math.min(ARENA_HEIGHT - PLAYER_RADIUS, me.y + Math.sin(angle) * dist));
