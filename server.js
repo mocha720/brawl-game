@@ -461,6 +461,18 @@ const CHARACTERS = {
       duration: 2,          // 지속 시간(초)
       speedMultiplier: 1.3, // 이동속도 배율 (1.3 = 30% 증가)
     },
+    // 하이퍼 차지: 이동속도 +10%, 공격력 +5%, 받는 피해 -5%, 해골물 웅덩이 지속시간/범위 +50%, 궁극기(은신) 중 벽 통과
+    hyper: {
+      name: '하이퍼 차지',
+      duration: 10,
+      chargeMultiplier: 0.45,
+      speedMultiplier: 1.1,
+      damageMultiplier: 1.05,
+      damageTakenMultiplier: 0.95,
+      poolLifetimeMultiplier: 1.5,
+      poolRadiusMultiplier: 1.5,
+      ultimateWallPass: true,
+    },
   },
   byeongitong: {
     id: 'byeongitong',
@@ -1141,7 +1153,7 @@ function describeGadget(g) {
 // 밸런스 기준: 11레벨 = 체력 +35%, 공격력 +30%. (1레벨 상대로 맞붙으면 약 1.75배 유리 -> 실력으로 뒤집을 수 있는 수준)
 // 레벨 1->11 강화 총비용은 2,720코인 (1:1 승리 보상 45코인 기준 약 60승). 수치를 바꾸고 싶으면 이 표만 고치면 된다.
 const MAX_CHARACTER_LEVEL = 11;
-// 하이퍼 차지(추가 스킬): 최고 레벨을 찍은 캐릭터가 코인으로 획득. hyper 스펙이 있는 캐릭터에만 존재한다. (현재는 미남, 지기, 슈, 변기통, 시스템, 모카)
+// 하이퍼 차지(추가 스킬): 최고 레벨을 찍은 캐릭터가 코인으로 획득. hyper 스펙이 있는 캐릭터에만 존재한다. (현재는 미남, 지기, 슈, 변기통, 시스템, 모카, 원효대사)
 const HYPER_PRICE = 1000;
 const HYPER_REQUIRED_LEVEL = MAX_CHARACTER_LEVEL;
 const LEVEL_TABLE = [
@@ -1219,6 +1231,9 @@ function describeHyper(hy) {
   if (hy.ultimateDistanceMultiplier) parts.push(`발동 중 궁극기 점프 거리 ${pct(hy.ultimateDistanceMultiplier)}% 증가`);
   if (hy.dashDistanceMultiplier) parts.push(`발동 중 기본공격(돌진) 거리 ${pct(hy.dashDistanceMultiplier)}% 증가`);
   if (hy.ultimateBounceTime) parts.push(`발동 중 궁극기의 고추가 적을 관통하고 벽에 튕기며 ${hy.ultimateBounceTime}초 동안 날아다니다 사라짐`);
+  if (hy.poolRadiusMultiplier) parts.push(`발동 중 기본공격 웅덩이 범위 ${pct(hy.poolRadiusMultiplier)}% 증가`);
+  if (hy.poolLifetimeMultiplier) parts.push(`발동 중 기본공격 웅덩이 지속시간 ${pct(hy.poolLifetimeMultiplier)}% 증가`);
+  if (hy.ultimateWallPass) parts.push('발동 중 궁극기(은신)를 쓰면 은신하는 동안 벽을 통과할 수 있고, 은신이 끝났을 때 벽 안에 있으면 밖으로 밀려남');
   if (hy.rangeMultiplier) parts.push(`발동 중 기본공격과 궁극기 사거리 ${pct(hy.rangeMultiplier)}% 증가`);
   return { name: hy.name, desc: parts.join('. ') + '.' };
 }
@@ -1815,6 +1830,17 @@ function repeatMissionsView(u) {
 // id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
+  {
+    id: '2026-10-22-wonhyo-hyper',
+    date: '2026-10-22',
+    tag: 'new',
+    title: '원효대사 하이퍼 차지 추가!',
+    items: [
+      '하이퍼 차지 발동 중 이동속도 10% 증가, 공격력 5% 강화, 받는 피해 5% 감소!',
+      '기본공격(해골물)의 웅덩이 지속시간과 범위가 50% 증가해요.',
+      '이 상태로 궁극기(은신)를 쓰면 은신하는 동안 벽을 통과할 수 있어요. 은신이 끝났을 때 벽에 끼어 있으면 밖으로 밀려나요.',
+    ],
+  },
   {
     id: '2026-10-18-gemgrab-mode',
     date: '2026-10-18',
@@ -4197,6 +4223,9 @@ function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hy
     hyper: hyperOwned && character.hyper ? character.hyper : null,
     hyperCharge: 0,  // 0~100
     hyperUntil: 0,   // 이 시각(ms) 전까지 하이퍼 차지 발동 중
+    wallPassUntil: 0, // 이 시각(ms) 전까지 벽 통과 (원효대사 하이퍼 + 은신)
+    wallPass: false,
+    ejecting: false,  // 벽 통과가 끝나 벽 밖으로 밀려나는 중
     hyperLeft: 0,    // 남은 발동 시간(초) - 클라이언트 표시용 (서버/클라이언트 시계가 달라서 시각 대신 남은 시간을 보냄)
     gadget: character.gadget || null, // 캐릭터 전용 가젯 (없으면 null)
     gadgetCooldownLeft: 0, // 가젯 재사용까지 남은 시간(초). 0이면 사용 가능
@@ -4435,6 +4464,9 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter, chain } 
       respawned.damageBoostUntil = 0;
       respawned.hyperUntil = 0; // 하이퍼 차지 발동 중이었다면 해제 (게이지는 궁극기처럼 유지)
       respawned.hyperLeft = 0;
+      respawned.wallPassUntil = 0;
+      respawned.wallPass = false;
+      respawned.ejecting = false;
       respawned.knockbackTimeLeft = 0;
       respawned.chargeStartAt = 0; // 충전 중이던 공격도 초기화
       respawned.chargeRatio = 0;
@@ -4671,6 +4703,10 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
   const hyperUltLandStun = hyperUltOn && p.hyper.ultimateLandStun ? p.hyper.ultimateLandStun : 0;
   // 하이퍼 차지 발동 중 꽈리의 궁극기: 고추가 벽/맵 끝에 튕기며 bounceTime초 동안 날아다니다 사라짐 (수명 = bounceTime)
   const bounceTime = hyperUltOn && p.hyper.ultimateBounceTime ? p.hyper.ultimateBounceTime : 0;
+  // 하이퍼 차지 발동 중 원효대사의 기본공격: 물웅덩이 반경/지속시간 증가
+  const hyperPoolOn = !isUltimate && p.hasHyper && p.hyper && p.hyperUntil && Date.now() < p.hyperUntil;
+  const hyperPoolRadius = hyperPoolOn && p.hyper.poolRadiusMultiplier ? p.hyper.poolRadiusMultiplier : 1;
+  const hyperPoolLife = hyperPoolOn && p.hyper.poolLifetimeMultiplier ? p.hyper.poolLifetimeMultiplier : 1;
 
   for (let i = 0; i < pelletCount; i++) {
     const angleOffset = pelletCount > 1 ? -halfSpread + (spreadRad * i) / (pelletCount - 1) : 0;
@@ -4714,8 +4750,8 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
       pierceWalls: !!spec.pierceWalls, // 성스럽다의 칼 던지기처럼 벽(장애물)을 무시하고 통과하는 발사체
       // 원효대사의 해골물 뿌리기처럼 벽/적에 닿으면 물웅덩이를 생성하는 발사체를 위한 부가 정보
       poolOnImpact: !!spec.poolOnImpact,
-      poolRadius: spec.poolRadius,
-      poolLifetime: spec.poolLifetime,
+      poolRadius: spec.poolRadius ? spec.poolRadius * hyperPoolRadius : spec.poolRadius,
+      poolLifetime: spec.poolLifetime ? spec.poolLifetime * hyperPoolLife : spec.poolLifetime,
       poolTickInterval: spec.poolTickInterval,
       poolDamage: spec.poolDamage,
       poolHeal: spec.poolHeal,
@@ -5492,7 +5528,7 @@ function registerGameplayHandlers(socket) {
     // 마우스가 가리키는 월드 좌표 (마우스 조준일 때만 옴. 조이스틱 조준이면 null). 시스템의 '돌진 후 공격'이 돌진이 끝난 위치에서 마우스 쪽으로 정확히 겨냥하는 데 사용
     p.aimX = Number.isFinite(data.aimX) ? data.aimX : null;
     p.aimY = Number.isFinite(data.aimY) ? data.aimY : null;
-    if (p.dashing || p.knockbackTimeLeft > 0 || (p.stunnedUntil && Date.now() < p.stunnedUntil)) {
+    if (p.dashing || p.ejecting || p.knockbackTimeLeft > 0 || (p.stunnedUntil && Date.now() < p.stunnedUntil)) {
       if (p.dashing && p.comboAimLive && typeof data.angle === 'number') p.angle = data.angle; // 시스템의 공격 돌진 중에도 조준 방향은 따라감 (돌진 직후 그 방향으로 발사)
       p.lastServerControlAt = Date.now(); // 서버가 위치를 제어한 마지막 시각 (아래 '낡은 위치' 거르기에 사용)
       return; // 돌진/기절 중에는 서버가 위치를 제어하므로 클라이언트 입력을 무시
@@ -5519,10 +5555,11 @@ function registerGameplayHandlers(socket) {
     }
 
     // 벽 충돌: 축별로 따로 검사해서 벽에 닿아도 옆으로는 미끄러지듯 이동 가능
-    if (!collidesWithWalls(match.walls, newX, p.y, PLAYER_RADIUS)) {
+    const wallPassing = !!(p.wallPassUntil && Date.now() < p.wallPassUntil); // 하이퍼 은신 중: 벽 통과
+    if (wallPassing || !collidesWithWalls(match.walls, newX, p.y, PLAYER_RADIUS)) {
       p.x = newX;
     }
-    if (!collidesWithWalls(match.walls, p.x, newY, PLAYER_RADIUS)) {
+    if (wallPassing || !collidesWithWalls(match.walls, p.x, newY, PLAYER_RADIUS)) {
       p.y = newY;
     }
 
@@ -5895,6 +5932,10 @@ function registerGameplayHandlers(socket) {
     } else if (ult.type === 'stealth') {
       // 조준 불필요: 즉시 일정 시간 동안 적에게 보이지 않는 은신 상태가 됨
       startStealth(match, p, ult.duration || 5);
+      // 하이퍼 차지 발동 중이면 은신하는 동안 벽 통과 (원효대사)
+      if (p.hasHyper && p.hyper && p.hyper.ultimateWallPass && p.hyperUntil && Date.now() < p.hyperUntil) {
+        p.wallPassUntil = Date.now() + (ult.duration || 5) * 1000;
+      }
     } else if (ult.type === 'dash') {
       // 변기통의 돌진: 바라보는 방향으로 매우 빠르게 이동하며, 이후 updateMatch 틱에서
       // 실제 이동/벽 충돌/적 관통(대미지+기절) 판정을 수행한다
@@ -6194,6 +6235,36 @@ function updateMatch(match, dt, now) {
 
     p.knockbackTimeLeft -= dt;
     if (blockedByWall2) p.knockbackTimeLeft = 0; // 벽에 부딪히면 그 자리에서 멈춤
+  }
+
+  // 하이퍼 벽 통과(원효대사) 종료 처리: 끝났을 때 벽 안에 끼어 있으면 가장 가까운 빈 자리로 밀어냄
+  for (const pid in match.players) {
+    const p = match.players[pid];
+    const passing = !!(p.wallPassUntil && now < p.wallPassUntil && p.alive);
+    if (p.wallPass && !passing && p.alive && collidesWithWalls(match.walls, p.x, p.y, PLAYER_RADIUS)) {
+      let best = null;
+      for (let r = 6; r <= 400 && !best; r += 6) {
+        const steps = Math.max(8, Math.round(r / 4));
+        for (let k = 0; k < steps; k++) {
+          const a = (k / steps) * Math.PI * 2;
+          const cx = Math.max(PLAYER_RADIUS, Math.min(ARENA_WIDTH - PLAYER_RADIUS, p.x + Math.cos(a) * r));
+          const cy = Math.max(PLAYER_RADIUS, Math.min(ARENA_HEIGHT - PLAYER_RADIUS, p.y + Math.sin(a) * r));
+          if (!collidesWithWalls(match.walls, cx, cy, PLAYER_RADIUS)) { best = { x: cx, y: cy }; break; }
+        }
+      }
+      if (best) { p.ejecting = true; p.ejectX = best.x; p.ejectY = best.y; }
+    }
+    if (!passing && p.wallPassUntil && now >= p.wallPassUntil) p.wallPassUntil = 0;
+    p.wallPass = passing;
+    if (p.ejecting) {
+      if (!p.alive) { p.ejecting = false; continue; }
+      const dx = p.ejectX - p.x, dy = p.ejectY - p.y;
+      const d = Math.hypot(dx, dy);
+      const step = 360 * dt; // 벽을 무시하고 초당 360px 로 밀려 나옴
+      if (d <= step) { p.x = p.ejectX; p.y = p.ejectY; p.ejecting = false; }
+      else { p.x += (dx / d) * step; p.y += (dy / d) * step; }
+      p.lastServerControlAt = Date.now();
+    }
   }
 
   // 터렛(성스럽다 궁극기) AI: 사거리 안에서 가장 가까운 적을 자동으로 조준해 주기적으로 총알을 발사
