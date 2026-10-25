@@ -6877,7 +6877,7 @@ function drawPlayer(p, isMe) {
     const ratio = Math.max(0.15, Math.min(1, p.shieldHp / (p.shieldMax || p.shieldHp)));
     ctx.save();
     ctx.beginPath();
-    ctx.arc(p.x, p.y, PLAYER_RADIUS + 9, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y - PLAYER_RADIUS * 0.45, PLAYER_RADIUS + 9, 0, Math.PI * 2); // 몸통(발보다 0.45R 위)의 중심에 맞춤
     ctx.fillStyle = `rgba(90, 190, 255, ${0.08 + 0.22 * ratio})`;
     ctx.fill();
     ctx.lineWidth = 3;
