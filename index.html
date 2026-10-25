@@ -1726,6 +1726,9 @@ updateBgmButton();
 
 // ===== 로컬 입력 상태 =====
 const keys = { w: false, a: false, s: false, d: false, up: false, down: false, left: false, right: false };
+// 서버가 보내는 '~Until' 시각은 서버 시계 기준이라, 내 PC 시계와 직접 비교하면 시계가 어긋난 PC에서 기절/무적/선딜이 안 풀린 것처럼 보임 -> 서버 시각 오프셋으로 보정
+let serverTimeOffset = 0;
+function sNow() { return Date.now() + serverTimeOffset; }
 let mouseX = 0, mouseY = 0;
 let myAngle = 0;
 
@@ -4084,6 +4087,7 @@ function drawHpBar(cx, y, barW, barH, hp, maxHp, shield, shieldMax) {
 }
 
 socket.on('state', (state) => {
+  if (typeof state.serverNow === 'number') serverTimeOffset = state.serverNow - Date.now();
   latestState = state;
   trackHpChanges(state);
   updateGateHud(state);
@@ -4454,7 +4458,7 @@ function update(dt) {
   }
   const me = latestState.players[myId];
   if (me && !me.alive) return; // 사망 중에는 이동 불가
-  if (me && (me.dashing || me.ejecting || (me.stunnedUntil && Date.now() < me.stunnedUntil) || (me.knockbackTimeLeft && me.knockbackTimeLeft > 0))) {
+  if (me && (me.dashing || me.ejecting || (me.stunnedUntil && sNow() < me.stunnedUntil) || (me.knockbackTimeLeft && me.knockbackTimeLeft > 0))) {
     // 돌진 중이거나 기절/넉백 상태면 서버가 위치를 직접 제어하므로, 로컬 입력을 무시하고 서버 위치를 그대로 따라간다
     myX = me.x;
     myY = me.y;
@@ -4488,7 +4492,7 @@ function update(dt) {
 
   const len = Math.sqrt(dx * dx + dy * dy);
   // 공격 선딜 중(업할의 망치 지진)에는 이동할 수 없고 조준 방향만 돌릴 수 있음
-  const windingUp = !!(me && me.windupUntil && Date.now() < me.windupUntil);
+  const windingUp = !!(me && me.windupUntil && sNow() < me.windupUntil);
   if (len > 0.01 && !windingUp) {
     // 조이스틱은 아날로그 값(0~1)이므로 그대로, 키보드(1 또는 √2)는 1로 눌러서 사용
     const magnitude = Math.min(1, len);
@@ -5746,7 +5750,7 @@ const SKIN_LOOKS = {
     draw(R, p) {
       const t = Date.now() / 1000;
       const pulse = 0.65 + 0.35 * Math.sin(t * 4);
-      const winding = !!(p && p.windupUntil && Date.now() < p.windupUntil);
+      const winding = !!(p && p.windupUntil && sNow() < p.windupUntil);
       // 뿔 (머리 양옆에서 위로 휘어 솟음, 끝은 달아오른 주황색)
       for (const side of [-1, 1]) {
         const hg = ctx.createLinearGradient(side * R * 0.3, -R * 0.8, side * R * 0.7, -R * 1.4);
@@ -5921,9 +5925,9 @@ const SKIN_LOOKS = {
       }
       ctx.globalAlpha = 1;
       // 지진 준비(선딜) 중: 용암 망치를 뒤로 들어올림. 시간이 갈수록 달아오르고 부들부들 떨림
-      if (p.windupUntil && Date.now() < p.windupUntil) {
+      if (p.windupUntil && sNow() < p.windupUntil) {
         const total = p.windupTotal || 1000;
-        const prog = Math.max(0, Math.min(1, 1 - (p.windupUntil - Date.now()) / total));
+        const prog = Math.max(0, Math.min(1, 1 - (p.windupUntil - sNow()) / total));
         const shake = Math.sin(Date.now() / 22) * prog * 2.2;
         ctx.translate(p.x, p.y);
         ctx.rotate(p.angle - 0.2 - prog * 1.5);
@@ -6707,9 +6711,9 @@ function drawHeroSwordShape(x0, x1) {
 
 function drawPlayer(p, isMe) {
   // 공격 선딜 경고 (업할의 망치 지진): 곧 지진이 나갈 부채꼴 범위를 표시하고, 시간이 지날수록 안쪽이 차오른다
-  if (p.alive && p.windupUntil && Date.now() < p.windupUntil && p.basic && p.basic.range) {
+  if (p.alive && p.windupUntil && sNow() < p.windupUntil && p.basic && p.basic.range) {
     const total = p.windupTotal || 1000;
-    const prog = Math.max(0, Math.min(1, 1 - (p.windupUntil - Date.now()) / total));
+    const prog = Math.max(0, Math.min(1, 1 - (p.windupUntil - sNow()) / total));
     const half = (((p.basic.angleDegrees || 40) * Math.PI) / 180) / 2;
     const aim = isMe ? myAngle : p.angle;
     ctx.save();
@@ -6882,7 +6886,7 @@ function drawPlayer(p, isMe) {
   }
 
   // 무적 상태 표시 (invincible 가젯): 몸 주변에 반짝이는 보호막
-  if (p.invincibleUntil && Date.now() < p.invincibleUntil) {
+  if (p.invincibleUntil && sNow() < p.invincibleUntil) {
     const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 90);
     ctx.save();
     ctx.beginPath();
@@ -6896,7 +6900,7 @@ function drawPlayer(p, isMe) {
   }
 
   // 반사 방어막 표시 (나이의 가젯): 크고 밝은 거울 같은 방어막. 육각형 무늬 + 빙글빙글 도는 빛 + 남은 시간 표시 호. 끝나기 0.6초 전부터 깜빡임
-  if (p.reflectUntil && Date.now() < p.reflectUntil) {
+  if (p.reflectUntil && sNow() < p.reflectUntil) {
     const nowMs = Date.now();
     const left = p.reflectUntil - nowMs;
     const blink = left < 600 ? (Math.floor(nowMs / 70) % 2 === 0 ? 0.4 : 1) : 1;
@@ -6976,10 +6980,10 @@ function drawPlayer(p, isMe) {
   }
 
   // 기절 상태 표시 (변기 돌진 등에 맞았을 때) / 충전 중 표시 (보배의 가젯)
-  if (p.chargingUntil && Date.now() < p.chargingUntil) {
+  if (p.chargingUntil && sNow() < p.chargingUntil) {
     ctx.font = `${PLAYER_RADIUS}px sans-serif`;
     ctx.fillText('🔋', p.x, p.y - PLAYER_RADIUS - 34);
-  } else if (!p.leaping && !(p.airborneTimeLeft > 0) && p.stunnedUntil && Date.now() < p.stunnedUntil) {
+  } else if (!p.leaping && !(p.airborneTimeLeft > 0) && p.stunnedUntil && sNow() < p.stunnedUntil) {
     ctx.font = `${PLAYER_RADIUS}px sans-serif`;
     ctx.fillText('💫', p.x, p.y - PLAYER_RADIUS - 34);
   }
