@@ -11626,7 +11626,16 @@ function render() {
     const bullets = Array.isArray(latestState.bullets) ? latestState.bullets : [];
     ctx.save();
     ctx.translate(0, -16 / TILT);
-    for (const b of bullets) drawBullet(b);
+    for (const b of bullets) {
+      if (b.lob) { drawBullet(b); continue; } // 포물선 투척(나이)은 착지 경고 원 등 바닥 효과가 섞여 있어 기존 방식 유지
+      // 바닥 좌표계는 세로로 눌려 있어서 그대로 그리면 투사체가 납작해진다 -> 투사체 자리에서 눌림을 풀어 세워 그리고,
+      // 날아가는 방향은 화면에 보이는 방향(세로 성분 x TILT)으로 맞춰서 진행 방향과 모양이 일치하게 한다
+      const bb = typeof b.vy === 'number' ? Object.assign({}, b, { vy: b.vy * TILT }) : b;
+      ctx.save();
+      uprightAt(b.y);
+      drawBullet(bb);
+      ctx.restore();
+    }
     ctx.restore();
   }
 
