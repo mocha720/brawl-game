@@ -1436,7 +1436,7 @@ function uprightAt(y) { ctx.translate(0, y); ctx.scale(1, 1 / TILT); ctx.transla
 // 월드 방향각을 화면에 보이는 방향각으로 변환 (세워 그린 캐릭터의 조준선 방향용)
 function projAngle(a) { return Math.atan2(Math.sin(a) * TILT, Math.cos(a)); }
 // 마우스(화면) 세로 좌표 -> 월드 y
-function mouseWorldY() { return mouseWorldY() / TILT; }
+function mouseWorldY() { return (mouseY / cameraScale + camera.y) / TILT; }
 
 // 캔버스 실제 해상도를 맵 크기가 아니라 '화면에 보이는 크기'로 맞춘다 (넓은 맵을 한눈에 다 보여주지 않기 위함)
 function resizeCanvas() {
