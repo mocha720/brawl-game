@@ -6322,6 +6322,14 @@ function updateMatch(match, dt, now) {
         nearest = target;
       }
     }
+    // 문지기 모드: 사거리 안에 적 플레이어가 없으면 사거리 안의 상대 팀 문을 대신 공격한다 (문도 터렛처럼 총알에 맞는 구조물)
+    if (!nearest && match.gates) {
+      for (const g of Object.values(match.gates)) {
+        if (!g || g.hp <= 0 || g.team === turret.team) continue;
+        const gd = Math.hypot(g.x - turret.x, g.y - turret.y);
+        if (gd <= turret.range + g.radius && gd < nearestDist) { nearestDist = gd; nearest = g; }
+      }
+    }
     if (!nearest) continue;
 
     const ndx = nearest.x - turret.x;
