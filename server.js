@@ -4538,6 +4538,7 @@ function reflectBullet(match, b, reflector) {
   b.team = reflector.team;
   if (Array.isArray(b.hitIds)) b.hitIds = []; // 관통 발사체: 원래 쏜 사람도 다시 맞힐 수 있게 초기화
   if (b.sweep) { b.prevX = b.x; b.prevY = b.y; }
+  b.wallStop = false;
   // 날아온 만큼은 다시 날아갈 수 있게 수명 보충
   const elapsed = Math.max(0, (b.maxLife || 0) - b.life);
   b.life = Math.max(b.life, elapsed, 0.4);
@@ -4649,10 +4650,13 @@ function bulletDistTo(b, px, py) {
 // sweep 발사체가 이번 틱에 지나온 경로 중간에 벽이 있었는지 (20px 간격으로 확인해서 얇은 벽을 뚫고 지나가지 않게 함)
 function sweptWallHit(walls, b) {
   const dx = b.x - b.prevX, dy = b.y - b.prevY;
-  const n = Math.max(1, Math.ceil(Math.hypot(dx, dy) / 20));
-  for (let i = 1; i < n; i++) {
+  const n = Math.max(1, Math.ceil(Math.hypot(dx, dy) / 10));
+  let lastX = b.prevX, lastY = b.prevY;
+  for (let i = 1; i <= n; i++) {
     const t = i / n;
-    if (collidesWithWalls(walls, b.prevX + dx * t, b.prevY + dy * t, b.radius)) return true;
+    const x = b.prevX + dx * t, y = b.prevY + dy * t;
+    if (collidesWithWalls(walls, x, y, b.radius)) { b.x = lastX; b.y = lastY; return true; } // 벽에 닿기 직전 위치로 되돌림
+    lastX = x; lastY = y;
   }
   return false;
 }
@@ -4670,7 +4674,7 @@ function updateBoomerang(match, b, dt) {
     b.outLeft -= dt;
     const outOfMap = b.x < 0 || b.x > ARENA_WIDTH || b.y < 0 || b.y > ARENA_HEIGHT;
     if (outOfMap) { b.x = Math.max(0, Math.min(ARENA_WIDTH, b.x)); b.y = Math.max(0, Math.min(ARENA_HEIGHT, b.y)); }
-    if (!(b.outLeft <= 0 || outOfMap || collidesWithWalls(match.walls, b.x, b.y, b.radius))) return;
+    if (!(b.outLeft <= 0 || outOfMap || collidesWithWalls(match.walls, b.x, b.y, b.radius) || (b.sweep && sweptWallHit(match.walls, b)))) return;
     turnBoomerang(b); // 방향을 바꾼 이 틱부터 바로 시전자 쪽으로 날아가야 함 (속도를 바꾸지 않으면 다음 틱에 맵 밖으로 나가 사라짐) -> 아래 돌아오는 처리로 이어짐
   }
   const owner = match.players[b.ownerId];
@@ -4750,9 +4754,12 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
       x: spawnX,
       y: spawnY,
       knockback: spec.knockback || 0, // 0보다 크면 맞은 적을 날아온 방향으로 이 거리(px)만큼 밀쳐냄 (여똥이의 가젯 '프링글스')
-      sweep: !!spec.sweep, // 아주 빠른 발사체(성스럽다의 저격 사격): 이전 위치~현재 위치 선분 전체로 적중/벽 충돌을 판정
-      prevX: spawnX,
-      prevY: spawnY,
+      sweep: true, // 모든 발사체: 이전 위치~현재 위치 선분 전체로 적중/벽 충돌을 판정 (빠른 탄이 대상/얇은 벽을 건너뛰지 않게)
+      prevX: p.x,
+      prevY: p.y,
+      originX: p.x,
+      originY: p.y,
+      fresh: true,
       vx: Math.cos(angle) * spec.speed * gearProjSpeed,
       vy: Math.sin(angle) * spec.speed * gearProjSpeed,
       ownerId: p.id,
@@ -6341,6 +6348,9 @@ function updateMatch(match, dt, now) {
       id: bulletIdCounter,
       x: turret.x + (ndx / ndist) * (turret.radius + 5),
       y: turret.y + (ndy / ndist) * (turret.radius + 5),
+      sweep: true,
+      prevX: turret.x,
+      prevY: turret.y,
       vx: (ndx / ndist) * turret.bulletSpeed,
       vy: (ndy / ndist) * turret.bulletSpeed,
       ownerId: turret.ownerId,
@@ -6462,7 +6472,10 @@ function updateMatch(match, dt, now) {
 
   // 총알 이동
   for (const b of match.bullets) {
-    if (b.sweep) { b.prevX = b.x; b.prevY = b.y; }
+    if (b.sweep) {
+      if (b.fresh) { b.prevX = b.originX; b.prevY = b.originY; b.fresh = false; } // 첫 틱: 발사한 사람 위치부터 판정 (근접 적/얇은 벽 통과 방지)
+      else { b.prevX = b.x; b.prevY = b.y; }
+    }
     if (b.bounce) {
       moveBouncingBullet(match, b, dt); // 하이퍼 차지 꽈리의 고추: 벽에 튕김
     } else {
@@ -6526,10 +6539,9 @@ function updateMatch(match, dt, now) {
       }
       return false;
     }
-    if (!b.pierceWalls && (collidesWithWalls(match.walls, b.x, b.y, b.radius) || (b.sweep && sweptWallHit(match.walls, b)))) {
-      if (b.poolOnImpact) spawnWaterPool(match, b);
-      if (b.explodeDamage > 0) explodePoopBomb(match, b); // 폭탄 똥: 벽에 닿으면 폭발
-      return false; // 벽에 막힘 (pierceWalls 발사체는 벽을 그대로 통과함)
+    if (!b.pierceWalls && (b.sweep ? sweptWallHit(match.walls, b) : collidesWithWalls(match.walls, b.x, b.y, b.radius))) {
+      b.wallStop = true; // 벽 앞까지는 적을 맞힐 수 있으므로 바로 지우지 않고, 아래 충돌 판정 후 폭발/웅덩이 처리하며 제거
+      return true;
     }
     return true;
   });
@@ -6681,7 +6693,15 @@ function updateMatch(match, dt, now) {
   }
   match.chickens = match.chickens.filter((c) => c.hp > 0);
 
-  match.bullets = match.bullets.filter((b) => !hitBulletIds.has(b.id));
+  match.bullets = match.bullets.filter((b) => {
+    if (hitBulletIds.has(b.id)) return false;
+    if (b.wallStop) {
+      if (b.poolOnImpact) spawnWaterPool(match, b);
+      if (b.explodeDamage > 0) explodePoopBomb(match, b); // 폭탄 똥: 벽에 닿으면 폭발
+      return false;
+    }
+    return true;
+  });
 
   // 시각 이펙트(번개 등) 수명 관리
   for (const e of match.effects) e.life -= dt;
