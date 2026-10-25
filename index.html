@@ -4088,6 +4088,7 @@ function drawHpBar(cx, y, barW, barH, hp, maxHp, shield, shieldMax) {
 
 socket.on('state', (state) => {
   if (typeof state.serverNow === 'number') serverTimeOffset = state.serverNow - Date.now();
+  window.__lastStateAt = Date.now();
   latestState = state;
   trackHpChanges(state);
   updateGateHud(state);
@@ -11842,6 +11843,31 @@ function loop(now) {
 
   requestAnimationFrame(loop);
 }
+
+// ===== 진단 표시 (이동/공격이 안 될 때 원인 확인용, F2로 켜고 끔) =====
+(function () {
+  const el = document.createElement('div');
+  el.style.cssText = 'position:fixed;left:6px;bottom:28px;z-index:99999;background:rgba(0,0,0,.75);color:#0f0;font:11px/1.35 monospace;padding:6px 8px;border-radius:6px;pointer-events:none;white-space:pre;display:none';
+  document.body.appendChild(el);
+  let on = false, sentMove = 0, sentShoot = 0;
+  const rawEmit = socket.emit.bind(socket);
+  socket.emit = function (...a) { if (a[0] === 'playerUpdate') sentMove++; else if (a[0] === 'shoot') sentShoot++; return rawEmit(...a); };
+  window.addEventListener('keydown', (e) => { if (e.key === 'F2') { on = !on; el.style.display = on ? 'block' : 'none'; e.preventDefault(); } });
+  setInterval(() => {
+    if (!on) return;
+    const me = latestState && latestState.players && latestState.players[myId];
+    const age = window.__lastStateAt ? Date.now() - window.__lastStateAt : -1;
+    el.textContent =
+      'joined=' + joined + '  연결=' + socket.connected + '\n' +
+      '클라 카운트다운 남음=' + Math.max(0, countdownEndsAt - Date.now()) + 'ms\n' +
+      '서버 입력잠금 남음=' + (latestState && latestState.lockMs != null ? latestState.lockMs : '?') + 'ms\n' +
+      '마지막 state 수신=' + age + 'ms 전\n' +
+      '내 상태: ' + (me ? 'alive=' + me.alive + ' dash=' + !!me.dashing + ' eject=' + !!me.ejecting + ' kb=' + (me.knockbackTimeLeft || 0).toFixed(2) + ' stun=' + (me.stunnedUntil ? Math.round(me.stunnedUntil - sNow()) : 0) + ' windup=' + (me.windupUntil ? Math.round(me.windupUntil - sNow()) : 0) : '없음(myId=' + myId + ')') + '\n' +
+      '내 위치 클라=(' + Math.round(myX) + ',' + Math.round(myY) + ') 서버=' + (me ? '(' + Math.round(me.x) + ',' + Math.round(me.y) + ')' : '?') + '\n' +
+      '키 up/dn/l/r=' + [keys.up, keys.down, keys.left, keys.right].map((v) => (v ? 1 : 0)).join('') + '\n' +
+      '보낸 이동패킷=' + sentMove + ' 공격패킷=' + sentShoot;
+  }, 200);
+})();
 
 requestAnimationFrame(loop);
 </script>
