@@ -492,6 +492,8 @@
   .vs-teams { display: flex; align-items: center; justify-content: center; gap: 18px; flex-wrap: wrap; }
   .vs-side { display: flex; flex-direction: column; gap: 10px; }
   .vs-side-label { font-size: 13px; color: var(--mute); }
+.vs-side.compact { gap: 6px; }
+.vs-side.compact .vs-card { padding: 8px 6px; }
   .vs-card { width: 156px; box-sizing: border-box; padding: 14px 8px; background: var(--dusk); border: 3px solid var(--lift); border-radius: 18px; box-shadow: 0 6px 0 var(--ink); }
   .vs-card.me { border-color: var(--sky); }
   .vs-card.enemy { border-color: var(--berry); }
@@ -1050,6 +1052,10 @@
       <div class="mode-title">2 : 2</div>
       <div class="mode-desc">팀원과 함께 2대2 협동전</div>
     </div>
+    <div class="mode-card" data-mode="3v3">
+      <div class="mode-title">3 : 3</div>
+      <div class="mode-desc">팀원 두 명과 함께 3대3 팀전</div>
+    </div>
     <div class="mode-card" data-mode="ai" data-difficulty="easy">
       <div class="mode-title">🤖 쉬움</div>
       <div class="mode-desc">접속자가 없어도 AI와 대결 (쉬운 AI)<br>이기면 🪙 20코인 + 🏆 트로피 10<br>(전적·연승에는 영향이 없어요)</div>
@@ -1411,6 +1417,7 @@ let ARENA_HEIGHT = 700;
 let PLAYER_RADIUS = 20;
 let WALLS = [];
 let BUSHES = [];
+let currentMapId = null; // 서버가 정해준 맵 id (맵별 바닥/벽 테마 선택용)
 
 // ===== 카메라 =====
 // 카메라는 더 이상 플레이어를 따라다니지 않고, 맵 중앙에 고정된다.
@@ -2056,7 +2063,7 @@ document.getElementById('missionCloseBtn').addEventListener('click', closeMissio
 // ===== 기어 상점 =====
 // 상점 칸/가격/보유/장착 가능 여부는 전부 서버가 판단하고, 클라이언트는 profile 의 gearShop / gears 를 보여주고 요청만 보낸다
 function gearInfoOf(id) { return ((currentProfile && currentProfile.gearCatalog) || []).find((g) => g.id === id) || null; }
-const GEAR_ICONS = { long_shot: '🎯', comeback_power: '🔥', heal_boost: '💚', fast_ult: '⚡', fast_projectile: '🚀', quick_reload: '🔄', regen_shield: '🛡️', quick_gadget: '🧰', desperate_dash: '👟', overwhelming: '⚔️', sacrifice: '🩸', bandage: '🩹', full_hp_guard: '🏰', assassin: '🥷' };
+const GEAR_ICONS = { lifesteal: '🧛', long_shot: '🎯', comeback_power: '🔥', heal_boost: '💚', fast_ult: '⚡', fast_projectile: '🚀', quick_reload: '🔄', regen_shield: '🛡️', quick_gadget: '🧰', desperate_dash: '👟', overwhelming: '⚔️', sacrifice: '🩸', bandage: '🩹', full_hp_guard: '🏰', assassin: '🥷' };
 function gearIconOf(id) { return GEAR_ICONS[id] || '⚙️'; }
 let gearTab = 'shop'; // 'shop' | 'owned'
 function gearRarityOf(id) { return ((currentProfile && currentProfile.gearRarities) || []).find((r) => r.id === id) || { name: '', color: '#888', price: 0 }; }
@@ -3584,7 +3591,7 @@ function doJoin() {
 function requestMatch() {
   document.getElementById('matchResultOverlay').classList.remove('open');
   document.getElementById('matchingStatus').textContent =
-    selectedMode === 'ai' ? `AI(${selectedAiDifficulty === 'easy' ? '쉬움' : '어려움'}) 상대를 준비하는 중입니다...` : selectedMode === '2v2' ? '2:2 상대를 찾는 중입니다...' : '1:1 상대를 찾는 중입니다...';
+    selectedMode === 'ai' ? `AI(${selectedAiDifficulty === 'easy' ? '쉬움' : '어려움'}) 상대를 준비하는 중입니다...` : selectedMode === '3v3' ? '3:3 상대를 찾는 중입니다...' : selectedMode === '2v2' ? '2:2 상대를 찾는 중입니다...' : '1:1 상대를 찾는 중입니다...';
   document.getElementById('matchingOverlay').classList.add('open');
   if (selectedMode === 'ai') socket.emit('findAiMatch', { characterId: selectedCharacterId, difficulty: selectedAiDifficulty }); // AI 대결: 대기열 없이 바로 시작. 이기면 난이도별 코인 + 고정 트로피
   else socket.emit('findMatch', { name: myName, characterId: selectedCharacterId, mode: selectedMode });
@@ -3643,6 +3650,9 @@ function showVersusScreen(data) {
   roster.forEach((r) => { matchDevices[r.id] = r.device === 'mobile' ? 'mobile' : 'desktop'; });
   const mine = roster.filter((r) => r.team === data.team);
   const enemy = roster.filter((r) => r.team !== data.team);
+  const compactVs = Math.max(mine.length, enemy.length) >= 3; // 3:3은 카드 3장이 세로로 쌓이므로 작게
+  document.getElementById('vsMySide').classList.toggle('compact', compactVs);
+  document.getElementById('vsEnemySide').classList.toggle('compact', compactVs);
   document.getElementById('vsMySide').innerHTML =
     '<div class="vs-side-label">우리 팀</div>' + mine.map((r) => vsCardHtml(r, r.id === data.id, 'me')).join('');
   document.getElementById('vsEnemySide').innerHTML =
@@ -3696,8 +3706,9 @@ function setupVoteUi(vote) {
 
 // 맵 투표 버튼에 쓰는 작은 미리보기: 벽(회색)과 덤불(초록)을 그대로 축소해서 그린다
 function mapThumbSvg(m) {
+  const th = MAP_THEMES[m.id] || MAP_THEMES.default;
   const rects = (list, fill) => (list || []).map((r) => `<rect x="${r.x}" y="${r.y}" width="${r.width}" height="${r.height}" fill="${fill}"/>`).join('');
-  return `<svg viewBox="0 0 ${ARENA_WIDTH} ${ARENA_HEIGHT}" xmlns="http://www.w3.org/2000/svg"><rect width="${ARENA_WIDTH}" height="${ARENA_HEIGHT}" fill="#2b3158"/>${rects(m.bushes, '#3f9b52')}${rects(m.walls, '#d6dae3')}</svg>`;
+  return `<svg viewBox="0 0 ${ARENA_WIDTH} ${ARENA_HEIGHT}" xmlns="http://www.w3.org/2000/svg"><rect width="${ARENA_WIDTH}" height="${ARENA_HEIGHT}" fill="${th.thumbFloor}"/>${rects(m.bushes, th.thumbBush)}${rects(m.walls, th.thumbWall)}</svg>`;
 }
 
 function renderVoteUi(result) {
@@ -3770,6 +3781,7 @@ socket.on('modeVoteResult', (data) => {
   // 투표로 정해진 맵으로 교체: 벽/덤불을 바꾸고, 서버가 옮겨준 새 스폰 위치로 내 위치도 다시 맞춘다
   if (data.walls) WALLS = data.walls;
   if (data.bushes) BUSHES = data.bushes;
+  if (data.mapId) currentMapId = data.mapId;
   wasAlive = false;
   countdownEndsAt = Date.now() + (data.startsInMs || 0); // 결과를 보여준 뒤 카운트다운
   if (voteState) {
@@ -3830,6 +3842,7 @@ socket.on('matchFound', (data) => {
   PLAYER_RADIUS = data.playerRadius;
   WALLS = data.walls || [];
   BUSHES = data.bushes || [];
+  currentMapId = data.mapId || null;
   setupVoteUi(data.vote); // 맵 미리보기 크기가 아레나 크기를 쓰므로 아레나 크기를 받은 뒤에 만듦
   resizeCanvas(); // 캔버스는 맵 크기가 아니라 화면 크기에 맞춤 (카메라가 그 안에서 맵을 비춤)
   // 서버로부터 실제 스폰 좌표를 받기 전까지 잠시 쓰이는 임시값 (아래 state 핸들러가 곧바로 덮어씀)
@@ -3853,8 +3866,8 @@ socket.on('matchFound', (data) => {
   document.getElementById('scoreboard').classList.add('open'); // 바로 전적을 보여줌
 
   // 매치 시작 안내를 시스템 메시지로 채팅창에 표시
-  if (matchMode === '2v2') {
-    const teammate = (data.teammateNames && data.teammateNames[0]) || '??';
+  if (matchMode === '2v2' || matchMode === '3v3') {
+    const teammate = (data.teammateNames || []).join(', ') || '??';
     const opponents = (data.opponentNames || []).join(', ') || '??';
     addChatMessage({ id: 'system', name: '시스템', color: '#f1c40f', text: `팀원: ${teammate} / 상대: ${opponents}` });
   } else {
@@ -4039,12 +4052,19 @@ function drawFloatTexts() {
 }
 
 // 체력바 + 현재 체력 숫자 (플레이어/터렛/닭 공용)
-function drawHpBar(cx, y, barW, barH, hp, maxHp) {
-  const ratio = Math.max(0, Math.min(1, hp / (maxHp || 1)));
+// shield: 남은 보호막 수치. 있으면 숫자는 체력+보호막 합계로 표시하고, 바는 초록(체력) 뒤에 파란(보호막) 구간이 이어진다
+function drawHpBar(cx, y, barW, barH, hp, maxHp, shield, shieldMax) {
+  const sh = Math.max(0, shield || 0);
+  const total = Math.max(0, hp) + sh;
+  const full = (maxHp || 1) + (sh > 0 ? Math.max(shieldMax || 0, sh) : 0); // 바 전체 = 최대 체력 + 보호막 최대치
+  const hpRatio = Math.max(0, Math.min(1, hp / (maxHp || 1)));
+  const hpW = barW * Math.max(0, Math.min(1, Math.max(0, hp) / full));
+  const shW = barW * Math.max(0, Math.min(1 - hpW / barW, sh / full));
   ctx.fillStyle = '#555';
   ctx.fillRect(cx - barW / 2, y, barW, barH);
-  ctx.fillStyle = ratio > 0.5 ? '#2ecc71' : ratio > 0.2 ? '#f1c40f' : '#e74c3c';
-  ctx.fillRect(cx - barW / 2, y, barW * ratio, barH);
+  ctx.fillStyle = hpRatio > 0.5 ? '#2ecc71' : hpRatio > 0.2 ? '#f1c40f' : '#e74c3c';
+  ctx.fillRect(cx - barW / 2, y, hpW, barH);
+  if (shW > 0) { ctx.fillStyle = '#5ac8ff'; ctx.fillRect(cx - barW / 2 + hpW, y, shW, barH); }
   ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
   ctx.lineWidth = 1;
   ctx.strokeRect(cx - barW / 2, y, barW, barH);
@@ -4054,7 +4074,7 @@ function drawHpBar(cx, y, barW, barH, hp, maxHp) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.lineJoin = 'round';
-  const txt = Math.ceil(Math.max(0, hp)).toLocaleString();
+  const txt = Math.ceil(total).toLocaleString();
   ctx.lineWidth = 2.5;
   ctx.strokeStyle = 'rgba(0, 0, 0, 0.85)';
   ctx.strokeText(txt, cx, y + barH / 2 + 0.5);
@@ -6391,6 +6411,178 @@ const SKIN_LOOKS = {
       }
     },
   },
+  jinwoopark_lumi: {
+    // 루미: 긴 보라색 머리의 여자 가수. 흰 드레스에 금색 포인트(금빛 테두리/목선/허리 리본/치맛단/별). 전체 모습은 몸통 원 안에서만 그려서 동그란 형태를 그대로 유지. 항상 정면으로 똑바로 서 있음
+    body: '#ffffff',
+    avatarRing: '#f5c542',
+    upright: true,
+    draw(R, p) {
+      const t = Date.now() / 700;
+      const sway = Math.sin(t) * R * 0.03;
+      // 모든 그림은 몸통 원 안쪽에서만 (원 밖으로 삐져나오지 않게 잘라냄)
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(0, 0, R - 0.5, 0, Math.PI * 2);
+      ctx.clip();
+      // 흰 드레스 (은은한 그라데이션)
+      const dress = ctx.createLinearGradient(0, -R * 0.2, 0, R);
+      dress.addColorStop(0, '#ffffff');
+      dress.addColorStop(1, '#e9e4f6');
+      ctx.fillStyle = dress;
+      ctx.fillRect(-R, -R, R * 2, R * 2);
+      // 금색 브이넥 목선
+      ctx.strokeStyle = '#f2b824';
+      ctx.lineWidth = R * 0.12;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      ctx.moveTo(-R * 0.5, R * 0.02);
+      ctx.lineTo(0, R * 0.42);
+      ctx.lineTo(R * 0.5, R * 0.02);
+      ctx.stroke();
+      // 허리 금빛 띠 + 가운데 리본
+      ctx.fillStyle = '#f2b824';
+      ctx.fillRect(-R, R * 0.5, R * 2, R * 0.13);
+      ctx.fillStyle = '#ffd95a';
+      for (const side of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(0, R * 0.56);
+        ctx.lineTo(side * R * 0.32, R * 0.4);
+        ctx.lineTo(side * R * 0.32, R * 0.72);
+        ctx.closePath();
+        ctx.fill();
+      }
+      ctx.fillStyle = '#8e44d8';
+      ctx.beginPath();
+      ctx.arc(0, R * 0.56, R * 0.09, 0, Math.PI * 2);
+      ctx.fill();
+      // 치맛단 금색 줄 + 금색 별 무늬
+      ctx.fillStyle = '#f2b824';
+      ctx.fillRect(-R, R * 0.88, R * 2, R * 0.1);
+      ctx.fillStyle = '#f7c948';
+      for (const [sx, sy] of [[-0.5, 0.76], [0.5, 0.76], [-0.18, 0.82], [0.2, 0.84]]) {
+        ctx.beginPath();
+        for (let i = 0; i < 8; i += 1) {
+          const a = (i * Math.PI) / 4 - Math.PI / 2;
+          const rr = i % 2 === 0 ? R * 0.09 : R * 0.035;
+          ctx.lineTo(R * sx + Math.cos(a) * rr, R * sy + Math.sin(a) * rr);
+        }
+        ctx.closePath();
+        ctx.fill();
+      }
+      // 어깨를 타고 가슴 앞까지 흘러내리는 긴 보라색 머리 (양옆, 살랑살랑)
+      for (const side of [-1, 1]) {
+        const hg = ctx.createLinearGradient(0, -R * 0.8, 0, R * 1.1);
+        hg.addColorStop(0, '#b982f0');
+        hg.addColorStop(1, '#6a2db8');
+        ctx.fillStyle = hg;
+        ctx.strokeStyle = '#3f1a73';
+        ctx.lineWidth = 1.1;
+        ctx.beginPath();
+        ctx.moveTo(side * R * 0.4, -R * 0.78);
+        ctx.bezierCurveTo(side * R * 1.15, -R * 0.7, side * (R * 1.05 + sway), R * 0.3, side * (R * 0.95 - sway), R * 1.15);
+        ctx.lineTo(side * R * 0.5, R * 1.1);
+        ctx.quadraticCurveTo(side * (R * 0.66 + sway), R * 0.35, side * R * 0.4, -R * 0.15);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        // 머리카락 결
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.28)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(side * R * 0.62, -R * 0.4);
+        ctx.quadraticCurveTo(side * R * 0.8, R * 0.2, side * R * 0.75, R * 0.8);
+        ctx.stroke();
+      }
+      // 머리 윗부분 (보라색)
+      const top = ctx.createLinearGradient(0, -R, 0, -R * 0.2);
+      top.addColorStop(0, '#b982f0');
+      top.addColorStop(1, '#7d3fd0');
+      ctx.fillStyle = top;
+      ctx.beginPath();
+      ctx.ellipse(0, -R * 0.55, R * 0.56, R * 0.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // 얼굴
+      ctx.fillStyle = '#fde3d0';
+      ctx.beginPath();
+      ctx.ellipse(0, -R * 0.38, R * 0.38, R * 0.41, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // 앞머리 (가운데 가르마, 양옆으로 갈라져 얼굴을 감쌈)
+      ctx.fillStyle = '#9a5de0';
+      ctx.beginPath();
+      ctx.moveTo(-R * 0.44, -R * 0.2);
+      ctx.quadraticCurveTo(-R * 0.5, -R * 0.95, 0, -R * 0.95);
+      ctx.quadraticCurveTo(R * 0.5, -R * 0.95, R * 0.44, -R * 0.2);
+      ctx.quadraticCurveTo(R * 0.36, -R * 0.52, R * 0.12, -R * 0.62);
+      ctx.lineTo(0, -R * 0.7);
+      ctx.lineTo(-R * 0.12, -R * 0.62);
+      ctx.quadraticCurveTo(-R * 0.36, -R * 0.52, -R * 0.44, -R * 0.2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = '#5b2a9e';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      // 눈 (연보라 눈동자 + 하이라이트) + 속눈썹
+      for (const side of [-1, 1]) {
+        ctx.fillStyle = '#6b35d6';
+        ctx.beginPath();
+        ctx.ellipse(side * R * 0.17, -R * 0.36, R * 0.07, R * 0.09, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.arc(side * R * 0.15, -R * 0.39, R * 0.025, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#3b1d6e';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(side * R * 0.08, -R * 0.45);
+        ctx.lineTo(side * R * 0.27, -R * 0.46);
+        ctx.stroke();
+      }
+      // 볼터치 + 미소
+      ctx.fillStyle = 'rgba(255, 140, 160, 0.45)';
+      for (const side of [-1, 1]) {
+        ctx.beginPath();
+        ctx.ellipse(side * R * 0.27, -R * 0.24, R * 0.07, R * 0.04, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.strokeStyle = '#c2506a';
+      ctx.lineWidth = 1.3;
+      ctx.beginPath();
+      ctx.arc(0, -R * 0.2, R * 0.09, 0.15 * Math.PI, 0.85 * Math.PI);
+      ctx.stroke();
+      // 금빛 머리핀 (머리 오른쪽 위, 원 안쪽에 들어오는 크기)
+      ctx.fillStyle = '#ffd23f';
+      ctx.strokeStyle = '#b8860b';
+      ctx.lineWidth = 0.9;
+      ctx.beginPath();
+      for (let i = 0; i < 10; i += 1) {
+        const a = (i * Math.PI) / 5 - Math.PI / 2;
+        const rr = i % 2 === 0 ? R * 0.15 : R * 0.06;
+        ctx.lineTo(R * 0.34 + Math.cos(a) * rr, -R * 0.68 + Math.sin(a) * rr);
+      }
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      // 반짝이는 금빛 반짝이 (드레스 위에서 깜빡임)
+      for (let i = 0; i < 3; i += 1) {
+        const tw = 0.5 + 0.5 * Math.sin(t * 3 + i * 2.1);
+        const sx = [-0.62, 0.66, 0.0][i] * R;
+        const sy = [0.28, 0.3, 0.72][i] * R;
+        ctx.fillStyle = `rgba(255, 224, 110, ${0.45 + 0.5 * tw})`;
+        ctx.beginPath();
+        ctx.arc(sx, sy, Math.max(1.2, R * (0.045 + 0.03 * tw)), 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // 가장자리를 두르는 금색 테두리 (동그란 모양을 또렷하게)
+      ctx.strokeStyle = '#f2b824';
+      ctx.lineWidth = R * 0.11;
+      ctx.beginPath();
+      ctx.arc(0, 0, R * 0.95, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    },
+  },
   seongseureopda_poop: {
     // 똥: 몸 전체가 3단으로 똬리를 튼 똥 모양. 가운데 단에 동그란 눈과 미소, 꼭대기에 말린 꼬리, 머리 위로 김이 모락모락, 파리 두 마리가 빙글빙글. 항상 정면으로 똑바로 서 있음
     body: '#5a3716',
@@ -6805,7 +6997,7 @@ function drawPlayer(p, isMe) {
   }
 
   // HP 바 (숫자 포함)
-  drawHpBar(p.x, p.y - PLAYER_RADIUS - 20, 54, 12, p.hp, p.maxHp || 100);
+  drawHpBar(p.x, p.y - PLAYER_RADIUS - 20, 54, 12, p.hp, p.maxHp || 100, p.shieldHp, p.shieldMax); // 숫자는 체력+보호막 합계
 
   // AI 연습 대결의 상대는 지금 어떤 마음인지(도망/추격/숨기/몰림)를 머리 위 이모지로 보여줌
   if (p.isBot && p.aiMode && p.aiMode !== 'fight') {
@@ -7686,6 +7878,106 @@ function drawChefLand(e) {
     ctx.arc(0, 0, R * (0.2 + 0.9 * q), 0, Math.PI * 2);
     ctx.stroke();
   }
+  ctx.restore();
+}
+
+function drawGoldenBlast(e) {
+  // 루미 스킨 궁극기(소다Bang) 착지: 금색 폭발 (바닥 금빛 번짐 + 충격 고리 + 방사형 광선 + 사방으로 튀는 반짝이 별) 그리고 그 위에 'GOLDEN' 글자 (피해 범위 = e.radius)
+  const maxLife = e.maxLife || 0.9;
+  const t = Math.max(0, Math.min(1, 1 - e.life / maxLife));
+  const ease = 1 - Math.pow(1 - Math.min(1, t / 0.45), 3);
+  const fade = t < 0.55 ? 1 : Math.max(0, (1 - t) / 0.45);
+  const R = e.radius;
+  const seed = e.id || 1;
+  ctx.save();
+  ctx.translate(e.x, e.y);
+  // 바닥 금빛 번짐
+  const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, R);
+  glow.addColorStop(0, `rgba(255, 246, 200, ${0.95 * fade})`);
+  glow.addColorStop(0.45, `rgba(255, 205, 70, ${0.6 * fade})`);
+  glow.addColorStop(1, 'rgba(255, 160, 0, 0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(0, 0, R * (0.35 + 0.65 * ease), 0, Math.PI * 2);
+  ctx.fill();
+  // 방사형 광선
+  ctx.globalAlpha = fade * 0.85;
+  const rays = 14;
+  for (let i = 0; i < rays; i += 1) {
+    const a = (i / rays) * Math.PI * 2 + seed * 0.37 + t * 0.4;
+    const len = R * (0.55 + 0.45 * ease) * (i % 2 === 0 ? 1 : 0.7);
+    const w = 0.09;
+    const rg = ctx.createLinearGradient(0, 0, Math.cos(a) * len, Math.sin(a) * len);
+    rg.addColorStop(0, 'rgba(255, 250, 220, 0.95)');
+    rg.addColorStop(1, 'rgba(255, 200, 40, 0)');
+    ctx.fillStyle = rg;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(Math.cos(a - w) * len, Math.sin(a - w) * len);
+    ctx.lineTo(Math.cos(a + w) * len, Math.sin(a + w) * len);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  // 충격 고리 2겹
+  ctx.save();
+  ctx.globalAlpha = fade;
+  ctx.shadowColor = 'rgba(255, 190, 40, 1)';
+  ctx.shadowBlur = 14;
+  for (const [scale, wid, col] of [[1, 10, '#ffd23f'], [0.68, 5, '#fff3b0']]) {
+    ctx.lineWidth = wid * (1 - t) + 2;
+    ctx.strokeStyle = col;
+    ctx.beginPath();
+    ctx.arc(0, 0, R * scale * (0.25 + 0.75 * ease), 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.restore();
+  // 사방으로 튀는 금빛 별 반짝이
+  ctx.fillStyle = '#fff1a8';
+  for (let i = 0; i < 18; i += 1) {
+    const a = (i * 2.399963 + seed) % (Math.PI * 2);
+    const d = R * (0.2 + 0.85 * ease) * (0.55 + ((i * 37) % 10) / 22);
+    const sx = Math.cos(a) * d;
+    const sy = Math.sin(a) * d - t * 14;
+    const sr = (3.2 - 1.8 * t) * (1 + (i % 3) * 0.35);
+    ctx.globalAlpha = fade;
+    ctx.beginPath();
+    ctx.moveTo(sx, sy - sr * 1.6);
+    ctx.lineTo(sx + sr * 0.5, sy - sr * 0.5);
+    ctx.lineTo(sx + sr * 1.6, sy);
+    ctx.lineTo(sx + sr * 0.5, sy + sr * 0.5);
+    ctx.lineTo(sx, sy + sr * 1.6);
+    ctx.lineTo(sx - sr * 0.5, sy + sr * 0.5);
+    ctx.lineTo(sx - sr * 1.6, sy);
+    ctx.lineTo(sx - sr * 0.5, sy - sr * 0.5);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+  // 금색 폭발 위에 'GOLDEN' 글자: 바닥 좌표(세로로 눌린 상태)가 아니라 똑바로 세워서 그림
+  ctx.save();
+  uprightAt(e.y);
+  const pop = Math.min(1, t / 0.22);
+  const scale = 0.55 + 0.45 * (1 + 2.2 * Math.pow(pop - 1, 3) + 1.2 * Math.pow(pop - 1, 2));
+  ctx.translate(e.x, e.y - 30 - 12 * ease);
+  ctx.scale(scale, scale);
+  ctx.globalAlpha = fade;
+  ctx.font = '900 30px "Arial Black", Impact, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineJoin = 'round';
+  ctx.shadowColor = 'rgba(255, 190, 40, 0.95)';
+  ctx.shadowBlur = 16;
+  ctx.lineWidth = 6;
+  ctx.strokeStyle = '#5a3a00';
+  ctx.strokeText('GOLDEN', 0, 0);
+  ctx.shadowBlur = 0;
+  const tg = ctx.createLinearGradient(0, -16, 0, 16);
+  tg.addColorStop(0, '#fff8cf');
+  tg.addColorStop(0.5, '#ffd23f');
+  tg.addColorStop(1, '#d99a00');
+  ctx.fillStyle = tg;
+  ctx.fillText('GOLDEN', 0, 0);
   ctx.restore();
 }
 
@@ -9000,6 +9292,76 @@ function drawBullet(b) {
     return;
   }
 
+  if (b.visual === 'microphone') {
+    // 루미 스킨의 기본공격: 날아가는 방향으로 회전하는 금빛 마이크 (손잡이 + 금색 링 + 은색 망 머리) + 뒤로 흩날리는 금빛 반짝임
+    const ang = Math.atan2(b.vy || 0, b.vx || 1);
+    const r = b.radius;
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.rotate(ang);
+    const tg = ctx.createLinearGradient(-r * 5, 0, -r * 1.2, 0);
+    tg.addColorStop(0, 'rgba(255, 210, 63, 0)');
+    tg.addColorStop(1, 'rgba(255, 220, 100, 0.65)');
+    ctx.fillStyle = tg;
+    ctx.beginPath();
+    ctx.moveTo(-r * 1.2, -r * 0.5);
+    ctx.lineTo(-r * 5, 0);
+    ctx.lineTo(-r * 1.2, r * 0.5);
+    ctx.closePath();
+    ctx.fill();
+    const sp = Date.now() / 90 + (b.id || 0);
+    ctx.fillStyle = 'rgba(255, 235, 150, 0.9)';
+    for (let i = 0; i < 3; i += 1) {
+      ctx.beginPath();
+      ctx.arc(-r * (1.8 + i * 1.1), Math.sin(sp + i * 2) * r * 0.7, Math.max(1, r * 0.13), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.shadowColor = 'rgba(255, 200, 60, 0.9)';
+    ctx.shadowBlur = 8;
+    // 손잡이 (진한 보라 + 금색 띠)
+    ctx.fillStyle = '#3a2166';
+    ctx.fillRect(-r * 2.3, -r * 0.32, r * 2.4, r * 0.64);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#f2b824';
+    ctx.fillRect(-r * 1.4, -r * 0.34, r * 0.22, r * 0.68);
+    ctx.fillRect(-r * 2.3, -r * 0.36, r * 0.22, r * 0.72);
+    // 금색 링
+    ctx.fillStyle = '#ffd23f';
+    ctx.fillRect(r * 0.0, -r * 0.5, r * 0.28, r * 1.0);
+    // 은색 망 머리
+    const hx = r * 1.15, hr = r * 1.05;
+    const hg = ctx.createRadialGradient(hx - hr * 0.35, -hr * 0.35, hr * 0.1, hx, 0, hr);
+    hg.addColorStop(0, '#ffffff');
+    hg.addColorStop(0.6, '#cfd3dc');
+    hg.addColorStop(1, '#8a90a0');
+    ctx.fillStyle = hg;
+    ctx.beginPath();
+    ctx.arc(hx, 0, hr, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(hx, 0, hr, 0, Math.PI * 2);
+    ctx.clip();
+    ctx.strokeStyle = 'rgba(70, 76, 92, 0.55)';
+    ctx.lineWidth = 0.8;
+    for (let k = -2; k <= 2; k += 1) {
+      ctx.beginPath();
+      ctx.moveTo(hx - hr, k * hr * 0.4);
+      ctx.lineTo(hx + hr, k * hr * 0.4);
+      ctx.moveTo(hx + k * hr * 0.4, -hr);
+      ctx.lineTo(hx + k * hr * 0.4, hr);
+      ctx.stroke();
+    }
+    ctx.restore();
+    ctx.lineWidth = 1.6;
+    ctx.strokeStyle = '#d99a00';
+    ctx.beginPath();
+    ctx.arc(hx, 0, hr, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+
   if (b.visual === 'heart') {
     // 진우Park의 하트 발사하기 - 날아가는 방향과 상관없이 똑바로 선 분홍 하트 (살짝 두근거리는 크기 변화 + 하이라이트)
     ctx.save();
@@ -9778,6 +10140,8 @@ function drawEffect(e) {
     ctx.restore();
   } else if (e.type === 'explosion' && e.visual === 'trayExplosion') {
     drawTrayExplosion(e);
+  } else if (e.type === 'leapLand' && e.visual === 'goldenBlast') {
+    drawGoldenBlast(e);
   } else if (e.type === 'leapLand' && e.visual === 'chefLand') {
     drawChefLand(e);
   } else if (e.type === 'explosion' && e.visual === 'slipper') {
@@ -10796,6 +11160,308 @@ function drawGemCount(p) {
   ctx.restore();
 }
 
+// ===== 맵별 테마 (바닥 / 벽 / 덤불 디자인) =====
+// 서버가 보내주는 mapId에 맞춰 바닥 무늬, 벽 재질, 덤불 색을 바꾼다. (판정용 벽/덤불 좌표는 그대로, 모양만 바뀜)
+// 새 맵을 추가하면 MAP_THEMES에 같은 id로 항목을 하나 넣으면 되고, 항목이 없으면 'default'(기존 체스판 모양)로 그려진다.
+// floorStyle: checker | grass | sand | asphalt | metal | snow | lava
+// wallDecor / frameDecor: vine | stone | brick | steel | ice | obsidian | null
+const MAP_THEMES = {
+  default: {
+    floor: '#2b3158', floorStyle: 'checker', outside: '#0c0d24',
+    wallTop: '#6a70b8', wallFront: '#3d4280', wallEdge: '#0c0d24', wallDecor: null,
+    frameTop: '#555ca8', frameFront: '#2c3068', frameEdge: '#0c0d24', frameDecor: null,
+    bushFill: 'rgba(52, 211, 120, 0.55)', bushStroke: 'rgba(14, 92, 52, 0.9)',
+    bushTop: 'rgb(70,200,115)', bushFront: 'rgb(28,128,70)', bushEdge: 'rgba(10,80,45,0.9)', bushDecor: false, leaves: null,
+    thumbFloor: '#2b3158', thumbWall: '#d6dae3', thumbBush: '#3f9b52',
+  },
+  // 기둥 숲: 잔디 바닥 + 덩쿨 감긴 기둥
+  pillars: {
+    floor: '#4f9a3c', floorStyle: 'grass', outside: '#10240f',
+    wallTop: '#4a6b34', wallFront: '#2f4a22', wallEdge: '#12260d', wallDecor: 'vine',
+    frameTop: '#3f5e2c', frameFront: '#23391a', frameEdge: '#0b1a08', frameDecor: 'vine',
+    bushFill: 'rgba(20,100,70,0.62)', bushStroke: 'rgba(6,56,40,0.9)',
+    bushTop: 'rgb(30,135,92)', bushFront: 'rgb(16,90,62)', bushEdge: 'rgba(6,56,40,0.9)', bushDecor: true, leaves: ['#2fa36b', '#1f7d55', '#46c58a'],
+    thumbFloor: '#4f9a3c', thumbWall: '#7a9a55', thumbBush: '#1f7d55',
+  },
+  // 고전 사원: 모래빛 돌바닥 + 이끼 낀 사암 벽
+  temple: {
+    floor: '#b9a273', floorStyle: 'sand', outside: '#1c150b',
+    wallTop: '#d2bf8c', wallFront: '#a38b58', wallEdge: '#3a2c12', wallDecor: 'stone',
+    frameTop: '#b8a273', frameFront: '#7d673a', frameEdge: '#2d2009', frameDecor: 'stone',
+    bushFill: 'rgba(95,150,70,0.58)', bushStroke: 'rgba(40,80,30,0.9)',
+    bushTop: 'rgb(96,170,84)', bushFront: 'rgb(52,112,56)', bushEdge: 'rgba(25,70,30,0.9)', bushDecor: true, leaves: ['#7fc062', '#5aa04a', '#a3d67a'],
+    thumbFloor: '#b9a273', thumbWall: '#e6d6a8', thumbBush: '#5aa04a',
+  },
+  // 사거리: 아스팔트 도로 + 벽돌 담
+  crossroads: {
+    floor: '#3b3f4a', floorStyle: 'asphalt', outside: '#0d0f14',
+    wallTop: '#b06a52', wallFront: '#7d3f2f', wallEdge: '#2a110b', wallDecor: 'brick',
+    frameTop: '#8c5444', frameFront: '#5e2e22', frameEdge: '#1f0c08', frameDecor: 'brick',
+    bushFill: 'rgba(60,170,100,0.55)', bushStroke: 'rgba(14,92,52,0.9)',
+    bushTop: 'rgb(70,190,110)', bushFront: 'rgb(28,128,70)', bushEdge: 'rgba(10,80,45,0.9)', bushDecor: true, leaves: ['#63d08a', '#3fae6a', '#8ee6a8'],
+    thumbFloor: '#3b3f4a', thumbWall: '#c9806a', thumbBush: '#3fae6a',
+  },
+  // 벙커: 강철판 바닥 + 리벳 박힌 철벽
+  bunkers: {
+    floor: '#4a5260', floorStyle: 'metal', outside: '#0a0d12',
+    wallTop: '#8e9bab', wallFront: '#566272', wallEdge: '#10151c', wallDecor: 'steel',
+    frameTop: '#6f7b8a', frameFront: '#3e4753', frameEdge: '#0b0f14', frameDecor: 'steel',
+    bushFill: 'rgba(80,150,95,0.55)', bushStroke: 'rgba(20,80,45,0.9)',
+    bushTop: 'rgb(84,160,100)', bushFront: 'rgb(40,106,62)', bushEdge: 'rgba(14,64,36,0.9)', bushDecor: true, leaves: ['#6fbb83', '#4a9a62', '#93d3a4'],
+    thumbFloor: '#4a5260', thumbWall: '#b3bfcc', thumbBush: '#4a9a62',
+  },
+  // 세 갈래 길: 눈 덮인 얼음 바닥 + 얼음 벽
+  lanes: {
+    floor: '#a9c4d6', floorStyle: 'snow', outside: '#0e1a24',
+    wallTop: '#e4f6ff', wallFront: '#9fd2ea', wallEdge: '#2a5b78', wallDecor: 'ice',
+    frameTop: '#cfeaf7', frameFront: '#7fb6d2', frameEdge: '#1f4a66', frameDecor: 'ice',
+    bushFill: 'rgba(30,120,110,0.6)', bushStroke: 'rgba(10,70,66,0.9)',
+    bushTop: 'rgb(46,150,128)', bushFront: 'rgb(24,100,92)', bushEdge: 'rgba(10,70,66,0.9)', bushDecor: true, leaves: ['#3fb596', '#2a8c78', '#6fd3b8'],
+    thumbFloor: '#a9c4d6', thumbWall: '#f2fbff', thumbBush: '#2a8c78',
+  },
+  // 고리: 화산 현무암 바닥(용암 균열) + 흑요석 벽
+  ring: {
+    floor: '#2b1d22', floorStyle: 'lava', outside: '#0a0506',
+    wallTop: '#3a2a30', wallFront: '#201419', wallEdge: '#0a0508', wallDecor: 'obsidian',
+    frameTop: '#33232a', frameFront: '#1a1014', frameEdge: '#070304', frameDecor: 'obsidian',
+    bushFill: 'rgba(130,70,160,0.6)', bushStroke: 'rgba(50,16,70,0.9)',
+    bushTop: 'rgb(146,82,184)', bushFront: 'rgb(88,44,116)', bushEdge: 'rgba(40,12,60,0.9)', bushDecor: true, leaves: ['#a865d6', '#7a3fa3', '#c58bf0'],
+    thumbFloor: '#2b1d22', thumbWall: '#ff8a3a', thumbBush: '#7a3fa3',
+  },
+};
+
+let mtLastMapId = '\u0000';
+const mtDecorCache = new Map();
+let mtFloorCache = { key: '', canvas: null };
+function mapTheme() {
+  if (currentMapId !== mtLastMapId) { mtLastMapId = currentMapId; mtDecorCache.clear(); }
+  return MAP_THEMES[currentMapId] || MAP_THEMES.default;
+}
+
+// 같은 맵이면 모든 플레이어 화면에서 똑같은 무늬가 나오도록 시드 기반 난수를 쓴다
+function mtHash(s) { let h = 2166136261 >>> 0; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+function mtRng(seed) {
+  let a = seed >>> 0;
+  return function () { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+function mtPick(rnd, arr) { return arr[Math.floor(rnd() * arr.length)]; }
+
+// ----- 바닥: 맵마다 한 번만 오프스크린 캔버스에 그려두고 매 프레임 복사만 한다 -----
+const FLOOR_PAINTERS = {
+  checker(g, W, H) {
+    g.fillStyle = 'rgba(255,255,255,0.04)';
+    for (let x = 0; x < W; x += 100) for (let y = 0; y < H; y += 100) {
+      if ((x / 100 + y / 100) % 2 === 0) g.fillRect(x, y, Math.min(100, W - x), Math.min(100, H - y));
+    }
+  },
+  grass(g, W, H, rnd) {
+    for (let x = 0; x < W; x += 70) if (((x / 70) | 0) % 2 === 0) { g.fillStyle = 'rgba(255,255,255,0.045)'; g.fillRect(x, 0, 70, H); } // 잔디 깎은 줄무늬
+    for (let i = 0; i < 7; i++) { g.fillStyle = 'rgba(120,92,52,0.16)'; g.beginPath(); g.ellipse(rnd() * W, rnd() * H, 18 + rnd() * 24, 10 + rnd() * 14, rnd() * 3, 0, Math.PI * 2); g.fill(); } // 흙 자국
+    const cols = ['#3f8a2f', '#6cbb4a', '#8ed15f', '#2f7426'];
+    g.lineWidth = 1.1; g.lineCap = 'round';
+    for (let i = 0; i < 1100; i++) {
+      const x = rnd() * W, y = rnd() * H, l = 3 + rnd() * 4, a = -Math.PI / 2 + (rnd() - 0.5);
+      g.strokeStyle = mtPick(rnd, cols); g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * l, y + Math.sin(a) * l); g.stroke();
+    }
+    const fl = ['#ffffff', '#ffe36b', '#ff9ec4', '#c9a6ff'];
+    for (let i = 0; i < 45; i++) { g.fillStyle = mtPick(rnd, fl); g.beginPath(); g.arc(rnd() * W, rnd() * H, 1.5, 0, Math.PI * 2); g.fill(); }
+  },
+  sand(g, W, H, rnd) {
+    const T = 70;
+    for (let x = 0; x < W; x += T) for (let y = 0; y < H; y += T) {
+      const v = rnd();
+      g.fillStyle = v < 0.5 ? `rgba(60,40,10,${(v * 0.12).toFixed(3)})` : `rgba(255,240,200,${((v - 0.5) * 0.14).toFixed(3)})`;
+      g.fillRect(x, y, T, T);
+    }
+    g.strokeStyle = 'rgba(80,60,30,0.28)'; g.lineWidth = 1.5; g.beginPath();
+    for (let x = 0; x <= W; x += T) { g.moveTo(x, 0); g.lineTo(x, H); }
+    for (let y = 0; y <= H; y += T) { g.moveTo(0, y); g.lineTo(W, y); }
+    g.stroke();
+    g.strokeStyle = 'rgba(70,50,25,0.35)'; g.lineWidth = 1;
+    for (let i = 0; i < 26; i++) { let x = rnd() * W, y = rnd() * H; g.beginPath(); g.moveTo(x, y); for (let k = 0; k < 4; k++) { x += (rnd() - 0.5) * 18; y += (rnd() - 0.5) * 18; g.lineTo(x, y); } g.stroke(); } // 금
+    g.fillStyle = 'rgba(90,70,40,0.35)';
+    for (let i = 0; i < 130; i++) { g.beginPath(); g.arc(rnd() * W, rnd() * H, 1 + rnd() * 1.3, 0, Math.PI * 2); g.fill(); } // 자갈
+    g.strokeStyle = 'rgba(90,60,25,0.35)'; g.lineWidth = 3; g.beginPath(); g.arc(W / 2, H / 2, 64, 0, Math.PI * 2); g.stroke(); // 제단 문양
+    g.lineWidth = 1.5; g.beginPath(); g.arc(W / 2, H / 2, 52, 0, Math.PI * 2); g.stroke();
+  },
+  asphalt(g, W, H, rnd) {
+    for (let i = 0; i < 1800; i++) { g.fillStyle = rnd() < 0.5 ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.12)'; g.fillRect(rnd() * W, rnd() * H, 1.4, 1.4); }
+    for (let i = 0; i < 9; i++) { g.fillStyle = 'rgba(0,0,0,0.12)'; g.beginPath(); g.ellipse(rnd() * W, rnd() * H, 8 + rnd() * 16, 5 + rnd() * 9, rnd() * 3, 0, Math.PI * 2); g.fill(); } // 기름 얼룩
+    g.strokeStyle = 'rgba(0,0,0,0.25)'; g.lineWidth = 1;
+    for (let i = 0; i < 14; i++) { let x = rnd() * W, y = rnd() * H; g.beginPath(); g.moveTo(x, y); for (let k = 0; k < 4; k++) { x += (rnd() - 0.5) * 22; y += (rnd() - 0.5) * 22; g.lineTo(x, y); } g.stroke(); }
+    g.strokeStyle = 'rgba(255,255,255,0.28)'; g.lineWidth = 2; g.strokeRect(14, 14, W - 28, H - 28);
+    g.strokeStyle = 'rgba(217,185,58,0.7)'; g.lineWidth = 3; g.setLineDash([18, 14]); g.beginPath();
+    g.moveTo(0, H / 2); g.lineTo(W, H / 2); g.moveTo(W / 2, 0); g.lineTo(W / 2, H); g.stroke(); g.setLineDash([]); // 중앙선
+  },
+  metal(g, W, H, rnd, th) {
+    const PW = 110, PH = 100;
+    for (let x = 0; x < W; x += PW) for (let y = 0; y < H; y += PH) {
+      const v = rnd();
+      g.fillStyle = v < 0.5 ? `rgba(0,0,0,${(v * 0.14).toFixed(3)})` : `rgba(255,255,255,${((v - 0.5) * 0.08).toFixed(3)})`;
+      g.fillRect(x, y, PW, PH);
+      g.fillStyle = 'rgba(205,215,230,0.35)';
+      for (const d of [[8, 8], [PW - 8, 8], [8, PH - 8], [PW - 8, PH - 8]]) { g.beginPath(); g.arc(x + d[0], y + d[1], 2, 0, Math.PI * 2); g.fill(); } // 리벳
+    }
+    g.lineWidth = 2; g.strokeStyle = 'rgba(0,0,0,0.35)'; g.beginPath();
+    for (let x = 0; x <= W; x += PW) { g.moveTo(x, 0); g.lineTo(x, H); }
+    for (let y = 0; y <= H; y += PH) { g.moveTo(0, y); g.lineTo(W, y); }
+    g.stroke();
+    g.lineWidth = 1; g.strokeStyle = 'rgba(255,255,255,0.07)'; g.beginPath();
+    for (let x = 2; x <= W; x += PW) { g.moveTo(x, 0); g.lineTo(x, H); }
+    for (let y = 2; y <= H; y += PH) { g.moveTo(0, y); g.lineTo(W, y); }
+    g.stroke();
+    g.strokeStyle = 'rgba(255,255,255,0.08)';
+    for (let i = 0; i < 30; i++) { const x = rnd() * W, y = rnd() * H; g.beginPath(); g.moveTo(x, y); g.lineTo(x + 6 + rnd() * 10, y + (rnd() - 0.5) * 4); g.stroke(); } // 긁힌 자국
+    const cx = W / 2, cy = H / 2; // 중앙 경고 줄무늬
+    g.save(); g.beginPath(); g.rect(cx - 82, cy - 32, 164, 64); g.clip(); g.fillStyle = 'rgba(224,185,42,0.55)';
+    for (let k = -100; k < 200; k += 16) { g.beginPath(); g.moveTo(cx - 82 + k, cy - 32); g.lineTo(cx - 82 + k + 8, cy - 32); g.lineTo(cx - 82 + k + 8 - 64, cy + 32); g.lineTo(cx - 82 + k - 64, cy + 32); g.closePath(); g.fill(); }
+    g.restore();
+    g.fillStyle = th.floor; g.fillRect(cx - 74, cy - 24, 148, 48);
+    g.fillStyle = 'rgba(0,0,0,0.1)'; g.fillRect(cx - 74, cy - 24, 148, 48);
+  },
+  snow(g, W, H, rnd) {
+    for (let i = 0; i < 8; i++) { g.fillStyle = 'rgba(255,255,255,0.16)'; g.beginPath(); g.ellipse(rnd() * W, rnd() * H, 40 + rnd() * 50, 20 + rnd() * 26, rnd() * 3, 0, Math.PI * 2); g.fill(); } // 눈더미
+    for (let i = 0; i < 5; i++) { g.fillStyle = 'rgba(190,235,255,0.22)'; g.strokeStyle = 'rgba(255,255,255,0.35)'; g.lineWidth = 1.5; g.beginPath(); g.ellipse(rnd() * W, rnd() * H, 28 + rnd() * 30, 14 + rnd() * 16, rnd() * 3, 0, Math.PI * 2); g.fill(); g.stroke(); } // 얼어붙은 곳
+    g.fillStyle = 'rgba(255,255,255,0.55)';
+    for (let i = 0; i < 1300; i++) { g.beginPath(); g.arc(rnd() * W, rnd() * H, 0.7 + rnd() * 0.8, 0, Math.PI * 2); g.fill(); }
+    for (let i = 0; i < 18; i++) {
+      let x = rnd() * W, y = rnd() * H; const pts = [[x, y]];
+      for (let k = 0; k < 4; k++) { x += (rnd() - 0.5) * 34; y += (rnd() - 0.5) * 34; pts.push([x, y]); }
+      for (const [col, off] of [['rgba(50,95,135,0.25)', 1], ['rgba(255,255,255,0.4)', 0]]) {
+        g.strokeStyle = col; g.lineWidth = 1; g.beginPath(); g.moveTo(pts[0][0], pts[0][1] + off);
+        for (let k = 1; k < pts.length; k++) g.lineTo(pts[k][0], pts[k][1] + off);
+        g.stroke();
+      }
+    }
+  },
+  lava(g, W, H, rnd) {
+    const T = 60;
+    for (let x = 0; x < W; x += T) for (let y = 0; y < H; y += T) { g.fillStyle = `rgba(0,0,0,${(rnd() * 0.22).toFixed(3)})`; g.fillRect(x, y, T, T); }
+    g.strokeStyle = 'rgba(0,0,0,0.3)'; g.lineWidth = 1.5; g.beginPath();
+    for (let x = 0; x <= W; x += T) { g.moveTo(x, 0); g.lineTo(x, H); }
+    for (let y = 0; y <= H; y += T) { g.moveTo(0, y); g.lineTo(W, y); }
+    g.stroke();
+    g.save(); g.shadowColor = '#ff6a00'; g.shadowBlur = 8; g.lineCap = 'round'; g.lineJoin = 'round';
+    for (let i = 0; i < 22; i++) { // 빛나는 용암 균열
+      let x = rnd() * W, y = rnd() * H;
+      g.strokeStyle = 'rgba(255,105,30,0.55)'; g.lineWidth = 1.6 + rnd(); g.beginPath(); g.moveTo(x, y);
+      for (let k = 0; k < 5; k++) { x += (rnd() - 0.5) * 40; y += (rnd() - 0.5) * 40; g.lineTo(x, y); }
+      g.stroke();
+    }
+    g.strokeStyle = 'rgba(255,120,40,0.4)'; g.lineWidth = 4; g.beginPath(); g.arc(W / 2, H / 2, 105, 0, Math.PI * 2); g.stroke(); // 중앙 불꽃 고리
+    g.restore();
+    g.strokeStyle = 'rgba(255,170,80,0.25)'; g.lineWidth = 1; g.beginPath(); g.arc(W / 2, H / 2, 96, 0, Math.PI * 2); g.stroke();
+    g.fillStyle = 'rgba(255,170,60,0.5)';
+    for (let i = 0; i < 80; i++) { g.beginPath(); g.arc(rnd() * W, rnd() * H, 1 + rnd() * 0.8, 0, Math.PI * 2); g.fill(); } // 불씨
+  },
+};
+
+function getFloorCanvas(th) {
+  const W = ARENA_WIDTH, H = ARENA_HEIGHT;
+  const key = currentMapId + '|' + W + 'x' + H;
+  if (mtFloorCache.key === key && mtFloorCache.canvas) return mtFloorCache.canvas;
+  const S = 2; // 선명하게 보이도록 2배 해상도로 그려둠
+  const cv = document.createElement('canvas');
+  cv.width = Math.ceil(W * S); cv.height = Math.ceil(H * S);
+  const g = cv.getContext('2d');
+  g.scale(S, S);
+  g.fillStyle = th.floor; g.fillRect(0, 0, W, H);
+  const rnd = mtRng(mtHash('floor:' + currentMapId));
+  (FLOOR_PAINTERS[th.floorStyle] || FLOOR_PAINTERS.checker)(g, W, H, rnd, th);
+  mtFloorCache = { key, canvas: cv };
+  return cv;
+}
+
+// ----- 벽/덤불 장식: 윗면(바닥 좌표)과 앞면(화면 픽셀 좌표)에 얹는 무늬. 한 번 만들어 캐시해 둔다 -----
+function genDecor(kind, w, h, hgt, rnd, th, dens) {
+  const top = [], front = [];
+  const C = (a, x, y, r, c) => a.push({ s: 'c', x, y, r, c });
+  const R = (a, x, y, rw, rh, c) => a.push({ s: 'r', x, y, w: rw, h: rh, c });
+  const L = (a, x1, y1, x2, y2, c, lw) => a.push({ s: 'l', x1, y1, x2, y2, c, lw });
+  const P = (a, pts, c) => a.push({ s: 'p', pts, c });
+  const area = w * h;
+  if (kind === 'vine') {
+    const greens = ['#5f8f3b', '#74a845', '#3f6d2a', '#8cc04f'];
+    for (let i = 0; i < area / 70 * dens; i++) C(top, rnd() * w, rnd() * h, 2 + rnd() * 2.6, mtPick(rnd, greens));
+    for (let i = 0; i < area / 500 * dens; i++) C(top, rnd() * w, rnd() * h, 1.7, mtPick(rnd, ['#fff4f8', '#ffd84a', '#ff9ec4']));
+    for (let x = 3; x < w; x += (6 + rnd() * 3) / dens) {
+      const len = hgt * (0.45 + rnd() * 0.55);
+      L(front, x, 0, x + (rnd() - 0.5) * 3, len, '#2f5a22', 1.6);
+      for (let y = 4; y < len; y += 5) C(front, x + (rnd() < 0.5 ? -2 : 2.2), y, 2 + rnd() * 1.4, mtPick(rnd, greens));
+      if (rnd() < 0.18) C(front, x, len, 2, mtPick(rnd, ['#fff4f8', '#ffd84a', '#ff9ec4']));
+    }
+    for (let x = 0; x < w; x += 4 / dens) C(front, x + rnd() * 3, 1 + rnd() * 3, 3 + rnd() * 1.6, mtPick(rnd, greens)); // 윗단에서 늘어지는 잎
+  } else if (kind === 'stone') {
+    for (let i = 0; i < area / 900 * dens + 1; i++) C(top, rnd() * w, rnd() * h, 2.5 + rnd() * 3, 'rgba(107,142,78,0.6)'); // 이끼
+    for (let i = 0; i < area / 1500 * dens + 1; i++) { let px = rnd() * w, py = rnd() * h; for (let k = 0; k < 3; k++) { const nx = px + (rnd() - 0.5) * 14, ny = py + (rnd() - 0.5) * 8; L(top, px, py, nx, ny, 'rgba(70,52,24,0.5)', 1); px = nx; py = ny; } }
+    L(front, 0, hgt * 0.5, w, hgt * 0.5, 'rgba(60,45,20,0.45)', 1.2);
+    for (let x = 10; x < w; x += 28) L(front, x, 0, x, hgt * 0.5, 'rgba(60,45,20,0.45)', 1.2);
+    for (let x = 24; x < w; x += 28) L(front, x, hgt * 0.5, x, hgt, 'rgba(60,45,20,0.45)', 1.2);
+    for (let x = 0; x < w; x += 5 / dens) if (rnd() < 0.5) C(front, x + rnd() * 3, hgt - 1 - rnd() * 3, 2 + rnd() * 1.5, 'rgba(95,140,70,0.75)');
+  } else if (kind === 'brick') {
+    const rows = Math.max(2, Math.round(hgt / 6.5)), rh = hgt / rows;
+    for (let r = 0; r < rows; r++) {
+      L(front, 0, (r + 1) * rh, w, (r + 1) * rh, 'rgba(40,16,8,0.45)', 1);
+      for (let x = (r % 2) * 7 + 7; x < w; x += 14) L(front, x, r * rh, x, (r + 1) * rh, 'rgba(40,16,8,0.45)', 1);
+    }
+    for (let i = 0; i < area / 200 * dens; i++) R(top, rnd() * w, rnd() * h, 2, 1.5, rnd() < 0.7 ? 'rgba(0,0,0,0.15)' : 'rgba(255,255,255,0.12)');
+  } else if (kind === 'steel') {
+    for (let x = 6; x < w; x += 22 / dens) { C(top, x, 3, 1.4, '#c3cdd9'); if (h >= 9) C(top, x, h - 3, 1.4, '#c3cdd9'); }
+    for (let i = 0; i < area / 400 * dens; i++) { const x = rnd() * w, y = rnd() * h; L(top, x, y, x + 5 + rnd() * 8, y + (rnd() - 0.5) * 3, 'rgba(255,255,255,0.25)', 1); }
+    L(front, 0, hgt * 0.5, w, hgt * 0.5, 'rgba(0,0,0,0.35)', 1.2);
+    for (let x = 6; x < w; x += 18 / dens) C(front, x, hgt * 0.28, 1.3, '#c3cdd9');
+    for (let x = 0; x < w; x += 8) { R(front, x, hgt - 5, 4, 5, '#e0b92a'); R(front, x + 4, hgt - 5, 4, 5, '#1a1d22'); } // 경고 줄무늬
+  } else if (kind === 'ice') {
+    for (let i = 0; i < area / 300 * dens; i++) { const x = rnd() * w, y = rnd() * h; L(top, x, y, x + 6, y - 2, 'rgba(255,255,255,0.55)', 1); }
+    for (let i = 0; i < area / 200 * dens; i++) C(top, rnd() * w, rnd() * h, 1.2, 'rgba(255,255,255,0.8)');
+    for (let x = 4; x < w; x += (7 + rnd() * 5) / dens) L(front, x, 0, x + (rnd() - 0.5) * 2, hgt * (0.4 + rnd() * 0.6), 'rgba(255,255,255,0.35)', 1.3);
+    for (let x = 2; x < w - 3; x += (8 + rnd() * 6) / dens) { const ih = 5 + rnd() * 8; P(front, [x, 0, x + 4, 0, x + 2, ih], 'rgba(240,252,255,0.95)'); } // 고드름
+  } else if (kind === 'obsidian') {
+    for (let i = 0; i < area / 700 * dens + 1; i++) {
+      let px = rnd() * w, py = rnd() * h;
+      for (let k = 0; k < 3; k++) { const nx = px + (rnd() - 0.5) * 16, ny = py + (rnd() - 0.5) * 10; L(top, px, py, nx, ny, 'rgba(255,122,26,0.8)', 1.2); px = nx; py = ny; }
+      C(top, px, py, 1.3, '#ffd27a');
+    }
+    let px = 2, py = hgt * 0.5;
+    while (px < w - 2) { const nx = px + 4 + rnd() * 8, ny = hgt * (0.25 + rnd() * 0.55); L(front, px, py, nx, ny, '#ff7a1a', 1.6); L(front, px, py, nx, ny, '#ffd27a', 0.6); px = nx; py = ny; } // 용암 균열
+  } else if (kind === 'leaf') { // 덤불 잎사귀
+    const cols = th.leaves || ['#58d68d', '#2ecc71', '#1e8449'];
+    for (let i = 0; i < area / 55 * dens; i++) C(top, rnd() * w, rnd() * h, 2 + rnd() * 3, mtPick(rnd, cols));
+    for (let x = 0; x < w; x += 5) C(front, x + rnd() * 3, hgt * (0.2 + rnd() * 0.7), 2 + rnd() * 2, mtPick(rnd, cols));
+  }
+  return { top, front };
+}
+
+function drawDecorOps(list) {
+  for (const o of list) {
+    if (o.s === 'c') { ctx.fillStyle = o.c; ctx.beginPath(); ctx.arc(o.x, o.y, o.r, 0, Math.PI * 2); ctx.fill(); }
+    else if (o.s === 'r') { ctx.fillStyle = o.c; ctx.fillRect(o.x, o.y, o.w, o.h); }
+    else if (o.s === 'l') { ctx.strokeStyle = o.c; ctx.lineWidth = o.lw; ctx.beginPath(); ctx.moveTo(o.x1, o.y1); ctx.lineTo(o.x2, o.y2); ctx.stroke(); }
+    else if (o.s === 'p') { ctx.fillStyle = o.c; ctx.beginPath(); ctx.moveTo(o.pts[0], o.pts[1]); for (let i = 2; i < o.pts.length; i += 2) ctx.lineTo(o.pts[i], o.pts[i + 1]); ctx.closePath(); ctx.fill(); }
+  }
+}
+
+// drawBox와 같은 좌표계(눌린 바닥 좌표)에서 호출. 윗면과 앞면 안쪽에만 그려서 윤곽선을 가리지 않는다.
+function drawDecor(kind, x, y, w, h, hgt, alpha, dens, th) {
+  if (!kind) return;
+  const key = currentMapId + '|' + kind + '|' + x + '|' + y + '|' + w + '|' + h + '|' + hgt;
+  let d = mtDecorCache.get(key);
+  if (!d) { d = genDecor(kind, w, h, hgt, mtRng(mtHash(key)), th, dens); mtDecorCache.set(key, d); }
+  const up = hgt / TILT, m = 1.5;
+  ctx.save();
+  if (alpha != null) ctx.globalAlpha = alpha;
+  ctx.lineCap = 'round';
+  ctx.save(); // 윗면: 바닥 좌표
+  ctx.beginPath(); ctx.rect(x + m, y - up + m, w - m * 2, h - m * 2); ctx.clip();
+  ctx.translate(x, y - up); drawDecorOps(d.top);
+  ctx.restore();
+  ctx.save(); // 앞면: 세로 압축을 되돌려 화면 픽셀 좌표로 그림
+  ctx.beginPath(); ctx.rect(x + m, y + h - up + m, w - m * 2, up - m * 2); ctx.clip();
+  ctx.translate(x, y + h - up); ctx.scale(1, 1 / TILT); drawDecorOps(d.front);
+  ctx.restore();
+  ctx.restore();
+}
+
 // 2.5D 상자: 바닥 사각형(x,y,w,h)을 높이 hgt(화면 픽셀)만큼 세워서, 윗면 + 앞면(아래쪽 면)을 그린다. (눌린 바닥 좌표계 안에서 호출)
 function drawBox(x, y, w, h, hgt, topColor, frontColor, edge, alpha) {
   const up = hgt / TILT; // 눌린 좌표계에서 화면 hgt 픽셀에 해당하는 길이
@@ -10829,15 +11495,28 @@ function boundaryFrames() {
     right: { x: ARENA_WIDTH, y: 0, w: t, h: ARENA_HEIGHT },
   };
 }
-function drawFrameBox(r) { drawBox(r.x, r.y, r.w, r.h, BOUNDARY_H, '#555ca8', '#2c3068', '#0c0d24'); }
-function drawWallBox(w) { drawBox(w.x, w.y, w.width, w.height, WALL_H, '#6a70b8', '#3d4280', '#0c0d24'); }
-function drawBushBox(b) { drawBox(b.x, b.y, b.width, b.height, 20, 'rgb(70,200,115)', 'rgb(28,128,70)', 'rgba(10,80,45,0.9)', 0.6); }
+function drawFrameBox(r) {
+  const th = mapTheme();
+  drawBox(r.x, r.y, r.w, r.h, BOUNDARY_H, th.frameTop, th.frameFront, th.frameEdge);
+  drawDecor(th.frameDecor, r.x, r.y, r.w, r.h, BOUNDARY_H, null, 0.55, th);
+}
+function drawWallBox(w) {
+  const th = mapTheme();
+  drawBox(w.x, w.y, w.width, w.height, WALL_H, th.wallTop, th.wallFront, th.wallEdge);
+  drawDecor(th.wallDecor, w.x, w.y, w.width, w.height, WALL_H, null, 1, th);
+}
+function drawBushBox(b) {
+  const th = mapTheme();
+  drawBox(b.x, b.y, b.width, b.height, 20, th.bushTop, th.bushFront, th.bushEdge, 0.6);
+  if (th.bushDecor) drawDecor('leaf', b.x, b.y, b.width, b.height, 20, 0.6, 1, th);
+}
 
 // 은신 가능한 덤불 - 벽과 달리 이동/총알은 막지 않고, 그 안에 들어가면 적에게 보이지 않게 됨
 function drawBushes() {
   ctx.save();
-  ctx.fillStyle = 'rgba(52, 211, 120, 0.55)';
-  ctx.strokeStyle = 'rgba(14, 92, 52, 0.9)';
+  const th = mapTheme();
+  ctx.fillStyle = th.bushFill;
+  ctx.strokeStyle = th.bushStroke;
   ctx.lineWidth = 2;
   const r = 16; // 모서리를 둥글게
   for (const b of BUSHES) {
@@ -10893,25 +11572,12 @@ function render() {
   const viewW = canvas.width / cameraScale;
   const viewH = canvas.height / cameraScale;
 
-  // 맵 밖(플레이 불가 구역)은 어둡게, 맵 안은 기존 배경색으로 채워서 안/밖을 명확히 구분
-  ctx.fillStyle = '#0c0d24';
+  // 맵 밖(플레이 불가 구역)은 어둡게, 맵 안은 맵 테마 바닥으로 채워서 안/밖을 명확히 구분
+  const theme = mapTheme();
+  ctx.fillStyle = theme.outside;
   ctx.fillRect(camera.x, camera.y, viewW, viewH);
   ctx.scale(1, TILT); // 여기부터 '바닥' 좌표계: 월드 좌표로 그리면 세로로 눌려 비스듬히 내려다본 모습이 됨
-  ctx.fillStyle = '#2b3158';
-  ctx.fillRect(0, 0, ARENA_WIDTH, ARENA_HEIGHT);
-
-  // 배경 타일: 100px 체스판 무늬 (맵 내부 범위로만 제한해서 그림 - 성능 + 안/밖 구분)
-  const tile = 100;
-  const tx0 = Math.max(0, Math.floor(camera.x / tile) * tile);
-  const tx1 = Math.min(ARENA_WIDTH, camera.x + viewW);
-  const ty0 = 0;
-  const ty1 = ARENA_HEIGHT;
-  ctx.fillStyle = 'rgba(255,255,255,0.04)';
-  for (let x = tx0; x < tx1; x += tile) {
-    for (let y = ty0; y < ty1; y += tile) {
-      if ((x / tile + y / tile) % 2 === 0) ctx.fillRect(x, y, Math.min(tile, ARENA_WIDTH - x), Math.min(tile, ARENA_HEIGHT - y));
-    }
-  }
+  ctx.drawImage(getFloorCanvas(theme), 0, 0, ARENA_WIDTH, ARENA_HEIGHT); // 맵별 바닥 (맵마다 한 번만 그려 캐시)
 
   drawBushes(); // 덤불 바닥(납작한 부분). 솟아오른 잎은 아래에서 깊이 순서대로 그림
   if (matchGameMode === 'gemgrab') { drawGemHole(); drawGems(); } // 쨍그랩: 중앙 구멍과 바닥의 보석 (플레이어보다 아래에 그림)
@@ -11127,7 +11793,7 @@ function updateScoreboard() {
   const list = document.getElementById('scoreList');
   const playersArr = Object.values(latestState.players || {});
 
-  if (matchMode === '2v2') {
+  if (matchMode === '2v2' || matchMode === '3v3') {
     const sumScore = (arr) => arr.reduce((s, p) => s + p.score, 0);
     const myTeamArr = playersArr.filter((p) => p.team === myTeam);
     const oppTeamArr = playersArr.filter((p) => p.team !== myTeam);
