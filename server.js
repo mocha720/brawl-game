@@ -7515,6 +7515,7 @@ function gameLoop() {
     for (const pid in match.players) {
       io.to(pid).emit('state', {
         serverNow: now, // 클라이언트가 서버 시계와의 차이를 보정할 수 있게
+        lockMs: Math.max(0, match.startsAt - now), // 서버가 아직 입력을 막고 있는 남은 시간(진단용)
         gameMode: match.gameMode,
         players: buildVisiblePlayers(match, pid),
         bullets: buildVisibleBullets(match, pid),
