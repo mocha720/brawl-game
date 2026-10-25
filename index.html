@@ -6877,7 +6877,7 @@ function drawPlayer(p, isMe) {
     const ratio = Math.max(0.15, Math.min(1, p.shieldHp / (p.shieldMax || p.shieldHp)));
     ctx.save();
     ctx.beginPath();
-    ctx.arc(p.x, p.y - PLAYER_RADIUS * 0.45, PLAYER_RADIUS + 9, 0, Math.PI * 2); // 몸통(발보다 0.45R 위)의 중심에 맞춤
+    ctx.arc(p.x, p.y - lift - PLAYER_RADIUS * 0.45, PLAYER_RADIUS + 9, 0, Math.PI * 2); // 몸통(발보다 0.45R 위)의 중심에 맞춤
     ctx.fillStyle = `rgba(90, 190, 255, ${0.08 + 0.22 * ratio})`;
     ctx.fill();
     ctx.lineWidth = 3;
@@ -6886,12 +6886,13 @@ function drawPlayer(p, isMe) {
     ctx.restore();
   }
 
+  const bodyCy = p.y - lift - PLAYER_RADIUS * 0.45; // 몸통 중심 (보호막/방어막을 캐릭터 정중앙에 맞춤)
   // 무적 상태 표시 (invincible 가젯): 몸 주변에 반짝이는 보호막
   if (p.invincibleUntil && sNow() < p.invincibleUntil) {
     const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 90);
     ctx.save();
     ctx.beginPath();
-    ctx.arc(p.x, p.y, PLAYER_RADIUS + 8, 0, Math.PI * 2);
+    ctx.arc(p.x, bodyCy, PLAYER_RADIUS + 8, 0, Math.PI * 2);
     ctx.fillStyle = `rgba(255, 235, 120, ${0.18 + 0.12 * pulse})`;
     ctx.fill();
     ctx.lineWidth = 3;
@@ -6913,27 +6914,27 @@ function drawPlayer(p, isMe) {
       const totalMs = ((p.gadget && p.gadget.duration) || 2) * 1000;
       ctx.save();
       ctx.globalAlpha = blink;
-      skinShield(p, R, blink, t, left, Math.max(0, Math.min(1, left / totalMs)));
+      skinShield(Object.assign({}, p, { y: bodyCy }), R, blink, t, left, Math.max(0, Math.min(1, left / totalMs)));
       ctx.restore();
     } else {
     ctx.save();
     ctx.globalAlpha = blink;
     // 바깥 후광
-    const halo = ctx.createRadialGradient(p.x, p.y, R * 0.8, p.x, p.y, R * 1.6);
+    const halo = ctx.createRadialGradient(p.x, bodyCy, R * 0.8, p.x, bodyCy, R * 1.6);
     halo.addColorStop(0, 'rgba(120, 220, 255, 0.45)');
     halo.addColorStop(1, 'rgba(120, 220, 255, 0)');
     ctx.fillStyle = halo;
     ctx.beginPath();
-    ctx.arc(p.x, p.y, R * 1.6, 0, Math.PI * 2);
+    ctx.arc(p.x, bodyCy, R * 1.6, 0, Math.PI * 2);
     ctx.fill();
     // 막 본체 (가장자리일수록 진함)
-    const body = ctx.createRadialGradient(p.x, p.y, R * 0.3, p.x, p.y, R);
+    const body = ctx.createRadialGradient(p.x, bodyCy, R * 0.3, p.x, bodyCy, R);
     body.addColorStop(0, 'rgba(170, 235, 255, 0.10)');
     body.addColorStop(0.75, 'rgba(150, 225, 255, 0.30)');
     body.addColorStop(1, 'rgba(235, 252, 255, 0.60)');
     ctx.fillStyle = body;
     ctx.beginPath();
-    ctx.arc(p.x, p.y, R, 0, Math.PI * 2);
+    ctx.arc(p.x, bodyCy, R, 0, Math.PI * 2);
     ctx.fill();
     // 육각형 무늬 (천천히 회전)
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
@@ -6944,7 +6945,7 @@ function drawPlayer(p, isMe) {
       for (let i = 0; i <= 6; i++) {
         const a = t * (ring === 0 ? 0.8 : -1.1) + (i * Math.PI) / 3;
         const x = p.x + Math.cos(a) * rr;
-        const y = p.y + Math.sin(a) * rr;
+        const y = bodyCy + Math.sin(a) * rr;
         if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
       }
       ctx.stroke();
@@ -6955,7 +6956,7 @@ function drawPlayer(p, isMe) {
     ctx.shadowColor = 'rgba(90, 210, 255, 1)';
     ctx.shadowBlur = 14;
     ctx.beginPath();
-    ctx.arc(p.x, p.y, R, 0, Math.PI * 2);
+    ctx.arc(p.x, bodyCy, R, 0, Math.PI * 2);
     ctx.stroke();
     // 남은 시간 호 (바깥쪽, 시간이 줄수록 짧아짐)
     const total = ((p.gadget && p.gadget.duration) || 2) * 1000;
@@ -6964,7 +6965,7 @@ function drawPlayer(p, isMe) {
     ctx.lineCap = 'round';
     ctx.strokeStyle = 'rgba(255, 255, 255, 1)';
     ctx.beginPath();
-    ctx.arc(p.x, p.y, R + 7, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * ratio);
+    ctx.arc(p.x, bodyCy, R + 7, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * ratio);
     ctx.stroke();
     // 빙글빙글 도는 빛줄기
     ctx.shadowBlur = 0;
@@ -6973,7 +6974,7 @@ function drawPlayer(p, isMe) {
     for (let i = 0; i < 3; i++) {
       const a0 = t * 4 + (i * Math.PI * 2) / 3;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, R - 4, a0, a0 + 0.6);
+      ctx.arc(p.x, bodyCy, R - 4, a0, a0 + 0.6);
       ctx.stroke();
     }
     ctx.restore();
@@ -11621,11 +11622,11 @@ function render() {
   upright.sort((a, b) => a.y - b.y);
   for (const it of upright) it.fn();
 
-  // 날아가는 투사체: 바닥보다 살짝 위(화면 16px)에 떠서 날아가도록 그림
+  // 날아가는 투사체: 몸통 중심 높이에 떠서 날아가도록 그림
   {
     const bullets = Array.isArray(latestState.bullets) ? latestState.bullets : [];
     ctx.save();
-    ctx.translate(0, -16 / TILT);
+    ctx.translate(0, -(PLAYER_RADIUS * 0.45) / TILT);
     for (const b of bullets) {
       if (b.lob) { drawBullet(b); continue; } // 포물선 투척(나이)은 착지 경고 원 등 바닥 효과가 섞여 있어 기존 방식 유지
       // 바닥 좌표계는 세로로 눌려 있어서 그대로 그리면 투사체가 납작해진다 -> 투사체 자리에서 눌림을 풀어 세워 그리고,
