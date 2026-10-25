@@ -1,5 +1,5 @@
 // server.js
-// 브롤스타즈 스타일 2D 탑다운 매칭 슈팅 게임 - 서버 (1:1 / 2:2 지원)
+// 브롤스타즈 스타일 2D 탑다운 매칭 슈팅 게임 - 서버 (1:1 / 2:2 / 3:3 지원)
 
 const express = require('express');
 const http = require('http');
@@ -47,9 +47,10 @@ const MODES = {
   // trophyLoss: 패배할 때 그 매치에서 쓴 캐릭터가 잃는 트로피 (0 아래로는 내려가지 않음)
   '1v1': { size: 2, teamSize: 1, winScore: 5, coinReward: 45, trophyReward: 15, trophyLoss: 5 },
   '2v2': { size: 4, teamSize: 2, winScore: 8, coinReward: 60, trophyReward: 12, trophyLoss: 4 },
+  '3v3': { size: 6, teamSize: 3, winScore: 12, coinReward: 75, trophyReward: 10, trophyLoss: 3 }, // 3:3 팀전 (한 팀 3명)
 };
 // ===== 게임 종류(규칙) =====
-// 매칭 모드(1v1/2v2)로 인원이 정해지면, 매칭된 사람들이 투표해서 어떤 규칙으로 할지 정한다 (동표면 무작위)
+// 매칭 모드(1v1/2v2/3v3)로 인원이 정해지면, 매칭된 사람들이 투표해서 어떤 규칙으로 할지 정한다 (동표면 무작위)
 const GAME_MODES = {
   knockout: { name: '녹아우', desc: '상대를 먼저 쓰러뜨려 목표 킬 수에 도달하면 승리' },
   gatekeeper: { name: '문지기', desc: '상대 리스폰 근처에 있는 문을 먼저 공격해 파괴하면 승리' },
@@ -57,7 +58,7 @@ const GAME_MODES = {
 };
 const MODE_VOTE_MS = 8000;        // 게임 종류 투표 시간 (모두 투표하면 바로 끝남)
 const GATE_HP = 100000;           // 문지기 모드: 문의 체력 (모든 공격이 문에 통함)
-const JINWOOPARK_GATE_DAMAGE = 3000; // 문지기 모드: 진우Park 하트(현재 체력 비율 피해)가 문에 주는 피해. 문은 체력이 매우 커서 비율 피해가 과하게 들어가므로 3000으로 고정
+const JINWOOPARK_GATE_DAMAGE = 4000; // 문지기 모드: 진우Park 하트(현재 체력 비율 피해)가 문에 주는 피해. 문은 체력이 매우 커서 비율 피해가 과하게 들어가므로 4000으로 고정
 const GATE_RADIUS = 36;           // 문의 크기(피격 반경)
 
 // ===== 쨍그랩 모드 설정 =====
@@ -598,7 +599,7 @@ const CHARACTERS = {
     maxHp: 7000,
     basic: {
       name: '보배 던지기',
-      damage: 1400,   // 기존 2000에서 공격력 30% 감소
+      damage: 1820,   // 1400에서 공격력 30% 강화 (1400 x 1.3)
       speed: 380,     // 총알보다 느린 투척형
       radius: 12,
       lifetime: 2.0,   // 초
@@ -619,9 +620,18 @@ const CHARACTERS = {
       name: '보조배터리 충전',
       type: 'powerCharge',    // 조준 불필요, 즉시 발동. 충전 동안은 이동/공격 불가(무방비) -> 충전이 끝나면 공격력 강화
       instant: true,
-      chargeTime: 2,          // 충전(무방비) 시간(초)
+      chargeTime: 1.5,        // 충전(무방비) 시간(초) (기존 2초에서 단축)
       boostDuration: 5,       // 충전 완료 후 공격력이 강화되는 시간(초)
       damageMultiplier: 1.5,  // 공격력 배율 (1.5 = 50% 증가)
+    },
+    hyper: {
+      name: '보조배터리 폭발',
+      duration: 10,             // 지속 시간(초)
+      chargeMultiplier: 0.45,   // 게이지 충전량 배율 (0.45 = 궁극기 충전량의 45%, 거기에 전체 보너스 +15%가 곱해짐). 발동 중에는 충전되지 않음
+      speedMultiplier: 1.3,     // 이동속도 배율 (1.3 = 30% 증가)
+      damageMultiplier: 1.4,    // 공격력 배율 (1.4 = 40% 강화)
+      damageTakenMultiplier: 0.8, // 받는 피해 배율 (0.8 = 20% 감소)
+      ultimateRadiusMultiplier: 1.5, // 발동 중 궁극기(보배 폭발)가 만드는 폭탄의 범위 배율 (1.5 = 50% 증가)
     },
   },
   ekhe: {
@@ -1153,7 +1163,7 @@ function describeGadget(g) {
 // 밸런스 기준: 11레벨 = 체력 +35%, 공격력 +30%. (1레벨 상대로 맞붙으면 약 1.75배 유리 -> 실력으로 뒤집을 수 있는 수준)
 // 레벨 1->11 강화 총비용은 2,720코인 (1:1 승리 보상 45코인 기준 약 60승). 수치를 바꾸고 싶으면 이 표만 고치면 된다.
 const MAX_CHARACTER_LEVEL = 11;
-// 하이퍼 차지(추가 스킬): 최고 레벨을 찍은 캐릭터가 코인으로 획득. hyper 스펙이 있는 캐릭터에만 존재한다. (현재는 미남, 지기, 슈, 변기통, 시스템, 모카, 원효대사)
+// 하이퍼 차지(추가 스킬): 최고 레벨을 찍은 캐릭터가 코인으로 획득. hyper 스펙이 있는 캐릭터에만 존재한다. (현재는 미남, 지기, 슈, 변기통, 시스템, 모카, 원효대사, 보배)
 const HYPER_PRICE = 1000;
 const HYPER_REQUIRED_LEVEL = MAX_CHARACTER_LEVEL;
 const LEVEL_TABLE = [
@@ -1273,6 +1283,7 @@ const GEAR_RARITIES = {
 //  gadgetCooldownSec: 가젯 재사용 대기시간(초)을 이 값으로 줄임 (기본 GADGET_COOLDOWN_SEC). 여러 개면 가장 짧은 값
 //  bandageHeal: 피해를 입고 체력이 최대 체력의 GEAR_BANDAGE_RATIO(20%) 이하가 되면 체력을 즉시 이만큼 회복 (살아 있는 상태에서만. 한 번 쓰면 죽었다가 부활할 때까지 다시 쓸 수 없음. 회복 기어의 회복량 증가 적용)
 const GEAR_BANDAGE_RATIO = 0.2;
+//  lifesteal: 적 플레이어에게 준 피해(체력에 실제로 들어간 만큼)의 이 비율만큼 체력을 회복 (0.15 = 15%). 물웅덩이/똥가루/흰자 같은 지속 피해(noLifesteal)는 제외하고 직접 피해만 해당. 회복 기어의 회복량 증가 적용
 //  ultStealthSec: 궁극기를 쓰면 이 시간(초) 동안 은신 (적에게 보이지 않음. 원효대사처럼 은신 자체가 궁극기인 캐릭터에는 효과 없음). 여러 개면 가장 긴 값
 const GEAR_CHAIN_WINDOW_MS = 1000;
 const GEAR_LOW_HP_RATIO = 0.5;
@@ -1294,6 +1305,7 @@ const GEAR_CATALOG = [
   { id: 'bandage', name: '붕대', rarity: 'legendary', desc: '체력이 20% 이하가 되면 체력을 즉시 3000 회복 (죽었다가 부활하면 다시 사용 가능)', effect: { bandageHeal: 3000 } },
   { id: 'assassin', name: '암살자', rarity: 'mythic', desc: '궁극기를 사용하면 1.5초 동안 은신', effect: { ultStealthSec: 1.5 } },
   { id: 'full_hp_guard', name: '만땅 방어', rarity: 'mythic', desc: '체력이 가득 차 있을 때 받는 피해량 50% 감소', effect: { fullHpDamageReduction: 0.5 } },
+  { id: 'lifesteal', name: '흡수', rarity: 'mythic', desc: '적에게 준 피해의 15%를 체력으로 회복 (원효대사·여똥이·엑헤의 지속 피해로는 회복하지 않음)', effect: { lifesteal: 0.15 } },
 ];
 function gearById(id) { return GEAR_CATALOG.find((g) => g.id === id) || null; }
 function gearSellPriceOf(gearId) { return Math.floor(gearPriceOf(gearId) * GEAR_SELL_RATIO); }
@@ -1316,7 +1328,7 @@ function ownedGearsOf(u) {
 // 캐릭터에 장착된 기어들의 효과 합계 (최대 장착 수까지만 인정)
 function gearBonusOf(u, charId) {
   // reloadSpeed: 재장전 속도 증가율(덧셈) / fullHpTakenMult: 체력이 가득 찰 때 받는 피해 배율(곱셈, 1 = 효과 없음) / lowHpDamageBonus: 체력 50% 이하일 때 공격력 증가율(덧셈) / fullAmmoRangeBonus: 탄창이 가득(3개)일 때 사거리 증가율(덧셈)
-  const total = { reloadSpeed: 0, fullHpTakenMult: 1, lowHpDamageBonus: 0, fullAmmoRangeBonus: 0, healBonus: 0, startShield: 0, ultChargeBonus: 0, projectileSpeedBonus: 0, lowHpSpeedBonus: 0, chainDamageBonus: 0, damageTakenUltCharge: 0, gadgetCooldownSec: 0, bandageHeal: 0, ultStealthSec: 0 };
+  const total = { reloadSpeed: 0, fullHpTakenMult: 1, lowHpDamageBonus: 0, fullAmmoRangeBonus: 0, healBonus: 0, startShield: 0, ultChargeBonus: 0, projectileSpeedBonus: 0, lowHpSpeedBonus: 0, chainDamageBonus: 0, damageTakenUltCharge: 0, gadgetCooldownSec: 0, bandageHeal: 0, ultStealthSec: 0, lifesteal: 0 };
   const seenGearIds = new Set(); // 같은 기어는 한 캐릭터에 한 번만 효과 적용 (이전 데이터의 중복 장착 대비)
   for (const g of ownedGearsOf(u).filter((x) => x.charId === charId).filter((x) => !seenGearIds.has(x.gearId) && seenGearIds.add(x.gearId)).slice(0, GEAR_MAX_PER_CHARACTER)) {
     const eff = gearById(g.gearId).effect || {};
@@ -1332,6 +1344,7 @@ function gearBonusOf(u, charId) {
     total.ultStealthSec = Math.max(total.ultStealthSec, eff.ultStealthSec || 0);
     total.bandageHeal = Math.max(total.bandageHeal, eff.bandageHeal || 0); // 한 번만 발동하므로 겹치지 않음
     total.damageTakenUltCharge += eff.damageTakenUltCharge || 0;
+    total.lifesteal += eff.lifesteal || 0;
     if (eff.gadgetCooldownSec > 0) total.gadgetCooldownSec = total.gadgetCooldownSec > 0 ? Math.min(total.gadgetCooldownSec, eff.gadgetCooldownSec) : eff.gadgetCooldownSec;
     total.chainDamageBonus = Math.max(total.chainDamageBonus, eff.chainDamageBonus || 0); // 겹쳐서 커지지 않음
   }
@@ -1596,6 +1609,15 @@ const SKINS = {
     desc: '얼음을 다루는 용사로 변신! 기본공격은 똥 대신 얼음 3개가 나가 냉기가 퍼지고, 가젯은 감자칩 대신 얼음 소용돌이를 발사해요. (외형만 바뀌고 성능은 그대로예요. 궁극기 간식 처먹기도 똑같아요)',
     // poop(기본공격 발사체)을 얼음 조각으로, poopGas(터진 뒤 남는 똥가루 구름)를 냉기 구름으로, pringles(가젯)를 얼음 소용돌이로 바꿈. 개수/피해/범위/넉백/사거리는 그대로
     visuals: { poop: 'iceShard', poopGas: 'frostPool', pringles: 'iceVortex' },
+  },
+  jinwoopark_lumi: {
+    id: 'jinwoopark_lumi',
+    characterId: 'jinwoopark',
+    name: '루미',
+    price: SKIN_PRICE,
+    desc: '긴 보라색 머리에 흰 드레스, 금색 포인트가 반짝이는 여자 가수로 변신! 기본공격은 하트 대신 마이크가 날아가고, 궁극기 착지는 금색 폭발과 함께 \'GOLDEN\' 글자가 떠올라요. (외형만 바뀌고 성능은 그대로예요)',
+    // heart(기본공격 발사체)를 마이크로, leapLand(궁극기 착지 연출)를 금색 폭발(+GOLDEN 글자)로 바꿈. 피해 비율/속도/사거리/착지 범위/밀쳐내기는 그대로
+    visuals: { heart: 'microphone', leapLand: 'goldenBlast' },
   },
 };
 function getSkin(id) {
@@ -3522,7 +3544,7 @@ function registerAuthHandlers(socket) {
       if (!socket.data.unlocked.has(charId)) return ack({ ok: false, message: '먼저 캐릭터를 잠금해제해야 합니다.' });
 
       const r = await db.buyHyper(key, charId, HYPER_PRICE, HYPER_REQUIRED_LEVEL);
-      if (r.ok) return ack({ ok: true, message: `${CHARACTERS[charId].name}의 ${CHARACTERS[charId].hyper.name}를 획득했어요!`, profile: publicProfile(r.user) });
+      if (r.ok) return ack({ ok: true, message: `${CHARACTERS[charId].name}의 ${CHARACTERS[charId].hyper.name}${(() => { const c = CHARACTERS[charId].hyper.name.charCodeAt(CHARACTERS[charId].hyper.name.length - 1) - 0xAC00; return c >= 0 && c % 28 !== 0 ? '을' : '를'; })()} 획득했어요!`, profile: publicProfile(r.user) });
 
       const message = r.reason === 'coins' ? '코인이 부족합니다.'
         : r.reason === 'level' ? `${HYPER_REQUIRED_LEVEL}레벨을 달성해야 획득할 수 있습니다.`
@@ -4192,6 +4214,7 @@ function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hy
     gearSacrificeCharge: (gear && gear.damageTakenUltCharge) || 0, // 장착한 기어(희생 정신): 잃은 체력 비율에 곱해 궁극기 게이지로 바꾸는 값
     gearGadgetCooldown: (gear && gear.gadgetCooldownSec) || 0,    // 장착한 기어(빠른 가젯): 가젯 재사용 대기시간(초). 0이면 기본값
     gadgetCooldownTotal: GADGET_COOLDOWN_SEC, // 이번 가젯 쿨다운의 전체 길이(초) - 클라이언트 버튼 표시용
+    gearLifesteal: (gear && gear.lifesteal) || 0, // 장착한 기어(흡수): 적에게 준 직접 피해 중 체력으로 회복하는 비율 (0.15 = 15%)
     gearBandageHeal: (gear && gear.bandageHeal) || 0, // 장착한 기어(붕대): 체력이 20% 이하가 될 때 즉시 회복하는 양
     bandageUsed: false,                               // 이번 목숨에서 붕대를 이미 썼는지 (리스폰하면 다시 사용 가능)
     gearUltStealthSec: (gear && gear.ultStealthSec) || 0, // 장착한 기어(암살자): 궁극기를 쓰면 이 시간(초) 동안 은신
@@ -4363,7 +4386,8 @@ function gearChainMult(shooter, chain) {
   return chain && shooter && shooter.gearChainBonus > 0 ? 1 + shooter.gearChainBonus : 1;
 }
 
-function applyDamage(match, target, damage, shooterId, { chargeShooter, chain } = {}) {
+// noLifesteal: true 이면 기어 '흡수'가 발동하지 않음 (원효대사 물웅덩이 / 여똥이 똥가루 / 엑헤 흰자 같은 지속 피해용)
+function applyDamage(match, target, damage, shooterId, { chargeShooter, chain, noLifesteal } = {}) {
   if (!target.alive || match.over) return;
   if (target.leaping) return; // 점프 중(모카 궁극기)에는 모든 피해 무시
   if (target.airborneTimeLeft > 0) return; // 하늘에 떠 있는 동안(시스템 궁극기)에도 모든 피해 무시 (착지 피해는 airborneTimeLeft를 0으로 만든 뒤 적용)
@@ -4387,7 +4411,13 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter, chain } 
       const lost = Math.min(damage, Math.max(0, target.hp));
       target.ultimateCharge = Math.min(100, (target.ultimateCharge || 0) + (lost / target.maxHp) * 100 * target.gearSacrificeCharge);
     }
+    const hpBeforeHit = target.hp;
     target.hp -= damage;
+    // 기어 '흡수': 적에게 실제로 들어간 피해(보호막이 막은 만큼, 남은 체력을 넘는 만큼은 제외)의 일부를 회복. 지속 피해(noLifesteal)는 제외
+    if (!noLifesteal && shooter && shooter.gearLifesteal > 0 && shooter.alive && shooter.id !== target.id && shooter.team !== target.team && !target.isGate) {
+      const dealt = Math.min(damage, Math.max(0, hpBeforeHit));
+      shooter.hp = Math.min(shooter.maxHp, shooter.hp + Math.round(dealt * shooter.gearLifesteal * (shooter.gearHealMult || 1)));
+    }
     // 기어 '붕대': 살아남은 채로 체력이 20% 이하가 되면 즉시 회복 (목숨당 1번)
     if (target.gearBandageHeal > 0 && !target.bandageUsed && target.hp > 0 && target.hp <= target.maxHp * GEAR_BANDAGE_RATIO) {
       target.bandageUsed = true;
@@ -4965,13 +4995,15 @@ function spawnWaterPool(match, b) {
 // 주기적인 지속 피해를 주다가(updateMatch의 폭발물 루프에서 처리) 일정 시간 뒤 크게 폭발한다
 function spawnBomb(match, p, spec) {
   bombIdCounter += 1;
+  const hyperOn = p.hasHyper && p.hyper && p.hyper.ultimateRadiusMultiplier && p.hyperUntil && Date.now() < p.hyperUntil;
+  const bombRadius = spec.radius * (hyperOn ? p.hyper.ultimateRadiusMultiplier : 1); // 하이퍼 차지(보조배터리 폭발) 발동 중에는 폭탄 범위 증가
   match.bombs.push({
     id: bombIdCounter,
     ownerId: p.id,
     team: p.team,
     x: p.x,
     y: p.y,
-    radius: spec.radius,
+    radius: bombRadius,
     fuseLeft: spec.fuseTime,      // 폭발까지 남은 시간(초)
     tickInterval: spec.tickInterval,
     tickTimer: 0,
@@ -6059,7 +6091,7 @@ function updateMatch(match, dt, now) {
     effectIdCounter += 1;
     const landSkinVisual = skinVisual(p, 'leapLand'); // 스킨이 있으면 착지 연출이 바뀜 (모카 섀도우). 스킨이 없으면 'leapLand' 그대로라서 기본 연출
     const landVisual = landSkinVisual !== 'leapLand' ? landSkinVisual : (p.leapStun > 0 ? 'shoot' : undefined);
-    const landLife = landVisual === 'chefLand' ? 0.95 : (landVisual === 'shoot' ? 0.6 : (landVisual ? 0.7 : EFFECT_LIFETIME));
+    const landLife = landVisual === 'chefLand' ? 0.95 : (landVisual === 'goldenBlast' ? 0.9 : (landVisual === 'shoot' ? 0.6 : (landVisual ? 0.7 : EFFECT_LIFETIME)));
     match.effects.push({ id: effectIdCounter, type: 'leapLand', visual: landVisual, x: p.x, y: p.y, radius: p.leapRadius, life: landLife, maxLife: landVisual ? landLife : undefined });
 
     for (const tid in match.players) {
@@ -6670,7 +6702,7 @@ function updateMatch(match, dt, now) {
           target.hp = Math.min(target.maxHp, target.hp + pool.heal * (target.gearHealMult || 1)); // 회복 기어: 회복받는 쪽의 회복량 증가
         } else {
           // 적 -> 대미지 (궁극기 게이지는 충전하지 않음)
-          applyDamage(match, target, pool.damage, pool.ownerId, { chargeShooter: false });
+          applyDamage(match, target, pool.damage, pool.ownerId, { chargeShooter: false, noLifesteal: true }); // 지속 피해는 기어 '흡수' 제외
           if (match.over) break;
         }
       }
