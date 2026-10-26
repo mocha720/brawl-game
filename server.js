@@ -77,7 +77,7 @@ const SOCCER_WIN_GOALS = 3;      // 먼저 이 골 수에 도달한 팀이 승�
 const SOCCER_BALL_R = 15;        // 공 반지름
 const SOCCER_GOAL_W = 240;       // 골대 입구 너비 (작게)
 const SOCCER_GOAL_DEPTH = 46;    // 골대 깊이 (맵 위/아래 끝에서 이만큼 안쪽까지)
-const SOCCER_KICK_SPEED = 1500;  // 공을 찰 때의 초기 속도 (px/초)
+const SOCCER_KICK_SPEED = 600;   // 공을 찰 때의 초기 속도 (px/초) - 기존 1500에서 60% 감소. 공이 굴러가는 거리는 '초기 속도 ÷ SOCCER_FRICTION' 이라서 기존 약 1000px에서 약 400px로 같이 줄어듦
 const SOCCER_FRICTION = 1.5;     // 굴러가는 공의 감속 (클수록 빨리 멈춤)
 const SOCCER_KICK_COOLDOWN = 450; // 찬 사람이 같은 공을 다시 잡기까지 걸리는 시간 (ms)
 const SOCCER_KICKOFF_MS = 2500;  // 골 직후 공이 정지해 있는 시간
@@ -765,6 +765,7 @@ const CHARACTERS = {
       minDistance: 100,      // 최소 점프 거리(px). 조준(PC 마우스 위치 / 모바일 스틱 당김)에 따라 minDistance ~ distance 사이로 조절됨
       duration: 0.55,        // 공중에 떠 있는 시간(초). 이 동안은 조작 불가 + 피격/총알 무시 (길수록 점프가 느리게 보임)
       landRadius: 90,        // 착지 지점 주변 피해 반경
+      reloadAmmo: true,      // 궁극기를 사용하면 즉시 탄창이 가득(3개) 재장전됨
     },
     // 하이퍼 차지: 캐릭터를 최고 레벨(11)까지 키운 뒤 코인으로 획득하는 추가 스킬. 기본공격을 적중시켜 게이지를 채우고, 가득 차면 발동한다.
     hyper: {
@@ -1093,7 +1094,7 @@ function describeUltimate(u) {
     }
     case 'leap':
       damage = u.damage;
-      desc = `조준한 방향으로 벽을 무시하고 점프, 거리는 조준으로 ${fmtNum(u.minDistance || 0)}~${fmtNum(u.distance)}px 조절 (공중에서는 피격 불가), 착지 지점 반경 ${u.landRadius} 안의 적에게 ${fmtNum(u.damage)} 피해${u.knockback ? ` + ${fmtNum(u.knockback)}만큼 밀쳐냄` : ''}${u.stunDuration ? ` + ${u.stunDuration}초 기절` : ''}`;
+      desc = `조준한 방향으로 벽을 무시하고 점프, 거리는 조준으로 ${fmtNum(u.minDistance || 0)}~${fmtNum(u.distance)}px 조절 (공중에서는 피격 불가), 착지 지점 반경 ${u.landRadius} 안의 적에게 ${fmtNum(u.damage)} 피해${u.knockback ? ` + ${fmtNum(u.knockback)}만큼 밀쳐냄` : ''}${u.stunDuration ? ` + ${u.stunDuration}초 기절` : ''}${u.reloadAmmo ? ` (사용하면 즉시 탄창 ${MAX_AMMO}개 재장전)` : ''}`;
       break;
     case 'quake':
       damage = u.damage;
@@ -6218,6 +6219,12 @@ function registerGameplayHandlers(socket) {
       } else {
         spawnProjectiles(match, p, ult, true);
       }
+    }
+
+    // 궁극기 사용 시 즉시 탄창 재장전 (모카): 탄창을 가득 채우고 재장전 진행도도 초기화
+    if (ult.reloadAmmo && p.alive && !match.over) {
+      p.ammo = p.maxAmmo;
+      p.ammoRegenElapsed = 0;
     }
 
     // 기어 '암살자': 궁극기를 쓰면 잠깐 은신 (은신이 궁극기인 캐릭터는 이미 은신하므로 제외)
