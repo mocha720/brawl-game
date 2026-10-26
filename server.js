@@ -55,6 +55,7 @@ const GAME_MODES = {
   knockout: { name: '녹아우', desc: '상대를 먼저 쓰러뜨려 목표 킬 수에 도달하면 승리' },
   gatekeeper: { name: '문지기', desc: '상대 리스폰 근처에 있는 문을 먼저 공격해 파괴하면 승리' },
   gemgrab: { name: '쨍그랩', desc: '중앙 구멍에서 나오는 보석을 모아 팀 보석 20개를 먼저 채우면 승리' },
+  soccer: { name: '슈퍼 축구', desc: '공을 몰고 가서 차 넣어요! 상대 골대에 3골을 먼저 넣으면 승리' },
 };
 const MODE_VOTE_MS = 8000;        // 게임 종류 투표 시간 (모두 투표하면 바로 끝남)
 const GATE_HP = 100000;           // 문지기 모드: 문의 체력 (모든 공격이 문에 통함)
@@ -70,6 +71,16 @@ const GEM_LAND_MS = 450;       // 보석이 구멍에서 튀어나와 땅에 떨
 const GEM_HOLE_RADIUS = 46;    // 중앙 구멍 반지름
 const GEM_MAX_ON_GROUND = 80;  // 바닥에 있는 보석이 이 수 이상이면 새 보석은 잠시 안 나옴 (죽어서 떨어뜨린 보석은 제한 없음)
 let gemIdCounter = 0;
+
+// ===== 슈퍼 축구 모드 설정 =====
+const SOCCER_WIN_GOALS = 3;      // 먼저 이 골 수에 도달한 팀이 승리
+const SOCCER_BALL_R = 15;        // 공 반지름
+const SOCCER_GOAL_W = 240;       // 골대 입구 너비 (작게)
+const SOCCER_GOAL_DEPTH = 46;    // 골대 깊이 (맵 위/아래 끝에서 이만큼 안쪽까지)
+const SOCCER_KICK_SPEED = 1500;  // 공을 찰 때의 초기 속도 (px/초)
+const SOCCER_FRICTION = 1.5;     // 굴러가는 공의 감속 (클수록 빨리 멈춤)
+const SOCCER_KICK_COOLDOWN = 450; // 찬 사람이 같은 공을 다시 잡기까지 걸리는 시간 (ms)
+const SOCCER_KICKOFF_MS = 2500;  // 골 직후 공이 정지해 있는 시간
 const RESPAWN_INVINCIBLE_MS = 3000; // 리스폰 직후 무적 시간
 const MATCH_COUNTDOWN_MS = 4000; // 매칭 직후 상대 정보(캐릭터/트로피)를 보여주는 대결 화면 시간. 이 동안은 이동/공격/스킬 입력이 막힘
 const AI_COIN_REWARD = 20; // (옛 공지사항 문구에서만 쓰는 값. 실제 AI 보상은 아래 AI_DIFFICULTIES 를 따름)
@@ -3769,7 +3780,7 @@ function registerAuthHandlers(socket) {
 // AI 연습 대결 정산: 사람이 점수로 이겼을 때만 난이도별 코인 + 고정 트로피(쓴 캐릭터)를 지급한다.
 // 전적(승/패)과 연승, 미션은 기록하지 않으므로 AI 승리는 연승을 올리지도 끊지도 않는다. 졌을 때는 트로피가 깎이지 않는다.
 async function settleAiMatch(match, winnerTeam, reason) {
-  if (reason !== 'scoreLimit' && reason !== 'gateDestroyed' && reason !== 'gemsCollected') return; // 모드와 상관없이 정상적으로 승부가 난 경우에만 보상
+  if (reason !== 'scoreLimit' && reason !== 'gateDestroyed' && reason !== 'gemsCollected' && reason !== 'goalsScored') return; // 모드와 상관없이 정상적으로 승부가 난 경우에만 보상
   const diff = aiDifficultyOf(match.aiDifficulty);
   for (const pid in match.players) {
     const p = match.players[pid];
@@ -3806,7 +3817,7 @@ async function settleMatch(match, winnerTeam, reason, leaverId) {
     const p = match.players[pid];
     const won = p.team === winnerTeam;
     // 패배 페널티: 점수로 져서 끝난 매치는 패배한 팀 전원, 중도 이탈로 끝난 매치는 나간 사람만 (남은 팀원은 깎이지 않음)
-    const penalized = !won && (reason === 'scoreLimit' || reason === 'gateDestroyed' || reason === 'gemsCollected' || pid === leaverId);
+    const penalized = !won && (reason === 'scoreLimit' || reason === 'gateDestroyed' || reason === 'gemsCollected' || reason === 'goalsScored' || pid === leaverId);
     try {
       // 연승 계산: 이 매치에서 쓴 캐릭터의 직전 연승 수를 서버 저장소에서 읽는다
       let previousStreak = 0;
@@ -3820,7 +3831,7 @@ async function settleMatch(match, winnerTeam, reason, leaverId) {
       // 승리: 연승 +1 / 페널티 받는 패배: 연승 0 / 페널티 없는 패배(팀원 이탈 등): 연승 유지
       const newStreak = won ? previousStreak + 1 : (penalized ? 0 : null);
       // 미션 진행도 누적 (정상 종료된 매치만). addResult보다 먼저 해서 아래 profileUpdate에 최신 진행도가 담기게 함
-      if (reason === 'scoreLimit' || reason === 'gateDestroyed' || reason === 'gemsCollected') {
+      if (reason === 'scoreLimit' || reason === 'gateDestroyed' || reason === 'gemsCollected' || reason === 'goalsScored') {
         await db.addMissionProgress(key, missionDay(), missionIncrements(won, match.mode, p.score || 0));
         await db.addRepeatProgress(key, repeatIncrements(won, match.mode, p.score || 0)); // 무한 미션도 같은 조건으로 누적
       }
@@ -4040,6 +4051,134 @@ function endGemMatch(match, winnerTeam) {
   setTimeout(() => endMatch(match.id), MATCH_CLEANUP_DELAY_MS);
 }
 
+// ===== 슈퍼 축구 =====
+function soccerGoalRect(team) {
+  // team 팀이 지키는 골대. A팀은 위쪽, B팀은 아래쪽
+  const x0 = ARENA_WIDTH / 2 - SOCCER_GOAL_W / 2;
+  return team === 'A'
+    ? { x: x0, y: 0, width: SOCCER_GOAL_W, height: SOCCER_GOAL_DEPTH }
+    : { x: x0, y: ARENA_HEIGHT - SOCCER_GOAL_DEPTH, width: SOCCER_GOAL_W, height: SOCCER_GOAL_DEPTH };
+}
+function rectsOverlap(a, b) {
+  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+}
+// 공 자리/골대 주변의 벽은 치운다 (원본 맵은 건드리지 않고 새 배열)
+function carveSoccerField(walls) {
+  const zones = ['A', 'B'].map((t) => { const g = soccerGoalRect(t); return { x: g.x - 70, y: t === 'A' ? 0 : ARENA_HEIGHT - 220, width: g.width + 140, height: 220 }; });
+  return walls.filter((w) => !circleIntersectsRect(ARENA_WIDTH / 2, ARENA_HEIGHT / 2, 90, w) && !zones.some((z) => rectsOverlap(z, w)));
+}
+function createSoccerBall(match, frozenMs) {
+  match.ball = { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT / 2, vx: 0, vy: 0, carrier: null, kickerId: null, noPickupUntil: 0, frozenUntil: Date.now() + (frozenMs || 0), r: SOCCER_BALL_R };
+  for (const pid in match.players) match.players[pid].hasBall = false;
+}
+function ballCarrier(match) {
+  const b = match.ball;
+  return b && b.carrier ? match.players[b.carrier] : null;
+}
+// 공을 놓친다 (맞았거나 죽었을 때). pop=true면 살짝 튕겨 나감
+function dropBall(match, p, pop) {
+  const b = match.ball;
+  if (!b || b.carrier !== p.id) return;
+  b.carrier = null;
+  p.hasBall = false;
+  b.kickerId = p.id; // 떨어뜨린 사람은 잠깐 다시 못 잡음
+  b.noPickupUntil = Date.now() + (pop ? 600 : SOCCER_KICK_COOLDOWN);
+  const a = Math.random() * Math.PI * 2;
+  const sp = pop ? 260 : 0;
+  b.vx = Math.cos(a) * sp;
+  b.vy = Math.sin(a) * sp;
+}
+function kickBall(match, p) {
+  const b = match.ball;
+  if (!b || b.carrier !== p.id) return;
+  b.carrier = null;
+  p.hasBall = false;
+  b.kickerId = p.id;
+  b.noPickupUntil = Date.now() + SOCCER_KICK_COOLDOWN;
+  b.vx = Math.cos(p.angle) * SOCCER_KICK_SPEED;
+  b.vy = Math.sin(p.angle) * SOCCER_KICK_SPEED;
+  b.x = p.x + Math.cos(p.angle) * (PLAYER_RADIUS + b.r);
+  b.y = p.y + Math.sin(p.angle) * (PLAYER_RADIUS + b.r);
+  if (collidesWithWalls(match.walls, b.x, b.y, b.r)) { b.x = p.x; b.y = p.y; }
+  effectIdCounter += 1;
+  match.effects.push({ id: effectIdCounter, type: 'reflect', x: b.x, y: b.y, angle: p.angle, ownerId: p.id, life: 0.2, maxLife: 0.2 });
+}
+function soccerGoalScored(match, scoringTeam) {
+  match.goals[scoringTeam] += 1;
+  match.teamScore = { A: match.goals.A, B: match.goals.B };
+  io.to(match.id).emit('soccerGoal', { team: scoringTeam, goals: match.goals });
+  if (match.goals[scoringTeam] >= SOCCER_WIN_GOALS) {
+    match.over = true;
+    io.to(match.id).emit('matchOver', {
+      reason: 'goalsScored',
+      winnerTeam: scoringTeam,
+      teamScore: match.goals,
+      ...aiOverExtras(match, scoringTeam),
+    });
+    settleMatch(match, scoringTeam, 'goalsScored');
+    setTimeout(() => endMatch(match.id), MATCH_CLEANUP_DELAY_MS);
+    return;
+  }
+  // 킥오프: 공은 가운데로, 모두 자기 진영 시작 위치로
+  match.bullets = [];
+  createSoccerBall(match, SOCCER_KICKOFF_MS);
+  const teamSize = MODES[match.mode].teamSize;
+  for (const pid in match.players) {
+    const pl = match.players[pid];
+    const sp = teamSpawnPoint(match.walls, pl.team, pl.spawnSlot || 0, teamSize);
+    pl.x = sp.x; pl.y = sp.y;
+    pl.lastServerControlAt = Date.now(); // 옛 위치를 담은 늦게 도착한 입력이 순간이동을 되돌리지 않게 함
+  }
+}
+function updateSoccer(match, dt, now) {
+  if (match.over || match.gameMode !== 'soccer' || !match.ball) return;
+  if (now < match.startsAt) return;
+  const b = match.ball;
+  let carrier = ballCarrier(match);
+  if (b.carrier && (!carrier || !carrier.alive)) { if (carrier) carrier.hasBall = false; b.carrier = null; b.vx = 0; b.vy = 0; carrier = null; }
+
+  if (carrier) {
+    // 공을 몰고 가는 중: 조준 방향 앞에 붙어 다님
+    let bx = carrier.x + Math.cos(carrier.angle) * (PLAYER_RADIUS + b.r - 2);
+    let by = carrier.y + Math.sin(carrier.angle) * (PLAYER_RADIUS + b.r - 2);
+    if (collidesWithWalls(match.walls, bx, by, b.r)) { bx = carrier.x; by = carrier.y; }
+    b.x = bx; b.y = by; b.vx = 0; b.vy = 0;
+  } else if (now >= b.frozenUntil) {
+    // 굴러가는 공: 작은 걸음으로 이동하면서 벽/맵 끝에 튕기고, 닿은 사람이 있으면 잡힘
+    const dist = Math.hypot(b.vx, b.vy) * dt;
+    const steps = Math.max(1, Math.ceil(dist / 8));
+    const g1 = soccerGoalRect('A'), g2 = soccerGoalRect('B');
+    const inMouth = (x) => Math.abs(x - ARENA_WIDTH / 2) < SOCCER_GOAL_W / 2 - 4;
+    for (let i = 0; i < steps; i++) {
+      let nx = b.x + (b.vx * dt) / steps;
+      let ny = b.y + (b.vy * dt) / steps;
+      // 골 판정: 골대 입구 안쪽으로 공 중심이 들어가면 득점
+      if (ny < g1.height - b.r * 0.5 && inMouth(nx)) { soccerGoalScored(match, 'B'); return; }
+      if (ny > ARENA_HEIGHT - g2.height + b.r * 0.5 && inMouth(nx)) { soccerGoalScored(match, 'A'); return; }
+      if (nx < b.r && b.vx < 0) { nx = b.r; b.vx = -b.vx * 0.8; }
+      if (nx > ARENA_WIDTH - b.r && b.vx > 0) { nx = ARENA_WIDTH - b.r; b.vx = -b.vx * 0.8; }
+      if (ny < b.r && b.vy < 0) { ny = b.r; b.vy = -b.vy * 0.8; }
+      if (ny > ARENA_HEIGHT - b.r && b.vy > 0) { ny = ARENA_HEIGHT - b.r; b.vy = -b.vy * 0.8; }
+      if (collidesWithWalls(match.walls, nx, b.y, b.r)) { nx = b.x; b.vx = -b.vx * 0.8; }
+      if (collidesWithWalls(match.walls, nx, ny, b.r)) { ny = b.y; b.vy = -b.vy * 0.8; }
+      b.x = nx; b.y = ny;
+      // 닿은 사람이 공을 잡음 (찬 사람은 잠깐 못 잡음)
+      for (const pid in match.players) {
+        const p = match.players[pid];
+        if (!p.alive || p.leaping || p.airborneTimeLeft > 0) continue;
+        if (pid === b.kickerId && now < b.noPickupUntil) continue;
+        if (Math.hypot(p.x - b.x, p.y - b.y) > PLAYER_RADIUS + b.r) continue;
+        b.carrier = pid; p.hasBall = true; b.vx = 0; b.vy = 0; b.kickerId = null;
+        break;
+      }
+      if (b.carrier) break;
+    }
+    const damp = Math.exp(-SOCCER_FRICTION * dt);
+    b.vx *= damp; b.vy *= damp;
+    if (Math.hypot(b.vx, b.vy) < 15) { b.vx = 0; b.vy = 0; }
+  }
+}
+
 // 매 틱: 보석 생성 + 획득 + 승리 판정 (쨍그랩 모드가 아니면 아무것도 안 함)
 function updateGemGrab(match, now) {
   if (match.over || match.gameMode !== 'gemgrab' || !match.gems) return;
@@ -4148,6 +4287,12 @@ function resolveModeVote(matchId) {
 
   if (chosen === 'gatekeeper') createGates(match);
   if (chosen === 'gemgrab') match.walls = carveGemHole(match.walls); // 중앙 구멍 자리의 벽은 치움
+  if (chosen === 'soccer') {
+    match.walls = carveSoccerField(match.walls); // 공 자리/골대 앞의 벽은 치움
+    match.goals = { A: 0, B: 0 };
+    match.winScore = SOCCER_WIN_GOALS;
+    createSoccerBall(match, 0);
+  }
   match.startsAt = Date.now() + MATCH_COUNTDOWN_MS; // 결과를 보여준 뒤 카운트다운 시작
   if (chosen === 'gemgrab') {
     match.gems = [];
@@ -4170,6 +4315,7 @@ function resolveModeVote(matchId) {
     gateHp: GATE_HP,
     gemWin: GEM_WIN_COUNT,
     hole: chosen === 'gemgrab' ? gemHole() : null,
+    soccer: chosen === 'soccer' ? { goalW: SOCCER_GOAL_W, goalDepth: SOCCER_GOAL_DEPTH, ballR: SOCCER_BALL_R, winGoals: SOCCER_WIN_GOALS } : null,
   });
 }
 
@@ -4411,6 +4557,7 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter, chain, n
       const lost = Math.min(damage, Math.max(0, target.hp));
       target.ultimateCharge = Math.min(100, (target.ultimateCharge || 0) + (lost / target.maxHp) * 100 * target.gearSacrificeCharge);
     }
+    if (match.gameMode === 'soccer' && target.hasBall && shooter && shooter.team !== target.team) dropBall(match, target, true); // 슈퍼 축구: 적에게 맞으면 공을 놓침
     const hpBeforeHit = target.hp;
     target.hp -= damage;
     // 기어 '흡수': 적에게 실제로 들어간 피해(보호막이 막은 만큼, 남은 체력을 넘는 만큼은 제외)의 일부를 회복. 지속 피해(noLifesteal)는 제외
@@ -4435,6 +4582,7 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter, chain, n
     target.hp = 0;
     target.alive = false;
     if (match.gameMode === 'gemgrab') dropGems(match, target); // 쨍그랩: 가지고 있던 보석을 모두 떨구고 죽음
+    if (match.gameMode === 'soccer') dropBall(match, target, false); // 슈퍼 축구: 죽으면 공을 놓침
 
     if (shooter) {
       shooter.score += 1;
@@ -5624,6 +5772,7 @@ function registerGameplayHandlers(socket) {
     if (p.dashing || p.knockbackTimeLeft > 0 || (p.stunnedUntil && Date.now() < p.stunnedUntil)) return; // 돌진/기절 중에는 공격 불가
 
     const now = Date.now();
+    if (match.gameMode === 'soccer' && p.hasBall) { kickBall(match, p); return; } // 슈퍼 축구: 공을 가지고 있으면 기본공격이 공 차기
     if (p.basic.type === 'charge') return; // 똥파리는 shoot이 아니라 chargeStart/chargeRelease로 공격함
     if (p.windupUntil && now < p.windupUntil) return; // 공격 선딜 중에는 다시 공격할 수 없음
     if (now - p.lastShotAt < FIRE_COOLDOWN_MS) return; // 연사 방지 (최소 발사 간격)
@@ -5754,6 +5903,7 @@ function registerGameplayHandlers(socket) {
     if (!match || match.over || Date.now() < match.startsAt) return; // 대결 화면(카운트다운) 중에는 입력 무시
     const p = match.players[socket.id];
     if (!p || p.basic.type !== 'charge') return;
+    if (match.gameMode === 'soccer' && p.hasBall && p.alive) { kickBall(match, p); return; } // 슈퍼 축구: 공 차기 (충전 안 함)
     if (p.chargeStartAt) return; // 이미 충전 중
     const now = Date.now();
     if (isChargeBlocked(p, now)) return;
@@ -5802,6 +5952,7 @@ function registerGameplayHandlers(socket) {
     if (!p || !p.alive) return;
     if (p.dashing || p.knockbackTimeLeft > 0 || (p.stunnedUntil && Date.now() < p.stunnedUntil)) return;
     if (!p.gadget || p.gadgetCooldownLeft > 0) return;
+    if (match.gameMode === 'soccer' && p.hasBall) return; // 슈퍼 축구: 공을 가진 동안은 가젯 사용 불가
 
     const gadget = p.gadget;
 
@@ -5930,6 +6081,7 @@ function registerGameplayHandlers(socket) {
     if (!p || !p.alive) return;
     if (p.dashing || p.knockbackTimeLeft > 0 || (p.stunnedUntil && Date.now() < p.stunnedUntil)) return; // 이미 돌진 중이거나 기절 상태면 재발동 불가
     if (p.ultimateCharge < 100) return;
+    if (match.gameMode === 'soccer' && p.hasBall) return; // 슈퍼 축구: 공을 가진 동안은 궁극기 사용 불가
 
     const ult = p.ultimate;
 
@@ -7394,6 +7546,24 @@ function runAiBot(match, botId, ai, dt, now) {
       if (sd > 28) { objX = (spot.x - p.x) / sd; objY = (spot.y - p.y) / sd; aimAngle = Math.atan2(spot.y - p.y, spot.x - p.x); }
       wObj = 1;
     }
+  } else if (match.gameMode === 'soccer' && match.ball && match.ball.frozenUntil <= now) {
+    // 슈퍼 축구: 공이 없으면 공을 쫓고, 공을 가지면 상대 골대로 몰고 가서 찬다. 팀원이 공을 가졌으면 같이 상대 골대 쪽으로 전진
+    const ball = match.ball;
+    const goalX = ARENA_WIDTH / 2, goalY = p.team === 'A' ? ARENA_HEIGHT : 0;
+    if (p.hasBall) {
+      const gd = Math.hypot(goalX - p.x, goalY - p.y) || 1;
+      objX = (goalX - p.x) / gd; objY = (goalY - p.y) / gd;
+      wObj = target && dist < 120 ? 0.75 : 1;
+      aimAngle = Math.atan2(goalY - p.y, goalX - p.x);
+      ai.soccerGoalDist = gd;
+    } else {
+      const carrier = ballCarrier(match);
+      const mateCarries = carrier && carrier.team === p.team;
+      const tx = mateCarries ? goalX : ball.x, ty = mateCarries ? (p.team === 'A' ? ARENA_HEIGHT * 0.65 : ARENA_HEIGHT * 0.35) : ball.y;
+      const bd = Math.hypot(tx - p.x, ty - p.y) || 1;
+      if (bd > 40) { objX = (tx - p.x) / bd; objY = (ty - p.y) / bd; wObj = mateCarries ? objWeight(0.5) : objWeight(0.9); }
+      if (!target) aimAngle = Math.atan2(ty - p.y, tx - p.x);
+    }
   }
   if (wObj > 0) {
     const cl = Math.hypot(moveX, moveY);
@@ -7430,7 +7600,9 @@ function runAiBot(match, botId, ai, dt, now) {
 
   // ===== 4) 기본 공격 =====
   // 모드별 공격 성향: 도망 중에는 가끔 뒤돌아 반격, 숨어 있을 땐 가까이 온 적만 기습, 추격 중에는 더 자주 발사
-  let canAttack = (target && dist <= range * 1.02 + 10 && now >= ai.feintUntil) || (gateAtk && gateDist <= range * 0.95); // 문지기 모드: 보이는 적이 없으면 사거리 안의 상대 문을 공격
+  const soccerHolding = match.gameMode === 'soccer' && p.hasBall;
+  if (soccerHolding && ai.soccerGoalDist < 650 && now >= (ai.nextKickAt || 0)) { h.shoot({}); ai.nextKickAt = now + 700; } // 슈퍼 축구: 골대 가까이에서 공을 참
+  let canAttack = !soccerHolding && ((target && dist <= range * 1.02 + 10 && now >= ai.feintUntil) || (gateAtk && gateDist <= range * 0.95)); // 문지기 모드: 보이는 적이 없으면 사거리 안의 상대 문을 공격
   if (mode === 'flee') canAttack = canAttack && basic.type !== 'charge' && Math.random() < 0.5;
   if (mode === 'hide') canAttack = canAttack && dist < 230;
   const rateScale = mode === 'chase' ? 0.7 : mode === 'flee' ? 1.4 : 1;
@@ -7538,6 +7710,7 @@ function gameLoop() {
     updateMatch(match, dt, now);
     checkGates(match); // 문지기 모드: 문이 부서졌는지 확인
     updateGemGrab(match, now); // 쨍그랩 모드: 보석 생성/획득/승리 판정
+    updateSoccer(match, dt, now); // 슈퍼 축구 모드: 공 이동/획득/골 판정
     if (!match.over) flushGems(match);
 
     for (const pid in match.players) {
@@ -7545,6 +7718,8 @@ function gameLoop() {
         serverNow: now, // 클라이언트가 서버 시계와의 차이를 보정할 수 있게
         lockMs: Math.max(0, match.startsAt - now), // 서버가 아직 입력을 막고 있는 남은 시간(진단용)
         gameMode: match.gameMode,
+        ball: match.gameMode === 'soccer' && match.ball ? { x: Math.round(match.ball.x), y: Math.round(match.ball.y), vx: Math.round(match.ball.vx), vy: Math.round(match.ball.vy), carrier: match.ball.carrier, frozen: Math.max(0, match.ball.frozenUntil - now) } : null,
+        goals: match.gameMode === 'soccer' ? match.goals : null,
         players: buildVisiblePlayers(match, pid),
         bullets: buildVisibleBullets(match, pid),
         effects: match.effects,
