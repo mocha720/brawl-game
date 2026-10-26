@@ -75,7 +75,7 @@ let gemIdCounter = 0;
 // ===== 슈퍼 축구 모드 설정 =====
 const SOCCER_WIN_GOALS = 3;      // 먼저 이 골 수에 도달한 팀이 승리
 const SOCCER_BALL_R = 15;        // 공 반지름
-const SOCCER_GOAL_W = 240;       // 골대 입구 너비 (작게)
+const SOCCER_GOAL_W = 120;       // 골대 입구 너비 (기존 240에서 50% 감소). 깊이(SOCCER_GOAL_DEPTH)는 공이 안에 들어가 득점 판정이 되려면 필요해서 그대로 둠
 const SOCCER_GOAL_DEPTH = 46;    // 골대 깊이 (맵 위/아래 끝에서 이만큼 안쪽까지)
 const SOCCER_KICK_SPEED = 600;   // 공을 찰 때의 초기 속도 (px/초) - 기존 1500에서 60% 감소. 공이 굴러가는 거리는 '초기 속도 ÷ SOCCER_FRICTION' 이라서 기존 약 1000px에서 약 400px로 같이 줄어듦
 const SOCCER_FRICTION = 1.5;     // 굴러가는 공의 감속 (클수록 빨리 멈춤)
@@ -91,6 +91,22 @@ const AI_DIFFICULTIES = {
   hard: { id: 'hard', name: '어려움', coinReward: 50, trophyReward: 30 },
 };
 const AI_DEFAULT_DIFFICULTY = 'hard'; // 난이도를 보내지 않는 옛 클라이언트는 기존과 같은 '어려움'
+// ===== 🎃 할로윈 이벤트: AI전 승리 보너스 코인 =====
+// 켜져 있는 동안 AI 대결(쉬움/어려움 모두)에서 사람이 이길 때마다 기본 보상에 더해 min~max 코인(step 단위, 무작위)을 추가로 지급한다.
+// 끝내려면 enabled 를 false 로 바꾸고 재배포하면 된다. (endsAt 에 종료 시각(ms)을 넣으면 그 시각에 자동 종료. 지금은 null = 직접 중단할 때까지 계속)
+const HALLOWEEN_AI_BONUS = { enabled: true, min: 50, max: 500, step: 10, endsAt: null };
+function halloweenBonusActive() {
+  return !!HALLOWEEN_AI_BONUS.enabled && (!HALLOWEEN_AI_BONUS.endsAt || Date.now() < HALLOWEEN_AI_BONUS.endsAt);
+}
+function rollHalloweenBonus() {
+  if (!halloweenBonusActive()) return 0;
+  const { min, max, step } = HALLOWEEN_AI_BONUS;
+  const n = Math.floor((max - min) / step) + 1; // min, min+step, ..., max
+  return min + Math.floor(Math.random() * n) * step;
+}
+function halloweenBonusView() {
+  return halloweenBonusActive() ? { min: HALLOWEEN_AI_BONUS.min, max: HALLOWEEN_AI_BONUS.max } : null;
+}
 function aiDifficultyOf(id) { return AI_DIFFICULTIES[id] || AI_DIFFICULTIES[AI_DEFAULT_DIFFICULTY]; }
 const MATCH_CLEANUP_DELAY_MS = 600; // 승리 판정 후 마지막 상태를 한 번 더 보낸 뒤 방을 정리하기까지의 지연
 
@@ -1295,6 +1311,7 @@ const GEAR_RARITIES = {
 //  gadgetCooldownSec: 가젯 재사용 대기시간(초)을 이 값으로 줄임 (기본 GADGET_COOLDOWN_SEC). 여러 개면 가장 짧은 값
 //  bandageHeal: 피해를 입고 체력이 최대 체력의 GEAR_BANDAGE_RATIO(20%) 이하가 되면 체력을 즉시 이만큼 회복 (살아 있는 상태에서만. 한 번 쓰면 죽었다가 부활할 때까지 다시 쓸 수 없음. 회복 기어의 회복량 증가 적용)
 const GEAR_BANDAGE_RATIO = 0.2;
+//  hyperDurationBonusSec: 하이퍼 차지 발동 시 지속시간이 이 시간(초)만큼 늘어남 (2 = 2초 증가. 하이퍼 차지를 가진 캐릭터에만 의미가 있음. 같은 기어를 여러 개 달면 2초씩 더해짐)
 //  lifesteal: 적 플레이어에게 준 피해(체력에 실제로 들어간 만큼)의 이 비율만큼 체력을 회복 (0.15 = 15%). 물웅덩이/똥가루/흰자 같은 지속 피해(noLifesteal)는 제외하고 직접 피해만 해당. 회복 기어의 회복량 증가 적용
 //  ultStealthSec: 궁극기를 쓰면 이 시간(초) 동안 은신 (적에게 보이지 않음. 원효대사처럼 은신 자체가 궁극기인 캐릭터에는 효과 없음). 여러 개면 가장 긴 값
 const GEAR_CHAIN_WINDOW_MS = 1000;
@@ -1317,6 +1334,7 @@ const GEAR_CATALOG = [
   { id: 'bandage', name: '붕대', rarity: 'legendary', desc: '체력이 20% 이하가 되면 체력을 즉시 3000 회복 (죽었다가 부활하면 다시 사용 가능)', effect: { bandageHeal: 3000 } },
   { id: 'assassin', name: '암살자', rarity: 'mythic', desc: '궁극기를 사용하면 1.5초 동안 은신', effect: { ultStealthSec: 1.5 } },
   { id: 'full_hp_guard', name: '만땅 방어', rarity: 'mythic', desc: '체력이 가득 차 있을 때 받는 피해량 50% 감소', effect: { fullHpDamageReduction: 0.5 } },
+  { id: 'hyper_extend', name: '하이퍼 연장', rarity: 'mythic', desc: '하이퍼 차지 지속시간이 2초 증가', effect: { hyperDurationBonusSec: 2 } },
   { id: 'lifesteal', name: '흡수', rarity: 'mythic', desc: '적에게 준 피해의 15%를 체력으로 회복 (원효대사·여똥이·엑헤의 지속 피해로는 회복하지 않음)', effect: { lifesteal: 0.15 } },
 ];
 function gearById(id) { return GEAR_CATALOG.find((g) => g.id === id) || null; }
@@ -1340,7 +1358,7 @@ function ownedGearsOf(u) {
 // 캐릭터에 장착된 기어들의 효과 합계 (최대 장착 수까지만 인정)
 function gearBonusOf(u, charId) {
   // reloadSpeed: 재장전 속도 증가율(덧셈) / fullHpTakenMult: 체력이 가득 찰 때 받는 피해 배율(곱셈, 1 = 효과 없음) / lowHpDamageBonus: 체력 50% 이하일 때 공격력 증가율(덧셈) / fullAmmoRangeBonus: 탄창이 가득(3개)일 때 사거리 증가율(덧셈)
-  const total = { reloadSpeed: 0, fullHpTakenMult: 1, lowHpDamageBonus: 0, fullAmmoRangeBonus: 0, healBonus: 0, startShield: 0, ultChargeBonus: 0, projectileSpeedBonus: 0, lowHpSpeedBonus: 0, chainDamageBonus: 0, damageTakenUltCharge: 0, gadgetCooldownSec: 0, bandageHeal: 0, ultStealthSec: 0, lifesteal: 0 };
+  const total = { reloadSpeed: 0, fullHpTakenMult: 1, lowHpDamageBonus: 0, fullAmmoRangeBonus: 0, healBonus: 0, startShield: 0, ultChargeBonus: 0, projectileSpeedBonus: 0, lowHpSpeedBonus: 0, chainDamageBonus: 0, damageTakenUltCharge: 0, gadgetCooldownSec: 0, bandageHeal: 0, ultStealthSec: 0, lifesteal: 0, hyperDurationBonusSec: 0 };
   const seenGearIds = new Set(); // 같은 기어는 한 캐릭터에 한 번만 효과 적용 (이전 데이터의 중복 장착 대비)
   for (const g of ownedGearsOf(u).filter((x) => x.charId === charId).filter((x) => !seenGearIds.has(x.gearId) && seenGearIds.add(x.gearId)).slice(0, GEAR_MAX_PER_CHARACTER)) {
     const eff = gearById(g.gearId).effect || {};
@@ -1357,6 +1375,7 @@ function gearBonusOf(u, charId) {
     total.bandageHeal = Math.max(total.bandageHeal, eff.bandageHeal || 0); // 한 번만 발동하므로 겹치지 않음
     total.damageTakenUltCharge += eff.damageTakenUltCharge || 0;
     total.lifesteal += eff.lifesteal || 0;
+    total.hyperDurationBonusSec += eff.hyperDurationBonusSec || 0;
     if (eff.gadgetCooldownSec > 0) total.gadgetCooldownSec = total.gadgetCooldownSec > 0 ? Math.min(total.gadgetCooldownSec, eff.gadgetCooldownSec) : eff.gadgetCooldownSec;
     total.chainDamageBonus = Math.max(total.chainDamageBonus, eff.chainDamageBonus || 0); // 겹쳐서 커지지 않음
   }
@@ -1865,6 +1884,18 @@ function repeatMissionsView(u) {
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
   {
+    id: '2026-10-27-halloween-start',
+    date: '2026-10-27',
+    tag: 'new',
+    title: '🎃 할로윈 이벤트 시작!',
+    items: [
+      '할로윈 이벤트가 시작됐어요! 🎃👻',
+      'AI 대결(쉬움/어려움)에서 승리할 때마다 기본 보상에 더해 🪙 50~500코인을 추가로 받아요!',
+      '추가 코인은 승리할 때마다 무작위로 정해지고, 이벤트는 종료 공지가 나올 때까지 계속돼요.',
+      '기어 상점 버튼도 메인 화면 맨 위로 옮겨서 더 쉽게 찾을 수 있어요.',
+    ],
+  },
+  {
     id: '2026-10-22-wonhyo-hyper',
     date: '2026-10-22',
     tag: 'new',
@@ -2255,6 +2286,7 @@ function publicProfile(u) {
   for (const id in CHARACTERS) { const sk = equippedSkinOf(u, id); if (sk) equippedSkins[id] = sk; }
   return { username: u.name, coins: u.coins, gems: u.gems || 0, gemResetCost: GEM_SHOP_RESET_COST, wins: u.wins || 0, losses: u.losses || 0, unlocked: effectiveUnlocked(u), prices: allPrices(),
     skinCatalog: skinCatalogPublic(), skins: ownedSkinsOf(u), equippedSkins, hypers: ownedHypersOf(u), gears: ownedGearsOf(u), gearShop: gearShopView(u), gearCatalog: GEAR_CATALOG.map((g) => ({ id: g.id, name: g.name, rarity: g.rarity, desc: g.desc })), gearRarities: Object.values(GEAR_RARITIES), gearMax: GEAR_MAX_PER_CHARACTER, gearSellRatio: GEAR_SELL_RATIO, hyperPrice: HYPER_PRICE, hyperRequiredLevel: HYPER_REQUIRED_LEVEL, trophyRoad: trophyRoadView(u), trophyRoadPlus: trophyRoadPlusView(u), trophies, streaks, missions: missionsView(u), repeatMissions: repeatMissionsView(u), ranks: TROPHY_RANKS, characters: buildCharacterInfo(levels), levels, levelTable: LEVEL_TABLE_PUBLIC, maxLevel: MAX_CHARACTER_LEVEL, isAdmin: u.key === ADMIN_KEY, announcements: allAnnouncements(), dailyDraw: dailyDrawView(u),
+    aiBonusEvent: halloweenBonusView(),
     events: activeEvents().map((e) => ({ id: e.id, name: e.name, coins: e.coins || 0, gems: e.gems || 0, desc: e.desc, endsAt: e.endsAt || null, claimed: (u.redeemed || []).includes(eventClaimCode(e)) })) };
 }
 
@@ -3789,9 +3821,13 @@ async function settleAiMatch(match, winnerTeam, reason) {
     const key = match.accounts[pid];
     if (!key) continue;
     try {
-      const user = await db.addAiReward(key, diff.coinReward, p.characterId, diff.trophyReward);
+      const bonus = rollHalloweenBonus(); // 🎃 할로윈 이벤트 중이면 승리할 때마다 50~500코인 추가 (기본 보상과 한 번에 지급)
+      const user = await db.addAiReward(key, diff.coinReward + bonus, p.characterId, diff.trophyReward);
       const s = io.sockets.sockets.get(pid);
-      if (s && user) s.emit('profileUpdate', publicProfile(user));
+      if (s && user) {
+        s.emit('profileUpdate', publicProfile(user));
+        if (bonus > 0) s.emit('aiBonus', { coins: bonus });
+      }
     } catch (e) {
       console.error('AI 대결 보상 지급 실패', key, e);
     }
@@ -4234,6 +4270,64 @@ function mapVoteCounts(match) {
   return counts;
 }
 
+// ===== 리스폰 앞 벽 =====
+// 모든 맵에서 각 팀 스폰(=리스폰) 위치 바로 앞(맵 안쪽)에 짧은 가로 벽을 하나씩 세운다. 스폰/리스폰 직후 정면에서 바로 맞는 일을 줄여 준다.
+// 벽은 스폰 자리 폭만큼만 세우고 양옆은 비워서 돌아 나갈 수 있다. 문지기 모드의 문, 슈퍼 축구의 골대 앞 비움 구역과는 겹치지 않게 그 부분을 잘라낸다.
+const SPAWN_WALL_W = 100;        // 벽 가로 길이
+const SPAWN_WALL_H = 18;         // 벽 두께
+const SPAWN_WALL_GAP = 22;       // 스폰한 캐릭터 몸(반지름 20)에서 벽까지 띄우는 거리
+const SPAWN_WALL_MIN_PIECE = 24; // 문/골대 구역을 잘라내고 남은 조각이 이보다 짧으면 버림
+function addSpawnWalls(match) {
+  const teamSize = MODES[match.mode].teamSize;
+  const blockers = []; // { x1, x2, y1, y2 }: 이 직사각형 안에는 벽을 세우지 않음
+  if (match.gates) {
+    for (const t of ['A', 'B']) {
+      const g = match.gates[t];
+      if (!g) continue;
+      const R = g.radius + 14; // 문 반경 + 여유 (문 주변으로 지나다닐 길을 남김)
+      blockers.push({ x1: g.x - R, x2: g.x + R, y1: g.y - R, y2: g.y + R });
+    }
+  }
+  if (match.gameMode === 'soccer') {
+    for (const t of ['A', 'B']) { // carveSoccerField 가 비워 둔 골대 앞 구역과 같은 범위
+      const g = soccerGoalRect(t);
+      blockers.push({ x1: g.x - 70, x2: g.x + g.width + 70, y1: t === 'A' ? 0 : ARENA_HEIGHT - 220, y2: t === 'A' ? 220 : ARENA_HEIGHT });
+    }
+  }
+  const added = [];
+  for (const team of ['A', 'B']) {
+    for (let slot = 0; slot < teamSize; slot++) {
+      const sp = teamSpawnPoint(match.walls, team, slot, teamSize); // 실제 스폰/리스폰 위치 (원래 맵 벽을 피해 옮겨진 위치 포함)
+      const dirY = team === 'A' ? 1 : -1; // 맵 안쪽 방향
+      const edgeY = sp.y + dirY * (PLAYER_RADIUS + SPAWN_WALL_GAP);
+      const y = dirY > 0 ? edgeY : edgeY - SPAWN_WALL_H;
+      let x1 = Math.max(0, sp.x - SPAWN_WALL_W / 2);
+      let x2 = Math.min(ARENA_WIDTH, sp.x + SPAWN_WALL_W / 2);
+      if (y < 0 || y + SPAWN_WALL_H > ARENA_HEIGHT) continue;
+      // 문/골대 구역과 겹치는 가로 구간을 잘라냄
+      let pieces = [[x1, x2]];
+      for (const b of blockers) {
+        if (y + SPAWN_WALL_H <= b.y1 || y >= b.y2) continue; // 세로로 안 겹치면 상관없음
+        const next = [];
+        for (const [a, c] of pieces) {
+          if (c <= b.x1 || a >= b.x2) { next.push([a, c]); continue; }
+          if (a < b.x1) next.push([a, b.x1]);
+          if (c > b.x2) next.push([b.x2, c]);
+        }
+        pieces = next;
+      }
+      for (const [a, c] of pieces) {
+        if (c - a < SPAWN_WALL_MIN_PIECE) continue;
+        const rect = { x: Math.round(a), y: Math.round(y), width: Math.round(c - a), height: SPAWN_WALL_H };
+        // 스폰한 캐릭터가 벽에 끼지 않는지 확인 (벽이 캐릭터 몸과 겹치면 세우지 않음)
+        if (circleIntersectsRect(sp.x, sp.y, PLAYER_RADIUS + 4, rect)) continue;
+        added.push(rect);
+      }
+    }
+  }
+  match.walls = [...match.walls, ...added];
+}
+
 // 매치의 맵을 바꾸고, 모든 참가자를 새 맵의 자기 팀 스폰 위치로 옮긴다 (경기 시작 전, 투표가 끝난 직후에만 호출)
 function applyMapToMatch(match, map) {
   match.mapId = map.id;
@@ -4294,6 +4388,7 @@ function resolveModeVote(matchId) {
     match.winScore = SOCCER_WIN_GOALS;
     createSoccerBall(match, 0);
   }
+  addSpawnWalls(match); // 모든 맵: 리스폰 위치 앞에 벽 추가 (문/골대 구역은 피함). 모드별 벽 정리와 문 생성이 끝난 뒤에 해야 서로 겹치지 않음
   match.startsAt = Date.now() + MATCH_COUNTDOWN_MS; // 결과를 보여준 뒤 카운트다운 시작
   if (chosen === 'gemgrab') {
     match.gems = [];
@@ -4362,6 +4457,8 @@ function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hy
     gearGadgetCooldown: (gear && gear.gadgetCooldownSec) || 0,    // 장착한 기어(빠른 가젯): 가젯 재사용 대기시간(초). 0이면 기본값
     gadgetCooldownTotal: GADGET_COOLDOWN_SEC, // 이번 가젯 쿨다운의 전체 길이(초) - 클라이언트 버튼 표시용
     gearLifesteal: (gear && gear.lifesteal) || 0, // 장착한 기어(흡수): 적에게 준 직접 피해 중 체력으로 회복하는 비율 (0.15 = 15%)
+    gearHyperDurationBonus: (gear && gear.hyperDurationBonusSec) || 0, // 장착한 기어(하이퍼 연장): 하이퍼 차지 지속시간 증가(초)
+    hyperDurationTotal: 0, // 이번(또는 마지막) 하이퍼 차지의 전체 지속시간(초, 기어 증가 포함) - 클라이언트 남은 시간 표시용
     gearBandageHeal: (gear && gear.bandageHeal) || 0, // 장착한 기어(붕대): 체력이 20% 이하가 될 때 즉시 회복하는 양
     bandageUsed: false,                               // 이번 목숨에서 붕대를 이미 썼는지 (리스폰하면 다시 사용 가능)
     gearUltStealthSec: (gear && gear.ultStealthSec) || 0, // 장착한 기어(암살자): 궁극기를 쓰면 이 시간(초) 동안 은신
@@ -5860,6 +5957,9 @@ function registerGameplayHandlers(socket) {
           const s = m.players[stabberId];
           if (!s || !s.alive || s.leaping) return;
           if (s.stunnedUntil && Date.now() < s.stunnedUntil) return; // 기절당하면 남은 찌르기는 끊김
+          // 기어 '파죽지세': 찌르기 한 번 한 번을 각각 별개의 기본공격으로 계산한다.
+          // 첫 번째 찌르기는 위 shoot 처리에서 이미 기록됐으므로, 2~4번째 찌르기는 직전 찌르기 후 1초 안에 이어진 공격으로 기록해 25% 추가 피해가 붙게 한다
+          if (i > 0) markBasicAttack(s, Date.now());
           performMeleeAttack(m, s, stabSpec, false, stabAngle, i);
         };
         if (i === 0) stab();
@@ -6067,8 +6167,10 @@ function registerGameplayHandlers(socket) {
     if (p.hyperCharge < 100) return;
     const now = Date.now();
     if (p.hyperUntil && now < p.hyperUntil) return;
-    p.hyperUntil = now + p.hyper.duration * 1000;
-    p.hyperLeft = p.hyper.duration;
+    const hyperTotalSec = p.hyper.duration + (p.gearHyperDurationBonus || 0); // 기어 '하이퍼 연장': 지속시간 증가
+    p.hyperUntil = now + hyperTotalSec * 1000;
+    p.hyperLeft = hyperTotalSec;
+    p.hyperDurationTotal = hyperTotalSec;
     p.hyperCharge = 0;
     effectIdCounter += 1;
     match.effects.push({ id: effectIdCounter, type: 'hyperActivate', ownerId: p.id, x: p.x, y: p.y, radius: PLAYER_RADIUS * 3.2, life: 0.7, maxLife: 0.7 }); // 발동 순간 보랏빛 폭발 연출
