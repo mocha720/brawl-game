@@ -1793,6 +1793,14 @@ function isLeapUltimateArmed(me) {
 function fireAttack() {
   if (!joined || inCountdown()) return;
   const me = latestState.players[myId];
+  if (me && me.hasBall && matchGameMode === 'soccer') {
+    // 슈퍼 축구: 공을 가지고 있으면 기본 공격이 공 차기. 궁극기/가젯 장전은 취소
+    ultimateArmed = false; gadgetArmed = false;
+    updateUltimateButton(); updateGadgetButton();
+    socket.emit('shoot');
+    SFX.shoot();
+    return;
+  }
   if (ultimateArmed && me && me.ultimateCharge >= 100) {
     if (me.ultimate && me.ultimate.type === 'leap') socket.emit('ultimate', { distance: Math.round(getLeapAimDistance(me)) });
     else socket.emit('ultimate');
@@ -3573,7 +3581,11 @@ let matchMode = '1v1';  // 'matchFound'에서 서버가 알려주는 실제 매�
 let matchWinScore = 5;  // 팀이 승리하는 데 필요한 누적 킬 수. matchFound에서 갱신됨
 let matchGameMode = 'knockout'; // 게임 종류: 'knockout'(녹아우) / 'gatekeeper'(문지기). 투표 결과(modeVoteResult)와 매 상태(state)로 갱신됨
 let voteState = null;           // 매칭 직후 게임 모드 투표 진행 상태 { resolved, myVote, counts }
-const GAME_MODE_NAMES = { knockout: '녹아우', gatekeeper: '문지기', gemgrab: '쨍그랩' };
+const GAME_MODE_NAMES = { knockout: '녹아우', gatekeeper: '문지기', gemgrab: '쨍그랩', soccer: '슈퍼 축구' };
+// 슈퍼 축구 모드: 서버가 modeVoteResult 로 골대/공 크기를 알려줌
+let matchSoccer = { goalW: 240, goalDepth: 46, ballR: 15, winGoals: 3 };
+let ballRot = 0;            // 공이 굴러가는 모양(회전 각도)
+let ballLastDraw = null;    // 직전에 그린 공 위치 (회전 계산용)
 // 쨍그랩 모드: 중앙 구멍에서 5초마다 나오는 보라색 보석. 서버가 바뀔 때만 'gems' 이벤트로 목록을 보내준다
 let matchGemWin = 20;   // 팀 보석이 이 수가 되면 승리 (modeVoteResult 로 서버가 알려줌)
 let matchHole = null;   // 중앙 구멍 { x, y, r }
@@ -3672,6 +3684,7 @@ function showVersusScreen(data) {
       cdEl.textContent = 'START!';
       if (matchGameMode === 'gatekeeper' && joined) showStartBanner('문을 지키고, 상대를 쥑이뿌세요!!'); // 문지기 모드 시작 안내
       if (matchGameMode === 'gemgrab' && joined) showStartBanner(`보라색 보석 ${matchGemWin}개를 먼저 모으세요!`); // 쨍그랩 모드 시작 안내
+      if (matchGameMode === 'soccer' && joined) showStartBanner(`⚽ 공을 몰고 가서 차 넣으세요! ${matchSoccer.winGoals}골 선취!`); // 슈퍼 축구 시작 안내
       clearInterval(vsTimer); vsTimer = null;
       setTimeout(() => { if (!vsTimer) document.getElementById('versusOverlay').classList.remove('open'); }, 400);
       return;
@@ -3702,7 +3715,7 @@ function setupVoteUi(vote) {
     el.innerHTML = '';
     return;
   }
-  voteState = { resolved: false, myVote: null, counts: { knockout: 0, gatekeeper: 0, gemgrab: 0 }, options: vote.options || [], mapOptions: vote.maps || [], myMapVote: null, mapCounts: {} };
+  voteState = { resolved: false, myVote: null, counts: { knockout: 0, gatekeeper: 0, gemgrab: 0, soccer: 0 }, options: vote.options || [], mapOptions: vote.maps || [], myMapVote: null, mapCounts: {} };
   el.classList.add('open');
   renderVoteUi();
 }
@@ -3776,11 +3789,18 @@ socket.on('gems', (data) => {
   for (const id in gemSeen) if (!alive[id]) delete gemSeen[id];
 });
 
+socket.on('soccerGoal', (data) => {
+  showStartBanner(data.team === myTeam ? '⚽ GOAL! 우리 팀 득점!' : '⚽ 상대 팀이 골을 넣었어요...');
+  SFX.ultimateReady();
+  wasAlive = false; // 서버가 모두를 시작 위치로 옮기므로 내 위치도 다시 맞춤
+});
+
 socket.on('modeVoteResult', (data) => {
   matchGameMode = data.gameMode || 'knockout';
   if (data.winScore) matchWinScore = data.winScore;
   matchGemWin = data.gemWin || 20;
   matchHole = data.hole || null;
+  if (data.soccer) matchSoccer = data.soccer;
   // 투표로 정해진 맵으로 교체: 벽/덤불을 바꾸고, 서버가 옮겨준 새 스폰 위치로 내 위치도 다시 맞춘다
   if (data.walls) WALLS = data.walls;
   if (data.bushes) BUSHES = data.bushes;
@@ -3803,6 +3823,7 @@ function updateGateHud(state) {
   const mode = state.gameMode || matchGameMode;
   matchGameMode = mode;
   const modeLabel = mode === 'gatekeeper' ? '🚪 문지기 — 상대 문을 먼저 부수면 승리!'
+    : mode === 'soccer' ? `⚽ 슈퍼 축구 — 상대 골대에 ${matchSoccer.winGoals}골을 먼저 넣으면 승리!`
     : mode === 'gemgrab' ? `💎 쨍그랩 — 팀 보석 ${matchGemWin}개를 먼저 모으면 승리!`
     : `⚔ 녹아우 — ${matchWinScore}킬 선취`;
   let html = `<div class="gate-mode">${modeLabel}</div>`;
@@ -3813,6 +3834,11 @@ function updateGateHud(state) {
     const enemyTeam = myTeam === 'A' ? 'B' : 'A';
     const gbar = (n, label, cls) => `<div class="gate-bar ${cls} gemb"><div class="gate-bar-label"><span>${label}</span><span>💎 ${n} / ${matchGemWin}</span></div><div class="gate-bar-track"><div class="gate-bar-fill" style="width:${Math.max(0, Math.min(100, (n / matchGemWin) * 100))}%"></div></div></div>`;
     html += `<div class="gate-bars">${gbar(totals[myTeam] || 0, '우리 팀', 'mine')}${gbar(totals[enemyTeam] || 0, '상대 팀', 'enemy')}</div>`;
+  }
+  if (mode === 'soccer' && state.goals) {
+    const enemyTeam = myTeam === 'A' ? 'B' : 'A';
+    const sbar = (n, label, cls) => `<div class="gate-bar ${cls} gemb"><div class="gate-bar-label"><span>${label}</span><span>⚽ ${n} / ${matchSoccer.winGoals}</span></div><div class="gate-bar-track"><div class="gate-bar-fill" style="width:${Math.max(0, Math.min(100, (n / matchSoccer.winGoals) * 100))}%"></div></div></div>`;
+    html += `<div class="gate-bars">${sbar(state.goals[myTeam] || 0, '우리 팀', 'mine')}${sbar(state.goals[enemyTeam] || 0, '상대 팀', 'enemy')}</div>`;
   }
   if (mode === 'gatekeeper') {
     const gates = (state.turrets || []).filter((t) => t.isGate);
@@ -3838,6 +3864,7 @@ socket.on('matchFound', (data) => {
   matchIsAi = !!data.ai;
   matchAiInfo = data.aiDifficulty || null;
   matchGameMode = data.gameMode || 'knockout';
+  ballLastDraw = null; ballRot = 0;
   matchHole = null; gemList = []; gemNextAt = 0; prevMyGems = 0; // 쨍그랩 상태 초기화
   for (const k in gemSeen) delete gemSeen[k];
   ARENA_WIDTH = data.arena.width;
@@ -3926,6 +3953,10 @@ socket.on('matchOver', (data) => {
     titleEl.textContent = iWon ? '승리!' : '패배';
     titleEl.classList.add(iWon ? 'win' : 'lose');
     descEl.textContent = iWon ? `💎 보석 ${matchGemWin}개를 모았어요!` : `💎 상대 팀이 보석 ${matchGemWin}개를 먼저 모았어요...`;
+  } else if (data.reason === 'goalsScored') {
+    titleEl.textContent = iWon ? '승리!' : '패배';
+    titleEl.classList.add(iWon ? 'win' : 'lose');
+    descEl.textContent = `⚽ ${myScore} : ${oppScore} (${matchSoccer.winGoals}골 선취)`;
   } else if (data.reason === 'gateDestroyed') {
     titleEl.textContent = iWon ? '승리!' : '패배';
     titleEl.classList.add(iWon ? 'win' : 'lose');
@@ -4280,6 +4311,7 @@ function activateUltimateControl() {
   const me = latestState.players[myId];
   if (!me || !me.alive) return;
   if (me.ultimateCharge < 100) return;
+  if (matchGameMode === 'soccer' && me.hasBall) return; // 공을 가진 동안은 궁극기 사용 불가
 
   if (me.ultimate && me.ultimate.type === 'lightning') {
     socket.emit('ultimate');
@@ -4355,6 +4387,7 @@ function activateGadgetControl() {
   const me = latestState.players[myId];
   if (!me || !me.alive || !me.gadget) return;
   if (me.gadgetCooldownLeft > 0) return;
+  if (matchGameMode === 'soccer' && me.hasBall) return; // 공을 가진 동안은 가젯 사용 불가
 
   if (me.gadget.instant) {
     socket.emit('gadget');
@@ -11064,6 +11097,120 @@ function drawGemShape(cx, cy, s) {
   ctx.restore();
 }
 
+
+// ===== 슈퍼 축구: 골대 / 공 =====
+function drawSoccerGoals() {
+  const { goalW, goalDepth } = matchSoccer;
+  const x0 = ARENA_WIDTH / 2 - goalW / 2;
+  for (const team of ['A', 'B']) {
+    const top = team === 'A';
+    const y0 = top ? 0 : ARENA_HEIGHT - goalDepth;
+    const mine = team === myTeam;
+    const col = mine ? '60, 140, 255' : '255, 90, 90';
+    ctx.save();
+    // 그물 바닥
+    ctx.fillStyle = `rgba(${col}, 0.22)`;
+    ctx.fillRect(x0, y0, goalW, goalDepth);
+    // 그물 무늬
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let x = x0; x <= x0 + goalW; x += 16) { ctx.moveTo(x, y0); ctx.lineTo(x, y0 + goalDepth); }
+    for (let y = y0; y <= y0 + goalDepth; y += 12) { ctx.moveTo(x0, y); ctx.lineTo(x0 + goalW, y); }
+    ctx.stroke();
+    // 골라인(입구)과 양쪽 골대 기둥
+    const lineY = top ? y0 + goalDepth : y0;
+    ctx.strokeStyle = `rgba(${col}, 0.95)`;
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(x0, lineY); ctx.lineTo(x0 + goalW, lineY); ctx.stroke();
+    ctx.fillStyle = '#ffffff';
+    ctx.strokeStyle = `rgba(${col}, 1)`;
+    for (const px of [x0, x0 + goalW]) {
+      ctx.beginPath(); ctx.arc(px, lineY, 7, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    }
+    ctx.restore();
+  }
+  // 가운데 원 (킥오프 자리)
+  ctx.save();
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+  ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.arc(ARENA_WIDTH / 2, ARENA_HEIGHT / 2, 90, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, ARENA_HEIGHT / 2); ctx.lineTo(ARENA_WIDTH, ARENA_HEIGHT / 2); ctx.stroke();
+  ctx.restore();
+}
+
+// 서버가 보낸 공 위치를 부드럽게: 몰고 가는 중이면 들고 있는 사람 앞에, 굴러가는 중이면 속도로 조금 앞서 예측
+function soccerBallRenderPos() {
+  const b = latestState.ball;
+  if (!b) return null;
+  const R = matchSoccer.ballR;
+  let x = b.x, y = b.y;
+  if (b.carrier && latestState.players[b.carrier]) {
+    const cp = latestState.players[b.carrier];
+    const rp = renderPos[b.carrier];
+    const cx = rp ? rp.x : cp.x, cy = rp ? rp.y : cp.y;
+    if (typeof cx === 'number' && typeof cy === 'number') {
+      x = cx + Math.cos(cp.angle || 0) * (PLAYER_RADIUS + R - 2);
+      y = cy + Math.sin(cp.angle || 0) * (PLAYER_RADIUS + R - 2);
+    }
+  } else if (b.vx || b.vy) {
+    const dt = Math.min(0.1, (Date.now() - (window.__lastStateAt || Date.now())) / 1000);
+    x += b.vx * dt; y += b.vy * dt;
+  }
+  if (ballLastDraw) ballRot += Math.hypot(x - ballLastDraw.x, y - ballLastDraw.y) / R;
+  ballLastDraw = { x, y };
+  return { x, y, carried: !!b.carrier, frozen: b.frozen > 0 };
+}
+
+function drawSoccerBall(bp) {
+  const R = matchSoccer.ballR;
+  // 바닥 그림자 (눌린 바닥 좌표계)
+  ctx.save();
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+  ctx.beginPath();
+  ctx.ellipse(bp.x, bp.y + R * 0.2, R * 0.95, R * 0.4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  ctx.save();
+  uprightAt(bp.y);
+  ctx.translate(bp.x, bp.y - R);
+  if (bp.frozen) ctx.globalAlpha = 0.6 + 0.4 * Math.sin(Date.now() / 90); // 킥오프 전 깜빡임
+  const g = ctx.createRadialGradient(-R * 0.3, -R * 0.3, R * 0.1, 0, 0, R);
+  g.addColorStop(0, '#ffffff');
+  g.addColorStop(1, '#cfd3dc');
+  ctx.beginPath();
+  ctx.arc(0, 0, R, 0, Math.PI * 2);
+  ctx.fillStyle = g;
+  ctx.fill();
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#1b1e2b';
+  ctx.stroke();
+  // 굴러가는 검은 조각 무늬
+  ctx.save();
+  ctx.beginPath(); ctx.arc(0, 0, R - 1, 0, Math.PI * 2); ctx.clip();
+  ctx.fillStyle = '#1b1e2b';
+  for (let i = 0; i < 5; i++) {
+    const a = ballRot + (i * Math.PI * 2) / 5;
+    const px = Math.cos(a) * R * 0.62, py = Math.sin(a) * R * 0.62;
+    ctx.beginPath();
+    for (let k = 0; k < 5; k++) {
+      const aa = a + (k * Math.PI * 2) / 5;
+      const x = px + Math.cos(aa) * R * 0.26, y = py + Math.sin(aa) * R * 0.26;
+      if (k === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.closePath(); ctx.fill();
+  }
+  ctx.beginPath();
+  for (let k = 0; k < 5; k++) {
+    const aa = ballRot + (k * Math.PI * 2) / 5;
+    const x = Math.cos(aa) * R * 0.28, y = Math.sin(aa) * R * 0.28;
+    if (k === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+  ctx.restore();
+}
+
 // 맵 한가운데의 구멍: 어두운 구덩이 + 보라빛 가장자리. 가장자리 호가 차오르다가 가득 차면 보석이 튀어나옴
 function drawGemHole() {
   const hole = matchHole || { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT / 2, r: 46 };
@@ -11586,6 +11733,7 @@ function render() {
   ctx.drawImage(getFloorCanvas(theme), 0, 0, ARENA_WIDTH, ARENA_HEIGHT); // 맵별 바닥 (맵마다 한 번만 그려 캐시)
 
   drawBushes(); // 덤불 바닥(납작한 부분). 솟아오른 잎은 아래에서 깊이 순서대로 그림
+  if (matchGameMode === 'soccer') drawSoccerGoals(); // 슈퍼 축구: 양쪽 끝의 작은 골대
   if (matchGameMode === 'gemgrab') { drawGemHole(); drawGems(); } // 쨍그랩: 중앙 구멍과 바닥의 보석 (플레이어보다 아래에 그림)
 
   const poolsArr = Array.isArray(latestState.waterPools) ? latestState.waterPools : [];
@@ -11618,6 +11766,10 @@ function render() {
     const rp = renderPos[pid];
     const pv = rp ? Object.assign({}, p, { x: rp.x, y: rp.y }) : p; // 부드럽게 보정된 위치로 그림
     upright.push({ y: pv.y, fn: () => { drawPlayer(pv, pid === myId); drawChatBubble(pv); } });
+  }
+  if (matchGameMode === 'soccer' && latestState.ball) {
+    const bp = soccerBallRenderPos();
+    if (bp) upright.push({ y: bp.y + 1, fn: () => { drawSoccerBall(bp); } });
   }
   upright.sort((a, b) => a.y - b.y);
   for (const it of upright) it.fn();
