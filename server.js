@@ -875,7 +875,7 @@ const CHARACTERS = {
       type: 'combo',         // 탄창 3개가 각각 다른 공격: 1번 원거리 구슬 -> 2번 던지는 구슬 -> 3번 소용돌이 3개
       reloadAllAtOnce: true, // 탄창 3개를 모두 쓴 뒤에야 재장전이 시작되고, ammoRegenSeconds 뒤에 한꺼번에 가득 참
       ammoRegenSeconds: 3,   // 3개를 모두 사용한 뒤 탄창이 리셋되기까지의 시간(초)
-      dash: { speed: 800, duration: 0.12 }, // 공격 버튼을 누르면 먼저 이동 중이던 방향으로 이만큼 돌진한 뒤(약 96px) 그 자리에서 공격. 가만히 서 있으면 돌진하지 않고 바로 공격
+      dash: { speed: 800, duration: 0.12 }, // 공격 버튼을 누르면 먼저 투사체를 발사한 뒤, 이동 중이던 방향으로 이만큼 돌진(약 96px). 가만히 서 있으면 돌진하지 않고 공격만 함
       combo: [
         { name: '원거리 구슬', damage: 1000, speed: 800, radius: 9, lifetime: 1.0, visual: 'sysOrb' },   // 사거리 약 800 (원거리)
         { name: '던지는 구슬', damage: 1500, speed: 480, radius: 14, lifetime: 1.0, visual: 'sysThrow' }, // 사거리 약 480 (중거리)
@@ -1312,7 +1312,7 @@ const GEAR_RARITIES = {
 //  bandageHeal: 피해를 입고 체력이 최대 체력의 GEAR_BANDAGE_RATIO(20%) 이하가 되면 체력을 즉시 이만큼 회복 (살아 있는 상태에서만. 한 번 쓰면 죽었다가 부활할 때까지 다시 쓸 수 없음. 회복 기어의 회복량 증가 적용)
 const GEAR_BANDAGE_RATIO = 0.2;
 //  hyperDurationBonusSec: 하이퍼 차지 발동 시 지속시간이 이 시간(초)만큼 늘어남 (2 = 2초 증가. 하이퍼 차지를 가진 캐릭터에만 의미가 있음. 같은 기어를 여러 개 달면 2초씩 더해짐)
-//  lifesteal: 적 플레이어에게 준 피해(체력에 실제로 들어간 만큼)의 이 비율만큼 체력을 회복 (0.15 = 15%). 물웅덩이/똥가루/흰자 같은 지속 피해(noLifesteal)는 제외하고 직접 피해만 해당. 회복 기어의 회복량 증가 적용
+//  lifesteal: 적 플레이어에게 준 피해(체력에 실제로 들어간 만큼)의 이 비율만큼 체력을 회복 (0.25 = 25%). 물웅덩이/똥가루/흰자 같은 지속 피해(noLifesteal)는 제외하고 직접 피해만 해당. 회복 기어의 회복량 증가 적용
 //  ultStealthSec: 궁극기를 쓰면 이 시간(초) 동안 은신 (적에게 보이지 않음. 원효대사처럼 은신 자체가 궁극기인 캐릭터에는 효과 없음). 여러 개면 가장 긴 값
 const GEAR_CHAIN_WINDOW_MS = 1000;
 const GEAR_LOW_HP_RATIO = 0.5;
@@ -1335,7 +1335,7 @@ const GEAR_CATALOG = [
   { id: 'assassin', name: '암살자', rarity: 'mythic', desc: '궁극기를 사용하면 1.5초 동안 은신', effect: { ultStealthSec: 1.5 } },
   { id: 'full_hp_guard', name: '만땅 방어', rarity: 'mythic', desc: '체력이 가득 차 있을 때 받는 피해량 50% 감소', effect: { fullHpDamageReduction: 0.5 } },
   { id: 'hyper_extend', name: '하이퍼 연장', rarity: 'mythic', desc: '하이퍼 차지 지속시간이 2초 증가', effect: { hyperDurationBonusSec: 2 } },
-  { id: 'lifesteal', name: '흡수', rarity: 'mythic', desc: '적에게 준 피해의 15%를 체력으로 회복 (원효대사·여똥이·엑헤의 지속 피해로는 회복하지 않음)', effect: { lifesteal: 0.15 } },
+  { id: 'lifesteal', name: '흡수', rarity: 'mythic', desc: '적에게 준 피해의 25%를 체력으로 회복 (원효대사·여똥이·엑헤의 지속 피해로는 회복하지 않음)', effect: { lifesteal: 0.25 } },
 ];
 function gearById(id) { return GEAR_CATALOG.find((g) => g.id === id) || null; }
 function gearSellPriceOf(gearId) { return Math.floor(gearPriceOf(gearId) * GEAR_SELL_RATIO); }
@@ -4456,7 +4456,7 @@ function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hy
     gearSacrificeCharge: (gear && gear.damageTakenUltCharge) || 0, // 장착한 기어(희생 정신): 잃은 체력 비율에 곱해 궁극기 게이지로 바꾸는 값
     gearGadgetCooldown: (gear && gear.gadgetCooldownSec) || 0,    // 장착한 기어(빠른 가젯): 가젯 재사용 대기시간(초). 0이면 기본값
     gadgetCooldownTotal: GADGET_COOLDOWN_SEC, // 이번 가젯 쿨다운의 전체 길이(초) - 클라이언트 버튼 표시용
-    gearLifesteal: (gear && gear.lifesteal) || 0, // 장착한 기어(흡수): 적에게 준 직접 피해 중 체력으로 회복하는 비율 (0.15 = 15%)
+    gearLifesteal: (gear && gear.lifesteal) || 0, // 장착한 기어(흡수): 적에게 준 직접 피해 중 체력으로 회복하는 비율 (0.25 = 25%)
     gearHyperDurationBonus: (gear && gear.hyperDurationBonusSec) || 0, // 장착한 기어(하이퍼 연장): 하이퍼 차지 지속시간 증가(초)
     hyperDurationTotal: 0, // 이번(또는 마지막) 하이퍼 차지의 전체 지속시간(초, 기어 증가 포함) - 클라이언트 남은 시간 표시용
     gearBandageHeal: (gear && gear.bandageHeal) || 0, // 장착한 기어(붕대): 체력이 20% 이하가 될 때 즉시 회복하는 양
@@ -5889,40 +5889,24 @@ function registerGameplayHandlers(socket) {
       // 가젯으로 탄창을 다시 채우면 다시 1번부터 시작한다.
       const phase = Math.max(0, Math.min(p.basic.combo.length - 1, p.maxAmmo - ammoBeforeShot));
       const comboSpec = withGearRange(p.basic.combo[phase]);
-      // 공격할 때마다 '공격 버튼을 누른 순간 이동 중이던 방향'으로 먼저 돌진하고, 돌진이 끝난 자리에서 '그 시점의 조준 방향'으로 공격한다.
-      // (돌진 중에도 조준 방향은 계속 갱신됨: playerUpdate 가 comboAimLive 동안 angle 만 받아들임)
-      // (최근 0.15초 안에 실제로 움직였을 때만. 서 있으면 돌진 없이 제자리에서 바로 공격)
+      // 공격할 때마다 먼저 '지금 조준한 방향'으로 투사체를 발사하고, 발사한 직후 '이동 중이던 방향'으로 짧게 돌진한다.
+      // (최근 0.15초 안에 실제로 움직였을 때만 돌진. 서 있으면 돌진 없이 제자리에서 공격만 함)
       const comboBlocked = p.leaping || p.dashing || p.airborneTimeLeft > 0 || p.knockbackTimeLeft > 0 || (p.stunnedUntil && now < p.stunnedUntil);
-      if (p.basic.dash && p.lastMoveAt && now - p.lastMoveAt <= 150 && !comboBlocked) {
+      const moveDirX = p.moveDirX;
+      const moveDirY = p.moveDirY;
+      const shouldDash = !!(p.basic.dash && p.lastMoveAt && now - p.lastMoveAt <= 150 && !comboBlocked && (moveDirX || moveDirY));
+      spawnProjectiles(match, p, comboSpec, false); // 1) 투사체 발사 (돌진 전 위치에서)
+      if (shouldDash) { // 2) 발사 직후 이동 방향으로 돌진 (피해/기절 없이 이동만 하는 돌진)
         const dashSpec = p.basic.dash;
-        const dasherId = p.id;
         p.comboDashId = (p.comboDashId || 0) + 1;
-        const myComboDashId = p.comboDashId;
-        const matchId2 = match.id;
-        p.comboAimLive = true; // 돌진하는 동안에도 조준 각도는 계속 받음
+        p.comboAimLive = false;
         p.dashing = true;
-        p.dashHarmless = true; // 피해/기절 없이 이동만 하는 돌진
+        p.dashHarmless = true;
         p.dashSpeed = dashSpec.speed;
-        p.dashDirX = p.moveDirX;
-        p.dashDirY = p.moveDirY;
+        p.dashDirX = moveDirX;
+        p.dashDirY = moveDirY;
         p.dashTimeLeft = dashSpec.duration;
         p.dashTotal = dashSpec.duration;
-        // 돌진이 끝난 뒤(서버 틱 단위로 올림) 그 자리에서 공격
-        const fireDelayMs = Math.ceil((dashSpec.duration * 1000) / TICK_MS) * TICK_MS;
-        setTimeout(() => {
-          const m = matches[matchId2];
-          if (!m || m.over) return;
-          const s2 = m.players[dasherId];
-          if (!s2) return;
-          if (s2.comboDashId === myComboDashId) s2.comboAimLive = false;
-          if (!s2.alive || s2.comboDashId !== myComboDashId) return; // 죽었거나 새 공격으로 대체됨
-          if (s2.leaping || s2.airborneTimeLeft > 0 || s2.knockbackTimeLeft > 0 || (s2.stunnedUntil && Date.now() < s2.stunnedUntil)) return; // 돌진하는 사이 기절/넉백/띄워졌으면 공격 취소
-          // 돌진이 끝난 '새 위치'에서 마우스 쪽을 향한 각도로 발사 (마우스 조준이면 마우스 좌표로 직접 계산, 조이스틱이면 마지막으로 받은 방향)
-          if (s2.aimX != null && s2.aimY != null && (s2.aimX !== s2.x || s2.aimY !== s2.y)) s2.angle = Math.atan2(s2.aimY - s2.y, s2.aimX - s2.x);
-          spawnProjectiles(m, s2, comboSpec, false);
-        }, fireDelayMs);
-      } else {
-        spawnProjectiles(match, p, comboSpec, false);
       }
     } else if ((p.basic.type === 'melee' || p.basic.type === 'quake') && p.basic.windup > 0) {
       // 업할의 망치 지진: 버튼을 누르면 windup초 동안 이동 불가 상태로 망치를 치켜들고, 시간이 지나면 그때의 조준 방향으로 지진 발동
