@@ -1632,6 +1632,14 @@ const CHARACTERS = [
     ultimate: { name: '슛', damage: 1500, desc: '조준한 방향으로 벽을 무시하고 점프, 거리는 조준으로 100~320px 조절 (공중에서는 피격 불가), 착지 지점 반경 100 안의 적에게 1,500 피해 + 1초 기절' },
     gadget: { name: '반사 방어막', desc: '2초 동안 반사 방어막을 둘러 자신에게 날아오는 모든 투사체를 원래 쏜 사람 쪽으로 튕겨냄 (15초마다 사용 가능)' },
   },
+  {
+    id: 'geunsuni',
+    name: '근수니',
+    color: '#8e5bd9',
+    maxHp: 5500,
+    basic: { name: '가시 발사', damage: 1500, desc: '가시 3개를 탄퍼짐 75도로 발사 (개당 1,500 피해), 가시는 직선이 아니라 구불구불한 궤도를 그리며 느리게 날아감' },
+    ultimate: { name: '중력 덩어리', desc: '거대한 중력 구체를 벽을 무시하고 던져 착지 지점에 블랙홀을 만듦. 블랙홀 범위에 들어간 적은 즉시 가운데로 빨려 들어가고, 범위 안의 모든 투사체는 중앙으로 모임' },
+  },
 ];
 let selectedCharacterId = CHARACTERS[0].id;
 
@@ -1812,7 +1820,7 @@ function isLobBasic(me) {
   return !!(me && me.basic && me.basic.type === 'lob');
 }
 function isLeapUltimateArmed(me) {
-  return !!(ultimateArmed && me && me.alive && me.ultimate && me.ultimate.type === 'leap');
+  return !!(ultimateArmed && me && me.alive && me.ultimate && (me.ultimate.type === 'leap' || me.ultimate.type === 'blackhole')); // 거리를 조준하는 궁극기: 모카의 점프, 근수니의 중력 덩어리
 }
 
 function fireAttack() {
@@ -1827,7 +1835,7 @@ function fireAttack() {
     return;
   }
   if (ultimateArmed && me && me.ultimateCharge >= 100) {
-    if (me.ultimate && me.ultimate.type === 'leap') socket.emit('ultimate', { distance: Math.round(getLeapAimDistance(me)) });
+    if (me.ultimate && (me.ultimate.type === 'leap' || me.ultimate.type === 'blackhole')) socket.emit('ultimate', { distance: Math.round(getLeapAimDistance(me)) });
     else socket.emit('ultimate');
     ultimateArmed = false;
     updateUltimateButton();
@@ -3955,6 +3963,12 @@ socket.on('matchFound', (data) => {
 });
 
 // 매치가 끝나면(승리/패배/상대 이탈) 결과 화면을 보여준다
+// 서버가 내 위치를 강제로 옮김 (근수니의 블랙홀에 빨려 들어감): 로컬 좌표를 새 위치로 맞춰야 다음 입력이 옛 위치에서 이어지지 않는다
+socket.on('forcePosition', (d) => {
+  if (!d || !Number.isFinite(d.x) || !Number.isFinite(d.y)) return;
+  myX = Math.max(PLAYER_RADIUS, Math.min(ARENA_WIDTH - PLAYER_RADIUS, d.x));
+  myY = Math.max(PLAYER_RADIUS, Math.min(ARENA_HEIGHT - PLAYER_RADIUS, d.y));
+});
 // 🎃 할로윈 이벤트: AI전 승리 보너스 코인이 정해지면 결과 화면에 표시 (코인은 profileUpdate 로 이미 반영됨)
 socket.on('aiBonus', (data) => {
   const coins = data && Number(data.coins);
@@ -7536,6 +7550,7 @@ function drawSlipperBullet(b) {
   ctx.rotate(now * 11 + b.id);
   ctx.lineJoin = 'round';
   if (b.visual === 'tray') { drawTrayBody(r, now, t); ctx.restore(); return; } // 나이 주방장: 실내화 대신 은쟁반
+  if (b.visual === 'gravitySphere') { drawGravitySphere(r, now); ctx.restore(); return; } // 근수니: 중력 덩어리
   // 밑창
   ctx.fillStyle = '#f6f2e9';
   ctx.strokeStyle = '#3b2f3a';
@@ -7719,6 +7734,47 @@ function drawSlipperExplosion(e) {
 }
 
 // 나이의 궁극기 '슛' 착지: 노란 충격파 + 별이 빙글빙글 도는 기절 표시 + '슛!' 글자
+// 근수니의 중력 덩어리: 검은 핵을 보랏빛 고리와 빨려드는 입자가 감싼 거대한 구체 (원점 기준으로 그림 - 호출하는 쪽이 이미 위치/회전을 맞춰 둠)
+function drawGravitySphere(r, now) {
+  ctx.rotate(-now * 11); // 호출하는 쪽의 빙글빙글 회전을 상쇄하고 구체 자체 회전으로 다시 돌림
+  ctx.rotate(now * 3);
+  const glow = ctx.createRadialGradient(0, 0, r * 0.3, 0, 0, r * 1.7);
+  glow.addColorStop(0, 'rgba(150, 80, 255, 0.55)');
+  glow.addColorStop(1, 'rgba(150, 80, 255, 0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 1.7, 0, Math.PI * 2);
+  ctx.fill();
+  const core = ctx.createRadialGradient(-r * 0.25, -r * 0.25, r * 0.1, 0, 0, r);
+  core.addColorStop(0, '#4b2a86');
+  core.addColorStop(0.5, '#150a2b');
+  core.addColorStop(1, '#02000a');
+  ctx.fillStyle = core;
+  ctx.strokeStyle = 'rgba(200, 150, 255, 0.95)';
+  ctx.lineWidth = Math.max(2, r * 0.12);
+  ctx.beginPath();
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = 'rgba(190, 130, 255, 0.8)';
+  ctx.lineWidth = Math.max(1.5, r * 0.09);
+  for (let k = 0; k < 3; k++) {
+    const a0 = (k * Math.PI * 2) / 3;
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.62, a0, a0 + 1.5);
+    ctx.stroke();
+  }
+  ctx.fillStyle = 'rgba(235, 215, 255, 0.95)';
+  for (let k = 0; k < 6; k++) {
+    const a = (k * Math.PI * 2) / 6 + now * 2;
+    const d = r * (1.15 + 0.2 * Math.sin(now * 5 + k));
+    ctx.beginPath();
+    ctx.arc(Math.cos(a) * d, Math.sin(a) * d, Math.max(1.5, r * 0.08), 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
 function drawTrayBody(r, now, t) {
   // 빙글빙글 도는 은쟁반 (윗면이 보이는 둥근 쟁반 + 양쪽 손잡이 + 곧 터질 것 같은 깜빡이는 불빛)
   const T = r * 1.9;
@@ -8244,6 +8300,57 @@ function drawBullet(b) {
 function drawBulletShape(b) {
   if (b.boomerang) drawBoomerangGlow(b); // 부메랑 궁극기의 후광/꼬리를 먼저 깔고, 그 위에 원래 모양(피에로/표창)을 그림
   if (b.lob) { drawSlipperBullet(b); return; } // 나이의 실내화 (포물선 투척)
+  if (b.visual === 'thorn') {
+    // 근수니의 가시: 구불구불 날아가는 방향(실제 이동 방향)으로 뾰족한 끝이 향함. 블랙홀 중앙에 모이면(captured) 빙글빙글 돎
+    const t = Date.now() / 1000;
+    const ang = b.captured ? t * 7 + b.id * 1.7 : Math.atan2(b.vy || 0, b.vx || 1);
+    const r = b.radius;
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.rotate(ang);
+    // 뒤로 이어지는 옅은 보랏빛 꼬리
+    const tail = ctx.createLinearGradient(-r * 3.2, 0, 0, 0);
+    tail.addColorStop(0, 'rgba(150, 90, 230, 0)');
+    tail.addColorStop(1, 'rgba(150, 90, 230, 0.45)');
+    ctx.fillStyle = tail;
+    ctx.beginPath();
+    ctx.moveTo(-r * 3.2, 0);
+    ctx.lineTo(-r * 0.6, -r * 0.55);
+    ctx.lineTo(-r * 0.6, r * 0.55);
+    ctx.closePath();
+    ctx.fill();
+    // 가시 본체: 앞 끝이 판정 반경(r)에 닿는 뾰족한 모양
+    const g = ctx.createLinearGradient(-r * 1.5, 0, r, 0);
+    g.addColorStop(0, '#3d1f6b');
+    g.addColorStop(0.55, '#7a3fd1');
+    g.addColorStop(1, '#e9d6ff');
+    ctx.fillStyle = g;
+    ctx.strokeStyle = '#1e0f38';
+    ctx.lineWidth = Math.max(1.2, r * 0.16);
+    ctx.lineJoin = 'round';
+    ctx.shadowColor = 'rgba(170, 110, 255, 0.9)';
+    ctx.shadowBlur = 7;
+    ctx.beginPath();
+    ctx.moveTo(r, 0);
+    ctx.lineTo(-r * 0.9, -r * 0.8);
+    ctx.lineTo(-r * 1.45, -r * 0.35);
+    ctx.lineTo(-r * 1.15, 0);
+    ctx.lineTo(-r * 1.45, r * 0.35);
+    ctx.lineTo(-r * 0.9, r * 0.8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.stroke();
+    // 가운데 하이라이트
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(r * 0.85, 0);
+    ctx.lineTo(-r * 0.6, 0);
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
   if (b.visual === 'chip') {
     // 시스템 미친 과학자 1타: 날아가는 반도체 칩 (까만 패키지 + 금색 핀 + 푸른 회로 + 지직거리는 전기 꼬리)
     const ang = Math.atan2(b.vy || 0, b.vx || 1);
@@ -10189,7 +10296,95 @@ function drawWaterPool(pool) {
 }
 
 function drawEffect(e) {
-  if (e.type === 'airLanding') {
+  if (e.type === 'blackHole') {
+    // 근수니의 블랙홀: 범위(e.radius) 안쪽으로 소용돌이가 빨려 들어가는 모양. 나타날 때 커지고, 사라지기 직전에 작아짐
+    const maxLife = e.maxLife || 4;
+    const age = maxLife - e.life;
+    const appear = Math.min(1, age / 0.3);
+    const fade = Math.min(1, e.life / 0.4);
+    const k = appear * fade;
+    const R = e.radius * (0.35 + 0.65 * appear) * (0.55 + 0.45 * fade);
+    const now = Date.now() / 1000;
+    ctx.save();
+    ctx.translate(e.x, e.y);
+    // 범위 바닥 (가장자리는 옅고 안쪽일수록 어두운 보랏빛)
+    const bg = ctx.createRadialGradient(0, 0, R * 0.1, 0, 0, R);
+    bg.addColorStop(0, `rgba(8, 0, 20, ${0.85 * k})`);
+    bg.addColorStop(0.55, `rgba(60, 20, 120, ${0.42 * k})`);
+    bg.addColorStop(1, `rgba(120, 60, 220, ${0.12 * k})`);
+    ctx.fillStyle = bg;
+    ctx.beginPath();
+    ctx.arc(0, 0, R, 0, Math.PI * 2);
+    ctx.fill();
+    // 범위 테두리 (점선이 천천히 돎)
+    ctx.setLineDash([10, 9]);
+    ctx.lineDashOffset = -now * 40;
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = `rgba(190, 140, 255, ${0.85 * k})`;
+    ctx.beginPath();
+    ctx.arc(0, 0, R, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // 안쪽으로 감기는 소용돌이 팔
+    ctx.lineCap = 'round';
+    for (let arm = 0; arm < 4; arm++) {
+      const base = (arm * Math.PI) / 2 + now * 2.4;
+      ctx.beginPath();
+      for (let i = 0; i <= 28; i++) {
+        const u = i / 28;                 // 0: 바깥, 1: 중심
+        const rad = R * (0.96 - 0.86 * u);
+        const ang = base + u * 3.6;
+        const x = Math.cos(ang) * rad;
+        const y = Math.sin(ang) * rad;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = `rgba(200, 150, 255, ${0.55 * k})`;
+      ctx.lineWidth = 3;
+      ctx.stroke();
+    }
+    // 빨려 들어가는 입자
+    ctx.fillStyle = `rgba(240, 225, 255, ${0.9 * k})`;
+    for (let i = 0; i < 14; i++) {
+      const phase = (now * 0.9 + i / 14) % 1;     // 0: 바깥, 1: 중심
+      const rad = R * (1 - phase) * 0.95;
+      const ang = (i * 2.399) + phase * 4;
+      ctx.beginPath();
+      ctx.arc(Math.cos(ang) * rad, Math.sin(ang) * rad, 2.6 * (1 - phase * 0.6), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // 사건의 지평선: 검은 핵 + 보랏빛 테두리
+    const coreR = Math.max(6, R * 0.16);
+    ctx.shadowColor = `rgba(170, 100, 255, ${k})`;
+    ctx.shadowBlur = 16;
+    ctx.fillStyle = '#02000a';
+    ctx.strokeStyle = `rgba(215, 170, 255, ${k})`;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(0, 0, coreR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  } else if (e.type === 'blackHolePull') {
+    // 블랙홀에 빨려 들어가는 적의 이동 궤적 (원래 자리 -> 중앙)
+    const prog = 1 - Math.max(0, Math.min(1, e.life / (e.maxLife || 0.3)));
+    ctx.save();
+    ctx.lineCap = 'round';
+    const g = ctx.createLinearGradient(e.x, e.y, e.toX, e.toY);
+    g.addColorStop(0, `rgba(190, 140, 255, ${0.7 * (1 - prog)})`);
+    g.addColorStop(1, `rgba(255, 255, 255, ${0.9 * (1 - prog)})`);
+    ctx.strokeStyle = g;
+    ctx.lineWidth = 9 * (1 - prog) + 2;
+    ctx.beginPath();
+    ctx.moveTo(e.x, e.y);
+    ctx.lineTo(e.toX, e.toY);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, 14 + 22 * prog, 0, Math.PI * 2);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = `rgba(200, 150, 255, ${0.8 * (1 - prog)})`;
+    ctx.stroke();
+    ctx.restore();
+  } else if (e.type === 'airLanding') {
     // 하늘에서 떨어져 땅에 닿은 충격파
     const prog = 1 - Math.max(0, Math.min(1, e.life / (e.maxLife || 0.4)));
     ctx.save();
