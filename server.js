@@ -985,6 +985,35 @@ const CHARACTERS = {
       duration: 2,            // 반사 방어막 지속 시간(초)
     },
   },
+  geunsuni: {
+    id: 'geunsuni',
+    name: '근수니',
+    maxHp: 5500, // 1레벨 기준 체력
+    basic: {
+      name: '가시 발사',
+      damage: 1500,          // 가시 1개당 피해 (1레벨 기준)
+      pelletCount: 3,        // 한 번에 가시 3개
+      spreadDegrees: 75,     // 탄퍼짐 각도
+      speed: 260,            // 느린 속도 (px/초)
+      radius: 9,
+      lifetime: 2.2,         // 초 (사거리 약 572)
+      wave: { amplitude: 24, length: 130 }, // 직선이 아니라 구불구불한 궤도: 좌우로 amplitude(px)만큼 흔들리며, 한 번 구불거리는 데 length(px)만큼 나아감
+      visual: 'thorn',
+    },
+    ultimate: {
+      name: '중력 덩어리',
+      type: 'blackhole',     // 거대한 구체를 포물선으로 던져(벽 무시) 착지 지점에 블랙홀을 만듦
+      minDistance: 120,      // 던지는 거리 (조준으로 최소~최대 조절)
+      distance: 420,
+      flightTime: 1.0,       // 착지까지 걸리는 시간 (거리와 무관하게 고정)
+      arcHeight: 130,
+      radius: 26,            // 던지는 구체 크기
+      landRadius: 135,       // 블랙홀 범위(반경)
+      duration: 4,           // 블랙홀 지속시간(초)
+      bulletPullSpeed: 900,  // 범위 안 투사체가 중앙으로 모이는 속도 (px/초)
+      visual: 'gravitySphere',
+    },
+  },
 };
 
 // ===== 캐릭터 설명(캐릭터 선택 화면용) 자동 생성 =====
@@ -1008,7 +1037,7 @@ function describeBasic(b) {
       else if (c.pelletCount > 1) parts.push(`${i + 1}번째 탄창: ${c.name} ${c.pelletCount}개를 중심각 ${c.spreadDegrees}도 범위로 발사 (개당 ${fmtNum(c.damage)} 피해, 사거리 약 ${r})`);
       else parts.push(`${i + 1}번째 탄창: ${c.name} (${fmtNum(c.damage)} 피해, 사거리 약 ${r})`);
     });
-    if (b.dash) parts.push(`공격할 때마다 이동 중인 방향으로 약 ${fmtNum(Math.round(b.dash.speed * b.dash.duration))}px 돌진한 뒤 그 자리에서 현재 조준 방향으로 공격 (가만히 서 있으면 돌진 없이 바로 공격)`);
+    if (b.dash) parts.push(`공격할 때마다 투사체를 발사한 직후 이동 중인 방향으로 약 ${fmtNum(Math.round(b.dash.speed * b.dash.duration))}px 돌진 (가만히 서 있으면 돌진 없이 공격만 함)`);
     if (b.reloadAllAtOnce) parts.push(`탄창 ${MAX_AMMO}개를 모두 사용하면 ${b.ammoRegenSeconds}초 뒤에 한꺼번에 재장전`);
   } else if (b.type === 'charge') {
     // 똥파리: 탄창 없이 누르고 있는 동안 충전하는 공격
@@ -1048,6 +1077,10 @@ function describeBasic(b) {
     pool.push('적 터렛·닭도 피해');
     parts.push(`${poolLabel} 생성 (${pool.join(', ')})`);
     if (b.poolOnExpire) parts.push('최대 사거리에서도 깨짐');
+    const r = rangeOf(b);
+    if (r) parts.push(`사거리 약 ${r}`);
+  } else if (b.wave && b.pelletCount > 1) {
+    parts.push(`가시 ${b.pelletCount}개를 탄퍼짐 ${b.spreadDegrees}도로 발사 (개당 ${fmtNum(b.damage)} 피해), 가시는 직선이 아니라 구불구불한 궤도를 그리며 느리게 날아감`);
     const r = rangeOf(b);
     if (r) parts.push(`사거리 약 ${r}`);
   } else if (b.pelletCount > 1) {
@@ -1111,6 +1144,9 @@ function describeUltimate(u) {
     case 'leap':
       damage = u.damage;
       desc = `조준한 방향으로 벽을 무시하고 점프, 거리는 조준으로 ${fmtNum(u.minDistance || 0)}~${fmtNum(u.distance)}px 조절 (공중에서는 피격 불가), 착지 지점 반경 ${u.landRadius} 안의 적에게 ${fmtNum(u.damage)} 피해${u.knockback ? ` + ${fmtNum(u.knockback)}만큼 밀쳐냄` : ''}${u.stunDuration ? ` + ${u.stunDuration}초 기절` : ''}${u.reloadAmmo ? ` (사용하면 즉시 탄창 ${MAX_AMMO}개 재장전)` : ''}`;
+      break;
+    case 'blackhole':
+      desc = `조준한 거리(${fmtNum(u.minDistance || 0)}~${fmtNum(u.distance)}px)로 거대한 중력 구체를 벽을 무시하고 던져 착지 지점에 반경 ${u.landRadius}의 블랙홀을 ${u.duration}초 동안 만듦. 블랙홀 범위에 들어간 적은 즉시 가운데로 빨려 들어가고, 범위 안의 모든 투사체는 중앙으로 모임`;
       break;
     case 'quake':
       damage = u.damage;
@@ -1499,6 +1535,7 @@ const CHARACTER_PRICES = {
   system: 300,
   ddongpari: 300,
   nai: 300,
+  geunsuni: 300,
 };
 CHARACTER_PRICES[DEFAULT_CHARACTER_ID] = 0; // 기본 캐릭터는 항상 무료 (사용 가능한 캐릭터가 하나도 없는 상황 방지)
 function priceOf(id) {
@@ -1884,6 +1921,18 @@ function repeatMissionsView(u) {
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
   {
+    id: '2026-10-28-geunsuni',
+    date: '2026-10-28',
+    tag: 'new',
+    title: '새 캐릭터 [근수니] 추가!',
+    items: [
+      '새 캐릭터 근수니가 등장했어요! 체력 5,500(1레벨 기준)',
+      '기본공격 [가시 발사]: 개당 1,500 피해의 가시 3개를 75도로 퍼뜨려 발사해요. 가시는 직선이 아니라 구불구불한 궤도로 느리게 날아가요.',
+      '궁극기 [중력 덩어리]: 거대한 구체를 벽을 무시하고 던져 블랙홀을 만들어요. 블랙홀 범위에 들어온 적은 즉시 가운데로 빨려 들어가고, 범위 안의 모든 투사체는 중앙으로 모여요.',
+      '시스템 기본공격이 투사체를 먼저 발사한 뒤 이동 방향으로 돌진하도록 바뀌었어요.',
+    ],
+  },
+  {
     id: '2026-10-27-halloween-start',
     date: '2026-10-27',
     tag: 'new',
@@ -2147,7 +2196,7 @@ const ANNOUNCEMENTS = [
       '탄창이 특별한 캐릭터 시스템이 추가되었어요. 🪙 300 코인으로 잠금해제할 수 있어요. (체력 6,000)',
       '기본공격 [시스템 콤보]: 탄창 3개가 각각 다른 공격이에요. 1번 탄창은 원거리 구슬(1,000 피해), 2번 탄창은 중거리로 던지는 구슬(1,500 피해), 3번 탄창은 중심각 90도 범위로 소용돌이 3개를 날려요(개당 3,000 피해, 사거리 약 150).',
       '탄창 3개를 모두 사용해야 3초 뒤에 한꺼번에 재장전돼요.',
-      '공격할 때마다 지금 이동 중인 방향으로 짧게 돌진해요. (가만히 서 있을 땐 돌진하지 않아요)',
+      '공격할 때마다 투사체를 먼저 발사하고, 발사한 직후 지금 이동 중인 방향으로 짧게 돌진해요. (가만히 서 있을 땐 돌진하지 않아요)',
       '궁극기 [거대 소용돌이]: 거대한 소용돌이를 날려 맞은 적들을 하늘로 띄워요. 벽에 닿아도 사라지지 않고 통과해요. 떠 있는 동안은 움직일 수 없고, 땅에 떨어질 때 1,500 피해를 입어요.',
       '가젯 [긴급 재장전]: 탄창을 즉시 가득 채워요.',
     ],
@@ -4878,7 +4927,8 @@ function spawnLob(match, p, spec, sentDistance) {
     explodeDamage: spec.explodeDamage,
     explodeRadius: spec.explodeRadius,
     explodeVisual: skinVisual(p, 'slipperExplosion') === 'trayExplosion' ? 'trayExplosion' : 'slipper',
-    explodeChargesUlt: true,         // 기본공격이므로 적중 시 궁극기 게이지 충전
+    explodeChargesUlt: !spec.blackHole, // 기본공격이므로 적중 시 궁극기 게이지 충전 (블랙홀 구체는 폭발 피해 없음)
+    blackHole: spec.blackHole ? { radius: spec.explodeRadius, duration: spec.duration, pullSpeed: spec.bulletPullSpeed } : null, // 근수니의 중력 덩어리: 착지하면 폭발 대신 블랙홀 생성
     selfKnockback: spec.selfKnockback || 0, // 폭발 범위 안의 던진 본인을 밀쳐내는 거리(px)
   });
 }
@@ -5043,8 +5093,118 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
       directDamage: spec.directDamage || 0, // 물웅덩이 생성 전 적에게 직접 적중 시 주는 대미지
       explodeDamage: spec.explodeDamage || 0, // 0보다 크면 적/벽에 닿거나 사거리 끝에서 폭발 (똥파리의 가젯 '폭탄 똥')
       explodeRadius: spec.explodeRadius || 0, // 폭발 범위(px)
+      // 근수니의 가시: 직선이 아니라 진행 방향 좌우로 사인 곡선을 그리며 날아감 (moveWavyBullet). 이 값들은 파동 투사체에만 붙음
+      ...(spec.wave ? {
+        waveAmp: spec.wave.amplitude,
+        waveFreq: (2 * Math.PI * spec.speed * gearProjSpeed) / spec.wave.length, // 속도가 빨라져도 구불거리는 모양(길이)은 그대로
+        wavePhase: i % 2 === 0 ? 0 : Math.PI, // 옆 가시와 반대로 흔들려서 서로 엇갈림
+        waveT: 0,
+        waveBaseX: spawnX,
+        waveBaseY: spawnY,
+        waveDirX: Math.cos(angle),
+        waveDirY: Math.sin(angle),
+        waveSpeed: spec.speed * gearProjSpeed,
+      } : {}),
     });
   }
+}
+
+// 파동 투사체(근수니의 가시) 이동: 기준 직선 경로를 따라 나아가면서 좌우로 사인 곡선만큼 흔들린다.
+// 처음 0.2초 동안은 흔들림 폭이 점점 커져서 몸에서 자연스럽게 갈라져 나가고, 속도(vx,vy)는 실제 이동 방향으로 갱신해 클라이언트가 가시 방향을 맞게 그린다.
+function moveWavyBullet(b, dt) {
+  b.waveT += dt;
+  b.waveBaseX += b.waveDirX * b.waveSpeed * dt;
+  b.waveBaseY += b.waveDirY * b.waveSpeed * dt;
+  const ramp = Math.min(1, b.waveT / 0.2);
+  const off = b.waveAmp * ramp * Math.sin(b.waveFreq * b.waveT + b.wavePhase);
+  const nx = b.waveBaseX - b.waveDirY * off;
+  const ny = b.waveBaseY + b.waveDirX * off;
+  if (dt > 0) {
+    b.vx = (nx - b.x) / dt;
+    b.vy = (ny - b.y) / dt;
+  }
+  b.x = nx;
+  b.y = ny;
+}
+
+// ===== 블랙홀 (근수니의 궁극기 '중력 덩어리') =====
+// 던진 구체가 착지하면 그 자리에 블랙홀이 생긴다. 블랙홀 범위 안에서는
+//  - 적(던진 사람의 상대 팀)이 범위에 들어오는 순간 즉시 가운데로 빨려 들어간다 (이미 안에 있다가 가운데로 간 적은 밖으로 나갔다가 다시 들어오면 또 빨려 들어감)
+//  - 모든 투사체(아군/적 모두)가 방향과 상관없이 중앙으로 모여든다 (모인 투사체는 중앙에 머무르다 수명이 끝나면 사라짐. 포물선 투척물은 제외)
+function findFreeSpotNear(walls, x, y, maxR) {
+  if (!collidesWithWalls(walls, x, y, PLAYER_RADIUS)) return { x, y };
+  for (let r = 10; r <= maxR; r += 10) {
+    for (let k = 0; k < 16; k++) {
+      const a = (k * Math.PI) / 8;
+      const px = Math.max(PLAYER_RADIUS, Math.min(ARENA_WIDTH - PLAYER_RADIUS, x + Math.cos(a) * r));
+      const py = Math.max(PLAYER_RADIUS, Math.min(ARENA_HEIGHT - PLAYER_RADIUS, y + Math.sin(a) * r));
+      if (!collidesWithWalls(walls, px, py, PLAYER_RADIUS)) return { x: px, y: py };
+    }
+  }
+  return { x, y };
+}
+function createBlackHole(match, b) {
+  const cfg = b.blackHole;
+  const x = Math.max(0, Math.min(ARENA_WIDTH, b.targetX));
+  const y = Math.max(0, Math.min(ARENA_HEIGHT, b.targetY));
+  const spot = findFreeSpotNear(match.walls, x, y, cfg.radius); // 중심이 벽 안이면 빨려 들어간 적이 벽에 끼지 않게 가까운 빈 자리로
+  effectIdCounter += 1;
+  match.effects.push({ id: effectIdCounter, type: 'blackHole', x, y, radius: cfg.radius, ownerId: b.ownerId, life: cfg.duration, maxLife: cfg.duration });
+  match.blackHoles.push({
+    x, y, pullX: spot.x, pullY: spot.y,
+    radius: cfg.radius,
+    team: b.team,
+    ownerId: b.ownerId,
+    life: cfg.duration,
+    pullSpeed: cfg.pullSpeed,
+    inside: new Set(), // 지금 범위 안에 있는 적 id (빨려 들어간 적이 매 틱 다시 끌려가지 않게 기록)
+  });
+}
+function updateBlackHoles(match, dt) {
+  if (!match.blackHoles || match.blackHoles.length === 0) return;
+  for (const h of match.blackHoles) {
+    h.life -= dt;
+    if (h.life <= 0) continue;
+    // 1) 범위 안의 모든 투사체는 중앙으로 모임
+    for (const b of match.bullets) {
+      if (b.lob) continue;
+      const dx = h.x - b.x;
+      const dy = h.y - b.y;
+      const d = Math.hypot(dx, dy);
+      if (d > h.radius) continue;
+      b.waveAmp = 0;       // 구불거리던 가시도 직선으로 끌려감
+      b.vx = 0;            // 이동은 아래에서만 처리 (원래 속도가 남아 있으면 중앙을 지나쳐 떨림)
+      b.vy = 0;
+      b.captured = true;
+      if (d <= 1) { b.x = h.x; b.y = h.y; continue; }
+      const step = Math.min(d, h.pullSpeed * dt);
+      b.x += (dx / d) * step;
+      b.y += (dy / d) * step;
+    }
+    // 2) 적이 범위에 들어오면 즉시 가운데로
+    for (const pid in match.players) {
+      const t = match.players[pid];
+      if (!t.alive || t.team === h.team) continue;
+      const inside = Math.hypot(t.x - h.x, t.y - h.y) < h.radius;
+      const was = h.inside.has(pid);
+      if (!inside) { if (was) h.inside.delete(pid); continue; }
+      if (was) continue;
+      if (t.leaping || t.airborneTimeLeft > 0) continue; // 공중에 있는 동안은 빨려 들어가지 않음 (착지 후 범위 안이면 그때 빨려 들어감)
+      h.inside.add(pid);
+      effectIdCounter += 1;
+      match.effects.push({ id: effectIdCounter, type: 'blackHolePull', x: t.x, y: t.y, toX: h.pullX, toY: h.pullY, life: 0.3, maxLife: 0.3 });
+      t.x = h.pullX;
+      t.y = h.pullY;
+      t.dashing = false;       // 돌진/넉백 중이었다면 끊김
+      t.knockbackTimeLeft = 0;
+      // 이동은 클라이언트가 자기 위치를 직접 보내는 방식이라, 서버가 위치만 바꾸면 곧바로 옛 위치로 되돌아간다.
+      // 그래서 (1) 서버가 위치를 제어한 시각을 기록해 직후 0.5초 동안 도착하는 낡은 위치를 무시하게 하고, (2) 당사자 클라이언트에 새 위치를 알려 로컬 좌표를 맞추게 한다.
+      t.lastServerControlAt = Date.now();
+      const pulledSocket = io.sockets.sockets.get(pid); // 연습 대결의 AI 봇은 가짜 소켓이라 여기서 undefined (봇 위치는 서버가 직접 다룸)
+      if (pulledSocket) pulledSocket.emit('forcePosition', { x: t.x, y: t.y });
+    }
+  }
+  match.blackHoles = match.blackHoles.filter((h) => h.life > 0);
 }
 
 // 근접 공격(변기통의 뚫어뻥 휘두르기 등): 발사체 없이 즉시 판정되는 부채꼴 범위 공격
@@ -5311,6 +5471,7 @@ function startMatch(mode, entries, opts = {}) {
     bullets: [],
     effects: [],
     waterPools: [],
+    blackHoles: [], // 근수니의 블랙홀 (서버 처리용. 화면 표시는 effects 의 'blackHole')
     turrets: [],
     bombs: [],
     chickens: [],
@@ -6257,6 +6418,9 @@ function registerGameplayHandlers(socket) {
     } else if (ult.type === 'timedBomb') {
       // 보배 폭발: 조준 불필요, 자신의 위치에 설치
       spawnBomb(match, p, ult);
+    } else if (ult.type === 'blackhole') {
+      // 근수니의 중력 덩어리: 조준한 거리(클라이언트가 보낸 distance, 서버가 범위 제한)로 거대한 구체를 벽을 무시하고 던짐. 착지하면 블랙홀 생성
+      spawnLob(match, p, { ...ult, explodeRadius: ult.landRadius, blackHole: true }, data && data.distance);
     } else if (ult.type === 'leap') {
       // 모카의 도약 강습: 바라보는 방향으로 벽을 무시하고 점프. 착지 지점은 즉시 정하고(벽 안이면 가까운 빈 곳으로 되돌림),
       // 실제 이동/착지 피해는 updateMatch가 처리한다. 점프 시간 동안은 stunnedUntil로 입력을 막는다.
@@ -6723,6 +6887,8 @@ function updateMatch(match, dt, now) {
     }
     if (b.bounce) {
       moveBouncingBullet(match, b, dt); // 하이퍼 차지 꽈리의 고추: 벽에 튕김
+    } else if (b.waveAmp) {
+      moveWavyBullet(b, dt); // 근수니의 가시: 구불구불한 궤도
     } else {
       b.x += b.vx * dt;
       b.y += b.vy * dt;
@@ -6736,6 +6902,8 @@ function updateMatch(match, dt, now) {
       b.y = b.startY + (b.targetY - b.startY) * t;
     }
   }
+
+  updateBlackHoles(match, dt); // 근수니의 블랙홀: 범위 안 적을 중앙으로 끌어당기고 모든 투사체를 중앙으로 모음
 
   // 화면 밖, 수명 종료, 벽 충돌한 총알 제거 (poolOnImpact 발사체는 벽/맵 경계에 닿으면 물웅덩이를 남김)
   match.bullets = match.bullets.filter((b) => {
@@ -6761,6 +6929,7 @@ function updateMatch(match, dt, now) {
             return true;
           }
         }
+        if (b.blackHole) { createBlackHole(match, b); return false; } // 근수니의 중력 덩어리: 폭발 대신 블랙홀 생성
         explodePoopBomb(match, { ...b, x: b.targetX, y: b.targetY });
         return false;
       }
@@ -7739,7 +7908,7 @@ function runAiBot(match, botId, ai, dt, now) {
     if (ult.type === 'heal') use = myR < 0.55;
     else if (ult.type === 'stealth') use = !!target && dist < (mode === 'flee' ? 650 : 500) && mode !== 'hide'; // 도망칠 때 적극적으로 사용
     else if (!offensiveOK) use = false; // 도망/은신 중에는 공격 궁극기를 아낌
-    else if (ult.type === 'leap') {
+    else if (ult.type === 'leap' || ult.type === 'blackhole') {
       use = !!target && dist <= ult.distance * 0.95 && dist >= Math.min(ult.distance, ult.minDistance || 0);
       arg = { distance: dist };
     } else if (ult.type === 'dash' || ult.type === 'burst') use = !!target && dist < ur * (mode === 'chase' ? 1.0 : 0.9);
