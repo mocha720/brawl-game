@@ -879,7 +879,7 @@ const CHARACTERS = {
       combo: [
         { name: '원거리 구슬', damage: 1000, speed: 800, radius: 9, lifetime: 1.0, visual: 'sysOrb' },   // 사거리 약 800 (원거리)
         { name: '던지는 구슬', damage: 1500, speed: 480, radius: 14, lifetime: 1.0, visual: 'sysThrow' }, // 사거리 약 480 (중거리)
-        { name: '소용돌이', damage: 3000, speed: 300, radius: 55, lifetime: 0.5, pierceTargets: true, visual: 'vortex' }, // 큰 소용돌이 1개 (판정 반경 55px의 광역, 맞은 적을 관통해서 범위 안의 여러 명에게 각각 3000 피해), 사거리 약 150
+        { name: '소용돌이', damage: 3000, speed: 300, radius: 55, lifetime: 0.5, pierceTargets: true, pierceWalls: true, visual: 'vortex' }, // 큰 소용돌이 (벽을 통과함) 1개 (판정 반경 55px의 광역, 맞은 적을 관통해서 범위 안의 여러 명에게 각각 3000 피해), 사거리 약 150
       ],
     },
     ultimate: {
