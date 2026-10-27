@@ -875,7 +875,7 @@ const CHARACTERS = {
       type: 'combo',         // 탄창 3개가 각각 다른 공격: 1번 원거리 구슬 -> 2번 던지는 구슬 -> 3번 소용돌이 3개
       reloadAllAtOnce: true, // 탄창 3개를 모두 쓴 뒤에야 재장전이 시작되고, ammoRegenSeconds 뒤에 한꺼번에 가득 참
       ammoRegenSeconds: 3,   // 3개를 모두 사용한 뒤 탄창이 리셋되기까지의 시간(초)
-      dash: { speed: 800, duration: 0.12 }, // 공격 버튼을 누르면 먼저 투사체를 발사한 뒤, 이동 중이던 방향으로 이만큼 돌진(약 96px). 가만히 서 있으면 돌진하지 않고 공격만 함
+      dash: { speed: 640, duration: 0.12 }, // 공격 버튼을 누르면 먼저 투사체를 발사한 뒤, 이동 중이던 방향으로 이만큼 돌진(약 77px, 기존 속도 800에서 20% 감소). 가만히 서 있으면 돌진하지 않고 공격만 함
       combo: [
         { name: '원거리 구슬', damage: 1000, speed: 800, radius: 9, lifetime: 1.0, visual: 'sysOrb' },   // 사거리 약 800 (원거리)
         { name: '던지는 구슬', damage: 1500, speed: 480, radius: 14, lifetime: 1.0, visual: 'sysThrow' }, // 사거리 약 480 (중거리)
