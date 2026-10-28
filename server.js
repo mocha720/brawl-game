@@ -989,11 +989,12 @@ const CHARACTERS = {
     id: 'geunsuni',
     name: '근수니',
     maxHp: 5500, // 1레벨 기준 체력
+    ultimateChargePerHit: 8.5, // 가시가 적중할 때마다 충전되는 궁극기 게이지(%). 기본값(17)의 50% (궁극기 충전 속도 50% 감소)
     basic: {
       name: '가시 발사',
       damage: 1500,          // 가시 1개당 피해 (1레벨 기준)
       pelletCount: 3,        // 한 번에 가시 3개
-      spreadDegrees: 75,     // 탄퍼짐 각도
+      spreadDegrees: 60,     // 탄퍼짐 각도
       speed: 260,            // 느린 속도 (px/초)
       radius: 9,
       lifetime: 2.2,         // 초 (사거리 약 572)
@@ -1012,6 +1013,11 @@ const CHARACTERS = {
       duration: 4,           // 블랙홀 지속시간(초)
       bulletPullSpeed: 900,  // 범위 안 투사체가 중앙으로 모이는 속도 (px/초)
       visual: 'gravitySphere',
+    },
+    gadget: {
+      name: '순간이동',
+      type: 'teleport',      // 조준한 방향으로 distance(px)만큼 즉시 순간이동 (벽을 넘어감)
+      distance: 260,
     },
   },
 };
@@ -1146,7 +1152,7 @@ function describeUltimate(u) {
       desc = `조준한 방향으로 벽을 무시하고 점프, 거리는 조준으로 ${fmtNum(u.minDistance || 0)}~${fmtNum(u.distance)}px 조절 (공중에서는 피격 불가), 착지 지점 반경 ${u.landRadius} 안의 적에게 ${fmtNum(u.damage)} 피해${u.knockback ? ` + ${fmtNum(u.knockback)}만큼 밀쳐냄` : ''}${u.stunDuration ? ` + ${u.stunDuration}초 기절` : ''}${u.reloadAmmo ? ` (사용하면 즉시 탄창 ${MAX_AMMO}개 재장전)` : ''}`;
       break;
     case 'blackhole':
-      desc = `조준한 거리(${fmtNum(u.minDistance || 0)}~${fmtNum(u.distance)}px)로 거대한 중력 구체를 벽을 무시하고 던져 착지 지점에 반경 ${u.landRadius}의 블랙홀을 ${u.duration}초 동안 만듦. 블랙홀 범위에 들어간 적은 즉시 가운데로 빨려 들어가고, 범위 안의 모든 투사체는 중앙으로 모임`;
+      desc = `조준한 거리(${fmtNum(u.minDistance || 0)}~${fmtNum(u.distance)}px)로 거대한 중력 구체를 벽을 무시하고 던져 착지 지점에 반경 ${u.landRadius}의 블랙홀을 ${u.duration}초 동안 만듦. 블랙홀 범위에 들어간 적은 즉시 가운데로 빨려 들어가고, 블랙홀이 사라질 때까지 계속 가운데로 끌려가 이동할 수 없음. 범위 안의 모든 투사체는 중앙으로 모여 그곳의 적을 맞히면 바로 사라짐`;
       break;
     case 'quake':
       damage = u.damage;
@@ -1194,6 +1200,9 @@ function describeGadget(g) {
       break;
     case 'sprint':
       desc = `조준한 방향으로 ${fmtNum(Math.round(g.speed * g.duration))}px를 순식간에 돌진, 피해나 기절을 주지 않는 도주용 (적을 통과함)`;
+      break;
+    case 'teleport':
+      desc = `조준한 방향으로 ${fmtNum(g.distance)}px를 즉시 순간이동 (벽을 넘어갈 수 있고, 도착 지점이 벽 안이면 가까운 빈 자리로 이동)`;
       break;
     case 'reloadBoost':
       desc = `${g.duration}초 동안 재장전 속도 ${Math.round((g.speedMultiplier - 1) * 100)}% 빨라짐`;
@@ -1927,7 +1936,7 @@ const ANNOUNCEMENTS = [
     title: '새 캐릭터 [근수니] 추가!',
     items: [
       '새 캐릭터 근수니가 등장했어요! 체력 5,500(1레벨 기준)',
-      '기본공격 [가시 발사]: 개당 1,500 피해의 가시 3개를 75도로 퍼뜨려 발사해요. 가시는 직선이 아니라 구불구불한 궤도로 느리게 날아가요.',
+      '기본공격 [가시 발사]: 개당 1,500 피해의 가시 3개를 60도로 퍼뜨려 발사해요. 가시는 직선이 아니라 구불구불한 궤도로 느리게 날아가요.',
       '궁극기 [중력 덩어리]: 거대한 구체를 벽을 무시하고 던져 블랙홀을 만들어요. 블랙홀 범위에 들어온 적은 즉시 가운데로 빨려 들어가고, 범위 안의 모든 투사체는 중앙으로 모여요.',
       '시스템 기본공격이 투사체를 먼저 발사한 뒤 이동 방향으로 돌진하도록 바뀌었어요.',
     ],
@@ -5157,11 +5166,12 @@ function createBlackHole(match, b) {
     ownerId: b.ownerId,
     life: cfg.duration,
     pullSpeed: cfg.pullSpeed,
-    inside: new Set(), // 지금 범위 안에 있는 적 id (빨려 들어간 적이 매 틱 다시 끌려가지 않게 기록)
+    inside: new Set(), // 지금 범위 안에 있는 적 id (범위를 벗어나면 풀려나고, 다시 들어오면 또 끌려감)
   });
 }
 function updateBlackHoles(match, dt) {
   if (!match.blackHoles || match.blackHoles.length === 0) return;
+  const nowMs = Date.now();
   for (const h of match.blackHoles) {
     h.life -= dt;
     if (h.life <= 0) continue;
@@ -5175,33 +5185,38 @@ function updateBlackHoles(match, dt) {
       b.waveAmp = 0;       // 구불거리던 가시도 직선으로 끌려감
       b.vx = 0;            // 이동은 아래에서만 처리 (원래 속도가 남아 있으면 중앙을 지나쳐 떨림)
       b.vy = 0;
-      b.captured = true;
+      b.captured = true;   // 중앙에 모인 투사체: 적을 맞히면 관통형이어도 바로 사라짐 (충돌 판정에서 처리)
       if (d <= 1) { b.x = h.x; b.y = h.y; continue; }
       const step = Math.min(d, h.pullSpeed * dt);
       b.x += (dx / d) * step;
       b.y += (dy / d) * step;
     }
-    // 2) 적이 범위에 들어오면 즉시 가운데로
+    // 2) 적이 범위에 들어오면 즉시 가운데로 빨려 들어가고, 블랙홀이 사라질 때까지 범위 안에 있는 동안 계속 가운데로 끌려감(이동 불가)
     for (const pid in match.players) {
       const t = match.players[pid];
       if (!t.alive || t.team === h.team) continue;
+      if (t.leaping || t.airborneTimeLeft > 0) continue; // 공중에 있는 동안은 영향 없음 (착지 후 범위 안이면 다시 끌려옴)
       const inside = Math.hypot(t.x - h.x, t.y - h.y) < h.radius;
       const was = h.inside.has(pid);
-      if (!inside) { if (was) h.inside.delete(pid); continue; }
-      if (was) continue;
-      if (t.leaping || t.airborneTimeLeft > 0) continue; // 공중에 있는 동안은 빨려 들어가지 않음 (착지 후 범위 안이면 그때 빨려 들어감)
-      h.inside.add(pid);
-      effectIdCounter += 1;
-      match.effects.push({ id: effectIdCounter, type: 'blackHolePull', x: t.x, y: t.y, toX: h.pullX, toY: h.pullY, life: 0.3, maxLife: 0.3 });
-      t.x = h.pullX;
-      t.y = h.pullY;
+      if (!inside) { if (was) h.inside.delete(pid); continue; } // 순간이동 등으로 범위를 벗어나면 풀려남
+      if (!was) h.inside.add(pid);
+      const moved = Math.hypot(t.x - h.pullX, t.y - h.pullY);
+      if (moved > 0.5) {
+        if (moved > 30) { // 눈에 띄게 끌려올 때만 연출/알림 (매 틱 보내지 않음)
+          effectIdCounter += 1;
+          match.effects.push({ id: effectIdCounter, type: 'blackHolePull', x: t.x, y: t.y, toX: h.pullX, toY: h.pullY, life: 0.3, maxLife: 0.3 });
+          const pulledSocket = io.sockets.sockets.get(pid); // 연습 대결의 AI 봇은 가짜 소켓이라 여기서 undefined (봇 위치는 서버가 직접 다룸)
+          if (pulledSocket) pulledSocket.emit('forcePosition', { x: h.pullX, y: h.pullY });
+        }
+        t.x = h.pullX;
+        t.y = h.pullY;
+      }
       t.dashing = false;       // 돌진/넉백 중이었다면 끊김
       t.knockbackTimeLeft = 0;
       // 이동은 클라이언트가 자기 위치를 직접 보내는 방식이라, 서버가 위치만 바꾸면 곧바로 옛 위치로 되돌아간다.
-      // 그래서 (1) 서버가 위치를 제어한 시각을 기록해 직후 0.5초 동안 도착하는 낡은 위치를 무시하게 하고, (2) 당사자 클라이언트에 새 위치를 알려 로컬 좌표를 맞추게 한다.
-      t.lastServerControlAt = Date.now();
-      const pulledSocket = io.sockets.sockets.get(pid); // 연습 대결의 AI 봇은 가짜 소켓이라 여기서 undefined (봇 위치는 서버가 직접 다룸)
-      if (pulledSocket) pulledSocket.emit('forcePosition', { x: t.x, y: t.y });
+      // 그래서 끌려가는 동안은 pullLockUntil 로 서버가 위치를 제어한다 (playerUpdate 가 위치 입력을 무시하고, 클라이언트는 서버 위치를 따라감). 매 틱 갱신하므로 블랙홀이 사라지면 곧 풀림
+      t.pullLockUntil = nowMs + 250;
+      t.lastServerControlAt = nowMs;
     }
   }
   match.blackHoles = match.blackHoles.filter((h) => h.life > 0);
@@ -5974,7 +5989,7 @@ function registerGameplayHandlers(socket) {
     // 마우스가 가리키는 월드 좌표 (마우스 조준일 때만 옴. 조이스틱 조준이면 null). 시스템의 '돌진 후 공격'이 돌진이 끝난 위치에서 마우스 쪽으로 정확히 겨냥하는 데 사용
     p.aimX = Number.isFinite(data.aimX) ? data.aimX : null;
     p.aimY = Number.isFinite(data.aimY) ? data.aimY : null;
-    if (p.dashing || p.ejecting || p.knockbackTimeLeft > 0 || (p.stunnedUntil && Date.now() < p.stunnedUntil)) {
+    if (p.dashing || p.ejecting || p.knockbackTimeLeft > 0 || (p.stunnedUntil && Date.now() < p.stunnedUntil) || (p.pullLockUntil && Date.now() < p.pullLockUntil)) {
       if (p.dashing && p.comboAimLive && typeof data.angle === 'number') p.angle = data.angle; // 시스템의 공격 돌진 중에도 조준 방향은 따라감 (돌진 직후 그 방향으로 발사)
       p.lastServerControlAt = Date.now(); // 서버가 위치를 제어한 마지막 시각 (아래 '낡은 위치' 거르기에 사용)
       return; // 돌진/기절 중에는 서버가 위치를 제어하므로 클라이언트 입력을 무시
@@ -6283,6 +6298,26 @@ function registerGameplayHandlers(socket) {
       p.dashTimeLeft = gadget.duration || 0.16;
       p.dashTotal = p.dashTimeLeft; // 돌진 속도 곡선(처음 빠르고 점점 느려짐)을 계산하기 위한 전체 시간
       p.dashHitIds = []; // 이번 돌진에서 이미 맞힌 대상 (관통 돌진이 같은 적을 두 번 때리지 않도록)
+    } else if (gadget.type === 'teleport') {
+      // 근수니의 가젯: 조준한 방향으로 즉시 순간이동. 벽은 넘어가지만 벽 안에는 도착하지 않음 (도착 지점이 벽이면 경로를 따라 되돌아와 가장 먼 빈 자리에 도착)
+      const dirX = Math.cos(p.angle);
+      const dirY = Math.sin(p.angle);
+      const fromX = p.x, fromY = p.y;
+      let destX = p.x, destY = p.y;
+      for (let d = gadget.distance; d >= 0; d -= 10) {
+        const tx = Math.max(PLAYER_RADIUS, Math.min(ARENA_WIDTH - PLAYER_RADIUS, fromX + dirX * d));
+        const ty = Math.max(PLAYER_RADIUS, Math.min(ARENA_HEIGHT - PLAYER_RADIUS, fromY + dirY * d));
+        if (!collidesWithWalls(match.walls, tx, ty, PLAYER_RADIUS)) { destX = tx; destY = ty; break; }
+      }
+      p.x = destX;
+      p.y = destY;
+      effectIdCounter += 1;
+      match.effects.push({ id: effectIdCounter, type: 'teleport', x: fromX, y: fromY, toX: destX, toY: destY, life: 0.4, maxLife: 0.4 });
+      // 이동은 클라이언트가 자기 위치를 직접 보내는 방식이라, 서버가 위치만 바꾸면 옛 위치로 되돌아간다 -> 블랙홀과 같은 방법으로 잠깐 서버가 위치를 제어하고 새 위치를 알려줌
+      const tpNow = Date.now();
+      p.pullLockUntil = Math.max(p.pullLockUntil || 0, tpNow + 150);
+      p.lastServerControlAt = tpNow;
+      socket.emit('forcePosition', { x: p.x, y: p.y }); // AI 봇의 가짜 소켓에서는 아무 일도 안 일어남 (봇 위치는 서버가 직접 다룸)
     } else if (gadget.type === 'ultCharge') {
       // 모카의 가젯: duration초에 걸쳐 궁극기 게이지를 amount%만큼 천천히 채움 (재사용 시 새로 갱신, 실제 충전은 updateMatch가 수행)
       p.ultGadgetLeft = gadget.duration || 4;
@@ -6992,12 +7027,13 @@ function updateMatch(match, dt, now) {
           // 시스템의 소용돌이는 기본 공격이라 맞힐 때마다 궁극기 게이지가 참 (부메랑/고추는 기존대로 충전 안 함)
           applyDamage(match, target, bulletDamageFor(b, target), b.ownerId, { chargeShooter: !b.boomerang && !b.bounce && !b.isUltimate, chain: b.chain });
           b.hitIds.push(pid);
+          if (b.captured) { hitBulletIds.add(b.id); break; } // 블랙홀 중앙에 모인 투사체는 적을 맞히면(관통형이어도) 바로 사라짐
           continue;
         }
         if (b.launchDuration > 0) {
           // 시스템의 거대 소용돌이: 적중 즉시 피해는 없고 하늘로 띄움. 관통형이면 사라지지 않고 계속 날아감
           launchTarget(match, target, b);
-          if (b.pierceTargets && b.hitIds) { b.hitIds.push(pid); continue; }
+          if (b.pierceTargets && b.hitIds && !b.captured) { b.hitIds.push(pid); continue; } // 중앙에 모인 투사체는 관통하지 않고 사라짐
           hitBulletIds.add(b.id);
           break;
         }
@@ -7928,6 +7964,7 @@ function runAiBot(match, botId, ai, dt, now) {
       const gr = g.speed && g.lifetime ? g.speed * g.lifetime : 350;
       use = offensiveOK && !!target && dist < gr * 0.9;
     } else if (g.type === 'powerCharge') use = (mode === 'fight' || mode === 'chase') && !!target && dist < 400;
+    else if (g.type === 'teleport') use = escaping && !!target && dist < 350; // 위험할 때 탈출용
     else if (g.type === 'shieldPush') use = !!target && dist < gadgetRangeFor(g) && mode !== 'hide'; // 적이 파동 범위 안에 있을 때만 사용
     else if (g.type === 'reflect') {
       // 적의 투사체가 자신 쪽으로 날아오고 있으면 사용
