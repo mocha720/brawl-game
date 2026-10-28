@@ -1637,8 +1637,9 @@ const CHARACTERS = [
     name: '근수니',
     color: '#8e5bd9',
     maxHp: 5500,
-    basic: { name: '가시 발사', damage: 1500, desc: '가시 3개를 탄퍼짐 75도로 발사 (개당 1,500 피해), 가시는 직선이 아니라 구불구불한 궤도를 그리며 느리게 날아감' },
-    ultimate: { name: '중력 덩어리', desc: '거대한 중력 구체를 벽을 무시하고 던져 착지 지점에 블랙홀을 만듦. 블랙홀 범위에 들어간 적은 즉시 가운데로 빨려 들어가고, 범위 안의 모든 투사체는 중앙으로 모임' },
+    basic: { name: '가시 발사', damage: 1500, desc: '가시 3개를 탄퍼짐 60도로 발사 (개당 1,500 피해), 가시는 직선이 아니라 구불구불한 궤도를 그리며 느리게 날아감' },
+    ultimate: { name: '중력 덩어리', desc: '거대한 중력 구체를 벽을 무시하고 던져 착지 지점에 블랙홀을 만듦. 블랙홀 범위에 들어간 적은 즉시 가운데로 빨려 들어가고, 블랙홀이 사라질 때까지 계속 가운데로 끌려감. 범위 안의 모든 투사체는 중앙으로 모여 그곳의 적을 맞히면 바로 사라짐' },
+    gadget: { name: '순간이동', desc: '조준한 방향으로 260px를 즉시 순간이동 (벽을 넘어갈 수 있고, 도착 지점이 벽 안이면 가까운 빈 자리로 이동)' },
   },
 ];
 let selectedCharacterId = CHARACTERS[0].id;
@@ -4551,7 +4552,7 @@ function update(dt) {
   }
   const me = latestState.players[myId];
   if (me && !me.alive) return; // 사망 중에는 이동 불가
-  if (me && (me.dashing || me.ejecting || (me.stunnedUntil && sNow() < me.stunnedUntil) || (me.knockbackTimeLeft && me.knockbackTimeLeft > 0))) {
+  if (me && (me.dashing || me.ejecting || (me.stunnedUntil && sNow() < me.stunnedUntil) || (me.knockbackTimeLeft && me.knockbackTimeLeft > 0) || (me.pullLockUntil && sNow() < me.pullLockUntil))) { // 블랙홀에 붙잡힌 동안(pullLockUntil)도 서버 제어
     // 돌진 중이거나 기절/넉백 상태면 서버가 위치를 직접 제어하므로, 로컬 입력을 무시하고 서버 위치를 그대로 따라간다
     myX = me.x;
     myY = me.y;
@@ -10363,6 +10364,34 @@ function drawEffect(e) {
     ctx.arc(0, 0, coreR, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
+    ctx.restore();
+  } else if (e.type === 'teleport') {
+    // 근수니의 순간이동: 출발 지점에서 보랏빛 고리가 오그라들며 사라지고, 도착 지점에서 고리가 퍼지며 나타남. 둘 사이에 옅은 궤적
+    const prog = 1 - Math.max(0, Math.min(1, e.life / (e.maxLife || 0.4)));
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = `rgba(190, 140, 255, ${0.45 * (1 - prog)})`;
+    ctx.lineWidth = 6 * (1 - prog) + 1;
+    ctx.beginPath();
+    ctx.moveTo(e.x, e.y);
+    ctx.lineTo(e.toX, e.toY);
+    ctx.stroke();
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = `rgba(215, 175, 255, ${0.9 * (1 - prog)})`;
+    ctx.beginPath();
+    ctx.arc(e.x, e.y, 34 * (1 - prog) + 4, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(e.toX, e.toY, 8 + 38 * prog, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.fillStyle = `rgba(240, 225, 255, ${0.85 * (1 - prog)})`;
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 + prog * 2;
+      const d = 10 + 40 * prog;
+      ctx.beginPath();
+      ctx.arc(e.toX + Math.cos(a) * d, e.toY + Math.sin(a) * d, 3 * (1 - prog) + 1, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.restore();
   } else if (e.type === 'blackHolePull') {
     // 블랙홀에 빨려 들어가는 적의 이동 궤적 (원래 자리 -> 중앙)
