@@ -992,7 +992,9 @@ const CHARACTERS = {
     ultimateChargePerHit: 8.5, // 가시가 적중할 때마다 충전되는 궁극기 게이지(%). 기본값(17)의 50% (궁극기 충전 속도 50% 감소)
     basic: {
       name: '가시 발사',
-      damage: 1500,          // 가시 1개당 피해 (1레벨 기준)
+      damage: 1500,          // 가운데 가시(직선으로 나가는 1개)의 피해 (1레벨 기준)
+      sideDamage: 1000,      // 양옆 가시(구불구불 날아가는 2개) 1개당 피해 (1레벨 기준). 레벨이 오르면 공격력 배율을 받음
+      centerStraight: true,  // true면 가운데 가시는 구불거리지 않고 조준한 방향으로 곧게 날아감
       pelletCount: 3,        // 한 번에 가시 3개
       spreadDegrees: 60,     // 탄퍼짐 각도
       speed: 260,            // 느린 속도 (px/초)
@@ -1086,7 +1088,7 @@ function describeBasic(b) {
     const r = rangeOf(b);
     if (r) parts.push(`사거리 약 ${r}`);
   } else if (b.wave && b.pelletCount > 1) {
-    parts.push(`가시 ${b.pelletCount}개를 탄퍼짐 ${b.spreadDegrees}도로 발사 (개당 ${fmtNum(b.damage)} 피해), 가시는 직선이 아니라 구불구불한 궤도를 그리며 느리게 날아감`);
+    parts.push(`가시 ${b.pelletCount}개를 탄퍼짐 ${b.spreadDegrees}도로 발사 (${b.centerStraight ? `가운데 1개는 직선으로 곧게 날아가 ${fmtNum(b.damage)} 피해, 양옆 ${b.pelletCount - 1}개는 개당 ${fmtNum(b.sideDamage != null ? b.sideDamage : b.damage)} 피해` : `개당 ${fmtNum(b.damage)} 피해`}), ${b.centerStraight ? '양옆 가시는' : '가시는 직선이 아니라'} 구불구불한 궤도를 그리며 느리게 날아감`);
     const r = rangeOf(b);
     if (r) parts.push(`사거리 약 ${r}`);
   } else if (b.pelletCount > 1) {
@@ -1254,7 +1256,7 @@ const LEVEL_TABLE = [
   { hp: 1.350, atk: 1.30, cost: 700 },
 ];
 const LEVEL_TABLE_PUBLIC = LEVEL_TABLE.slice(1).map((t, i) => ({ level: i + 1, hp: t.hp, atk: t.atk, cost: t.cost }));
-const DAMAGE_KEYS = new Set(['damage', 'minDamage', 'maxDamage', 'directDamage', 'poolDamage', 'tickDamage', 'explodeDamage', 'landDamage']); // 공격력 배율을 적용할 수치 이름
+const DAMAGE_KEYS = new Set(['damage', 'sideDamage', 'minDamage', 'maxDamage', 'directDamage', 'poolDamage', 'tickDamage', 'explodeDamage', 'landDamage']); // 공격력 배율을 적용할 수치 이름
 function clampLevel(v) {
   const n = Math.floor(Number(v));
   if (!Number.isFinite(n) || n < 1) return 1;
@@ -1929,6 +1931,16 @@ function repeatMissionsView(u) {
 // id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
+  {
+    id: '2026-10-28-geunsuni-basic-change',
+    date: '2026-10-28',
+    tag: 'balance',
+    title: '근수니 기본공격 변경',
+    items: [
+      '근수니 기본공격 [가시 발사]: 가운데 가시 1개는 구불거리지 않고 앞으로 곧게 날아가요.',
+      '양옆으로 구불구불 날아가는 가시 2개의 피해가 1레벨 기준 개당 1,000으로 바뀌었어요. (가운데 가시는 1,500 그대로)',
+    ],
+  },
   {
     id: '2026-10-28-geunsuni',
     date: '2026-10-28',
@@ -5050,6 +5062,9 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
   for (let i = 0; i < pelletCount; i++) {
     const angleOffset = pelletCount > 1 ? -halfSpread + (spreadRad * i) / (pelletCount - 1) : 0;
     const angle = baseAngle + angleOffset;
+    // 근수니의 가시: 가운데 가시(centerStraight)는 직선으로, 양옆 가시는 구불구불하게 날아가며 피해가 따로 정해져 있음
+    const isCenterPellet = !!spec.centerStraight && pelletCount % 2 === 1 && i === (pelletCount - 1) / 2;
+    const pelletDamage = !isCenterPellet && spec.sideDamage != null ? spec.sideDamage : spec.damage;
 
     bulletIdCounter += 1;
     const spawnX = p.x + Math.cos(angle) * (PLAYER_RADIUS + 5);
@@ -5071,7 +5086,7 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
       team: p.team,
       life: bounceTime > 0 ? bounceTime : bulletLife,
       maxLife: bounceTime > 0 ? bounceTime : bulletLife, // 처음 수명 (폭탄 똥이 터지기 직전에 더 빠르게 깜빡이는 연출용)
-      damage: spec.damage,
+      damage: pelletDamage,
       executeBelowHp: spec.executeBelowHp || 0, // 0보다 크면 맞은 대상의 현재 체력이 이 값 이하일 때 즉사 (진우Park의 하트)
       currentHpRatio: spec.currentHpRatio || 0, // 0보다 크면 고정 피해 대신 대상 현재 체력(+보호막)의 비율만큼 피해 (진우Park의 하트)
       radius: spec.radius * hyperUltRadius, // 하이퍼 차지 발동 중 궁극기(시스템)는 크기가 커짐
@@ -5103,7 +5118,7 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
       explodeDamage: spec.explodeDamage || 0, // 0보다 크면 적/벽에 닿거나 사거리 끝에서 폭발 (똥파리의 가젯 '폭탄 똥')
       explodeRadius: spec.explodeRadius || 0, // 폭발 범위(px)
       // 근수니의 가시: 직선이 아니라 진행 방향 좌우로 사인 곡선을 그리며 날아감 (moveWavyBullet). 이 값들은 파동 투사체에만 붙음
-      ...(spec.wave ? {
+      ...(spec.wave && !isCenterPellet ? {
         waveAmp: spec.wave.amplitude,
         waveFreq: (2 * Math.PI * spec.speed * gearProjSpeed) / spec.wave.length, // 속도가 빨라져도 구불거리는 모양(길이)은 그대로
         wavePhase: i % 2 === 0 ? 0 : Math.PI, // 옆 가시와 반대로 흔들려서 서로 엇갈림
