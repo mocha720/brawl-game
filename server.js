@@ -1932,6 +1932,16 @@ function repeatMissionsView(u) {
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
   {
+    id: '2026-10-29-geunsuni-teleport-symmetry',
+    date: '2026-10-29',
+    tag: 'fix',
+    title: '근수니 순간이동 범위 표시 / 가시 대칭',
+    items: [
+      '근수니 가젯 [순간이동]을 장전하면 최대 이동 범위와 도착 지점이 화면에 표시돼요.',
+      '근수니 기본공격 [가시 발사]의 양옆 가시가 좌우 대칭으로 구불거리며 날아가요.',
+    ],
+  },
+  {
     id: '2026-10-28-geunsuni-basic-change',
     date: '2026-10-28',
     tag: 'balance',
@@ -5121,7 +5131,7 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
       ...(spec.wave && !isCenterPellet ? {
         waveAmp: spec.wave.amplitude,
         waveFreq: (2 * Math.PI * spec.speed * gearProjSpeed) / spec.wave.length, // 속도가 빨라져도 구불거리는 모양(길이)은 그대로
-        wavePhase: i % 2 === 0 ? 0 : Math.PI, // 옆 가시와 반대로 흔들려서 서로 엇갈림
+        wavePhase: i < (pelletCount - 1) / 2 ? 0 : Math.PI, // 왼쪽 절반/오른쪽 절반이 반대 위상 -> 가운데 기준 좌우 대칭 (가운데 가시는 직선)
         waveT: 0,
         waveBaseX: spawnX,
         waveBaseY: spawnY,
