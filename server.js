@@ -327,6 +327,14 @@ function isHiddenFromEnemy(bushes, target, viewer) {
   return false;
 }
 
+// ===== 미지의 돌: 밀어내는 돌진(pushDash) 속도 곡선 =====
+// 처음 70%는 일정한 속도, 마지막 30%는 점점 느려지며 멈춘다 (갑자기 멈추지 않게). 남은 시간 비율(frac)에 따른 속도 배율.
+function pushDashEase(frac) {
+  return frac > 0.3 ? 1 : 0.25 + 2.5 * Math.max(0, frac);
+}
+const PUSH_DASH_DIST_FACTOR = 0.7 + 0.3 * ((1 + 0.25) / 2); // 위 곡선의 평균 속도 배율 (= 0.8875). 총 돌진 거리 = 속도 × 시간 × 이 값
+const PUSH_DASH_CARRY_STUN_MS = 120; // 밀려가는 동안 매 틱 이 시간만큼 기절을 갱신해서 아무것도 못 하게 함
+
 // ===== 캐릭터 정의 (나중에 여기에 캐릭터를 추가하면 됩니다) =====
 const CHARACTERS = {
   minam: {
@@ -423,9 +431,9 @@ const CHARACTERS = {
       damage: 350,        // 펠릿(총알) 1개당 대미지 (1레벨 기준, 기존 300에서 변경)
       speed: 700,
       radius: 4,
-      lifetime: 0.4,       // 사거리 ≈ 280px (샷건이라 사거리가 짧음)
+      lifetime: 0.32,      // 사거리 ≈ 224px (샷건이라 사거리가 짧음, 기존 0.4에서 20% 감소)
       visual: 'bullet',
-      pelletCount: 10,     // 한 번에 나가는 총알 개수
+      pelletCount: 7,      // 한 번에 나가는 총알 개수 (기존 10에서 변경)
       spreadDegrees: 30,   // 전체 탄퍼짐 각도
     },
     ultimate: {
@@ -1022,6 +1030,42 @@ const CHARACTERS = {
       distance: 260,
     },
   },
+  dol: {
+    id: 'dol',
+    name: '미지의 돌',
+    maxHp: 5500, // 1레벨 기준 체력
+    basic: {
+      name: '돌 던지기',
+      type: 'stoneSplit',    // 짧은 거리를 날아가다 사거리 끝에서 여러 조각으로 갈라지는 돌 (발사/충돌은 일반 투사체와 같이 처리)
+      damage: 2000,          // 갈라지기 전에 돌이 적에게 직접 적중했을 때 피해 (1레벨 기준)
+      speed: 520,            // px/초
+      radius: 13,
+      lifetime: 0.48,        // 초 -> 사거리 ≈ 250px (짧은 거리). 서버 틱(0.05초) 단위라 10틱 = 약 260px 날아가고 갈라짐
+      visual: 'stone',
+      // 사거리 끝에 닿으면 돌이 count개의 조각으로 갈라져 spreadDegrees 범위로 퍼지며 짧은 거리를 더 날아감.
+      // 조각은 1개당 damage 피해 (1레벨 기준). 벽에 먼저 부딪히면 갈라지지 않고 그대로 부서짐
+      split: {
+        count: 5,
+        spreadDegrees: 100,  // 조각이 퍼지는 전체 각도
+        damage: 400,         // 조각 1개당 피해 (1레벨 기준)
+        speed: 360,
+        radius: 8,
+        lifetime: 0.43,      // 초 -> 조각 사거리 ≈ 155px (9틱 ≈ 162px)
+        visual: 'stoneShard',
+        chargeScale: 0.25,   // 조각 하나가 적중할 때 차는 궁극기 게이지 비율 (조각이 5개라 돌 한 번 적중(100%)보다 훨씬 적게 참)
+      },
+    },
+    ultimate: {
+      name: '바위 돌진',
+      type: 'pushDash',      // 조준 방향으로 돌진. 처음 닿은 적(들)은 피해를 입고 돌진이 끝날 때까지 앞에서 밀려가며 지속 피해를 받음 (돌진기를 가진 캐릭터도 돌진이 끊기고 그대로 밀려남)
+      damage: 1500,          // 돌진하다 적에게 닿는 순간 피해 (1레벨 기준)
+      tickDamage: 500,       // 밀려가는 동안 tickInterval초마다 받는 피해 (1레벨 기준)
+      tickInterval: 0.5,
+      speed: 480,            // 돌진 속도(px/초)
+      duration: 1.5,         // 돌진 시간(초). 벽에 닿으면 그 자리에서 멈춤
+      range: Math.round(480 * 1.5 * PUSH_DASH_DIST_FACTOR), // 총 돌진 거리(px) - 조준선/AI/설명용 (≈ 639)
+    },
+  },
 };
 
 // ===== 캐릭터 설명(캐릭터 선택 화면용) 자동 생성 =====
@@ -1061,6 +1105,12 @@ function describeBasic(b) {
   } else if (b.type === 'dash') {
     damage = b.damage;
     parts.push(`바라보는 방향으로 약 ${fmtNum(Math.round(b.speed * b.duration))}px를 돌진, 적을 관통하며 지나간 모든 적에게 ${fmtNum(b.damage)} 피해`);
+  } else if (b.type === 'stoneSplit' && b.split) {
+    // 미지의 돌: 짧은 거리를 날아가다 사거리 끝에서 여러 조각으로 갈라지는 돌
+    damage = b.damage;
+    const sr = Math.round(b.split.speed * b.split.lifetime);
+    parts.push(`돌을 던져 사거리 약 ${rangeOf(b)}까지 날아가며, 갈라지기 전에 적에게 맞으면 ${fmtNum(b.damage)} 피해`);
+    parts.push(`사거리 끝에서 돌이 ${b.split.count}개의 조각으로 탄퍼짐 ${b.split.spreadDegrees}도로 퍼지며 약 ${sr}px를 더 날아가고, 조각에 맞으면 조각 1개당 ${fmtNum(b.split.damage)} 피해 (벽에 먼저 닿으면 갈라지지 않고 부서짐)`);
   } else if (b.type === 'multiStab') {
     damage = b.damage;
     parts.push(`양손으로 ${b.stabCount}번 빠르게 찌름 (한 번당 ${fmtNum(b.damage)} 피해, 전방 ${b.angleDegrees}도, 사거리 ${b.range}로 짧음)`);
@@ -1134,6 +1184,10 @@ function describeUltimate(u) {
       break;
     case 'dash':
       desc = `바라보는 방향으로 매우 빠르게 돌진, 적을 관통하며 지나간 모든 적에게 ${fmtNum(u.damage)} 피해 + ${u.stunDuration}초 기절`;
+      break;
+    case 'pushDash':
+      damage = u.damage;
+      desc = `조준한 방향으로 약 ${fmtNum(u.range)}px를 돌진 (벽에 닿으면 멈춤). 돌진하다 적에게 닿으면 ${fmtNum(u.damage)} 피해를 주고, 그 적은 돌진이 끝날 때까지 앞으로 밀려가며 ${u.tickInterval}초마다 ${fmtNum(u.tickDamage)} 피해를 받음. 밀려가는 동안은 아무것도 할 수 없고, 돌진 능력(꽈리·변기통 등)도 끊겨서 그대로 밀려남`;
       break;
     case 'turret':
       desc = `조준 불필요, 체력 ${fmtNum(u.hp)}의 자동 사격 터렛을 설치 (사거리 ${u.range}, ${u.fireInterval}초마다 ${fmtNum(u.damage)} 피해 저격탄 발사)`;
@@ -1547,6 +1601,7 @@ const CHARACTER_PRICES = {
   ddongpari: 300,
   nai: 300,
   geunsuni: 300,
+  dol: 300,
 };
 CHARACTER_PRICES[DEFAULT_CHARACTER_ID] = 0; // 기본 캐릭터는 항상 무료 (사용 가능한 캐릭터가 하나도 없는 상황 방지)
 function priceOf(id) {
@@ -1586,8 +1641,8 @@ const SKINS = {
     characterId: 'syu',
     name: '슈퍼맨',
     price: SKIN_PRICE,
-    desc: '기본공격은 작은 주먹 10개, 궁극기는 큰 주먹 10개가 나가요. 슈퍼맨으로 변신! (외형만 바뀌고 성능은 그대로예요)',
-    // 슈의 샷건은 원래 기본공격 펠릿 10개(bullet), 궁극기 큰 총알 10개(slug)가 나간다. 개수/피해/탄퍼짐은 그대로 두고 모양만 주먹으로 바꿈
+    desc: '기본공격은 작은 주먹 7개, 궁극기는 큰 주먹 10개가 나가요. 슈퍼맨으로 변신! (외형만 바뀌고 성능은 그대로예요)',
+    // 슈의 샷건은 기본공격 펠릿 7개(bullet), 궁극기 큰 총알 10개(slug)가 나간다. 개수/피해/탄퍼짐은 그대로 두고 모양만 주먹으로 바꿈
     visuals: { bullet: 'smallFist', slug: 'bigFist' },
   },
   wonhyo_fire: {
@@ -1931,6 +1986,19 @@ function repeatMissionsView(u) {
 // id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
+  {
+    id: '2026-10-29-dol',
+    date: '2026-10-29',
+    tag: 'new',
+    title: '새 캐릭터 [미지의 돌] 추가!',
+    items: [
+      '새 캐릭터 미지의 돌이 등장했어요! 체력 5,500(1레벨 기준) / 🪙 300 코인으로 잠금해제할 수 있어요.',
+      '기본공격 [돌 던지기]: 짧은 거리를 날아가는 돌을 던져요. 갈라지기 전에 적에게 맞으면 2,000 피해!',
+      '돌이 사거리 끝에 닿으면 5개의 조각으로 100도 범위로 퍼지며 짧은 거리를 더 날아가요. 조각에 맞으면 조각 1개당 400 피해를 줘요. (벽에 먼저 닿으면 갈라지지 않아요)',
+      '궁극기 [바위 돌진]: 앞으로 돌진해요. 돌진하다 적에게 닿으면 1,500 피해를 주고, 그 적은 돌진이 끝날 때까지 앞으로 밀려가며 0.5초마다 500 피해를 받아요.',
+      '밀려가는 동안 적은 아무것도 할 수 없어요. 꽈리·변기통처럼 돌진하는 캐릭터도 돌진이 끊긴 채 그대로 밀려나요. 돌이나 밀려가는 적이 벽에 닿으면 돌진이 멈춰요.',
+    ],
+  },
   {
     id: '2026-10-29-geunsuni-teleport-symmetry',
     date: '2026-10-29',
@@ -4514,6 +4582,8 @@ function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hy
     inBush: false,     // 덤불 안에 있으면 true (같은 덤불에 있는 적을 제외하고는 보이지 않음)
     stealthId: 0,      // 은신 발동 회차 (타이머가 중첩될 때 오래된 타이머가 새 은신을 끄지 않도록 함)
     dashing: false,     // 변기통의 돌진 궁극기를 사용 중이면 true (이동/공격 입력이 무시되고 서버가 위치를 직접 제어함)
+    pushDash: null,     // 미지의 돌의 '바위 돌진' 진행 상태 { carried: [{ id, fwd, lat, tickTimer }], hitIds: [] }. null 이면 돌진 중이 아님 (dashing 과 함께 켜짐)
+    carriedBy: null,    // 미지의 돌의 돌진에 밀려가고 있으면 그 돌 플레이어의 id (클라이언트 연출용)
     dashDirX: 0,
     dashDirY: 0,
     dashTimeLeft: 0,
@@ -4639,15 +4709,15 @@ function getDamageTakenMultiplier(p) {
   return mult;
 }
 // 기본공격이 적중했을 때 궁극기 게이지와 하이퍼 차지 게이지를 함께 채움
-function chargeGauges(shooter) {
+function chargeGauges(shooter, chargeScale = 1) {
   // 하이퍼 차지 발동 중 궁극기 충전량 증가 (모카): hyper.ultimateChargeMultiplier 배
   const hyperActive = shooter.hasHyper && shooter.hyperUntil && Date.now() < shooter.hyperUntil;
-  const ultGain = shooter.ultimateChargePerHit * (shooter.gearUltChargeMult || 1) * (hyperActive && shooter.hyper && shooter.hyper.ultimateChargeMultiplier ? shooter.hyper.ultimateChargeMultiplier : 1);
+  const ultGain = chargeScale * shooter.ultimateChargePerHit * (shooter.gearUltChargeMult || 1) * (hyperActive && shooter.hyper && shooter.hyper.ultimateChargeMultiplier ? shooter.hyper.ultimateChargeMultiplier : 1);
   shooter.ultimateCharge = Math.min(100, shooter.ultimateCharge + ultGain);
   // 하이퍼 차지 게이지: 궁극기보다 적게 차고(chargeMultiplier × 전체 보너스), 발동 중에는 충전되지 않음
   if (shooter.hasHyper && !hyperActive) {
     const mult = (shooter.hyper && shooter.hyper.chargeMultiplier != null ? shooter.hyper.chargeMultiplier : 1) * HYPER_CHARGE_BONUS;
-    shooter.hyperCharge = Math.min(100, (shooter.hyperCharge || 0) + shooter.ultimateChargePerHit * mult);
+    shooter.hyperCharge = Math.min(100, (shooter.hyperCharge || 0) + chargeScale * shooter.ultimateChargePerHit * mult);
   }
 }
 
@@ -4711,7 +4781,7 @@ function gearChainMult(shooter, chain) {
 }
 
 // noLifesteal: true 이면 기어 '흡수'가 발동하지 않음 (원효대사 물웅덩이 / 여똥이 똥가루 / 엑헤 흰자 같은 지속 피해용)
-function applyDamage(match, target, damage, shooterId, { chargeShooter, chain, noLifesteal } = {}) {
+function applyDamage(match, target, damage, shooterId, { chargeShooter, chain, noLifesteal, chargeScale } = {}) {
   if (!target.alive || match.over) return;
   if (target.leaping) return; // 점프 중(모카 궁극기)에는 모든 피해 무시
   if (target.airborneTimeLeft > 0) return; // 하늘에 떠 있는 동안(시스템 궁극기)에도 모든 피해 무시 (착지 피해는 airborneTimeLeft를 0으로 만든 뒤 적용)
@@ -4753,7 +4823,7 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter, chain, n
 
   // 공격이 적중했으면(보호막이 막았더라도) 궁극기 게이지는 충전됨
   if (shooter && chargeShooter) {
-    chargeGauges(shooter);
+    chargeGauges(shooter, chargeScale == null ? 1 : chargeScale);
   }
 
   if (target.hp <= 0) {
@@ -4801,6 +4871,8 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter, chain, n
       respawned.invisible = false;
       respawned.stealthId = (respawned.stealthId || 0) + 1; // 진행 중이던 은신 타이머를 무효화
       respawned.dashing = false;
+      respawned.pushDash = null;
+      respawned.carriedBy = null;
       respawned.dashTimeLeft = 0;
       respawned.dashHitIds = [];
       respawned.stunnedUntil = 0;
@@ -5043,6 +5115,61 @@ function moveBouncingBullet(match, b, dt) {
   }
 }
 
+// 미지의 돌: 돌(b)이 사거리 끝에 닿으면 그 자리에서 count개의 조각으로 갈라져 부채꼴로 퍼진다.
+// 새 투사체는 out 배열에 모아서 돌려준다 (총알 목록을 걸러내는 도중에 직접 넣으면 사라지기 때문)
+function spawnStoneShards(match, b, out) {
+  const sp = b.splitInto;
+  if (!sp) return;
+  let sx = b.x;
+  let sy = b.y;
+  if (collidesWithWalls(match.walls, sx, sy, 2) && b.prevX != null) { sx = b.prevX; sy = b.prevY; } // 벽 안에서 끝났으면 직전 위치에서 갈라짐
+  sx = Math.max(0, Math.min(ARENA_WIDTH, sx));
+  sy = Math.max(0, Math.min(ARENA_HEIGHT, sy));
+  const baseAngle = Math.atan2(b.vy || 0, b.vx || 1);
+  const count = Math.max(1, sp.count || 1);
+  const spreadRad = ((sp.spreadDegrees || 0) * Math.PI) / 180;
+  const gear = sp.gearSpeed || 1;
+  for (let i = 0; i < count; i++) {
+    const offset = count > 1 ? -spreadRad / 2 + (spreadRad * i) / (count - 1) : 0;
+    const ang = baseAngle + offset;
+    bulletIdCounter += 1;
+    out.push({
+      id: bulletIdCounter,
+      x: sx, y: sy,
+      knockback: 0,
+      sweep: true,
+      prevX: sx, prevY: sy, originX: sx, originY: sy,
+      fresh: true,
+      vx: Math.cos(ang) * sp.speed * gear,
+      vy: Math.sin(ang) * sp.speed * gear,
+      ownerId: b.ownerId,
+      team: b.team,
+      life: sp.lifetime / gear,
+      maxLife: sp.lifetime / gear,
+      damage: sp.damage,
+      executeBelowHp: 0,
+      currentHpRatio: 0,
+      radius: sp.radius,
+      isUltimate: false,
+      chain: b.chain,
+      visual: sp.visual,
+      launchDuration: 0, landDamage: 0, landStun: 0,
+      pierceTargets: false,
+      hitIds: null,
+      boomerang: false, phase: null, outLeft: 0,
+      baseSpeed: sp.speed * gear,
+      bounce: false,
+      pierceWalls: false,
+      poolOnImpact: false, poolOnExpire: false, directDamage: 0,
+      explodeDamage: 0, explodeRadius: 0,
+      chargeScale: sp.chargeScale != null ? sp.chargeScale : 1, // 조각이 적중할 때 차는 궁극기 게이지 비율
+      isShard: true,
+    });
+  }
+  effectIdCounter += 1;
+  match.effects.push({ id: effectIdCounter, type: 'stoneBurst', x: sx, y: sy, angle: baseAngle, spread: sp.spreadDegrees || 0, life: 0.35, maxLife: 0.35 });
+}
+
 function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
   // 해골물(원효대사) 스킨: 터진 뒤 남는 웅덩이 모양도 스킨에 따라 바뀜 (스킨이 없으면 spec 그대로)
   // 여똥이 스킨(기가차네): 똥가루 구름도 냉기 구름으로 바뀜
@@ -5127,6 +5254,8 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
       directDamage: spec.directDamage || 0, // 물웅덩이 생성 전 적에게 직접 적중 시 주는 대미지
       explodeDamage: spec.explodeDamage || 0, // 0보다 크면 적/벽에 닿거나 사거리 끝에서 폭발 (똥파리의 가젯 '폭탄 똥')
       explodeRadius: spec.explodeRadius || 0, // 폭발 범위(px)
+      // 미지의 돌의 돌: 사거리 끝(수명 종료)에서 여러 조각으로 갈라짐 (updateMatch 의 총알 정리에서 spawnStoneShards 로 처리). 기어 투사체 속도 배율도 조각에 같이 적용
+      splitInto: spec.split && !isUltimate ? { ...spec.split, gearSpeed: gearProjSpeed } : null,
       // 근수니의 가시: 직선이 아니라 진행 방향 좌우로 사인 곡선을 그리며 날아감 (moveWavyBullet). 이 값들은 파동 투사체에만 붙음
       ...(spec.wave && !isCenterPellet ? {
         waveAmp: spec.wave.amplitude,
@@ -6454,6 +6583,23 @@ function registerGameplayHandlers(socket) {
       p.dashReturn = hyperDashReturn ? { x: p.x, y: p.y } : null;
       p.dashReturning = false;
       p.dashReturnTarget = null;
+    } else if (ult.type === 'pushDash') {
+      // 미지의 돌의 바위 돌진: 바라보는 방향으로 돌진. 실제 이동/충돌/밀기는 updateMatch 의 돌진 처리(updatePushDash)가 한다
+      p.dashing = true;
+      p.dashHarmless = false;
+      p.dashCharge = false;
+      p.dashSpeed = ult.speed || 0;
+      p.dashDirX = Math.cos(p.angle);
+      p.dashDirY = Math.sin(p.angle);
+      p.dashTimeLeft = ult.duration || 1;
+      p.dashTotal = p.dashTimeLeft;
+      p.dashHitIds = [];
+      p.dashReturn = null;
+      p.dashReturning = false;
+      p.dashReturnTarget = null;
+      p.pushDash = { carried: [], hitIds: [], damage: ult.damage, tickDamage: ult.tickDamage || 0, tickInterval: ult.tickInterval || 0.5, turretHitIds: [] };
+      effectIdCounter += 1;
+      match.effects.push({ id: effectIdCounter, type: 'stoneRush', ownerId: p.id, x: p.x, y: p.y, angle: p.angle, dist: ult.range || 600, life: 0.5, maxLife: 0.5 });
     } else if (ult.type === 'burst') {
       // 꽈리의 고추 발사: 발사 순간의 조준 방향으로 고추를 짧은 간격으로 연달아 발사 (첫 발은 즉시)
       const fireAngle = p.angle;
@@ -6543,6 +6689,151 @@ function registerGameplayHandlers(socket) {
   });
 }
 
+// ===== 미지의 돌의 궁극기 '바위 돌진' =====
+// 돌이 앞으로 돌진하다가 닿은 적은 1500 피해를 받고, 돌진이 끝날 때까지 돌 앞에서 같이 밀려가며 0.5초마다 500 피해를 받는다.
+// 밀려가는 적은 돌진/공격/스킬/이동 등 모든 행동이 막히고(기절), 하던 돌진(꽈리·변기통 등)도 끊긴 채 그대로 밀려난다.
+// 돌이나 밀려가는 적 중 누구든 벽/맵 끝에 닿으면 돌진이 거기서 멈추고 모두 풀려난다.
+function releasePushedTargets(match, p) {
+  if (!p.pushDash) return;
+  for (const c of p.pushDash.carried) {
+    const t = match.players[c.id];
+    if (t && t.carriedBy === p.id) t.carriedBy = null;
+  }
+  p.pushDash.carried = [];
+}
+
+function endPushDash(match, p) {
+  releasePushedTargets(match, p);
+  p.pushDash = null;
+  p.dashing = false;
+  p.dashTimeLeft = 0;
+}
+
+// 밀려갈 수 없는 상태인 적인지 (공중/무적/죽음). 이런 적은 닿아도 그냥 통과하고, 이미 밀려가던 적이 이렇게 되면 풀려난다
+function cannotBePushed(t) {
+  return !t.alive || t.leaping || t.airborneTimeLeft > 0 || (t.invincibleUntil && Date.now() < t.invincibleUntil);
+}
+
+function updatePushDash(match, p, dt, now) {
+  const pd = p.pushDash;
+  if (!p.alive) { endPushDash(match, p); return; }
+  const R = PLAYER_RADIUS;
+  const dirX = p.dashDirX;
+  const dirY = p.dashDirY;
+  const perpX = -dirY;
+  const perpY = dirX;
+
+  const total = p.dashTotal > 0 ? p.dashTotal : Math.max(0.001, p.dashTimeLeft);
+  const frac = Math.max(0, Math.min(1, p.dashTimeLeft / total));
+  const stepDt = Math.min(dt, Math.max(0, p.dashTimeLeft));
+  const step = (p.dashSpeed || 0) * pushDashEase(frac) * stepDt;
+  const subSteps = Math.max(1, Math.ceil(step / 5));
+  const subStep = step / subSteps;
+  const inBounds = (x, y) => x >= R && x <= ARENA_WIDTH - R && y >= R && y <= ARENA_HEIGHT - R;
+  let blocked = false;
+
+  for (let i = 0; i < subSteps; i++) {
+    // 1) 돌이 한 걸음 나아갈 수 있는지 (벽/맵 끝) + 밀고 있는 적들이 그 걸음만큼 같이 갈 수 있는지
+    const nx = p.x + dirX * subStep;
+    const ny = p.y + dirY * subStep;
+    let ok = inBounds(nx, ny) && !collidesWithWalls(match.walls, nx, ny, R);
+    const moves = [];
+    if (ok) {
+      for (const c of pd.carried) {
+        const t = match.players[c.id];
+        if (!t || cannotBePushed(t)) continue;
+        const tx = nx + dirX * c.fwd + perpX * c.lat;
+        const ty = ny + dirY * c.fwd + perpY * c.lat;
+        if (!inBounds(tx, ty) || collidesWithWalls(match.walls, tx, ty, R)) { ok = false; break; }
+        moves.push([t, tx, ty]);
+      }
+    }
+    if (!ok) { blocked = true; break; }
+    p.x = nx;
+    p.y = ny;
+    for (const [t, tx, ty] of moves) { t.x = tx; t.y = ty; }
+
+    // 2) 새로 닿은 적: 피해를 주고 (살아있으면) 앞에서 같이 밀려가도록 붙잡음
+    for (const tid in match.players) {
+      if (match.over) break;
+      const t = match.players[tid];
+      if (tid === p.id || !t.alive) continue;
+      if (!FRIENDLY_FIRE && t.team === p.team) continue;
+      if (pd.hitIds.includes(tid)) continue;
+      if (cannotBePushed(t)) continue; // 공중/무적 상태는 그대로 통과
+      const ddx = t.x - p.x;
+      const ddy = t.y - p.y;
+      if (Math.hypot(ddx, ddy) >= R * 2) continue;
+      pd.hitIds.push(tid);
+      applyDamage(match, t, pd.damage, p.id, { chargeShooter: false });
+      if (match.over) break;
+      if (!t.alive) continue; // 첫 피해로 쓰러지면 밀 대상이 없음
+      // 하던 행동을 모두 끊음: 돌진(꽈리/변기통/시스템/다른 미지의 돌), 넉백, 공격 선딜, 충전
+      if (t.pushDash) { releasePushedTargets(match, t); t.pushDash = null; }
+      t.dashing = false;
+      t.dashReturn = null;
+      t.dashReturning = false;
+      t.dashTimeLeft = 0;
+      t.knockbackTimeLeft = 0;
+      t.windupUntil = 0;
+      t.windupId = (t.windupId || 0) + 1;
+      t.comboDashId = (t.comboDashId || 0) + 1;
+      t.chargeStartAt = 0;
+      t.chargeRatio = 0;
+      // 돌 앞쪽(닿은 거리 이상)에 같이 붙어서 밀려감. 옆으로 벗어난 정도는 유지해서 여러 명이 나란히 밀리면 나란히 감
+      const fwd = Math.max(R * 1.6, ddx * dirX + ddy * dirY);
+      const lat = Math.max(-R * 1.4, Math.min(R * 1.4, ddx * perpX + ddy * perpY));
+      pd.carried.push({ id: tid, fwd, lat, tickTimer: 0 });
+      t.carriedBy = p.id;
+      t.stunnedUntil = Math.max(t.stunnedUntil || 0, now + PUSH_DASH_CARRY_STUN_MS);
+    }
+
+    // 3) 적 터렛(성스럽다의 터렛, 문지기 모드의 문)/닭은 한 번씩 피해만 받음 (밀리지 않음)
+    for (const turret of match.turrets) {
+      if (!FRIENDLY_FIRE && turret.team === p.team) continue;
+      const key = `t${turret.id}`;
+      if (pd.turretHitIds.includes(key)) continue;
+      if (Math.hypot(turret.x - p.x, turret.y - p.y) < turret.radius + R) {
+        pd.turretHitIds.push(key);
+        turret.hp -= pd.damage * getDamageMultiplier(p);
+      }
+    }
+    for (const chicken of match.chickens) {
+      if (chicken.hp <= 0 || (!FRIENDLY_FIRE && chicken.team === p.team)) continue;
+      const key = `c${chicken.id}`;
+      if (pd.turretHitIds.includes(key)) continue;
+      if (Math.hypot(chicken.x - p.x, chicken.y - p.y) < chicken.radius + R) {
+        pd.turretHitIds.push(key);
+        chicken.hp -= pd.damage * getDamageMultiplier(p);
+      }
+    }
+  }
+  match.turrets = match.turrets.filter((t) => t.hp > 0);
+  match.chickens = match.chickens.filter((c) => c.hp > 0);
+
+  // 4) 밀려가는 적: 계속 기절 상태로 묶고, 0.5초마다 지속 피해. 죽거나 공중/무적이 되면 풀려남
+  const stillCarried = [];
+  for (const c of pd.carried) {
+    const t = match.players[c.id];
+    if (!t || !t.alive || t.leaping || t.airborneTimeLeft > 0) { if (t && t.carriedBy === p.id) t.carriedBy = null; continue; }
+    t.stunnedUntil = Math.max(t.stunnedUntil || 0, now + PUSH_DASH_CARRY_STUN_MS);
+    t.dashing = false;
+    t.knockbackTimeLeft = 0;
+    c.tickTimer += dt;
+    while (c.tickTimer >= pd.tickInterval && !match.over) {
+      c.tickTimer -= pd.tickInterval;
+      applyDamage(match, t, pd.tickDamage, p.id, { chargeShooter: false, noLifesteal: true }); // 지속 피해는 기어 '흡수' 제외
+      if (!t.alive) break;
+    }
+    if (t.alive) stillCarried.push(c);
+    else if (t.carriedBy === p.id) t.carriedBy = null;
+  }
+  pd.carried = stillCarried;
+
+  p.dashTimeLeft -= dt;
+  if (blocked || p.dashTimeLeft <= 0) endPushDash(match, p); // 벽에 닿거나 돌진 시간이 끝나면 멈추고 모두 풀어줌
+}
+
 // ===== 매치별 물리 처리 (한 틱 분량) =====
 function updateMatch(match, dt, now) {
   // 모카의 도약 강습: 벽을 무시하고 시작점 -> 착지점으로 직선 이동하다가, 시간이 다 되면 착지하면서 주변 적에게 피해
@@ -6616,7 +6907,8 @@ function updateMatch(match, dt, now) {
   for (const pid in match.players) {
     if (match.over) break;
     const p = match.players[pid];
-    if (!p.dashing) continue;
+    if (!p.dashing) { if (p.pushDash) p.pushDash = null; continue; } // 다른 효과로 돌진이 끊긴 미지의 돌: 밀기 상태 정리 (밀려가던 적은 기절이 곧 풀림)
+    if (p.pushDash) { updatePushDash(match, p, dt, now); continue; } // 미지의 돌의 바위 돌진은 별도 처리
     if (!p.alive) { p.dashing = false; p.dashReturn = null; p.dashReturning = false; continue; }
 
     const ult = p.ultimate;
@@ -6966,6 +7258,7 @@ function updateMatch(match, dt, now) {
   updateBlackHoles(match, dt); // 근수니의 블랙홀: 범위 안 적을 중앙으로 끌어당기고 모든 투사체를 중앙으로 모음
 
   // 화면 밖, 수명 종료, 벽 충돌한 총알 제거 (poolOnImpact 발사체는 벽/맵 경계에 닿으면 물웅덩이를 남김)
+  const newShards = []; // 사거리 끝에서 갈라진 돌의 조각 (걸러내기가 끝난 뒤 총알 목록에 추가)
   match.bullets = match.bullets.filter((b) => {
     if (b.lob) {
       // 포물선 투척은 벽/맵 경계/적에 막히지 않고 날다가, 착지(수명 종료)하는 순간 그 자리에서 폭발
@@ -6996,6 +7289,7 @@ function updateMatch(match, dt, now) {
       return true;
     }
     if (b.life <= 0) {
+      if (b.splitInto) spawnStoneShards(match, b, newShards); // 미지의 돌: 사거리 끝에서 조각으로 갈라짐
       if (b.poolOnImpact && b.poolOnExpire) spawnWaterPool(match, b); // 계란: 사거리 끝에서 깨짐
       if (b.explodeDamage > 0) explodePoopBomb(match, b); // 폭탄 똥: 사거리 끝에서도 폭발
       return false;
@@ -7019,6 +7313,8 @@ function updateMatch(match, dt, now) {
     }
     return true;
   });
+
+  if (newShards.length) match.bullets.push(...newShards);
 
   // 총알-플레이어 충돌 판정
   const hitBulletIds = new Set();
@@ -7081,7 +7377,7 @@ function updateMatch(match, dt, now) {
           }
         } else {
           // 기본 공격만 궁극기 게이지를 충전시킴
-          applyDamage(match, target, bulletDamageFor(b, target), b.ownerId, { chargeShooter: !b.isUltimate, chain: b.chain });
+          applyDamage(match, target, bulletDamageFor(b, target), b.ownerId, { chargeShooter: !b.isUltimate, chain: b.chain, chargeScale: b.chargeScale }); // 미지의 돌의 조각은 chargeScale 만큼만 게이지 충전
           // 넉백(여똥이의 프링글스): 총알이 날아온 방향으로 밀쳐냄 (무적이거나 이미 죽었으면 밀리지 않음). 실제 이동은 넉백 처리 루프가 수행
           if (b.knockback > 0 && target.alive && !(target.invincibleUntil && Date.now() < target.invincibleUntil)) {
             const bs = Math.hypot(b.vx, b.vy) || 1;
@@ -7972,7 +8268,7 @@ function runAiBot(match, botId, ai, dt, now) {
     else if (ult.type === 'leap' || ult.type === 'blackhole') {
       use = !!target && dist <= ult.distance * 0.95 && dist >= Math.min(ult.distance, ult.minDistance || 0);
       arg = { distance: dist };
-    } else if (ult.type === 'dash' || ult.type === 'burst') use = !!target && dist < ur * (mode === 'chase' ? 1.0 : 0.9);
+    } else if (ult.type === 'dash' || ult.type === 'burst' || ult.type === 'pushDash') use = !!target && dist < ur * (mode === 'chase' ? 1.0 : 0.9);
     else use = !!target && dist < Math.min(ur, 350);
     if (use && Math.random() < 0.6 * ai.profile.abilityChance) h.ultimate(arg);
   }
