@@ -12107,6 +12107,7 @@ function render() {
   const meForAim = latestState.players[myId];
   if (isLeapUltimateArmed(meForAim)) drawLeapIndicator(meForAim);
   else if (isLobAiming(meForAim)) drawLobIndicator(meForAim);
+  else if (isTeleportArmed(meForAim)) drawTeleportIndicator(meForAim);
   else drawAimRangeIndicator();
 
   ctx.restore();
@@ -12164,6 +12165,54 @@ function drawLobIndicator(me) {
   ctx.beginPath();
   ctx.arc(lx, ly, 4, 0, Math.PI * 2);
   ctx.fillStyle = 'rgba(255, 245, 250, 0.95)';
+  ctx.fill();
+  ctx.restore();
+}
+
+function isTeleportArmed(me) {
+  return !!(gadgetArmed && me && me.alive && me.gadget && me.gadget.type === 'teleport' && !(me.gadgetCooldownLeft > 0));
+}
+
+// 근수니의 순간이동: 최대 범위(점선 원)와, 서버와 같은 규칙으로 계산한 실제 도착 지점을 보여준다
+function drawTeleportIndicator(me) {
+  const g = me.gadget;
+  const angle = touchAimActive
+    ? touchAimAngle
+    : Math.atan2(mouseWorldY() - me.y, (mouseX / cameraScale + camera.x) - me.x);
+  const dx = Math.cos(angle), dy = Math.sin(angle);
+  let lx = me.x, ly = me.y;
+  for (let d = g.distance; d >= 0; d -= 10) {
+    const tx = Math.max(PLAYER_RADIUS, Math.min(ARENA_WIDTH - PLAYER_RADIUS, me.x + dx * d));
+    const ty = Math.max(PLAYER_RADIUS, Math.min(ARENA_HEIGHT - PLAYER_RADIUS, me.y + dy * d));
+    if (!collidesWithWalls(tx, ty, PLAYER_RADIUS)) { lx = tx; ly = ty; break; }
+  }
+
+  ctx.save();
+  ctx.setLineDash([4, 10]);
+  ctx.strokeStyle = 'rgba(190, 150, 255, 0.35)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(me.x, me.y, g.distance, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.setLineDash([8, 8]);
+  ctx.strokeStyle = 'rgba(190, 150, 255, 0.9)';
+  ctx.beginPath();
+  ctx.moveTo(me.x, me.y);
+  ctx.lineTo(lx, ly);
+  ctx.stroke();
+
+  ctx.setLineDash([]);
+  ctx.beginPath();
+  ctx.arc(lx, ly, PLAYER_RADIUS, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(142, 91, 217, 0.28)';
+  ctx.fill();
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'rgba(190, 150, 255, 0.95)';
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(lx, ly, 4, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(245, 235, 255, 0.95)';
   ctx.fill();
   ctx.restore();
 }
