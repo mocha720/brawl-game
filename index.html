@@ -1513,7 +1513,7 @@ const CHARACTERS = [
     name: '슈',
     color: '#e67e22',
     maxHp: 6000,
-    basic: { name: '샷건 발사 (펠릿 10발, 사거리 짧음)', damage: 350 },
+    basic: { name: '샷건 발사 (펠릿 7발, 사거리 짧음)', damage: 350 },
     ultimate: { name: '메가 샷건', damage: 600, desc: '큰 총알 10발 발사, 사거리 더 짧음' },
     gadget: { name: '보호막', desc: '2,500 피해를 막아주는 보호막을 두름, 다 막으면 사라짐 (15초마다 사용 가능)' },
   },
@@ -1640,6 +1640,14 @@ const CHARACTERS = [
     basic: { name: '가시 발사', damage: 1500, desc: '가시 3개를 탄퍼짐 60도로 발사 (개당 1,500 피해), 가시는 직선이 아니라 구불구불한 궤도를 그리며 느리게 날아감' },
     ultimate: { name: '중력 덩어리', desc: '거대한 중력 구체를 벽을 무시하고 던져 착지 지점에 블랙홀을 만듦. 블랙홀 범위에 들어간 적은 즉시 가운데로 빨려 들어가고, 블랙홀이 사라질 때까지 계속 가운데로 끌려감. 범위 안의 모든 투사체는 중앙으로 모여 그곳의 적을 맞히면 바로 사라짐' },
     gadget: { name: '순간이동', desc: '조준한 방향으로 260px를 즉시 순간이동 (벽을 넘어갈 수 있고, 도착 지점이 벽 안이면 가까운 빈 자리로 이동)' },
+  },
+  {
+    id: 'dol',
+    name: '미지의 돌',
+    color: '#8b8f98',
+    maxHp: 5500,
+    basic: { name: '돌 던지기', damage: 2000, desc: '짧은 거리를 날아가는 돌 (갈라지기 전 적중 2,000 피해). 사거리 끝에서 5조각으로 100도 퍼지며 조각 1개당 400 피해' },
+    ultimate: { name: '바위 돌진', damage: 1500, desc: '앞으로 돌진해 닿은 적에게 1,500 피해, 적은 돌진이 끝날 때까지 밀려가며 0.5초마다 500 피해' },
   },
 ];
 let selectedCharacterId = CHARACTERS[0].id;
@@ -6857,6 +6865,8 @@ function drawPlayer(p, isMe) {
   }
   // 스킨 전용 돌진 연출 (용사의 푸른 잔상/빛줄기/검 찌르기). 몸통보다 먼저 그려서 몸 뒤쪽에 깔림
   if (p.skin && SKIN_LOOKS[p.skin] && SKIN_LOOKS[p.skin].drawFx) SKIN_LOOKS[p.skin].drawFx(p);
+  if (p.alive && p.pushDash) drawStoneRushFx(p);  // 미지의 돌: 바위 돌진 연출
+  if (p.alive && p.carriedBy) drawCarriedFx(p);   // 돌에 밀려가는 중
   // 하이퍼 차지 발동 중: 몸 주위에서 보랏빛 불꽃이 타오름 (몸통보다 먼저 그려서 뒤에 깔림)
   if (p.alive && p.hyperLeft > 0) drawHyperAura(p);
   // 2.5D: 바닥에 둥근 그림자를 깔고, 이 아래부터는 캐릭터를 눌리지 않게 세워서 그림
@@ -6918,6 +6928,8 @@ function drawPlayer(p, isMe) {
   ctx.strokeStyle = isMe ? '#fff' : '#222';
   ctx.stroke();
 
+
+  if (p.characterId === 'dol' && !skinLook) drawStoneBody(R3, isMe); // 미지의 돌: 바위 몸통
 
   // 스킨 외형: upright 스킨은 조준 방향과 상관없이 똑바로 선 모습 (닌자: 머리띠/복면/눈)
   if (skinLook && skinLook.draw && skinLook.upright) skinLook.draw(PLAYER_RADIUS, p);
@@ -8281,6 +8293,147 @@ const SKIN_HIT_FIT = {
   iceVortex: [1.95, 1.95],   // 여똥이 얼음 소용돌이
   microphone: [2.2, 1.05],   // 진우Park 마이크
 };
+// 미지의 돌의 돌/조각: 빙글빙글 도는 울퉁불퉁한 회색 바위. 돌은 갈라지기 직전에 금이 환하게 빛남
+function drawStoneBullet(b) {
+  const shard = b.visual === 'stoneShard';
+  const r = b.radius;
+  const rot = Date.now() / (shard ? 70 : 130) + (b.id || 0) * 1.3;
+  const sp = Math.hypot(b.vx || 0, b.vy || 0) || 1;
+  ctx.save();
+  ctx.translate(b.x, b.y);
+  // 뒤로 흩날리는 먼지 꼬리
+  const ang = Math.atan2(b.vy || 0, b.vx || 1);
+  ctx.save();
+  ctx.rotate(ang);
+  const tail = ctx.createLinearGradient(-r * 3.4, 0, 0, 0);
+  tail.addColorStop(0, 'rgba(170,170,175,0)');
+  tail.addColorStop(1, 'rgba(170,170,175,0.4)');
+  ctx.fillStyle = tail;
+  ctx.beginPath();
+  ctx.moveTo(-r * 3.4, 0); ctx.lineTo(0, -r * 0.7); ctx.lineTo(0, r * 0.7); ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+  ctx.rotate(rot);
+  const n = shard ? 5 : 8;
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    const rr = r * (shard ? (i % 2 ? 0.6 : 1.1) : 0.88 + 0.16 * Math.sin(i * 2.9 + 1));
+    const x = Math.cos(a) * rr, y = Math.sin(a) * rr;
+    if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+  }
+  ctx.closePath();
+  const g = ctx.createRadialGradient(-r * 0.35, -r * 0.35, r * 0.1, 0, 0, r * 1.15);
+  g.addColorStop(0, '#d2d4d9'); g.addColorStop(0.6, '#8b8f98'); g.addColorStop(1, '#4d5058');
+  ctx.fillStyle = g;
+  ctx.fill();
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = '#2f3136';
+  ctx.stroke();
+  if (!shard) {
+    const warn = b.maxLife ? Math.max(0, Math.min(1, 1 - b.life / 0.15)) : 0; // 갈라지기 직전(남은 수명 0.15초)에 금이 빛남
+    ctx.strokeStyle = warn > 0 ? `rgba(255, 240, 190, ${0.4 + 0.6 * warn})` : 'rgba(40,42,48,0.7)';
+    ctx.lineWidth = 1.6;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.6, -r * 0.2); ctx.lineTo(0, 0); ctx.lineTo(r * 0.5, -r * 0.55);
+    ctx.moveTo(0, 0); ctx.lineTo(r * 0.15, r * 0.65);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+// 미지의 돌의 몸통: 울퉁불퉁한 회색 바위 + 금 + '?' 표시 (스킨이 없을 때)
+function drawStoneBody(R, isMe) {
+  ctx.save();
+  const pts = 9;
+  ctx.beginPath();
+  for (let i = 0; i < pts; i++) {
+    const a = (i / pts) * Math.PI * 2 + 0.2;
+    const rr = R * (0.94 + 0.12 * Math.sin(i * 2.7 + 1));
+    const x = Math.cos(a) * rr, y = Math.sin(a) * rr;
+    if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+  }
+  ctx.closePath();
+  const g = ctx.createRadialGradient(-R * 0.35, -R * 0.4, R * 0.1, 0, 0, R * 1.1);
+  g.addColorStop(0, '#cfd2d8'); g.addColorStop(0.6, '#8b8f98'); g.addColorStop(1, '#4d5058');
+  ctx.fillStyle = g;
+  ctx.fill();
+  ctx.lineWidth = isMe ? 3 : 2;
+  ctx.strokeStyle = isMe ? '#fff' : '#2f3136';
+  ctx.stroke();
+  ctx.strokeStyle = 'rgba(40,42,48,0.75)';
+  ctx.lineWidth = 1.5;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(-R * 0.1, -R * 0.85); ctx.lineTo(R * 0.05, -R * 0.45); ctx.lineTo(-R * 0.25, -R * 0.2);
+  ctx.moveTo(R * 0.65, R * 0.3); ctx.lineTo(R * 0.3, R * 0.45); ctx.lineTo(R * 0.35, R * 0.8);
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.font = `bold ${Math.round(R * 0.95)}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('?', 0, R * 0.05);
+  ctx.restore();
+}
+// 바위 돌진 중인 돌: 뒤로 먼지 구름과 속도선, 앞쪽에 밀어내는 바위 기운
+function drawStoneRushFx(p) {
+  const t = Date.now() / 60;
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  ctx.rotate(p.angle);
+  for (let i = 0; i < 6; i++) {
+    const k = i / 5;
+    ctx.fillStyle = `rgba(190,190,195,${0.45 * (1 - k)})`;
+    ctx.beginPath();
+    ctx.arc(-PLAYER_RADIUS - i * 14, Math.sin(t + i * 1.7) * 9, 9 + i * 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.strokeStyle = 'rgba(255,255,255,0.7)';
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+  for (let i = -2; i <= 2; i++) {
+    const len = 40 + ((i * 37 + Math.floor(t)) % 3 + 3) % 3 * 14;
+    ctx.beginPath();
+    ctx.moveTo(-PLAYER_RADIUS - 6, i * 9);
+    ctx.lineTo(-PLAYER_RADIUS - 6 - len, i * 9);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = 'rgba(210,212,218,0.85)';
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.arc(0, 0, PLAYER_RADIUS + 8, -0.9, 0.9);
+  ctx.stroke();
+  ctx.restore();
+}
+// 돌에 밀려가는 적: 밀려가는 반대 방향으로 속도선과 충격 불꽃
+function drawCarriedFx(p) {
+  const st = latestState.players && latestState.players[p.carriedBy];
+  const ang = st ? Math.atan2(st.dashDirY || 0, st.dashDirX || 1) : 0;
+  const t = Date.now() / 50;
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  ctx.rotate(ang);
+  ctx.strokeStyle = 'rgba(255,120,90,0.8)';
+  ctx.lineWidth = 2.5;
+  ctx.lineCap = 'round';
+  for (let i = -1; i <= 1; i++) {
+    const len = 22 + ((i * 11 + Math.floor(t)) % 3 + 3) % 3 * 8;
+    ctx.beginPath();
+    ctx.moveTo(PLAYER_RADIUS + 2, i * 10);
+    ctx.lineTo(PLAYER_RADIUS + 2 - len * 0.2, i * 10);
+    ctx.moveTo(-PLAYER_RADIUS - 2, i * 10);
+    ctx.lineTo(-PLAYER_RADIUS - 2 - len, i * 10);
+    ctx.stroke();
+  }
+  ctx.fillStyle = 'rgba(255,230,160,0.9)';
+  for (let i = 0; i < 4; i++) {
+    ctx.beginPath();
+    ctx.arc(-PLAYER_RADIUS + Math.sin(t + i * 2) * 8, Math.cos(t * 1.3 + i * 3) * 14, 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
 function drawBullet(b) {
   if (SKIN_TEAM_BULLETS[b.visual]) drawTeamHalo(b); // 스킨 기본공격 탄: 팀 색 후광(= 실제 판정 크기)을 먼저 깔고 그 위에 스킨 모양을 그림
   const fit = b.lob ? null : SKIN_HIT_FIT[b.visual];
@@ -8301,6 +8454,7 @@ function drawBullet(b) {
 function drawBulletShape(b) {
   if (b.boomerang) drawBoomerangGlow(b); // 부메랑 궁극기의 후광/꼬리를 먼저 깔고, 그 위에 원래 모양(피에로/표창)을 그림
   if (b.lob) { drawSlipperBullet(b); return; } // 나이의 실내화 (포물선 투척)
+  if (b.visual === 'stone' || b.visual === 'stoneShard') { drawStoneBullet(b); return; } // 미지의 돌: 돌 / 갈라진 조각
   if (b.visual === 'thorn') {
     // 근수니의 가시: 구불구불 날아가는 방향(실제 이동 방향)으로 뾰족한 끝이 향함. 블랙홀 중앙에 모이면(captured) 빙글빙글 돎
     const t = Date.now() / 1000;
@@ -10297,6 +10451,59 @@ function drawWaterPool(pool) {
 }
 
 function drawEffect(e) {
+  if (e.type === 'stoneBurst') {
+    // 돌이 갈라지는 순간: 먼지 고리 + 퍼지는 방향(부채꼴)으로 뻗는 금 + 파편
+    const prog = 1 - Math.max(0, Math.min(1, e.life / (e.maxLife || 0.35)));
+    const half = ((e.spread || 100) * Math.PI) / 360;
+    ctx.save();
+    ctx.translate(e.x, e.y);
+    ctx.strokeStyle = `rgba(220,220,225,${0.8 * (1 - prog)})`;
+    ctx.lineWidth = 4 * (1 - prog) + 1;
+    ctx.beginPath();
+    ctx.arc(0, 0, 8 + 30 * prog, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = `rgba(255,245,200,${0.9 * (1 - prog)})`;
+    ctx.lineWidth = 3 * (1 - prog) + 1;
+    for (let i = 0; i < 5; i++) {
+      const a = e.angle - half + (half * 2 * i) / 4;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * 6, Math.sin(a) * 6);
+      ctx.lineTo(Math.cos(a) * (14 + 50 * prog), Math.sin(a) * (14 + 50 * prog));
+      ctx.stroke();
+    }
+    ctx.fillStyle = `rgba(150,152,160,${1 - prog})`;
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 + 0.4;
+      const d = 6 + 34 * prog;
+      ctx.beginPath();
+      ctx.arc(Math.cos(a) * d, Math.sin(a) * d, 3 * (1 - prog) + 0.8, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+    return;
+  }
+  if (e.type === 'stoneRush') {
+    // 바위 돌진 출발: 바닥에 끌린 자국 + 출발 지점의 먼지
+    const prog = 1 - Math.max(0, Math.min(1, e.life / (e.maxLife || 0.5)));
+    const dx = Math.cos(e.angle), dy = Math.sin(e.angle);
+    ctx.save();
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = `rgba(60,60,66,${0.35 * (1 - prog)})`;
+    ctx.lineWidth = 10;
+    ctx.beginPath();
+    ctx.moveTo(e.x, e.y);
+    ctx.lineTo(e.x + dx * (e.dist || 600) * Math.min(1, prog * 3 + 0.2), e.y + dy * (e.dist || 600) * Math.min(1, prog * 3 + 0.2));
+    ctx.stroke();
+    ctx.fillStyle = `rgba(200,200,205,${0.5 * (1 - prog)})`;
+    for (let i = 0; i < 5; i++) {
+      ctx.beginPath();
+      ctx.arc(e.x - dx * (6 + i * 7) * (0.4 + prog), e.y - dy * (6 + i * 7) * (0.4 + prog) + (i - 2) * 8 * (0.5 + prog), 8 + 14 * prog, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+    return;
+  }
   if (e.type === 'blackHole') {
     // 근수니의 블랙홀: 범위(e.radius) 안쪽으로 소용돌이가 빨려 들어가는 모양. 나타날 때 커지고, 사라지기 직전에 작아짐
     const maxLife = e.maxLife || 4;
