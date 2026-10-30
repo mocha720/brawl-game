@@ -77,8 +77,10 @@ const SOCCER_WIN_GOALS = 3;      // 먼저 이 골 수에 도달한 팀이 승�
 const SOCCER_BALL_R = 15;        // 공 반지름
 const SOCCER_GOAL_W = 120;       // 골대 입구 너비 (기존 240에서 50% 감소). 깊이(SOCCER_GOAL_DEPTH)는 공이 안에 들어가 득점 판정이 되려면 필요해서 그대로 둠
 const SOCCER_GOAL_DEPTH = 46;    // 골대 깊이 (맵 위/아래 끝에서 이만큼 안쪽까지)
-const SOCCER_KICK_SPEED = 600;   // 공을 찰 때의 초기 속도 (px/초) - 기존 1500에서 60% 감소. 공이 굴러가는 거리는 '초기 속도 ÷ SOCCER_FRICTION' 이라서 기존 약 1000px에서 약 400px로 같이 줄어듦
-const SOCCER_FRICTION = 1.5;     // 굴러가는 공의 감속 (클수록 빨리 멈춤)
+const SOCCER_KICK_SPEED = 300;   // 공을 찰 때의 초기 속도 (px/초) - 직전 600에서 50% 감소. 공이 굴러가는 거리는 '초기 속도 ÷ SOCCER_FRICTION'
+const SOCCER_FRICTION = 1.25;    // 굴러가는 공의 감속 (클수록 빨리 멈춤). 300 ÷ 1.25 = 약 240px (직전 약 400px에서 40% 감소)
+const SOCCER_CARRY_SPEED_MULT = 0.9; // 공을 잡고 있는 동안 이동속도 배율 (10% 감소)
+const SOCCER_HIT_KNOCKBACK = 150; // 공을 가진 채 적에게 공격받으면 공은 그 자리에 두고 이 거리(px)만큼 공격 받은 반대 방향으로 밀려남
 const SOCCER_KICK_COOLDOWN = 450; // 찬 사람이 같은 공을 다시 잡기까지 걸리는 시간 (ms)
 const SOCCER_KICKOFF_MS = 2500;  // 골 직후 공이 정지해 있는 시간
 const RESPAWN_INVINCIBLE_MS = 3000; // 리스폰 직후 무적 시간
@@ -4261,17 +4263,27 @@ function ballCarrier(match) {
   return b && b.carrier ? match.players[b.carrier] : null;
 }
 // 공을 놓친다 (맞았거나 죽었을 때). pop=true면 살짝 튕겨 나감
-function dropBall(match, p, pop) {
+// pop=true(공격받음): 공은 튕기지 않고 그 자리에 두고, 공을 가졌던 사람이 공격한 쪽의 반대 방향으로 SOCCER_HIT_KNOCKBACK 만큼 밀려남
+function dropBall(match, p, pop, fromX, fromY) {
   const b = match.ball;
   if (!b || b.carrier !== p.id) return;
   b.carrier = null;
   p.hasBall = false;
   b.kickerId = p.id; // 떨어뜨린 사람은 잠깐 다시 못 잡음
   b.noPickupUntil = Date.now() + (pop ? 600 : SOCCER_KICK_COOLDOWN);
-  const a = Math.random() * Math.PI * 2;
-  const sp = pop ? 260 : 0;
-  b.vx = Math.cos(a) * sp;
-  b.vy = Math.sin(a) * sp;
+  b.vx = 0;
+  b.vy = 0;
+  if (pop && Number.isFinite(fromX) && Number.isFinite(fromY) && p.alive && !p.dashing && !p.leaping && !(p.airborneTimeLeft > 0) && !(p.invincibleUntil && Date.now() < p.invincibleUntil)) {
+    const dx = p.x - fromX, dy = p.y - fromY;
+    const d = Math.hypot(dx, dy);
+    if (d > 0.001) {
+      p.knockbackDirX = dx / d;
+      p.knockbackDirY = dy / d;
+      p.knockbackDistance = SOCCER_HIT_KNOCKBACK * 0.843; // 넉백 처리가 틱 단위(0.05초)라 실제 이동 거리가 약 18% 더 늘어나므로 보정해서 실제로 약 150px 밀리게 함
+      p.knockbackTimeLeft = KNOCKBACK_DURATION;
+      p.knockbackTotalTime = KNOCKBACK_DURATION;
+    }
+  }
 }
 function kickBall(match, p) {
   const b = match.ball;
@@ -4805,7 +4817,7 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter, chain, n
       const lost = Math.min(damage, Math.max(0, target.hp));
       target.ultimateCharge = Math.min(100, (target.ultimateCharge || 0) + (lost / target.maxHp) * 100 * target.gearSacrificeCharge);
     }
-    if (match.gameMode === 'soccer' && target.hasBall && shooter && shooter.team !== target.team) dropBall(match, target, true); // 슈퍼 축구: 적에게 맞으면 공을 놓침
+    if (match.gameMode === 'soccer' && target.hasBall && shooter && shooter.team !== target.team) dropBall(match, target, true, shooter.x, shooter.y); // 슈퍼 축구: 적에게 맞으면 공을 두고 공격 반대 방향으로 밀려남
     const hpBeforeHit = target.hp;
     target.hp -= damage;
     // 기어 '흡수': 적에게 실제로 들어간 피해(보호막이 막은 만큼, 남은 체력을 넘는 만큼은 제외)의 일부를 회복. 지속 피해(noLifesteal)는 제외
@@ -7594,6 +7606,7 @@ function updateMatch(match, dt, now) {
   for (const pid in match.players) {
     const p = match.players[pid];
     if (p.speedBoostUntil && now < p.speedBoostUntil) p.speedMultiplier *= p.speedBoostMultiplier || 1;
+    if (match.gameMode === 'soccer' && p.hasBall) p.speedMultiplier *= SOCCER_CARRY_SPEED_MULT; // 슈퍼 축구: 공을 잡고 있으면 이동속도 10% 감소
     // 기어: 체력이 30% 이하이면 이동속도 증가
     if (p.gearLowHpSpeedBonus > 0 && p.alive && p.hp <= p.maxHp * GEAR_LOW_HP_SPEED_RATIO) p.speedMultiplier *= 1 + p.gearLowHpSpeedBonus;
     // 하이퍼 차지: 발동 중에는 이동속도 증가. 남은 시간(초)은 클라이언트 표시용으로 매 틱 갱신
