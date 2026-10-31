@@ -86,15 +86,15 @@ const SOCCER_KICKOFF_MS = 2500;  // 골 직후 공이 정지해 있는 시간
 const RESPAWN_INVINCIBLE_MS = 3000; // 리스폰 직후 무적 시간
 const MATCH_COUNTDOWN_MS = 4000; // 매칭 직후 상대 정보(캐릭터/트로피)를 보여주는 대결 화면 시간. 이 동안은 이동/공격/스킬 입력이 막힘
 const AI_COIN_REWARD = 20; // (옛 공지사항 문구에서만 쓰는 값. 실제 AI 보상은 아래 AI_DIFFICULTIES 를 따름)
-// AI 연습 대결 난이도: 점수로 이기면 코인 + 고정 트로피를 받는다 (진 경우/중도 이탈은 보상도 트로피 변화도 없음).
+// AI전: 점수로 이기면 코인 + 고정 트로피를 받는다 (진 경우/중도 이탈은 보상도 트로피 변화도 없음).
+// 난이도 구분은 없어졌고 예전 '어려움'(코인 50 + 트로피 30)과 같은 보상/강한 AI 하나만 있다.
 // 전적(승/패), 연승, 미션은 기록하지 않으므로 AI 승리는 연승에 영향을 주지 않는다.
 const AI_DIFFICULTIES = {
-  easy: { id: 'easy', name: '쉬움', coinReward: 20, trophyReward: 10 },
-  hard: { id: 'hard', name: '어려움', coinReward: 50, trophyReward: 30 },
+  hard: { id: 'hard', name: 'AI전', coinReward: 50, trophyReward: 30 },
 };
-const AI_DEFAULT_DIFFICULTY = 'hard'; // 난이도를 보내지 않는 옛 클라이언트는 기존과 같은 '어려움'
+const AI_DEFAULT_DIFFICULTY = 'hard'; // 옛 클라이언트가 'easy' 등 어떤 값을 보내도 항상 AI전(강한 AI)으로 처리
 // ===== 🎃 할로윈 이벤트: AI전 승리 보너스 코인 =====
-// 켜져 있는 동안 AI 대결(쉬움/어려움 모두)에서 사람이 이길 때마다 기본 보상에 더해 min~max 코인(step 단위, 무작위)을 추가로 지급한다.
+// 켜져 있는 동안 AI전에서 사람이 이길 때마다 기본 보상에 더해 min~max 코인(step 단위, 무작위)을 추가로 지급한다.
 // 끝내려면 enabled 를 false 로 바꾸고 재배포하면 된다. (endsAt 에 종료 시각(ms)을 넣으면 그 시각에 자동 종료. 지금은 null = 직접 중단할 때까지 계속)
 const HALLOWEEN_AI_BONUS = { enabled: true, min: 50, max: 500, step: 10, endsAt: null };
 function halloweenBonusActive() {
@@ -365,7 +365,7 @@ const CHARACTERS = {
       type: 'burst',       // 조준한 한 방향으로 총알을 빠르게 연달아 발사
       bulletCount: 3,
       interval: 0.07,      // 총알 사이 간격(초)
-      damage: 1500,
+      damage: 750,         // 총알 1개당 피해 (1레벨 기준. 기존 1500에서 감소)
       speed: 845,
       radius: 6,
       lifetime: 1.5,
@@ -1414,6 +1414,8 @@ const GEAR_RARITIES = {
 //  gadgetCooldownSec: 가젯 재사용 대기시간(초)을 이 값으로 줄임 (기본 GADGET_COOLDOWN_SEC). 여러 개면 가장 짧은 값
 //  bandageHeal: 피해를 입고 체력이 최대 체력의 GEAR_BANDAGE_RATIO(20%) 이하가 되면 체력을 즉시 이만큼 회복 (살아 있는 상태에서만. 한 번 쓰면 죽었다가 부활할 때까지 다시 쓸 수 없음. 회복 기어의 회복량 증가 적용)
 const GEAR_BANDAGE_RATIO = 0.2;
+//  maxAmmoBonus: 기본공격 탄창 수가 이만큼 늘어남 (1 = 3개 → 4개). 탄창 수가 고정인 캐릭터(시스템)에는 장착할 수 없음 (gearAllowedOn)
+//  moveSpeedMult: 이동속도 배율 (0.9 = 10% 느려짐. 곱셈으로 적용)
 //  hyperDurationBonusSec: 하이퍼 차지 발동 시 지속시간이 이 시간(초)만큼 늘어남 (2 = 2초 증가. 하이퍼 차지를 가진 캐릭터에만 의미가 있음. 같은 기어를 여러 개 달면 2초씩 더해짐)
 //  lifesteal: 적 플레이어에게 준 피해(체력에 실제로 들어간 만큼)의 이 비율만큼 체력을 회복 (0.25 = 25%). 물웅덩이/똥가루/흰자 같은 지속 피해(noLifesteal)는 제외하고 직접 피해만 해당. 회복 기어의 회복량 증가 적용
 //  ultStealthSec: 궁극기를 쓰면 이 시간(초) 동안 은신 (적에게 보이지 않음. 원효대사처럼 은신 자체가 궁극기인 캐릭터에는 효과 없음). 여러 개면 가장 긴 값
@@ -1438,9 +1440,21 @@ const GEAR_CATALOG = [
   { id: 'assassin', name: '암살자', rarity: 'mythic', desc: '궁극기를 사용하면 1.5초 동안 은신', effect: { ultStealthSec: 1.5 } },
   { id: 'full_hp_guard', name: '만땅 방어', rarity: 'mythic', desc: '체력이 가득 차 있을 때 받는 피해량 50% 감소', effect: { fullHpDamageReduction: 0.5 } },
   { id: 'hyper_extend', name: '하이퍼 연장', rarity: 'mythic', desc: '하이퍼 차지 지속시간이 2초 증가', effect: { hyperDurationBonusSec: 2 } },
+  { id: 'big_mag', name: '큰 탄창', rarity: 'epic', desc: '탄창이 4개가 되지만 이동속도가 10% 감소 (탄창이 3개로 고정인 시스템에는 장착 불가)', effect: { maxAmmoBonus: 1, moveSpeedMult: 0.9 } },
   { id: 'lifesteal', name: '흡수', rarity: 'mythic', desc: '적에게 준 피해의 25%를 체력으로 회복 (원효대사·여똥이·엑헤의 지속 피해로는 회복하지 않음)', effect: { lifesteal: 0.25 } },
 ];
 function gearById(id) { return GEAR_CATALOG.find((g) => g.id === id) || null; }
+// 탄창이 무조건 3개여야 하는 캐릭터 (시스템: 탄창 3개가 각각 다른 콤보 공격이라 탄창 수를 바꿀 수 없음)
+function fixedAmmoCharacter(charId) {
+  const ch = CHARACTERS[charId];
+  return !!(ch && (ch.id === 'system' || (ch.basic && ch.basic.combo)));
+}
+// 이 기어를 이 캐릭터에 장착할 수 있는지 ('큰 탄창'은 탄창 수가 고정인 캐릭터에 장착 불가)
+function gearAllowedOn(gearId, charId) {
+  const g = gearById(gearId);
+  if (g && g.effect && g.effect.maxAmmoBonus && fixedAmmoCharacter(charId)) return false;
+  return true;
+}
 function gearSellPriceOf(gearId) { return Math.floor(gearPriceOf(gearId) * GEAR_SELL_RATIO); }
 function gearPriceOf(gearId) { const g = gearById(gearId); return g ? GEAR_RARITIES[g.rarity].price : 0; }
 // 상점 칸에 새로 올릴 기어: 먼저 등급을 가중치로 뽑고, 그 등급의 기어 중 하나를 무작위로 고름
@@ -1461,10 +1475,13 @@ function ownedGearsOf(u) {
 // 캐릭터에 장착된 기어들의 효과 합계 (최대 장착 수까지만 인정)
 function gearBonusOf(u, charId) {
   // reloadSpeed: 재장전 속도 증가율(덧셈) / fullHpTakenMult: 체력이 가득 찰 때 받는 피해 배율(곱셈, 1 = 효과 없음) / lowHpDamageBonus: 체력 50% 이하일 때 공격력 증가율(덧셈) / fullAmmoRangeBonus: 탄창이 가득(3개)일 때 사거리 증가율(덧셈)
-  const total = { reloadSpeed: 0, fullHpTakenMult: 1, lowHpDamageBonus: 0, fullAmmoRangeBonus: 0, healBonus: 0, startShield: 0, ultChargeBonus: 0, projectileSpeedBonus: 0, lowHpSpeedBonus: 0, chainDamageBonus: 0, damageTakenUltCharge: 0, gadgetCooldownSec: 0, bandageHeal: 0, ultStealthSec: 0, lifesteal: 0, hyperDurationBonusSec: 0 };
+  const total = { reloadSpeed: 0, fullHpTakenMult: 1, lowHpDamageBonus: 0, fullAmmoRangeBonus: 0, healBonus: 0, startShield: 0, ultChargeBonus: 0, projectileSpeedBonus: 0, lowHpSpeedBonus: 0, chainDamageBonus: 0, damageTakenUltCharge: 0, gadgetCooldownSec: 0, bandageHeal: 0, ultStealthSec: 0, lifesteal: 0, hyperDurationBonusSec: 0, maxAmmoBonus: 0, moveSpeedMult: 1 };
   const seenGearIds = new Set(); // 같은 기어는 한 캐릭터에 한 번만 효과 적용 (이전 데이터의 중복 장착 대비)
   for (const g of ownedGearsOf(u).filter((x) => x.charId === charId).filter((x) => !seenGearIds.has(x.gearId) && seenGearIds.add(x.gearId)).slice(0, GEAR_MAX_PER_CHARACTER)) {
+    if (!gearAllowedOn(g.gearId, charId)) continue; // 장착할 수 없는 캐릭터에 (잘못) 붙어 있어도 효과는 적용하지 않음
     const eff = gearById(g.gearId).effect || {};
+    total.maxAmmoBonus += eff.maxAmmoBonus || 0;
+    if (eff.moveSpeedMult) total.moveSpeedMult *= eff.moveSpeedMult;
     total.reloadSpeed += eff.reloadSpeed || 0;
     if (eff.fullHpDamageReduction) total.fullHpTakenMult *= 1 - eff.fullHpDamageReduction;
     total.lowHpDamageBonus += eff.lowHpDamageBonus || 0;
@@ -1989,6 +2006,39 @@ function repeatMissionsView(u) {
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
   {
+    id: '2026-10-31-minam-gadget',
+    date: '2026-10-31',
+    tag: 'balance',
+    title: '미남 가젯 [연발 사격] 변경',
+    items: [
+      '미남 가젯 [연발 사격]: 총알 3개가 빠르게 날아가는 건 그대로이고, 총알 1개당 피해가 1레벨 기준 1,500에서 750으로 줄었어요.',
+    ],
+  },
+  {
+    id: '2026-10-31-big-mag',
+    date: '2026-10-31',
+    tag: 'new',
+    title: '새 기어 [큰 탄창] 추가!',
+    items: [
+      '영웅 등급 기어 [큰 탄창]이 기어 상점에 추가됐어요. 장착하면 탄창이 3개에서 4개로 늘어나지만, 이동속도가 10% 감소해요.',
+      '탄창이 3개로 고정인 시스템에는 장착할 수 없어요.',
+    ],
+  },
+  {
+    id: '2026-10-30-ai-battle',
+    date: '2026-10-30',
+    tag: 'balance',
+    title: 'AI전 개편 · AI가 더 똑똑해졌어요',
+    items: [
+      'AI 대결의 쉬움/어려움 구분이 없어지고 [AI전] 하나로 합쳐졌어요. 보상은 이기면 🪙 50코인 + 🏆 트로피 30이에요. (전적·연승에는 영향이 없어요)',
+      'AI가 날아오는 투사체와 투척물 착지 지점을 보고 피해요.',
+      '움직이는 적을 더 정확하게 예측해서 조준하고, 벽 뒤에 숨은 적에게는 낭비하지 않고 각을 잡아요.',
+      '내 사거리와 상대 사거리를 비교해서, 사거리가 길면 거리를 유지하며 싸우고 짧으면 빠르게 붙어서 싸워요.',
+      '마무리 타이밍에 궁극기를 사용하고, 맞으면 움직임 패턴을 바꿔서 쉽게 읽히지 않아요.',
+      'AI도 매 판 무작위 기어 3개를 장착하고, 하이퍼 차지가 있는 캐릭터는 게이지가 차면 하이퍼 차지를 사용해요.',
+    ],
+  },
+  {
     id: '2026-10-29-dol',
     date: '2026-10-29',
     tag: 'new',
@@ -2040,7 +2090,7 @@ const ANNOUNCEMENTS = [
     title: '🎃 할로윈 이벤트 시작!',
     items: [
       '할로윈 이벤트가 시작됐어요! 🎃👻',
-      'AI 대결(쉬움/어려움)에서 승리할 때마다 기본 보상에 더해 🪙 50~500코인을 추가로 받아요!',
+      'AI전에서 승리할 때마다 기본 보상에 더해 🪙 50~500코인을 추가로 받아요!',
       '추가 코인은 승리할 때마다 무작위로 정해지고, 이벤트는 종료 공지가 나올 때까지 계속돼요.',
       '기어 상점 버튼도 메인 화면 맨 위로 옮겨서 더 쉽게 찾을 수 있어요.',
     ],
@@ -2435,7 +2485,7 @@ function publicProfile(u) {
   const equippedSkins = {};
   for (const id in CHARACTERS) { const sk = equippedSkinOf(u, id); if (sk) equippedSkins[id] = sk; }
   return { username: u.name, coins: u.coins, gems: u.gems || 0, gemResetCost: GEM_SHOP_RESET_COST, wins: u.wins || 0, losses: u.losses || 0, unlocked: effectiveUnlocked(u), prices: allPrices(),
-    skinCatalog: skinCatalogPublic(), skins: ownedSkinsOf(u), equippedSkins, hypers: ownedHypersOf(u), gears: ownedGearsOf(u), gearShop: gearShopView(u), gearCatalog: GEAR_CATALOG.map((g) => ({ id: g.id, name: g.name, rarity: g.rarity, desc: g.desc })), gearRarities: Object.values(GEAR_RARITIES), gearMax: GEAR_MAX_PER_CHARACTER, gearSellRatio: GEAR_SELL_RATIO, hyperPrice: HYPER_PRICE, hyperRequiredLevel: HYPER_REQUIRED_LEVEL, trophyRoad: trophyRoadView(u), trophyRoadPlus: trophyRoadPlusView(u), trophies, streaks, missions: missionsView(u), repeatMissions: repeatMissionsView(u), ranks: TROPHY_RANKS, characters: buildCharacterInfo(levels), levels, levelTable: LEVEL_TABLE_PUBLIC, maxLevel: MAX_CHARACTER_LEVEL, isAdmin: u.key === ADMIN_KEY, announcements: allAnnouncements(), dailyDraw: dailyDrawView(u),
+    skinCatalog: skinCatalogPublic(), skins: ownedSkinsOf(u), equippedSkins, hypers: ownedHypersOf(u), gears: ownedGearsOf(u), gearShop: gearShopView(u), gearCatalog: GEAR_CATALOG.map((g) => ({ id: g.id, name: g.name, rarity: g.rarity, desc: g.desc, excludeChars: Object.keys(CHARACTERS).filter((cid) => !gearAllowedOn(g.id, cid)) })), gearRarities: Object.values(GEAR_RARITIES), gearMax: GEAR_MAX_PER_CHARACTER, gearSellRatio: GEAR_SELL_RATIO, hyperPrice: HYPER_PRICE, hyperRequiredLevel: HYPER_REQUIRED_LEVEL, trophyRoad: trophyRoadView(u), trophyRoadPlus: trophyRoadPlusView(u), trophies, streaks, missions: missionsView(u), repeatMissions: repeatMissionsView(u), ranks: TROPHY_RANKS, characters: buildCharacterInfo(levels), levels, levelTable: LEVEL_TABLE_PUBLIC, maxLevel: MAX_CHARACTER_LEVEL, isAdmin: u.key === ADMIN_KEY, announcements: allAnnouncements(), dailyDraw: dailyDrawView(u),
     aiBonusEvent: halloweenBonusView(),
     events: activeEvents().map((e) => ({ id: e.id, name: e.name, coins: e.coins || 0, gems: e.gems || 0, desc: e.desc, endsAt: e.endsAt || null, claimed: (u.redeemed || []).includes(eventClaimCode(e)) })) };
 }
@@ -3846,6 +3896,11 @@ function registerAuthHandlers(socket) {
       if (charId !== null && (typeof charId !== 'string' || !CHARACTERS[charId])) return ack({ ok: false, message: '잘못된 캐릭터입니다.' });
       if (charId !== null && !socket.data.unlocked.has(charId)) return ack({ ok: false, message: '잠금해제한 캐릭터에만 장착할 수 있습니다.' });
 
+      if (charId !== null) { // 장착할 수 없는 조합(큰 탄창 + 탄창 수 고정 캐릭터)은 서버에서 막는다
+        const owner = await db.findUser(key);
+        const og = ownedGearsOf(owner).find((x) => x.uid === uid);
+        if (og && !gearAllowedOn(og.gearId, charId)) return ack({ ok: false, message: `${CHARACTERS[charId].name}은(는) 탄창이 3개로 고정이라 '${gearById(og.gearId).name}' 기어를 장착할 수 없어요.` });
+      }
       const r = await db.equipGear(key, uid, charId, GEAR_MAX_PER_CHARACTER);
       if (r.ok) return ack({ ok: true, profile: publicProfile(r.user) });
       const message = r.reason === 'full' ? `한 캐릭터에는 기어를 최대 ${GEAR_MAX_PER_CHARACTER}개까지 장착할 수 있어요.`
@@ -4611,6 +4666,7 @@ function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hy
     gearFullHpTakenMult: (gear && gear.fullHpTakenMult) || 1, // 장착한 기어: 체력이 가득 차 있을 때 받는 피해 배율 (0.5 = 50% 감소)
     gearUltChargeMult: 1 + ((gear && gear.ultChargeBonus) || 0),       // 장착한 기어: 궁극기 충전 속도 배율 (1.1 = 10% 빠름)
     gearProjectileSpeedMult: 1 + ((gear && gear.projectileSpeedBonus) || 0), // 장착한 기어: 투사체 속도 배율 (1.1 = 10% 빠름)
+    gearMoveSpeedMult: (gear && gear.moveSpeedMult) || 1, // 장착한 기어(큰 탄창): 이동속도 배율 (0.9 = 10% 감소)
     gearLowHpSpeedBonus: (gear && gear.lowHpSpeedBonus) || 0,         // 장착한 기어: 체력 30% 이하일 때 이동속도 증가율
     gearChainBonus: (gear && gear.chainDamageBonus) || 0, // 장착한 기어(파죽지세): 1초 안에 이어서 평타를 칠 때의 추가 피해율 (0.25 = 25%)
     lastBasicAttackAt: 0,   // 마지막으로 기본공격을 한 시각(ms) - 파죽지세용
@@ -4688,8 +4744,8 @@ function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hy
     airborneLandDamage: 0,
     airborneBy: null,
     airborneStunUntil: 0,
-    ammo: MAX_AMMO,
-    maxAmmo: MAX_AMMO,
+    ammo: MAX_AMMO + ((gear && gear.maxAmmoBonus) || 0), // 기어 '큰 탄창': 탄창 수 증가
+    maxAmmo: MAX_AMMO + ((gear && gear.maxAmmoBonus) || 0),
     chargeStartAt: 0,      // 똥파리: 공격 버튼을 누르기 시작한 시각(ms). 0이면 충전 중이 아님 (충전 시간은 서버가 직접 잼)
     chargeRatio: 0,        // 똥파리: 현재 충전 진행도(0~1) - 클라이언트가 충전 게이지를 그릴 때 사용
     ammoRegenSeconds: character.basic.ammoRegenSeconds || AMMO_REGEN_SECONDS, // 캐릭터별 기본공격 재장전 시간
@@ -4911,7 +4967,7 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter, chain, n
       respawned.chargeStartAt = 0; // 충전 중이던 공격도 초기화
       respawned.chargeRatio = 0;
       // 궁극기 게이지는 사망/리스폰 시에도 초기화하지 않고 그대로 유지함
-      respawned.ammo = MAX_AMMO;
+      respawned.ammo = respawned.maxAmmo; // 기어 '큰 탄창'이면 4개로 리스폰
       respawned.ammoRegenElapsed = 0;
       respawned.lastDamageAt = Date.now();
     }, RESPAWN_DELAY);
@@ -6046,7 +6102,7 @@ io.on('connection', (socket) => {
       return;
     }
     const userKey = socket.data.userKey;
-    const difficulty = aiDifficultyOf(data && data.difficulty).id; // 쉬움/어려움 (모르는 값이면 어려움)
+    const difficulty = aiDifficultyOf().id; // 난이도 구분 없음: 항상 AI전(강한 AI). 옛 클라이언트가 어떤 값을 보내도 무시
     let level = 1;
     let trophies = 0; // 대결 화면에 보여주기만 함 (AI 대결에서 이기면 난이도별 고정 트로피를 받지만, 이 값은 시작 시점의 트로피)
     let skin = null;
@@ -7607,6 +7663,7 @@ function updateMatch(match, dt, now) {
     const p = match.players[pid];
     if (p.speedBoostUntil && now < p.speedBoostUntil) p.speedMultiplier *= p.speedBoostMultiplier || 1;
     if (match.gameMode === 'soccer' && p.hasBall) p.speedMultiplier *= SOCCER_CARRY_SPEED_MULT; // 슈퍼 축구: 공을 잡고 있으면 이동속도 10% 감소
+    if (p.gearMoveSpeedMult && p.gearMoveSpeedMult !== 1) p.speedMultiplier *= p.gearMoveSpeedMult; // 기어 '큰 탄창': 이동속도 감소
     // 기어: 체력이 30% 이하이면 이동속도 증가
     if (p.gearLowHpSpeedBonus > 0 && p.alive && p.hp <= p.maxHp * GEAR_LOW_HP_SPEED_RATIO) p.speedMultiplier *= 1 + p.gearLowHpSpeedBonus;
     // 하이퍼 차지: 발동 중에는 이동속도 증가. 남은 시간(초)은 클라이언트 표시용으로 매 틱 갱신
@@ -7763,25 +7820,18 @@ function buildVisibleBullets(match, viewerId) {
 const AI_MOVE_SPEED = 152; // 클라이언트의 MOVE_SPEED 와 같은 값 (px/초, 기존 190에서 20% 감소)
 let aiBotCounter = 0;
 
-// 난이도별 봇 성능. 어려움이 기존 AI와 똑같은 값이고, 쉬움은 조준이 부정확하고 반응이 느리며 덜 공격적이다.
+// AI전 봇 성능 (예전 '어려움'보다 더 강하게 조정됨)
 const AI_PROFILES = {
   hard: {
-    aimErrRange: 0.26,      // 조준 오차 폭(라디안, 약 ±7도)
-    leadScale: 1,           // 움직이는 적을 예측해서 조준하는 정도 (1 = 기존 그대로)
-    reactionBaseMs: 450,    // 처음 적을 발견한 뒤 쏘기까지 반응 시간 (기본 + 무작위)
-    reactionVarMs: 400,
+    aimErrRange: 0.12,      // 조준 오차 폭(라디안, 약 ±3.5도)
+    leadScale: 0.95,        // 움직이는 적을 예측해서 조준하는 정도 (1 = 완전 예측)
+    reactionBaseMs: 220,    // 처음 적을 발견한 뒤 쏘기까지 반응 시간 (기본 + 무작위)
+    reactionVarMs: 200,
     moveScale: 1,           // 이동 속도 배율
-    shotDelayScale: 1,      // 발사 간격 배율 (클수록 천천히 쏨)
+    shotDelayScale: 0.8,    // 발사 간격 배율 (작을수록 빨리 쏨)
     abilityChance: 1,       // 궁극기/가젯을 쓸 수 있을 때 실제로 쓸 확률 배율
-  },
-  easy: {
-    aimErrRange: 0.75,      // 약 ±21도로 크게 빗나감
-    leadScale: 0.25,        // 적의 이동을 거의 예측하지 못함
-    reactionBaseMs: 1100,
-    reactionVarMs: 800,
-    moveScale: 0.8,
-    shotDelayScale: 1.7,
-    abilityChance: 0.45,
+    dodgeReactMs: 100,      // 날아오는 투사체를 알아채고 피하기 시작하는 데 걸리는 시간
+    dodgeMissChance: 0.1,   // 투사체를 못 보고 놓칠 확률 (사람처럼 가끔 맞아주기)
   },
 };
 
@@ -7800,8 +7850,9 @@ function createBotSocket(id) {
 function createAiState(socket, difficulty) {
   return {
     socket,
-    difficulty: AI_PROFILES[difficulty] ? difficulty : 'hard',
-    profile: AI_PROFILES[difficulty] || AI_PROFILES.hard, // 난이도별 성능 (조준 오차/반응/이동속도/발사 간격/스킬 사용 확률)
+    difficulty: 'hard',
+    profile: AI_PROFILES.hard, // 조준 오차/반응/이동속도/발사 간격/스킬 사용 확률/회피 성능
+    seenBullets: new Map(),  // 이미 알아챈 적 투사체 id -> { at, ignore } (회피 반응 시간/놓침 판정용)
     strafeDir: Math.random() < 0.5 ? 1 : -1,
     strafeUntil: 0,
     nextShotAt: 0,
@@ -7916,6 +7967,141 @@ function aiGemCampSpot(match) {
   return { x: h.x, y: h.y + h.r + 30 };
 }
 
+// ===== AI 보조 함수 (조준/시야/회피/길찾기) =====
+// 두 점 사이에 벽이 없는지 (20px 간격으로 확인)
+function aiLineClear(match, x1, y1, x2, y2) {
+  const d = Math.hypot(x2 - x1, y2 - y1);
+  const n = Math.ceil(d / 20);
+  for (let i = 1; i < n; i++) {
+    const t = i / n;
+    if (collidesWithWalls(match.walls, x1 + (x2 - x1) * t, y1 + (y2 - y1) * t, 6)) return false;
+  }
+  return true;
+}
+
+// 이 기본공격이 벽에 막히는지 (포물선 투척과 벽 통과 공격은 막히지 않음)
+function aiBasicNeedsLos(basic) {
+  if (basic.type === 'lob' || basic.pierceWalls) return false;
+  if (basic.combo && basic.combo.length && basic.combo.every((c) => c.pierceWalls)) return false;
+  return true;
+}
+
+// 투사체 속도(px/초): 일반 공격은 speed, 콤보 공격은 첫 타의 speed
+function aiProjectileSpeed(basic) {
+  return basic.speed || (basic.combo && basic.combo[0] && basic.combo[0].speed) || 0;
+}
+
+// 움직이는 적을 맞히려면 어디를 겨눠야 하는지 (탄속과 적의 속도로 만나는 지점을 계산)
+function aiInterceptPoint(p, target, vx, vy, speed) {
+  const dx = target.x - p.x, dy = target.y - p.y;
+  const a = vx * vx + vy * vy - speed * speed;
+  const b = 2 * (dx * vx + dy * vy);
+  const c = dx * dx + dy * dy;
+  let t = 0;
+  if (Math.abs(a) < 1e-6) {
+    t = b !== 0 ? -c / b : 0;
+  } else {
+    const disc = b * b - 4 * a * c;
+    if (disc < 0) return { x: target.x, y: target.y };
+    const sq = Math.sqrt(disc);
+    const t1 = (-b - sq) / (2 * a), t2 = (-b + sq) / (2 * a);
+    const lo = Math.min(t1, t2), hi = Math.max(t1, t2);
+    t = lo > 0 ? lo : hi;
+  }
+  if (!(t > 0)) t = 0;
+  t = Math.min(t, 1.0);
+  return { x: target.x + vx * t, y: target.y + vy * t };
+}
+
+// 적의 기본공격 사거리 (정보가 없으면 null)
+function aiEnemyRange(match, target) {
+  const ep = target && match.players[target.id];
+  const spec = ep && ep.basic;
+  return spec ? aiBasicRange(spec) : null;
+}
+
+// 맵 가장자리에서 중앙 쪽으로 밀어내는 벡터 (몰리지 않게)
+function aiEdgePush(p) {
+  const M = 90;
+  let ex = 0, ey = 0;
+  if (p.x < M) ex += (M - p.x) / M; else if (p.x > ARENA_WIDTH - M) ex -= (p.x - (ARENA_WIDTH - M)) / M;
+  if (p.y < M) ey += (M - p.y) / M; else if (p.y > ARENA_HEIGHT - M) ey -= (p.y - (ARENA_HEIGHT - M)) / M;
+  return { ex, ey };
+}
+
+// 날아오는 적 투사체/투척물 착지 지점을 피하는 방향을 계산한다. 위험이 없으면 null.
+// urgent: 0~1 (1에 가까울수록 곧 맞는다)
+function aiDodgeVector(match, p, ai, now) {
+  let dx = 0, dy = 0, urgent = 0;
+  for (const b of match.bullets) {
+    if (b.team === p.team) continue;
+    if (b.lob) {
+      // 포물선 투척: 착지 지점의 폭발 범위 안에 있으면 바깥으로 벗어남
+      if (typeof b.targetX !== 'number' || !(b.explodeRadius > 0) || !(b.life > 0) || b.life > 1.4) continue;
+      const ddx = p.x - b.targetX, ddy = p.y - b.targetY;
+      const dd = Math.hypot(ddx, ddy);
+      const safe = b.explodeRadius + PLAYER_RADIUS + 25;
+      if (dd >= safe) continue;
+      const w = 1 + Math.max(0, 0.6 - b.life);
+      const nx = dd > 1 ? ddx / dd : ai.strafeDir, ny = dd > 1 ? ddy / dd : 0;
+      dx += nx * w; dy += ny * w;
+      if (b.life < 0.7) urgent = Math.max(urgent, 0.7);
+      continue;
+    }
+    const sp2 = b.vx * b.vx + b.vy * b.vy;
+    if (!(sp2 > 100)) continue;
+    const rx = p.x - b.x, ry = p.y - b.y;
+    if (rx * rx + ry * ry > 520 * 520) continue;
+    const tHit = (rx * b.vx + ry * b.vy) / sp2; // 이 탄이 내 위치 근처까지 오는 데 걸리는 시간(초)
+    if (tHit < -0.05 || tHit > 0.9) continue;
+    if (typeof b.life === 'number' && tHit > b.life + 0.1) continue; // 도착하기 전에 사라지는 탄
+    const sp = Math.sqrt(sp2);
+    const ux = b.vx / sp, uy = b.vy / sp;
+    const off = rx * -uy + ry * ux; // 탄 진행선에서 내가 옆으로 얼마나 떨어져 있는지 (+는 탄의 왼쪽)
+    const margin = PLAYER_RADIUS + (b.radius || 8) + 18;
+    if (Math.abs(off) > margin) continue;
+    if (!b.pierceWalls && !aiLineClear(match, b.x, b.y, p.x, p.y)) continue; // 벽에 막히는 탄은 피할 필요 없음
+    // 사람처럼: 알아채는 데 시간이 걸리고, 가끔은 놓친다
+    let seen = ai.seenBullets.get(b.id);
+    if (!seen) {
+      seen = { at: now, ignore: Math.random() < ai.profile.dodgeMissChance };
+      ai.seenBullets.set(b.id, seen);
+    }
+    if (seen.ignore || now - seen.at < ai.profile.dodgeReactMs) continue;
+    const side = Math.abs(off) < 4 ? ai.strafeDir : (off >= 0 ? 1 : -1);
+    const w = 1 + Math.max(0, 0.9 - tHit) * 1.5;
+    dx += -uy * side * w; dy += ux * side * w;
+    if (tHit < 0.45) urgent = Math.max(urgent, 1);
+    else urgent = Math.max(urgent, 0.5);
+  }
+  if (ai.seenBullets.size > 300) {
+    for (const [id, s] of ai.seenBullets) if (now - s.at > 3000) ai.seenBullets.delete(id);
+  }
+  const len = Math.hypot(dx, dy);
+  if (len < 0.01) return null;
+  return { x: dx / len, y: dy / len, urgent };
+}
+
+// 가려는 방향 앞에 벽이 있으면 벽을 따라 미끄러지듯 돌아서 간다 (벽에 박혀서 떠는 것 방지)
+function aiSteer(match, p, ai, mx, my, step) {
+  const L = Math.max(40, step * 8);
+  const base = Math.atan2(my, mx);
+  const free = (ang) => {
+    const cx = p.x + Math.cos(ang) * L, cy = p.y + Math.sin(ang) * L;
+    if (cx < PLAYER_RADIUS || cx > ARENA_WIDTH - PLAYER_RADIUS || cy < PLAYER_RADIUS || cy > ARENA_HEIGHT - PLAYER_RADIUS) return false;
+    if (collidesWithWalls(match.walls, cx, cy, PLAYER_RADIUS)) return false;
+    return !collidesWithWalls(match.walls, p.x + Math.cos(ang) * L * 0.5, p.y + Math.sin(ang) * L * 0.5, PLAYER_RADIUS);
+  };
+  if (free(base)) return { x: mx, y: my };
+  for (const off of [0.5, 0.9, 1.3, 1.8]) {
+    for (const sign of [ai.strafeDir, -ai.strafeDir]) {
+      const ang = base + sign * off;
+      if (free(ang)) return { x: Math.cos(ang), y: Math.sin(ang) };
+    }
+  }
+  return { x: mx, y: my };
+}
+
 function runAiBot(match, botId, ai, dt, now) {
   if (match.over || now < match.startsAt) return;
   const p = match.players[botId];
@@ -7926,6 +8112,13 @@ function runAiBot(match, botId, ai, dt, now) {
     if (p) p.aiMode = 'fight';
     return;
   }
+
+  // 맞으면 좌우 방향을 바꿔서 쉽게 읽히지 않게 함
+  if (ai.lastHp !== null && p.hp < ai.lastHp - 1 && Math.random() < 0.45) {
+    ai.strafeDir *= -1;
+    ai.strafeUntil = now + 500 + Math.random() * 700;
+  }
+  ai.lastHp = p.hp;
 
   // 1) 보이는 가장 가까운 적 찾기 (덤불/은신으로 숨은 적은 위치가 없어서 자동으로 제외됨)
   const view = buildVisiblePlayers(match, botId);
@@ -7941,22 +8134,33 @@ function runAiBot(match, botId, ai, dt, now) {
   // 적의 이동 속도 추정 (부드럽게 섞어서 조준 리드에 사용)
   if (target) {
     if (ai.prevTarget && ai.prevTarget.id === target.id) {
-      ai.vx = ai.vx * 0.6 + ((target.x - ai.prevTarget.x) / dt) * 0.4;
-      ai.vy = ai.vy * 0.6 + ((target.y - ai.prevTarget.y) / dt) * 0.4;
+      const rvx = (target.x - ai.prevTarget.x) / dt, rvy = (target.y - ai.prevTarget.y) / dt;
+      if (Math.hypot(rvx, rvy) < 700) { // 순간이동/돌진 같은 튀는 값은 속도 추정에서 제외
+        ai.vx = ai.vx * 0.5 + rvx * 0.5;
+        ai.vy = ai.vy * 0.5 + rvy * 0.5;
+        const vl = Math.hypot(ai.vx, ai.vy);
+        if (vl > 260) { ai.vx *= 260 / vl; ai.vy *= 260 / vl; }
+      }
     } else { ai.vx = 0; ai.vy = 0; }
     ai.prevTarget = { id: target.id, x: target.x, y: target.y };
     ai.lastSeen = { x: target.x, y: target.y };
     ai.seenAt = now;
-    if (!ai.hadTarget) ai.nextShotAt = Math.max(ai.nextShotAt, now + ai.profile.reactionBaseMs + Math.random() * ai.profile.reactionVarMs); // 처음 발견하면 반응 시간 (쉬움은 더 느림)
+    if (!ai.hadTarget) ai.nextShotAt = Math.max(ai.nextShotAt, now + ai.profile.reactionBaseMs + Math.random() * ai.profile.reactionVarMs); // 처음 발견하면 짧은 반응 시간
   } else {
     ai.prevTarget = null;
   }
   ai.hadTarget = !!target;
 
-  if (now >= ai.aimErrUntil) { ai.aimErr = (Math.random() - 0.5) * ai.profile.aimErrRange; ai.aimErrUntil = now + 350; } // 조준 오차 (어려움 약 ±7도, 쉬움 약 ±21도)
+  if (now >= ai.aimErrUntil) { ai.aimErr = (Math.random() - 0.5) * ai.profile.aimErrRange; ai.aimErrUntil = now + 250; } // 조준 오차 (약 ±3.5도)
 
   const basic = p.basic;
   const range = aiBasicRange(basic);
+  const projSpeed = aiProjectileSpeed(basic);
+  const eRange = aiEnemyRange(match, target); // 상대의 기본공격 사거리 (사거리 비교로 거리 조절)
+  const needsLos = aiBasicNeedsLos(basic);
+  const losClear = !target || !needsLos || aiLineClear(match, p.x, p.y, target.x, target.y); // 벽에 막혀서 못 맞히는 위치인지
+  const outranges = eRange !== null && range > eRange * 1.2;  // 내 사거리가 훨씬 김 → 거리를 유지하며 싸움 (카이팅)
+  const outranged = eRange !== null && range < eRange * 0.8;  // 상대 사거리가 훨씬 김 → 빠르게 붙어서 싸움
 
   // ===== 2) 심리전: 체력 상황에 따라 행동 모드 결정 =====
   const myR = p.hp / (p.maxHp || 1);
@@ -8013,19 +8217,27 @@ function runAiBot(match, botId, ai, dt, now) {
     const d = Math.max(1, dist);
     ux = dx / d; uy = dy / d;
 
-    // 조준: 투사체는 날아가는 시간만큼, 포물선 투척은 착지 시간만큼 적의 이동을 예측
-    let leadT = 0;
-    if (basic.type === 'lob') leadT = (basic.flightTime || 2) * 0.6;
-    else if (basic.speed) leadT = Math.min(0.9, dist / basic.speed) * 0.75;
-    leadT *= ai.profile.leadScale; // 쉬움은 움직이는 적을 잘 예측하지 못함
-    const tx = target.x + ai.vx * leadT;
-    const ty = target.y + ai.vy * leadT;
+    // 조준: 투사체는 탄속과 적의 속도로 '만나는 지점'을 계산하고, 포물선 투척은 착지 시간만큼 적의 이동을 예측
+    let tx = target.x, ty = target.y;
+    if (basic.type === 'lob') {
+      const lt = (basic.flightTime || 2) * 0.8 * ai.profile.leadScale;
+      tx = target.x + ai.vx * lt; ty = target.y + ai.vy * lt;
+    } else if (projSpeed > 0) {
+      const ip = aiInterceptPoint(p, target, ai.vx, ai.vy, projSpeed);
+      tx = target.x + (ip.x - target.x) * ai.profile.leadScale;
+      ty = target.y + (ip.y - target.y) * ai.profile.leadScale;
+    }
+    tx = Math.max(PLAYER_RADIUS, Math.min(ARENA_WIDTH - PLAYER_RADIUS, tx));
+    ty = Math.max(PLAYER_RADIUS, Math.min(ARENA_HEIGHT - PLAYER_RADIUS, ty));
+    if ((tx !== target.x || ty !== target.y) && collidesWithWalls(match.walls, tx, ty, PLAYER_RADIUS * 0.6)) { // 예측 지점이 벽 안이면 적을 덜 앞서서 겨눔
+      tx = target.x + (tx - target.x) * 0.4; ty = target.y + (ty - target.y) * 0.4;
+    }
     aimAngle = Math.atan2(ty - p.y, tx - p.x) + ai.aimErr;
     aimDist = Math.hypot(tx - p.x, ty - p.y);
 
     if (now >= ai.strafeUntil) {
-      if (Math.random() < 0.6) ai.strafeDir *= -1;
-      ai.strafeUntil = now + 800 + Math.random() * 1500;
+      if (Math.random() < 0.7) ai.strafeDir *= -1;
+      ai.strafeUntil = now + 450 + Math.random() * 1100;
     }
     const sx = -uy * ai.strafeDir, sy = ux * ai.strafeDir;
 
@@ -8066,11 +8278,25 @@ function runAiBot(match, botId, ai, dt, now) {
         if (dist < range * 1.1 && myR > 0.5 && Math.random() < 0.5) ai.feintUntil = now + 700 + Math.random() * 600;
         ai.nextFeintAt = now + 5000 + Math.random() * 4000;
       }
-      if (now < ai.feintUntil) {
+      const ep = aiEdgePush(p);
+      if (!losClear && dist > 90) {
+        // 벽 때문에 공격이 막히는 위치면 가만히 있지 않고 각이 열릴 때까지 파고듦
+        moveX = ux * 0.9 + sx * 0.7; moveY = uy * 0.9 + sy * 0.7;
+      } else if (now < ai.feintUntil) {
         moveX = -ux * 0.9 + sx * 0.3; moveY = -uy * 0.9 + sy * 0.3;
       } else if (p.ammo <= 0 && dist < range * 1.15) {
         // 탄창이 비었으면 재장전될 때까지 거리를 벌리며 피함 (사람처럼 탄창을 관리)
-        moveX = -ux * 0.7 + sx * 0.6; moveY = -uy * 0.7 + sy * 0.6;
+        moveX = -ux * 0.7 + sx * 0.6 + ep.ex * 1.2; moveY = -uy * 0.7 + sy * 0.6 + ep.ey * 1.2;
+      } else if (outranged && myR >= 0.3) {
+        // 상대 사거리가 더 긺: 멀리서 맞고만 있지 않고 지그재그로 빠르게 붙어서 싸움
+        const closeTo = Math.max(55, range * 0.5);
+        if (dist > closeTo) { moveX = ux + sx * 0.55; moveY = uy + sy * 0.55; } else { moveX = sx; moveY = sy; }
+      } else if (outranges) {
+        // 내 사거리가 더 긺: 상대 사거리 바로 바깥을 유지하며 때리고 빠짐 (카이팅)
+        const keepMin = Math.max(near, eRange * 1.1), keepMax = range * 0.95;
+        if (dist < keepMin) { moveX = -ux * 0.9 + sx * 0.5 + ep.ex * 1.2; moveY = -uy * 0.9 + sy * 0.5 + ep.ey * 1.2; }
+        else if (dist > keepMax) { moveX = ux + sx * 0.25; moveY = uy + sy * 0.25; }
+        else { moveX = sx + ep.ex * 0.8; moveY = sy + ep.ey * 0.8; }
       } else if (dist > far) {
         moveX = ux + sx * 0.25; moveY = uy + sy * 0.25;
       } else if (dist < near) {
@@ -8206,8 +8432,19 @@ function runAiBot(match, botId, ai, dt, now) {
     moveX = bx; moveY = by;
   }
 
-  // 벽에 끼면 잠시 옆으로 빠져나옴
   const step = AI_MOVE_SPEED * ai.profile.moveScale * (p.speedMultiplier || 1) * dt;
+
+  // 날아오는 투사체/착지 지점 회피: 위험하면 원래 움직임에 회피 방향을 섞는다 (곧 맞을수록 회피를 우선)
+  const dodge = aiDodgeVector(match, p, ai, now);
+  if (dodge) {
+    const cl2 = Math.hypot(moveX, moveY);
+    const cx2 = cl2 > 0.01 ? moveX / cl2 : 0, cy2 = cl2 > 0.01 ? moveY / cl2 : 0;
+    const k = dodge.urgent > 0.9 ? 0.85 : 0.55;
+    moveX = cx2 * (1 - k) + dodge.x * k;
+    moveY = cy2 * (1 - k) + dodge.y * k;
+  }
+
+  // 벽에 끼면 잠시 옆으로 빠져나옴
   if (ai.lastX !== null && ai.intended) {
     const moved = Math.hypot(p.x - ai.lastX, p.y - ai.lastY);
     ai.stuckTicks = moved < step * 0.3 ? ai.stuckTicks + 1 : 0;
@@ -8222,6 +8459,10 @@ function runAiBot(match, botId, ai, dt, now) {
     ai.stuckTicks = 0;
   }
   if (now < ai.unstickUntil) { moveX = ai.unstickX; moveY = ai.unstickY; }
+  else if (Math.hypot(moveX, moveY) > 0.01 && !p.wallPass) { // 앞에 벽이 있으면 벽을 따라 돌아서 감
+    const sv = aiSteer(match, p, ai, moveX, moveY, step);
+    moveX = sv.x; moveY = sv.y;
+  }
   const ml = Math.hypot(moveX, moveY);
   ai.intended = ml > 0.01;
   ai.lastX = p.x; ai.lastY = p.y;
@@ -8234,7 +8475,7 @@ function runAiBot(match, botId, ai, dt, now) {
   // 모드별 공격 성향: 도망 중에는 가끔 뒤돌아 반격, 숨어 있을 땐 가까이 온 적만 기습, 추격 중에는 더 자주 발사
   const soccerHolding = match.gameMode === 'soccer' && p.hasBall;
   if (soccerHolding && ai.soccerGoalDist < 650 && now >= (ai.nextKickAt || 0)) { h.shoot({}); ai.nextKickAt = now + 700; } // 슈퍼 축구: 골대 가까이에서 공을 참
-  let canAttack = !soccerHolding && ((target && dist <= range * 1.02 + 10 && now >= ai.feintUntil) || (gateAtk && gateDist <= range * 0.95)); // 문지기 모드: 보이는 적이 없으면 사거리 안의 상대 문을 공격
+  let canAttack = !soccerHolding && ((target && dist <= range * 1.02 + 10 && now >= ai.feintUntil && losClear) || (gateAtk && gateDist <= range * 0.95)); // 문지기 모드: 보이는 적이 없으면 사거리 안의 상대 문을 공격
   if (mode === 'flee') canAttack = canAttack && basic.type !== 'charge' && Math.random() < 0.5;
   if (mode === 'hide') canAttack = canAttack && dist < 230;
   const rateScale = mode === 'chase' ? 0.7 : mode === 'flee' ? 1.4 : 1;
@@ -8254,11 +8495,11 @@ function runAiBot(match, botId, ai, dt, now) {
       if (basic.type === 'lob') {
         const maxD = basic.distance;
         const minD = Math.min(maxD, basic.minDistance || 0);
-        h.shoot({ distance: Math.max(minD, Math.min(maxD, aimDist + (Math.random() - 0.5) * 50)) });
+        h.shoot({ distance: Math.max(minD, Math.min(maxD, aimDist + (Math.random() - 0.5) * 20)) });
       } else {
         h.shoot();
       }
-      ai.nextShotAt = now + (p.ammo <= 1 ? 900 + Math.random() * 700 : 350 + Math.random() * 550) * rateScale * ai.profile.shotDelayScale; // 탄창이 1발 이하로 남으면 아껴서 쏨 (쉬움은 더 천천히 쏨)
+      ai.nextShotAt = now + (p.ammo <= 1 ? 900 + Math.random() * 700 : 350 + Math.random() * 550) * rateScale * ai.profile.shotDelayScale; // 탄창이 1발 이하로 남으면 아껴서 쏨
     }
   } else if (p.chargeStartAt && (!target || mode === 'flee')) {
     h.chargeCancel();
@@ -8269,6 +8510,11 @@ function runAiBot(match, botId, ai, dt, now) {
   ai.nextAbilityAt = now + 250;
 
   const offensiveOK = mode === 'fight' || mode === 'chase' || mode === 'desperate' || (mode === 'hide' && target && dist < 230);
+
+  // 하이퍼 차지: 게이지가 가득 찼고 적과 싸울 만한 거리에 있으면 발동 (궁극기보다 먼저 켜서 강화된 궁극기를 씀)
+  if (p.hasHyper && p.hyper && p.hyperCharge >= 100 && !(p.hyperUntil && now < p.hyperUntil)) {
+    if (offensiveOK && target && dist < range * 1.4 && Math.random() < 0.8) h.hyper();
+  }
 
   if (p.ultimateCharge >= 100) {
     const ult = p.ultimate;
@@ -8281,9 +8527,10 @@ function runAiBot(match, botId, ai, dt, now) {
     else if (ult.type === 'leap' || ult.type === 'blackhole') {
       use = !!target && dist <= ult.distance * 0.95 && dist >= Math.min(ult.distance, ult.minDistance || 0);
       arg = { distance: dist };
-    } else if (ult.type === 'dash' || ult.type === 'burst' || ult.type === 'pushDash') use = !!target && dist < ur * (mode === 'chase' ? 1.0 : 0.9);
-    else use = !!target && dist < Math.min(ur, 350);
-    if (use && Math.random() < 0.6 * ai.profile.abilityChance) h.ultimate(arg);
+    } else if (ult.type === 'dash' || ult.type === 'burst' || ult.type === 'pushDash') use = !!target && dist < ur * (mode === 'chase' ? 1.0 : 0.9) && (losClear || !!ult.pierceWalls);
+    else use = !!target && dist < Math.min(ur, 350) && (losClear || !!ult.pierceWalls);
+    const finisher = !!target && enR !== null && enR < 0.4; // 적이 거의 죽었으면 마무리로 바로 사용
+    if (use && Math.random() < (finisher ? 1 : 0.85) * ai.profile.abilityChance) h.ultimate(arg);
   }
 
   const g = p.gadget;
@@ -8309,11 +8556,20 @@ function runAiBot(match, botId, ai, dt, now) {
         h.playerUpdate({ x: p.x, y: p.y, angle: Math.atan2(moveY, moveX) }); // 돌진은 바라보는 방향으로 나가므로, 도망 방향을 보고 사용
       }
     } else use = !!target && dist < 400;
-    if (use && Math.random() < 0.5 * ai.profile.abilityChance) h.gadget();
+    if (use && Math.random() < 0.7 * ai.profile.abilityChance) h.gadget();
   }
 }
 
-// AI 연습 대결 시작: 사람 1명 + 무작위 캐릭터를 쓰는 AI 봇 1명의 1:1 매치. 대기열을 거치지 않고 바로 시작한다.
+// AI전 시작: 사람 1명 + 무작위 캐릭터를 쓰는 AI 봇 1명의 1:1 매치. 대기열을 거치지 않고 바로 시작한다.
+// AI 봇에게 줄 기어: 카탈로그에서 서로 다른 3개를 무작위로 골라 장착한 것으로 계산한다 (사람과 같은 gearBonusOf 를 사용)
+function randomAiGear(charId) {
+  const hasHyperSpec = !!(CHARACTERS[charId] && CHARACTERS[charId].hyper);
+  const pool = GEAR_CATALOG.filter((g) => (hasHyperSpec || g.id !== 'hyper_extend') && gearAllowedOn(g.id, charId)).map((g) => g.id); // 하이퍼가 없는 캐릭터에게 '하이퍼 연장'은 의미 없음
+  for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+  const picks = pool.slice(0, GEAR_MAX_PER_CHARACTER);
+  return gearBonusOf({ gears: picks.map((gearId, i) => ({ uid: `ai_gear_${i}`, gearId, charId })) }, charId);
+}
+
 function startAiMatch(socket, characterId, userKey, level, trophies, skin, hyper, difficulty, gear) {
   const diff = aiDifficultyOf(difficulty);
   const ids = Object.keys(CHARACTERS);
@@ -8322,7 +8578,7 @@ function startAiMatch(socket, characterId, userKey, level, trophies, skin, hyper
   const botSocket = createBotSocket(`ai_${aiBotCounter}`);
   const entries = [
     { socket, name: socket.data.displayName, characterId, userKey, trophies: trophies || 0, level, skin: skin || null, hyper: !!hyper, gear: gear || null },
-    { socket: botSocket, name: `AI(${diff.name}) ${CHARACTERS[botCharId].name}`, characterId: botCharId, userKey: null, trophies: 0, level, isBot: true },
+    { socket: botSocket, name: `AI ${CHARACTERS[botCharId].name}`, characterId: botCharId, userKey: null, trophies: 0, level, isBot: true, hyper: !!CHARACTERS[botCharId].hyper, gear: randomAiGear(botCharId) }, // AI도 무작위 기어 3개를 장착하고, 하이퍼 차지가 있는 캐릭터는 하이퍼 차지를 사용
   ];
   startMatch('1v1', entries, { ai: true, aiDifficulty: diff.id });
 }
