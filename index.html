@@ -1082,12 +1082,8 @@
       <div class="mode-title">3 : 3</div>
       <div class="mode-desc">팀원 두 명과 함께 3대3 팀전</div>
     </div>
-    <div class="mode-card" data-mode="ai" data-difficulty="easy">
-      <div class="mode-title">🤖 쉬움</div>
-      <div class="mode-desc">접속자가 없어도 AI와 대결 (쉬운 AI)<br>이기면 🪙 20코인 + 🏆 트로피 10<br>(전적·연승에는 영향이 없어요)</div>
-    </div>
     <div class="mode-card" data-mode="ai" data-difficulty="hard">
-      <div class="mode-title">🤖 어려움</div>
+      <div class="mode-title">🤖 AI전</div>
       <div class="mode-desc">접속자가 없어도 AI와 대결 (강한 AI)<br>이기면 🪙 50코인 + 🏆 트로피 30<br>(전적·연승에는 영향이 없어요)</div>
     </div>
   </div>
@@ -1388,6 +1384,7 @@
   <div class="ammo-dot" id="ammoDot0"></div>
   <div class="ammo-dot" id="ammoDot1"></div>
   <div class="ammo-dot" id="ammoDot2"></div>
+  <div class="ammo-dot" id="ammoDot3" style="display:none"></div>
 </div>
 
 <!-- 충전 게이지: 똥파리처럼 탄창이 없는 충전 공격 캐릭터일 때만 표시 -->
@@ -2127,7 +2124,7 @@ document.getElementById('missionCloseBtn').addEventListener('click', closeMissio
 // ===== 기어 상점 =====
 // 상점 칸/가격/보유/장착 가능 여부는 전부 서버가 판단하고, 클라이언트는 profile 의 gearShop / gears 를 보여주고 요청만 보낸다
 function gearInfoOf(id) { return ((currentProfile && currentProfile.gearCatalog) || []).find((g) => g.id === id) || null; }
-const GEAR_ICONS = { lifesteal: '🧛', long_shot: '🎯', comeback_power: '🔥', heal_boost: '💚', fast_ult: '⚡', fast_projectile: '🚀', quick_reload: '🔄', regen_shield: '🛡️', quick_gadget: '🧰', desperate_dash: '👟', overwhelming: '⚔️', sacrifice: '🩸', bandage: '🩹', full_hp_guard: '🏰', assassin: '🥷' };
+const GEAR_ICONS = { lifesteal: '🧛', long_shot: '🎯', comeback_power: '🔥', heal_boost: '💚', fast_ult: '⚡', fast_projectile: '🚀', quick_reload: '🔄', regen_shield: '🛡️', quick_gadget: '🧰', desperate_dash: '👟', overwhelming: '⚔️', sacrifice: '🩸', bandage: '🩹', full_hp_guard: '🏰', assassin: '🥷', big_mag: '🎒' };
 function gearIconOf(id) { return GEAR_ICONS[id] || '⚙️'; }
 let gearTab = 'shop'; // 'shop' | 'owned'
 function gearRarityOf(id) { return ((currentProfile && currentProfile.gearRarities) || []).find((r) => r.id === id) || { name: '', color: '#888', price: 0 }; }
@@ -2187,8 +2184,9 @@ function renderGearShop() {
     const opts = myChars.map((c) => {
       const n = gears.filter((x) => x.charId === c.id).length; // 이 캐릭터에 지금 장착된 기어 수 (이 기어 포함)
       const dup = gears.some((x) => x.charId === c.id && x.uid !== g.uid && x.gearId === g.gearId); // 같은 기어가 이미 장착됨
-      const full = (n >= max && g.charId !== c.id) || dup;
-      return `<option value="${escapeHtml(c.id)}" ${g.charId === c.id ? 'selected' : ''} ${full ? 'disabled' : ''}>${escapeHtml(c.name)} ${lvText(c.id)} (${n}/${max})</option>`;
+      const blocked = (info.excludeChars || []).includes(c.id); // 이 기어를 달 수 없는 캐릭터 (큰 탄창 + 탄창 3개 고정인 시스템)
+      const full = (n >= max && g.charId !== c.id) || dup || blocked;
+      return `<option value="${escapeHtml(c.id)}" ${g.charId === c.id ? 'selected' : ''} ${full ? 'disabled' : ''}>${escapeHtml(c.name)} ${lvText(c.id)} (${n}/${max})${blocked ? ' - 장착 불가' : ''}</option>`;
     }).join('');
     return `<div class="gear-owned-row" style="--gear-color:${escapeHtml(r.color)}">
       <div class="gear-icon sm">${gearIconOf(info.id)}</div>
@@ -3405,7 +3403,7 @@ socket.on('findMatchError', (data) => {
 });
 
 let selectedMode = '1v1';
-let selectedAiDifficulty = 'hard'; // AI 대결 난이도: 'easy'(쉬움) / 'hard'(어려움)
+let selectedAiDifficulty = 'hard'; // AI전은 난이도 구분 없이 항상 'hard'(강한 AI)
 
 function goToModeSelect() {
   document.getElementById('joinOverlay').style.display = 'none';
@@ -3425,7 +3423,7 @@ document.querySelectorAll('.mode-card').forEach((card) => {
   card.addEventListener('click', () => {
     if (serverPauseInfo.on) { alert(serverPauseInfo.message || '서버 점검 중입니다. 잠시 후 다시 시도해주세요.'); return; }
     selectedMode = card.getAttribute('data-mode');
-    if (selectedMode === 'ai') selectedAiDifficulty = card.getAttribute('data-difficulty') === 'easy' ? 'easy' : 'hard';
+    if (selectedMode === 'ai') selectedAiDifficulty = 'hard';
     goToCharacterSelect();
   });
 });
@@ -3659,7 +3657,7 @@ function doJoin() {
 function requestMatch() {
   document.getElementById('matchResultOverlay').classList.remove('open');
   document.getElementById('matchingStatus').textContent =
-    selectedMode === 'ai' ? `AI(${selectedAiDifficulty === 'easy' ? '쉬움' : '어려움'}) 상대를 준비하는 중입니다...` : selectedMode === '3v3' ? '3:3 상대를 찾는 중입니다...' : selectedMode === '2v2' ? '2:2 상대를 찾는 중입니다...' : '1:1 상대를 찾는 중입니다...';
+    selectedMode === 'ai' ? 'AI 상대를 준비하는 중입니다...' : selectedMode === '3v3' ? '3:3 상대를 찾는 중입니다...' : selectedMode === '2v2' ? '2:2 상대를 찾는 중입니다...' : '1:1 상대를 찾는 중입니다...';
   document.getElementById('matchingOverlay').classList.add('open');
   if (selectedMode === 'ai') socket.emit('findAiMatch', { characterId: selectedCharacterId, difficulty: selectedAiDifficulty }); // AI 대결: 대기열 없이 바로 시작. 이기면 난이도별 코인 + 고정 트로피
   else socket.emit('findMatch', { name: myName, characterId: selectedCharacterId, mode: selectedMode });
@@ -3955,7 +3953,7 @@ socket.on('matchFound', (data) => {
     addChatMessage({ id: 'system', name: '시스템', color: '#f1c40f', text: `팀원: ${teammate} / 상대: ${opponents}` });
   } else {
     const opponent = (data.opponentNames && data.opponentNames[0]) || '??';
-    addChatMessage({ id: 'system', name: '시스템', color: '#f1c40f', text: matchIsAi ? `상대: ${opponent} (AI ${matchAiInfo ? matchAiInfo.name : ''} 대결 - 이기면 🪙 ${matchAiInfo ? matchAiInfo.coinReward : 0}코인 + 🏆 트로피 ${matchAiInfo ? matchAiInfo.trophyReward : 0}, 전적·연승에는 영향 없음)` : `상대: ${opponent}` });
+    addChatMessage({ id: 'system', name: '시스템', color: '#f1c40f', text: matchIsAi ? `상대: ${opponent} (AI전 - 이기면 🪙 ${matchAiInfo ? matchAiInfo.coinReward : 0}코인 + 🏆 트로피 ${matchAiInfo ? matchAiInfo.trophyReward : 0}, 전적·연승에는 영향 없음)` : `상대: ${opponent}` });
   }
 
   joined = true;
@@ -4038,7 +4036,7 @@ socket.on('matchOver', (data) => {
   if (iWon && data.coinReward) descEl.textContent += `  |  🪙 +${data.coinReward} 코인`;
   if (data.ai) {
     if (iWon && data.aiTrophyReward) descEl.textContent += `  |  🏆 +${data.aiTrophyReward} 트로피`;
-    descEl.textContent += `  |  🤖 AI ${data.aiDifficultyName || ''} 대결은 전적·연승에 영향이 없어요`;
+    descEl.textContent += `  |  🤖 AI전은 전적·연승에 영향이 없어요`;
   }
 
   document.getElementById('matchResultOverlay').classList.add('open');
@@ -4521,9 +4519,11 @@ function updateAmmoDisplay() {
   }
   const ammo = me ? me.ammo : 3;
   const maxAmmo = me ? me.maxAmmo : 3;
-  for (let i = 0; i < maxAmmo; i++) {
+  for (let i = 0; i < 4; i++) { // 기어 '큰 탄창'을 달면 4번째 점도 표시
     const dot = document.getElementById('ammoDot' + i);
-    if (dot) dot.classList.toggle('empty', i >= ammo);
+    if (!dot) continue;
+    dot.style.display = i < maxAmmo ? '' : 'none';
+    dot.classList.toggle('empty', i >= ammo);
   }
 }
 
