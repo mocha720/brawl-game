@@ -1409,7 +1409,7 @@
 </div>
 
 <canvas id="gameCanvas"></canvas>
-<div id="hint">WASD / 방향키: 이동 &nbsp;|&nbsp; 마우스: 조준 &nbsp;|&nbsp; 좌클릭: 기본 공격(탄창 3발) &nbsp;|&nbsp; Enter: 오토에임 &nbsp;|&nbsp; E 또는 궁극기 버튼: 궁극기 장전 후 클릭으로 조준 발사</div>
+<div id="hint">WASD / 방향키: 이동 &nbsp;|&nbsp; 마우스: 조준 &nbsp;|&nbsp; 좌클릭: 기본 공격(탄창 3발) &nbsp;|&nbsp; C: 오토에임 &nbsp;|&nbsp; E 또는 궁극기 버튼: 궁극기 장전 후 클릭으로 조준 발사</div>
 <div id="mobileHint">왼쪽 스틱: 이동 &nbsp;|&nbsp; 오른쪽 스틱: 당겨서 조준, 손을 떼면 발사 &nbsp;|&nbsp; 🎯 버튼: 오토에임 &nbsp;|&nbsp; 🤡 버튼: 궁극기</div>
 
 <!-- 모바일 전용 가상 조이스틱: 왼쪽=이동, 오른쪽=조준+발사 -->
@@ -1438,7 +1438,7 @@
 <div id="autoAimButton" title="오토에임">🎯</div>
 
 <!-- 채팅: Enter 또는 💬 버튼으로 입력창 열기, Enter로 전송, Esc로 취소 -->
-<button id="chatToggleBtn" title="채팅">💬</button>
+<button id="chatToggleBtn" title="채팅 (Enter)">💬</button>
 <div id="chatContainer">
   <div id="chatLog"></div>
   <div id="chatInputRow">
@@ -1861,6 +1861,9 @@ function getAimDistanceFor(me, u) {
   const d = Math.hypot(worldMouseX - me.x, worldMouseY - me.y);
   return Math.max(minD, Math.min(maxD, d));
 }
+function isLeapGadgetArmed(me) {
+  return !!(gadgetArmed && me && me.alive && me.gadget && me.gadget.type === 'leap' && !(me.gadgetCooldownLeft > 0)); // 점프 가젯(시스템): 조준한 거리만큼 점프
+}
 function isLobBasic(me) {
   return !!(me && me.basic && me.basic.type === 'lob');
 }
@@ -1886,7 +1889,8 @@ function fireAttack() {
     updateUltimateButton();
     SFX.ultimate();
   } else if (gadgetArmed && me && me.gadget && !(me.gadgetCooldownLeft > 0)) {
-    socket.emit('gadget');
+    if (me.gadget.type === 'leap') socket.emit('gadget', { distance: Math.round(getAimDistanceFor(me, me.gadget)) }); // 점프 가젯: 조준한 거리만큼 점프
+    else socket.emit('gadget');
     gadgetArmed = false;
     updateGadgetButton();
     SFX.gadget();
@@ -4411,9 +4415,16 @@ chatInputEl.addEventListener('keydown', (e) => {
   }
 });
 
-// Enter로 오토에임 발동 (채팅 입력 중이 아닐 때만). 채팅은 💬 버튼으로 연다.
+// Enter로 채팅창 열기 (다른 입력 중이 아닐 때만)
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && joined && !isChatFocused()) {
+    e.preventDefault();
+    openChatInput();
+  }
+});
+// C 키로 오토에임 발동 (채팅 입력 중이거나 Ctrl/Cmd/Alt 조합일 때는 제외)
+window.addEventListener('keydown', (e) => {
+  if ((e.key === 'c' || e.key === 'C') && joined && !isChatFocused() && !e.ctrlKey && !e.metaKey && !e.altKey) {
     e.preventDefault();
     if (!e.repeat) autoAim();
   }
@@ -12670,7 +12681,8 @@ function render() {
   drawFloatTexts(); // 데미지(빨강)/회복(초록)/보호막 흡수(파랑) 숫자
 
   const meForAim = latestState.players[myId];
-  if (isLeapUltimateArmed(meForAim)) drawLeapIndicator(meForAim);
+  if (isLeapUltimateArmed(meForAim)) drawLeapIndicator(meForAim, meForAim.ultimate);
+  else if (isLeapGadgetArmed(meForAim)) drawLeapIndicator(meForAim, meForAim.gadget);
   else if (isLobAiming(meForAim)) drawLobIndicator(meForAim);
   else if (isTeleportArmed(meForAim)) drawTeleportIndicator(meForAim);
   else drawAimRangeIndicator();
@@ -12782,12 +12794,12 @@ function drawTeleportIndicator(me) {
   ctx.restore();
 }
 
-function drawLeapIndicator(me) {
-  const u = me.ultimate;
+function drawLeapIndicator(me, spec) {
+  const u = spec || me.ultimate;
   const angle = touchAimActive
     ? touchAimAngle
     : Math.atan2(mouseWorldY() - me.y, (mouseX / cameraScale + camera.x) - me.x);
-  const dist = getLeapAimDistance(me);
+  const dist = getAimDistanceFor(me, u);
   const lx = Math.max(PLAYER_RADIUS, Math.min(ARENA_WIDTH - PLAYER_RADIUS, me.x + Math.cos(angle) * dist));
   const ly = Math.max(PLAYER_RADIUS, Math.min(ARENA_HEIGHT - PLAYER_RADIUS, me.y + Math.sin(angle) * dist));
 
@@ -12818,6 +12830,15 @@ function drawLeapIndicator(me) {
   ctx.lineWidth = 3;
   ctx.strokeStyle = 'rgba(162, 155, 254, 0.95)';
   ctx.stroke();
+  if (u.directRadius) { // 정확히 착지하면 더 큰 피해를 주는 안쪽 원
+    ctx.beginPath();
+    ctx.arc(lx, ly, u.directRadius, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 84, 112, 0.28)';
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(255, 84, 112, 0.9)';
+    ctx.stroke();
+  }
   ctx.beginPath();
   ctx.arc(lx, ly, 4, 0, Math.PI * 2);
   ctx.fillStyle = 'rgba(235, 238, 255, 0.95)';
@@ -12833,8 +12854,8 @@ function drawAimRangeIndicator() {
   if (!me || !me.alive) return;
 
   let range, color;
-  if (gadgetArmed && me.gadget && me.gadget.speed) {
-    range = me.gadget.speed * me.gadget.lifetime;
+  if (gadgetArmed && me.gadget && (me.gadget.speed || me.gadget.type === 'leap')) {
+    range = me.gadget.type === 'leap' ? me.gadget.distance : me.gadget.speed * me.gadget.lifetime;
     color = 'rgba(52, 152, 219, 0.9)'; // 가젯은 파란색으로 구분
   } else if (ultimateArmed && me.ultimate && me.ultimate.type !== 'lightning') {
     range = me.ultimate.distance || me.ultimate.range || me.ultimate.speed * me.ultimate.lifetime; // 점프 궁극기는 distance, 부채꼴 궁극기는 range, 발사형은 속도×수명
