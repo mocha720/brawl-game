@@ -1409,7 +1409,7 @@
 </div>
 
 <canvas id="gameCanvas"></canvas>
-<div id="hint">WASD / 방향키: 이동 &nbsp;|&nbsp; 마우스: 조준 &nbsp;|&nbsp; 좌클릭: 기본 공격(탄창 3발) &nbsp;|&nbsp; C: 오토에임 &nbsp;|&nbsp; E 또는 궁극기 버튼: 궁극기 장전 후 클릭으로 조준 발사</div>
+<div id="hint">WASD / 방향키: 이동 &nbsp;|&nbsp; 마우스: 조준 &nbsp;|&nbsp; 좌클릭: 기본 공격(탄창 3발) &nbsp;|&nbsp; 우클릭: 오토에임 &nbsp;|&nbsp; E 또는 궁극기 버튼: 궁극기 장전 후 클릭으로 조준 발사</div>
 <div id="mobileHint">왼쪽 스틱: 이동 &nbsp;|&nbsp; 오른쪽 스틱: 당겨서 조준, 손을 떼면 발사 &nbsp;|&nbsp; 🎯 버튼: 오토에임 &nbsp;|&nbsp; 🤡 버튼: 궁극기</div>
 
 <!-- 모바일 전용 가상 조이스틱: 왼쪽=이동, 오른쪽=조준+발사 -->
@@ -4422,13 +4422,8 @@ window.addEventListener('keydown', (e) => {
     openChatInput();
   }
 });
-// C 키로 오토에임 발동 (채팅 입력 중이거나 Ctrl/Cmd/Alt 조합일 때는 제외)
-window.addEventListener('keydown', (e) => {
-  if ((e.key === 'c' || e.key === 'C') && joined && !isChatFocused() && !e.ctrlKey && !e.metaKey && !e.altKey) {
-    e.preventDefault();
-    if (!e.repeat) autoAim();
-  }
-});
+// 마우스 우클릭으로 오토에임 발동 (캔버스 위에서만, 브라우저 우클릭 메뉴는 막음)
+canvas.addEventListener('contextmenu', (e) => { if (joined) e.preventDefault(); });
 
 // ===== 오토에임: 가장 가까운 표적(적 / 문 / 터렛 / 닭)을 자동으로 조준하고 공격 =====
 let autoAimOverride = null; // { angle, dist, until }
@@ -4578,6 +4573,9 @@ canvas.addEventListener('mousedown', (e) => {
   if (isTouchDevice) return; // 모바일은 오른쪽 조이스틱으로만 발사 (캔버스 탭에 의한 오발사 방지)
   if (e.button === 0 && joined) {
     if (!beginCharge()) fireAttack(); // 충전 공격 캐릭터는 누르는 동안 충전, 그 외에는 즉시 발사
+  } else if (e.button === 2 && joined) {
+    e.preventDefault();
+    autoAim(); // 우클릭: 가장 가까운 표적 오토에임
   }
 });
 
