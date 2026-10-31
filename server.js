@@ -342,7 +342,7 @@ const CHARACTERS = {
   minam: {
     id: 'minam',
     name: '미남',
-    maxHp: 7000,
+    maxHp: 6500, // 1레벨 기준 (기존 7000에서 너프)
     basic: {
       name: '총 쏘기',
       damage: 1540,    // 기존 2200에서 공격력 30% 감소
@@ -746,7 +746,7 @@ const CHARACTERS = {
     gadget: {
       name: '쌈장 변신',
       type: 'samjang',       // 조준한 방향으로 몸이 쌈장(스킨을 장착하면 먹구름)으로 변해 duration초 동안 이동: 그동안 어떤 피해도 받지 않고 벽을 통과함 (맵 끝은 넘지 못함)
-      speed: 260,            // 변신해서 이동하는 속도(px/초) -> 2초 동안 약 520px
+      speed: 130,            // 변신해서 이동하는 속도(px/초) -> 2초 동안 약 260px (이동 거리 50% 감소: 520 -> 260)
       duration: 2,           // 변신 지속 시간(초)
       lifetime: 2,           // (클라이언트 조준 거리 표시용: speed * lifetime = 이동 거리)
     },
@@ -917,14 +917,16 @@ const CHARACTERS = {
       ultimateLandStun: 2,      // 발동 중 궁극기로 띄운 적이 땅에 떨어졌을 때 추가로 기절하는 시간(초)
     },
     gadget: {
-      name: '파괴 바람',
-      type: 'windShot',      // 조준한 방향으로 작은 바람을 발사: 맞은 적의 보호막(슈/엑헤의 가젯, 재생 보호막 기어 등)을 피해 없이 즉시 파괴함
-      breakShield: true,
-      damage: 0,             // 피해는 주지 않음 (보호막만 파괴)
-      speed: 700,
-      radius: 8,             // 작은 바람
-      lifetime: 0.9,         // 사거리 약 630
-      visual: 'wind',
+      name: '점프 강타',
+      type: 'leap',          // 벽을 무시하고 조준한 거리만큼 점프. 착지 지점에 정확히 있던 적은 directDamage, 근처 범위의 적은 damage 피해 + knockback만큼 밀침
+      directDamage: 2000,    // 정확히 착지한 적(착지 지점에서 directRadius 안)이 받는 피해 (1레벨 기준)
+      directRadius: 35,      // '정확히 착지'로 인정하는 반경(px)
+      damage: 1000,          // 착지 지점 근처 범위(landRadius)의 적이 받는 피해 (1레벨 기준)
+      landRadius: 110,       // 착지 지점 주변 피해 반경
+      knockback: 150,        // 범위 안의 적을 착지 지점 바깥쪽으로 밀어내는 거리(px)
+      distance: 300,         // 최대 점프 거리(px)
+      minDistance: 100,      // 최소 점프 거리(px)
+      duration: 0.5,         // 공중에 떠 있는 시간(초). 이 동안은 조작 불가 + 피격/총알 무시
     },
   },
   ddongpari: {
@@ -1065,9 +1067,9 @@ const CHARACTERS = {
     ultimate: {
       name: '바위 돌진',
       type: 'pushDash',      // 조준 방향으로 돌진. 처음 닿은 적(들)은 피해를 입고 돌진이 끝날 때까지 앞에서 밀려가며 지속 피해를 받음 (돌진기를 가진 캐릭터도 돌진이 끊기고 그대로 밀려남)
-      damage: 1500,          // 돌진하다 적에게 닿는 순간 피해 (1레벨 기준)
-      tickDamage: 500,       // 밀려가는 동안 tickInterval초마다 받는 피해 (1레벨 기준)
-      tickInterval: 0.5,
+      damage: 2000,          // 돌진하다 적에게 닿는 순간 피해 (1레벨 기준, 기존 1500)
+      tickDamage: 600,       // 밀려가는 동안 tickInterval초마다 받는 피해 (1레벨 기준, 기존 500)
+      tickInterval: 0.25,    // 기존 0.5초
       speed: 480,            // 돌진 속도(px/초)
       duration: 1.5,         // 돌진 시간(초). 벽에 닿으면 그 자리에서 멈춤
       range: Math.round(480 * 1.5 * PUSH_DASH_DIST_FACTOR), // 총 돌진 거리(px) - 조준선/AI/설명용 (≈ 639)
@@ -1252,6 +1254,10 @@ function describeGadget(g) {
     case 'samjang': {
       const dist = Math.round((g.speed || 0) * (g.duration || 0));
       desc = `조준한 방향으로 몸이 쌈장(스킨을 장착하면 먹구름)으로 변해 ${g.duration}초 동안 약 ${dist}px 이동, 변해 있는 동안 어떤 피해도 받지 않고 벽을 통과함 (맵 끝은 넘지 못함)`;
+      break;
+    }
+    case 'leap': {
+      desc = `조준한 거리(최대 약 ${g.distance}px)만큼 벽을 넘어 점프, 점프하는 동안은 피해를 받지 않음. 착지 지점에 정확히 있던 적은 ${fmtNum(g.directDamage)} 피해, 착지 지점 근처 범위의 적은 ${fmtNum(g.damage)} 피해를 받고 ${g.knockback}px 밀려남`;
       break;
     }
     case 'windShot': {
@@ -4983,6 +4989,7 @@ function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hy
     leapStartX: 0, leapStartY: 0, leapTargetX: 0, leapTargetY: 0,
     leapEndsAt: 0,         // 점프 중 입력을 막기 위해 걸어둔 기절 시각(착지 때 같은 값이면 해제)
     leapDamage: 0, leapRadius: 0,
+    leapDirectDamage: 0, leapDirectRadius: 0, // 정확히 착지한 적에게 주는 피해/반경 (시스템의 가젯 '점프 강타'). 0이면 없음
     leapKnockback: 0,      // 점프 착지 때 적을 밀쳐내는 거리(px) (진우Park의 소다Bang). 0이면 밀치지 않음
     leapStun: 0,           // 점프 착지 때 적을 기절시키는 시간(초) (나이의 슛). 0이면 기절시키지 않음
     ultGadgetLeft: 0,      // 모카의 가젯: 궁극기 게이지가 천천히 채워지는 남은 시간(초)
@@ -6729,7 +6736,7 @@ function registerGameplayHandlers(socket) {
   });
 
   // 가젯 사용 요청 (재사용 대기시간이 끝났을 때만 발동, 탄약/궁극기 게이지는 소모하지 않음)
-  socket.on('gadget', () => {
+  socket.on('gadget', (data) => {
     const match = matches[socketToMatch[socket.id]];
     if (!match || match.over || Date.now() < match.startsAt) return; // 대결 화면(카운트다운) 중에는 입력 무시
     const p = match.players[socket.id];
@@ -6774,8 +6781,37 @@ function registerGameplayHandlers(socket) {
       p.samjangEndsAt = Date.now() + dur * 1000 + 400; // 서버 틱 오차를 감안한 여유
       p.stunnedUntil = p.samjangEndsAt; // 변신하는 동안 입력(이동/공격/스킬)을 막음
     } else if (gadget.type === 'windShot') {
-      // 시스템의 가젯: 조준한 방향으로 보호막 파괴 바람을 발사 (적중 처리는 updateMatch 의 총알-플레이어 판정에서 breakShield 로 처리)
+      // 보호막 파괴 바람(현재 사용하는 캐릭터 없음): 조준한 방향으로 발사 (적중 처리는 updateMatch 의 총알-플레이어 판정에서 breakShield 로 처리)
       spawnProjectiles(match, p, gadget, false);
+    } else if (gadget.type === 'leap') {
+      // 시스템의 점프 강타: 궁극기 점프(모카)와 같은 '공중' 상태로 조준한 거리만큼 점프. 착지 처리는 updateMatch 의 도약 처리가 수행
+      const maxDist = gadget.distance;
+      const minDist = Math.min(maxDist, gadget.minDistance || 0);
+      const sent = data && typeof data.distance === 'number' && Number.isFinite(data.distance) ? data.distance : maxDist;
+      const leapDist = Math.max(minDist, Math.min(maxDist, sent));
+      let tx = p.x;
+      let ty = p.y;
+      for (let d = leapDist; d >= 0; d -= 10) {
+        const cx = Math.max(PLAYER_RADIUS, Math.min(ARENA_WIDTH - PLAYER_RADIUS, p.x + Math.cos(p.angle) * d));
+        const cy = Math.max(PLAYER_RADIUS, Math.min(ARENA_HEIGHT - PLAYER_RADIUS, p.y + Math.sin(p.angle) * d));
+        if (!collidesWithWalls(match.walls, cx, cy, PLAYER_RADIUS + 4)) { tx = cx; ty = cy; break; }
+      }
+      const leapDuration = Math.max(0.3, (gadget.duration || 0.4) * (leapDist / maxDist));
+      p.leaping = true;
+      p.leapTotal = leapDuration;
+      p.leapTimeLeft = p.leapTotal;
+      p.leapStartX = p.x;
+      p.leapStartY = p.y;
+      p.leapTargetX = tx;
+      p.leapTargetY = ty;
+      p.leapDamage = gadget.damage;
+      p.leapDirectDamage = gadget.directDamage || 0;
+      p.leapDirectRadius = gadget.directRadius || 0;
+      p.leapRadius = gadget.landRadius || 90;
+      p.leapKnockback = gadget.knockback || 0;
+      p.leapStun = 0;
+      p.leapEndsAt = Date.now() + leapDuration * 1000 + 400;
+      p.stunnedUntil = p.leapEndsAt;
     } else if (gadget.type === 'heal') {
       // 진우Park의 소다 마시기: 체력을 즉시 healAmount만큼 회복 (최대 체력 초과 불가)
       p.hp = Math.min(p.maxHp, p.hp + (gadget.healAmount || 0) * (p.gearHealMult || 1)); // 회복 기어: 회복량 증가
@@ -7040,6 +7076,8 @@ function registerGameplayHandlers(socket) {
       p.leapTargetX = tx;
       p.leapTargetY = ty;
       p.leapDamage = ult.damage;
+      p.leapDirectDamage = 0;
+      p.leapDirectRadius = 0;
       p.leapRadius = ult.landRadius || 90;
       p.leapKnockback = ult.knockback || 0;
       p.leapStun = ult.stunDuration || 0;
@@ -7289,15 +7327,17 @@ function updateMatch(match, dt, now) {
       const target = match.players[tid];
       if (!target.alive) continue;
       if (!FRIENDLY_FIRE && target.team === p.team) continue;
-      if (Math.hypot(target.x - p.x, target.y - p.y) < PLAYER_RADIUS + p.leapRadius) {
-        applyDamage(match, target, p.leapDamage, pid, { chargeShooter: false });
+      const landDist = Math.hypot(target.x - p.x, target.y - p.y);
+      if (landDist < PLAYER_RADIUS + p.leapRadius) {
+        const directHit = p.leapDirectDamage > 0 && landDist <= p.leapDirectRadius; // 착지 지점에 정확히 있던 적
+        applyDamage(match, target, directHit ? p.leapDirectDamage : p.leapDamage, pid, { chargeShooter: false });
         if (match.over) break;
         // 기절 (나이의 슛): 무적/공중에 있는 대상은 제외. 기절 시간은 기존 기절과 겹치면 더 긴 쪽을 유지
         if (p.leapStun > 0 && target.alive && !target.leaping && !(target.invincibleUntil && Date.now() < target.invincibleUntil)) {
           target.stunnedUntil = Math.max(target.stunnedUntil || 0, Date.now() + p.leapStun * 1000);
         }
         // 밀쳐내기(진우Park): 착지 지점 바깥쪽으로 날려보냄 (무적이면 밀리지 않음). 실제 이동은 넉백 처리 루프가 수행
-        if (p.leapKnockback > 0 && target.alive && !(target.invincibleUntil && Date.now() < target.invincibleUntil)) {
+        if (p.leapKnockback > 0 && !directHit && target.alive && !(target.invincibleUntil && Date.now() < target.invincibleUntil)) {
           let kx = target.x - p.x;
           let ky = target.y - p.y;
           const kd = Math.hypot(kx, ky);
@@ -8915,6 +8955,8 @@ function runAiBot(match, botId, ai, dt, now) {
         const edge = aiEdgePush(p);
         p.angle = Math.atan2(ey + edge.ey * 1.5, ex + edge.ex * 1.5);
       }
+    } else if (g.type === 'leap') {
+      use = offensiveOK && !!target && dist < g.distance * 0.9 && dist > (g.minDistance || 0) * 0.8; // 적이 점프 거리 안에 있을 때 착지 공격 (AI는 적 방향으로 점프)
     } else if (g.type === 'windShot') {
       const gr = g.speed * g.lifetime;
       const enemyP = target && match.players[target.id];
@@ -8934,7 +8976,7 @@ function runAiBot(match, botId, ai, dt, now) {
         h.playerUpdate({ x: p.x, y: p.y, angle: Math.atan2(moveY, moveX) }); // 돌진은 바라보는 방향으로 나가므로, 도망 방향을 보고 사용
       }
     } else use = !!target && dist < 400;
-    if (use && Math.random() < 0.7 * ai.profile.abilityChance) h.gadget();
+    if (use && Math.random() < 0.7 * ai.profile.abilityChance) h.gadget(g.type === 'leap' ? { distance: dist } : undefined); // 점프 가젯은 적에게 정확히 착지하도록 적까지의 거리를 보냄
   }
 }
 
