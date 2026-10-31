@@ -744,11 +744,11 @@ const CHARACTERS = {
       visual: 'chili',
     },
     gadget: {
-      name: '재장전 가속',
-      type: 'reloadBoost',   // 조준 불필요, 즉시 발동
-      instant: true,
-      duration: 3,           // 지속 시간(초)
-      speedMultiplier: 1.25, // 재장전 속도 배율 (1.25 = 25% 빨라짐)
+      name: '쌈장 변신',
+      type: 'samjang',       // 조준한 방향으로 몸이 쌈장(스킨을 장착하면 먹구름)으로 변해 duration초 동안 이동: 그동안 어떤 피해도 받지 않고 벽을 통과함 (맵 끝은 넘지 못함)
+      speed: 260,            // 변신해서 이동하는 속도(px/초) -> 2초 동안 약 520px
+      duration: 2,           // 변신 지속 시간(초)
+      lifetime: 2,           // (클라이언트 조준 거리 표시용: speed * lifetime = 이동 거리)
     },
     // 하이퍼 차지: 캐릭터를 최고 레벨(11)까지 키운 뒤 코인으로 획득하는 추가 스킬. 기본공격을 적중시켜 게이지를 채우고, 가득 차면 발동한다.
     hyper: {
@@ -885,7 +885,7 @@ const CHARACTERS = {
       type: 'combo',         // 탄창 3개가 각각 다른 공격: 1번 원거리 구슬 -> 2번 던지는 구슬 -> 3번 소용돌이 3개
       reloadAllAtOnce: true, // 탄창 3개를 모두 쓴 뒤에야 재장전이 시작되고, ammoRegenSeconds 뒤에 한꺼번에 가득 참
       ammoRegenSeconds: 3,   // 3개를 모두 사용한 뒤 탄창이 리셋되기까지의 시간(초)
-      dash: { speed: 640, duration: 0.12 }, // 공격 버튼을 누르면 먼저 투사체를 발사한 뒤, 이동 중이던 방향으로 이만큼 돌진(약 77px, 기존 속도 800에서 20% 감소). 가만히 서 있으면 돌진하지 않고 공격만 함
+      dash: { speed: 448, duration: 0.12 }, // 공격 버튼을 누르면 먼저 투사체를 발사한 뒤, 이동 중이던 방향으로 이만큼 돌진(약 54px, 기존 약 77px에서 30% 감소). 가만히 서 있으면 돌진하지 않고 공격만 함
       combo: [
         { name: '원거리 구슬', damage: 1000, speed: 800, radius: 9, lifetime: 1.0, visual: 'sysOrb' },   // 사거리 약 800 (원거리)
         { name: '던지는 구슬', damage: 1500, speed: 480, radius: 14, lifetime: 1.0, visual: 'sysThrow' }, // 사거리 약 480 (중거리)
@@ -917,9 +917,14 @@ const CHARACTERS = {
       ultimateLandStun: 2,      // 발동 중 궁극기로 띄운 적이 땅에 떨어졌을 때 추가로 기절하는 시간(초)
     },
     gadget: {
-      name: '긴급 재장전',
-      type: 'reloadAmmo',    // 조준 불필요, 즉시 탄창을 가득 채움 (3개를 다 쓰기 전에도 바로 처음 구슬부터 다시 시작)
-      instant: true,
+      name: '파괴 바람',
+      type: 'windShot',      // 조준한 방향으로 작은 바람을 발사: 맞은 적의 보호막(슈/엑헤의 가젯, 재생 보호막 기어 등)을 피해 없이 즉시 파괴함
+      breakShield: true,
+      damage: 0,             // 피해는 주지 않음 (보호막만 파괴)
+      speed: 700,
+      radius: 8,             // 작은 바람
+      lifetime: 0.9,         // 사거리 약 630
+      visual: 'wind',
     },
   },
   ddongpari: {
@@ -1244,6 +1249,16 @@ function describeGadget(g) {
     case 'reloadAmmo':
       desc = '즉시 탄창을 가득 채움';
       break;
+    case 'samjang': {
+      const dist = Math.round((g.speed || 0) * (g.duration || 0));
+      desc = `조준한 방향으로 몸이 쌈장(스킨을 장착하면 먹구름)으로 변해 ${g.duration}초 동안 약 ${dist}px 이동, 변해 있는 동안 어떤 피해도 받지 않고 벽을 통과함 (맵 끝은 넘지 못함)`;
+      break;
+    }
+    case 'windShot': {
+      const r = rangeOf(g);
+      desc = `조준한 방향으로 작은 바람을 발사${r ? ` (사거리 약 ${r})` : ''}, 맞은 적의 보호막을 피해 없이 즉시 파괴`;
+      break;
+    }
     case 'shield':
       desc = `${fmtNum(g.shieldHp)} 피해를 막아주는 보호막을 두름 (다 막으면 사라짐)`;
       break;
@@ -2006,6 +2021,40 @@ function repeatMissionsView(u) {
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
   {
+    id: '2026-10-31-gwari-gadget',
+    date: '2026-10-31',
+    tag: 'balance',
+    title: '꽈리 가젯 변경',
+    items: [
+      '꽈리의 가젯이 [재장전 가속]에서 [쌈장 변신]으로 바뀌었어요.',
+      '조준한 방향으로 몸이 쌈장으로 변해 2초 동안 이동해요. 변해 있는 동안은 어떤 피해도 받지 않고 벽을 통과할 수 있어요. 맵 끝은 넘어갈 수 없어요.',
+      '스킨을 장착하고 있으면 쌈장 대신 먹구름이 되어 이동해요.',
+    ],
+  },
+  {
+    id: '2026-10-31-system-change',
+    date: '2026-10-31',
+    tag: 'balance',
+    title: '시스템 변경',
+    items: [
+      '기본공격 후 돌진하는 거리가 약 30% 줄었어요. (약 77px → 약 54px)',
+      '가젯이 [긴급 재장전]에서 [파괴 바람]으로 바뀌었어요. 조준한 방향으로 작은 바람을 발사해서, 맞은 적의 보호막을 피해 없이 즉시 파괴해요.',
+    ],
+  },
+  {
+    id: '2026-10-31-ranked',
+    date: '2026-10-31',
+    tag: 'new',
+    title: '🏆 경쟁전 추가!',
+    items: [
+      '메인 화면에 [경쟁전]이 생겼어요. 1:1로만 진행돼요.',
+      '매칭되면 티어가 높은 사람이 먼저 캐릭터를 고르고, 나중에 고르는 사람은 상대가 고른 캐릭터를 보고 골라요. (선택 시간 20초, 시간이 지나면 무작위 선택)',
+      '이기면 경쟁전 점수 50~100점을 얻고, 지면 25~50점을 잃어요. (0점 아래로는 내려가지 않아요)',
+      '티어: 브론즈(0~99) / 실버(100~299) / 골드(300~499) / 다이아(500~999) / 페인(1000~1999) / 초인(2000~2999) / 프로(3000~)',
+      '코인·트로피·전적은 일반 1:1과 똑같이 반영돼요. 경기 도중 나가면 패배로 처리돼요.',
+    ],
+  },
+  {
     id: '2026-10-31-minam-gadget',
     date: '2026-10-31',
     tag: 'balance',
@@ -2487,6 +2536,7 @@ function publicProfile(u) {
   return { username: u.name, coins: u.coins, gems: u.gems || 0, gemResetCost: GEM_SHOP_RESET_COST, wins: u.wins || 0, losses: u.losses || 0, unlocked: effectiveUnlocked(u), prices: allPrices(),
     skinCatalog: skinCatalogPublic(), skins: ownedSkinsOf(u), equippedSkins, hypers: ownedHypersOf(u), gears: ownedGearsOf(u), gearShop: gearShopView(u), gearCatalog: GEAR_CATALOG.map((g) => ({ id: g.id, name: g.name, rarity: g.rarity, desc: g.desc, excludeChars: Object.keys(CHARACTERS).filter((cid) => !gearAllowedOn(g.id, cid)) })), gearRarities: Object.values(GEAR_RARITIES), gearMax: GEAR_MAX_PER_CHARACTER, gearSellRatio: GEAR_SELL_RATIO, hyperPrice: HYPER_PRICE, hyperRequiredLevel: HYPER_REQUIRED_LEVEL, trophyRoad: trophyRoadView(u), trophyRoadPlus: trophyRoadPlusView(u), trophies, streaks, missions: missionsView(u), repeatMissions: repeatMissionsView(u), ranks: TROPHY_RANKS, characters: buildCharacterInfo(levels), levels, levelTable: LEVEL_TABLE_PUBLIC, maxLevel: MAX_CHARACTER_LEVEL, isAdmin: u.key === ADMIN_KEY, announcements: allAnnouncements(), dailyDraw: dailyDrawView(u),
     aiBonusEvent: halloweenBonusView(),
+    rankedScore: u.rankedScore || 0, rankedTiers: RANKED_TIERS.map((t) => ({ id: t.id, name: t.name, min: t.min, icon: t.icon })),
     events: activeEvents().map((e) => ({ id: e.id, name: e.name, coins: e.coins || 0, gems: e.gems || 0, desc: e.desc, endsAt: e.endsAt || null, claimed: (u.redeemed || []).includes(eventClaimCode(e)) })) };
 }
 
@@ -2708,6 +2758,16 @@ function createFileDb() {
       }
       scheduleSave();
       return cloneUser(u);
+    },
+    // 경쟁전 점수 증감 (0점 아래로는 내려가지 않음). { before, after, user } 를 돌려줌
+    async addRankedScore(key, delta) {
+      const u = users[key];
+      if (!u) return null;
+      const before = u.rankedScore || 0;
+      const after = Math.max(0, before + delta);
+      u.rankedScore = after;
+      scheduleSave();
+      return { before, after, user: cloneUser(u) };
     },
     // 미션 진행도 누적 (날짜가 바뀌었으면 먼저 초기화). incs: { 미션id: 증가량 }
     async addMissionProgress(key, day, incs) {
@@ -3066,6 +3126,18 @@ function createMongoDb(uri) {
     // 날짜가 바뀐 계정의 미션 기록을 오늘 것으로 초기화 (이미 오늘 날짜면 아무 일도 하지 않음)
     async resetMissionsIfNewDay(key, day) {
       await col.updateOne({ key, 'missions.day': { $ne: day } }, { $set: { missions: { day, progress: {}, claimed: [] } } });
+    },
+    // 경쟁전 점수 증감 (0점 아래로는 내려가지 않음). 한 번의 원자적 연산으로 처리하고 { before, after, user } 를 돌려줌
+    async addRankedScore(key, delta) {
+      const beforeDoc = await col.findOneAndUpdate(
+        { key },
+        [{ $set: { rankedScore: { $max: [0, { $add: [{ $ifNull: ['$rankedScore', 0] }, delta] }] } } }],
+        { returnDocument: 'before', projection }
+      );
+      if (!beforeDoc) return null;
+      const before = beforeDoc.rankedScore || 0;
+      const after = Math.max(0, before + delta);
+      return { before, after, user: { ...beforeDoc, rankedScore: after } };
     },
     async addMissionProgress(key, day, incs) {
       const inc = {};
@@ -4090,6 +4162,7 @@ async function settleMatch(match, winnerTeam, reason, leaverId) {
       console.error('매치 결과 저장 실패', key, e);
     }
   }
+  if (match.ranked) await settleRankedMatch(match, winnerTeam, reason, leaverId); // 경쟁전 점수 (일반 정산이 끝난 뒤 한 번만 실행됨)
 }
 
 // 플레이어 색상 팔레트 (랜덤 배정)
@@ -4099,6 +4172,194 @@ const COLORS = ['#e74c3c', '#3498db', '#2ecc71', '#f1c40f', '#9b59b6', '#e67e22'
 // queues: { '1v1': [...], '2v2': [...] } - 모드별 대기열. 각 항목은 { socket, name, characterId }
 const queues = {};
 for (const mode in MODES) queues[mode] = [];
+
+// ===== 🏆 경쟁전 =====
+// 1:1 전용. 매칭되면 티어가 높은 사람부터 캐릭터를 고른다(드래프트). 이긴 사람은 경쟁전 점수 50~100을 얻고, 진 사람은 25~50점을 잃는다 (0점 아래로는 내려가지 않음).
+// 티어는 점수 구간으로 정해진다 (구간의 시작 점수 포함): 브론즈 0~99 / 실버 100~299 / 골드 300~499 / 다이아 500~999 / 페인 1000~1999 / 초인 2000~2999 / 프로 3000~
+// 코인/트로피/전적/연승/미션은 일반 1:1 대결과 똑같이 정산되고, 경쟁전 점수는 그에 더해 따로 쌓인다.
+const RANKED_TIERS = [
+  { id: 'bronze', name: '브론즈', min: 0, icon: '🥉' },
+  { id: 'silver', name: '실버', min: 100, icon: '🥈' },
+  { id: 'gold', name: '골드', min: 300, icon: '🥇' },
+  { id: 'diamond', name: '다이아', min: 500, icon: '💎' },
+  { id: 'fame', name: '페인', min: 1000, icon: '🌟' },
+  { id: 'superhuman', name: '초인', min: 2000, icon: '⚡' },
+  { id: 'pro', name: '프로', min: 3000, icon: '👑' },
+];
+const RANKED_WIN_MIN = 50, RANKED_WIN_MAX = 100;   // 승리 시 얻는 점수 범위
+const RANKED_LOSS_MIN = 25, RANKED_LOSS_MAX = 50;  // 패배 시 잃는 점수 범위
+const RANKED_PICK_MS = 20000;                      // 캐릭터 선택 제한 시간 (시간이 지나면 무작위로 자동 선택)
+function rankedTierIndex(score) {
+  let idx = 0;
+  for (let i = 0; i < RANKED_TIERS.length; i++) if ((score || 0) >= RANKED_TIERS[i].min) idx = i;
+  return idx;
+}
+function rankedTierOf(score) { return RANKED_TIERS[rankedTierIndex(score)]; }
+function randIntRange(min, max) { return min + Math.floor(Math.random() * (max - min + 1)); }
+
+queues.ranked = []; // 경쟁전 대기열: { socket, name, userKey, rankedScore } (MODES 에는 넣지 않음 - 인원/보상 설정은 일반 1:1 을 그대로 씀)
+const rankedDrafts = {};   // draftId -> 캐릭터 선택 중인 경쟁전 상태
+const socketToDraft = {};  // socketId -> draftId
+let rankedDraftCounter = 0;
+
+// 점수 차이가 가장 적은 사람끼리 짝지음 (가장 오래 기다린 사람 기준). 같은 계정끼리는 매칭하지 않는다.
+function tryRankedMatchmaking() {
+  const beforeLength = queues.ranked.length;
+  queues.ranked = queues.ranked.filter((q) => q.socket.connected);
+  let matched = false;
+  while (queues.ranked.length >= 2) {
+    const first = queues.ranked[0];
+    let bestIdx = -1;
+    let bestDiff = Infinity;
+    for (let i = 1; i < queues.ranked.length; i++) {
+      const q = queues.ranked[i];
+      if (q.userKey === first.userKey) continue;
+      const d = Math.abs((q.rankedScore || 0) - (first.rankedScore || 0));
+      if (d < bestDiff) { bestDiff = d; bestIdx = i; }
+    }
+    if (bestIdx < 0) break;
+    const second = queues.ranked.splice(bestIdx, 1)[0];
+    queues.ranked.shift();
+    startRankedDraft(first, second);
+    matched = true;
+  }
+  if (matched || queues.ranked.length !== beforeLength) broadcastQueueStatus('ranked');
+}
+
+// 두 사람이 매칭되면 캐릭터 선택 단계를 연다. 티어가 높은 사람이 먼저 고르고(같은 티어면 무작위), 나중에 고르는 사람은 먼저 고른 캐릭터를 보고 고른다.
+function startRankedDraft(a, b) {
+  const ta = rankedTierIndex(a.rankedScore), tb = rankedTierIndex(b.rankedScore);
+  let order = [a, b];
+  if (tb > ta || (tb === ta && Math.random() < 0.5)) order = [b, a];
+  rankedDraftCounter += 1;
+  const draft = { id: `draft_${rankedDraftCounter}`, entries: order, picks: {}, turn: 0, endsAt: 0, timer: null, finishing: false };
+  rankedDrafts[draft.id] = draft;
+  order.forEach((e) => { socketToDraft[e.socket.id] = draft.id; });
+  rankedSetTurnTimer(draft);
+  emitRankedDraft(draft);
+}
+
+// 이 사람이 고를 수 있는 캐릭터: 잠금해제한 캐릭터. 나중에 고르는 사람은 먼저 고른 캐릭터를 고를 수 없다 (고를 수 있는 게 그것뿐이면 예외로 허용)
+function rankedOptionsFor(draft, socket) {
+  const all = [...socket.data.unlocked].filter((id) => CHARACTERS[id]);
+  const firstId = draft.entries[0].socket.id;
+  if (socket.id === firstId) return all;
+  const taken = draft.picks[firstId];
+  const rest = all.filter((id) => id !== taken);
+  return rest.length ? rest : all;
+}
+
+function emitRankedDraft(draft) {
+  const cur = draft.entries[draft.turn];
+  draft.entries.forEach((e, idx) => {
+    const other = draft.entries[1 - idx];
+    const tMe = rankedTierOf(e.rankedScore), tOp = rankedTierOf(other.rankedScore);
+    const myTurn = cur.socket.id === e.socket.id;
+    e.socket.emit('rankedDraft', {
+      draftId: draft.id,
+      you: { name: e.name, tier: tMe.name, icon: tMe.icon, score: e.rankedScore || 0 },
+      opponent: { name: other.name, tier: tOp.name, icon: tOp.icon, score: other.rankedScore || 0 },
+      youFirst: idx === 0,
+      yourTurn: myTurn,
+      endsInMs: Math.max(0, draft.endsAt - Date.now()),
+      opponentPick: idx === 1 ? (draft.picks[other.socket.id] || null) : null, // 먼저 고른 캐릭터는 나중에 고르는 사람에게 보임
+      options: myTurn ? rankedOptionsFor(draft, e.socket) : [],
+    });
+  });
+}
+
+function rankedSetTurnTimer(draft) {
+  if (draft.timer) clearTimeout(draft.timer);
+  draft.endsAt = Date.now() + RANKED_PICK_MS;
+  draft.timer = setTimeout(() => {
+    const d = rankedDrafts[draft.id];
+    if (!d || d.finishing) return;
+    const e = d.entries[d.turn];
+    const opts = rankedOptionsFor(d, e.socket);
+    if (!opts.length) { rankedCancelDraftFor(e.socket.id); return; }
+    rankedApplyPick(d, e, opts[Math.floor(Math.random() * opts.length)]); // 시간 초과: 무작위 자동 선택
+  }, RANKED_PICK_MS + 500);
+}
+
+function rankedApplyPick(draft, entry, characterId) {
+  draft.picks[entry.socket.id] = characterId;
+  if (draft.turn === 0) {
+    draft.turn = 1;
+    rankedSetTurnTimer(draft);
+    emitRankedDraft(draft);
+  } else {
+    finishRankedDraft(draft);
+  }
+}
+
+// 둘 다 골랐으면 서버 저장소에서 레벨/스킨/하이퍼/기어를 읽어 일반 1:1 매치로 시작한다
+async function finishRankedDraft(draft) {
+  if (draft.finishing) return;
+  draft.finishing = true;
+  if (draft.timer) { clearTimeout(draft.timer); draft.timer = null; }
+  const entries = [];
+  for (const e of draft.entries) {
+    const characterId = draft.picks[e.socket.id];
+    let trophies = 0, level = 1, skin = null, hyper = false, gear = null;
+    try {
+      const u = await db.findUser(e.userKey);
+      trophies = (u && u.trophies && u.trophies[characterId]) || 0;
+      level = levelOf(u, characterId);
+      skin = equippedSkinOf(u, characterId);
+      hyper = hasHyper(u, characterId);
+      gear = gearBonusOf(u, characterId);
+    } catch (err) {
+      console.error('경쟁전 캐릭터 정보 조회 실패', e.userKey, err);
+    }
+    entries.push({ socket: e.socket, name: e.name, characterId, userKey: e.userKey, trophies, level, skin, hyper, gear });
+  }
+  delete rankedDrafts[draft.id];
+  draft.entries.forEach((e) => { if (socketToDraft[e.socket.id] === draft.id) delete socketToDraft[e.socket.id]; });
+  if (entries.some((e) => !e.socket.connected || socketToMatch[e.socket.id])) { // 조회하는 사이에 누가 나간 경우: 점수 변화 없이 취소
+    entries.forEach((e) => { if (e.socket.connected) e.socket.emit('rankedCancelled', { message: '상대가 나가서 경쟁전이 취소됐어요. 점수는 변하지 않아요.' }); });
+    return;
+  }
+  startMatch('1v1', entries, { ranked: true });
+}
+
+// 캐릭터 선택 중에 누가 나가면 점수 변화 없이 취소하고, 남은 사람에게 알린다
+function rankedCancelDraftFor(socketId) {
+  const id = socketToDraft[socketId];
+  const draft = id && rankedDrafts[id];
+  if (!draft) { delete socketToDraft[socketId]; return; }
+  if (draft.finishing) return; // 마무리 중이면 finishRankedDraft 가 연결 상태를 확인해서 처리
+  if (draft.timer) { clearTimeout(draft.timer); draft.timer = null; }
+  delete rankedDrafts[id];
+  draft.entries.forEach((e) => {
+    delete socketToDraft[e.socket.id];
+    if (e.socket.id !== socketId && e.socket.connected) e.socket.emit('rankedCancelled', { message: '상대가 나가서 경쟁전이 취소됐어요. 점수는 변하지 않아요.' });
+  });
+}
+
+// 경쟁전 점수 정산: 정상 종료는 이긴 사람 +50~100 / 진 사람 -25~50. 중도 이탈로 끝나면 나간 사람은 패배로 감점, 남은 사람은 승리로 점수를 얻는다.
+async function settleRankedMatch(match, winnerTeam, reason, leaverId) {
+  const normalEnd = reason === 'scoreLimit' || reason === 'gateDestroyed' || reason === 'gemsCollected' || reason === 'goalsScored';
+  for (const pid in match.players) {
+    const key = match.accounts[pid];
+    if (!key) continue;
+    const p = match.players[pid];
+    const won = p.team === winnerTeam;
+    const lost = !won && (normalEnd || pid === leaverId);
+    if (!won && !lost) continue;
+    const delta = won ? randIntRange(RANKED_WIN_MIN, RANKED_WIN_MAX) : -randIntRange(RANKED_LOSS_MIN, RANKED_LOSS_MAX);
+    try {
+      const r = await db.addRankedScore(key, delta);
+      if (!r) continue;
+      const s = io.sockets.sockets.get(pid);
+      if (!s) continue; // 나간 사람에게는 보낼 곳이 없음 (점수는 이미 저장됨)
+      const tBefore = rankedTierIndex(r.before), tAfter = rankedTierIndex(r.after);
+      const t = RANKED_TIERS[tAfter];
+      s.emit('rankedResult', { won, delta: r.after - r.before, score: r.after, tierId: t.id, tierName: t.name, icon: t.icon, tierChange: tAfter - tBefore });
+    } catch (e) {
+      console.error('경쟁전 점수 저장 실패', key, e);
+    }
+  }
+}
 
 // matches: { [matchId]: matchState } - 진행 중인 매치들. 매치끼리는 서로 상태를 절대 공유하지 않음
 const matches = {};
@@ -4714,7 +4975,9 @@ function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hy
     hyperLeft: 0,    // 남은 발동 시간(초) - 클라이언트 표시용 (서버/클라이언트 시계가 달라서 시각 대신 남은 시간을 보냄)
     gadget: character.gadget || null, // 캐릭터 전용 가젯 (없으면 null)
     gadgetCooldownLeft: 0, // 가젯 재사용까지 남은 시간(초). 0이면 사용 가능
-    leaping: false,        // 모카의 궁극기 점프 중이면 true (공중: 조작 불가, 피격/총알 무시)
+    leaping: false,        // 모카의 궁극기 점프 중이면 true (공중: 조작 불가, 피격/총알 무시). 꽈리의 쌈장 변신 중에도 같은 상태를 씀
+    samjang: false,        // 꽈리의 가젯 '쌈장 변신' 중이면 true ('sauce' 쌈장 / 'cloud' 먹구름 모양은 samjangForm)
+    samjangForm: null,
     leapTimeLeft: 0,
     leapTotal: 0,
     leapStartX: 0, leapStartY: 0, leapTargetX: 0, leapTargetY: 0,
@@ -5310,6 +5573,7 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
       baseSpeed: spec.speed * gearProjSpeed,
       bounce: bounceTime > 0, // true면 벽/맵 끝에 닿아도 사라지지 않고 튕김 (moveBouncingBullet)
       pierceWalls: !!spec.pierceWalls, // 성스럽다의 칼 던지기처럼 벽(장애물)을 무시하고 통과하는 발사체
+      breakShield: !!spec.breakShield, // true면 피해 없이 맞은 적의 보호막만 즉시 파괴 (시스템의 가젯 '파괴 바람')
       // 원효대사의 해골물 뿌리기처럼 벽/적에 닿으면 물웅덩이를 생성하는 발사체를 위한 부가 정보
       poolOnImpact: !!spec.poolOnImpact,
       poolRadius: spec.poolRadius ? spec.poolRadius * hyperPoolRadius : spec.poolRadius,
@@ -5734,6 +5998,7 @@ function startMatch(mode, entries, opts = {}) {
     match.settled = true;  // 일반 정산(트로피/전적)은 건너뜀. AI 보상은 settleAiMatch 가 따로 처리
     match.aiBots = {};     // botSocketId -> AI 상태
   }
+  if (opts.ranked) match.ranked = true; // 경쟁전: 일반 1:1 정산에 더해 경쟁전 점수도 정산 (settleRankedMatch)
   matches[matchId] = match;
 
   // 대기열에 들어온 순서대로 앞쪽 teamSize명은 A팀(맵 위쪽), 나머지는 B팀(맵 아래쪽)으로 배정
@@ -5782,6 +6047,7 @@ function startMatch(mode, entries, opts = {}) {
       opponentNames,
       roster,
       ai: !!opts.ai, // AI 연습 대결 여부
+      ranked: !!opts.ranked, // 경쟁전 여부
       aiDifficulty: opts.ai ? aiDifficultyOf(opts.aiDifficulty) : null, // { id, name, coinReward, trophyReward }
       gameMode: 'knockout',
       vote: match.voteOpen ? { options: Object.keys(GAME_MODES).map((id) => ({ id, name: GAME_MODES[id].name, desc: GAME_MODES[id].desc })), maps: MAP_LAYOUTS.map((m) => ({ id: m.id, name: m.name, walls: m.walls, bushes: m.bushes })), endsInMs: MODE_VOTE_MS } : null,
@@ -5796,7 +6062,7 @@ function startMatch(mode, entries, opts = {}) {
 // (기존에는 새로 들어온 사람에게만 보내서, 먼저 기다리던 사람 화면에는 인원수가 갱신되지 않는 버그가 있었음)
 function broadcastQueueStatus(mode) {
   const list = queues[mode];
-  const needed = MODES[mode].size;
+  const needed = mode === 'ranked' ? 2 : MODES[mode].size;
   list.forEach((q) => {
     if (q.socket.connected) {
       q.socket.emit('queueUpdate', { mode, waiting: list.length, needed });
@@ -5817,6 +6083,7 @@ function leaveQueue(socketId) {
 }
 
 function isQueued(socketId) {
+  if (socketToDraft[socketId]) return true; // 경쟁전 캐릭터 선택 중에도 다른 매칭/AI전을 시작하지 못하게 대기 중으로 취급
   return Object.keys(queues).some((mode) => queues[mode].some((q) => q.socket.id === socketId));
 }
 
@@ -6089,6 +6356,39 @@ io.on('connection', (socket) => {
     if (mode) broadcastQueueStatus(mode); // 남아있는 대기자들에게 줄어든 인원수를 알림
   });
 
+  // 경쟁전 대기열 참가: 캐릭터는 매칭된 뒤 선택 단계에서 고른다 (티어가 높은 사람이 먼저)
+  socket.on('findRankedMatch', async () => {
+    if (socketToMatch[socket.id]) return;
+    if (isQueued(socket.id)) return;
+    if (!socket.data.userKey) { socket.emit('findMatchError', { message: '로그인이 필요합니다.' }); return; }
+    if (serverPause.on) { socket.emit('findMatchError', { message: serverPause.message }); return; }
+    const userKey = socket.data.userKey;
+    let rankedScore = 0; // 점수는 클라이언트가 보낸 값이 아니라 서버 저장소의 값을 사용
+    try {
+      const u = await db.findUser(userKey);
+      rankedScore = (u && u.rankedScore) || 0;
+    } catch (e) {
+      console.error('경쟁전 점수 조회 실패', userKey, e);
+    }
+    if (!socket.connected || socket.data.userKey !== userKey) return;
+    if (socketToMatch[socket.id] || isQueued(socket.id)) return;
+    if (serverPause.on) { socket.emit('findMatchError', { message: serverPause.message }); return; }
+    queues.ranked.push({ socket, name: socket.data.displayName, userKey, rankedScore });
+    broadcastQueueStatus('ranked');
+    tryRankedMatchmaking();
+  });
+
+  // 경쟁전 캐릭터 선택: 내 차례일 때만, 내가 고를 수 있는 캐릭터만 인정
+  socket.on('rankedPick', (data) => {
+    const draft = rankedDrafts[socketToDraft[socket.id]];
+    if (!draft || draft.finishing) return;
+    const entry = draft.entries[draft.turn];
+    if (!entry || entry.socket.id !== socket.id) return;
+    const characterId = data && data.characterId;
+    if (typeof characterId !== 'string' || !rankedOptionsFor(draft, socket).includes(characterId)) return;
+    rankedApplyPick(draft, entry, characterId);
+  });
+
   // AI 연습 대결: 대기열 없이 바로 AI 봇 1명과 1:1 매치를 시작한다.
   // 전적/연승/미션은 기록되지 않고(match.settled 를 처음부터 true 로 둠), 이기면 난이도별 코인 + 고정 트로피만 받는다 (settleAiMatch).
   socket.on('findAiMatch', async (data) => {
@@ -6155,6 +6455,7 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     console.log(`플레이어 접속 해제: ${socket.id}`);
     releaseAccount(socket);
+    rankedCancelDraftFor(socket.id); // 경쟁전 캐릭터 선택 중이었다면 점수 변화 없이 취소
     const queuedMode = Object.keys(queues).find((m) => queues[m].some((q) => q.socket.id === socket.id));
     leaveQueue(socket.id);
     if (queuedMode) broadcastQueueStatus(queuedMode); // 남아있는 대기자들에게 줄어든 인원수를 알림
@@ -6459,6 +6760,22 @@ function registerGameplayHandlers(socket) {
       spawnProjectiles(match, p, gadget, false);
       effectIdCounter += 1;
       match.effects.push({ id: effectIdCounter, type: 'poopLaunch', x: p.x + Math.cos(p.angle) * (PLAYER_RADIUS + 5), y: p.y + Math.sin(p.angle) * (PLAYER_RADIUS + 5), angle: p.angle, life: 0.3, maxLife: 0.3 }); // 발사 연기 연출
+    } else if (gadget.type === 'samjang') {
+      // 꽈리의 가젯: 조준한 방향으로 쌈장(스킨 장착 시 먹구름)이 되어 duration초 동안 직진. 모카의 점프(leaping)와 같은 '공중' 상태를 써서
+      // 모든 피해/총알/범위 효과를 받지 않고 조작은 막힌다. 실제 이동은 updateMatch 의 samjang 처리가 수행 (벽은 통과, 맵 끝은 막힘)
+      const dur = gadget.duration || 2;
+      p.leaping = true;
+      p.samjang = true;
+      p.samjangForm = p.skin ? 'cloud' : 'sauce'; // 스킨을 장착했으면 먹구름 모양
+      p.samjangDirX = Math.cos(p.angle);
+      p.samjangDirY = Math.sin(p.angle);
+      p.samjangSpeed = gadget.speed || 260;
+      p.samjangTimeLeft = dur;
+      p.samjangEndsAt = Date.now() + dur * 1000 + 400; // 서버 틱 오차를 감안한 여유
+      p.stunnedUntil = p.samjangEndsAt; // 변신하는 동안 입력(이동/공격/스킬)을 막음
+    } else if (gadget.type === 'windShot') {
+      // 시스템의 가젯: 조준한 방향으로 보호막 파괴 바람을 발사 (적중 처리는 updateMatch 의 총알-플레이어 판정에서 breakShield 로 처리)
+      spawnProjectiles(match, p, gadget, false);
     } else if (gadget.type === 'heal') {
       // 진우Park의 소다 마시기: 체력을 즉시 healAmount만큼 회복 (최대 체력 초과 불가)
       p.hp = Math.min(p.maxHp, p.hp + (gadget.healAmount || 0) * (p.gearHealMult || 1)); // 회복 기어: 회복량 증가
@@ -6902,13 +7219,51 @@ function updatePushDash(match, p, dt, now) {
   if (blocked || p.dashTimeLeft <= 0) endPushDash(match, p); // 벽에 닿거나 돌진 시간이 끝나면 멈추고 모두 풀어줌
 }
 
+// 벽과 겹치지 않는 가장 가까운 자리를 찾는다 (쌈장 변신이 끝났을 때 벽 안이면 가까운 빈 곳으로 옮기는 데 사용)
+function nearestFreePoint(walls, x, y) {
+  for (let r = 0; r <= 480; r += 12) {
+    const steps = r === 0 ? 1 : Math.max(8, Math.round((2 * Math.PI * r) / 24));
+    for (let i = 0; i < steps; i++) {
+      const a = (i / steps) * Math.PI * 2;
+      const cx = Math.max(PLAYER_RADIUS, Math.min(ARENA_WIDTH - PLAYER_RADIUS, x + Math.cos(a) * r));
+      const cy = Math.max(PLAYER_RADIUS, Math.min(ARENA_HEIGHT - PLAYER_RADIUS, y + Math.sin(a) * r));
+      if (!collidesWithWalls(walls, cx, cy, PLAYER_RADIUS + 2)) return { x: cx, y: cy };
+    }
+  }
+  return randomSpawnPoint(walls);
+}
+
+// 꽈리의 쌈장 변신 종료: 상태를 풀고, 벽 안에서 끝났으면 가까운 빈 곳으로 옮긴다
+function endSamjang(match, p) {
+  p.samjang = false;
+  p.leaping = false;
+  if (p.stunnedUntil === p.samjangEndsAt) p.stunnedUntil = 0; // 변신 때문에 걸어둔 입력 차단만 해제 (다른 기절은 유지)
+  if (p.alive && collidesWithWalls(match.walls, p.x, p.y, PLAYER_RADIUS)) {
+    const f = nearestFreePoint(match.walls, p.x, p.y);
+    p.x = f.x;
+    p.y = f.y;
+  }
+}
+
 // ===== 매치별 물리 처리 (한 틱 분량) =====
 function updateMatch(match, dt, now) {
+  // 꽈리의 쌈장 변신: 정한 방향으로 직진 (벽은 통과하지만 맵 끝은 넘지 못함). 시간이 다 되면 변신이 풀림
+  for (const pid in match.players) {
+    const p = match.players[pid];
+    if (!p.samjang) continue;
+    if (!p.alive) { endSamjang(match, p); continue; }
+    p.samjangTimeLeft -= dt;
+    const step = (p.samjangSpeed || 260) * dt;
+    p.x = Math.max(PLAYER_RADIUS, Math.min(ARENA_WIDTH - PLAYER_RADIUS, p.x + p.samjangDirX * step));
+    p.y = Math.max(PLAYER_RADIUS, Math.min(ARENA_HEIGHT - PLAYER_RADIUS, p.y + p.samjangDirY * step));
+    if (p.samjangTimeLeft <= 0) endSamjang(match, p);
+  }
+
   // 모카의 도약 강습: 벽을 무시하고 시작점 -> 착지점으로 직선 이동하다가, 시간이 다 되면 착지하면서 주변 적에게 피해
   for (const pid in match.players) {
     if (match.over) break;
     const p = match.players[pid];
-    if (!p.leaping) continue;
+    if (!p.leaping || p.samjang) continue; // 쌈장 변신(samjang)은 위에서 따로 처리
     if (!p.alive) { p.leaping = false; continue; }
 
     p.leapTimeLeft -= dt;
@@ -7427,6 +7782,16 @@ function updateMatch(match, dt, now) {
           break;
         }
         hitBulletIds.add(b.id);
+        if (b.breakShield) {
+          // 파괴 바람(시스템의 가젯): 피해/궁극기 충전 없이 맞은 적의 보호막만 즉시 파괴 (무적 중이어도 보호막은 파괴됨)
+          if (target.shieldHp > 0) {
+            target.shieldHp = 0;
+            target.lastHitAt = Date.now(); // 재생 보호막 기어: 보호막이 깨진 것도 '피해를 입은 것'으로 쳐서 재생 대기시간이 새로 시작됨
+            effectIdCounter += 1;
+            match.effects.push({ id: effectIdCounter, type: 'shieldBreak', x: target.x, y: target.y, life: 0.4, maxLife: 0.4 });
+          }
+          break;
+        }
         if (b.explodeDamage > 0) {
           // 폭탄 똥: 적에게 닿으면 그 자리에서 폭발 (직접 적중 피해는 따로 없고 폭발 피해만 줌)
           explodePoopBomb(match, b);
@@ -7465,7 +7830,7 @@ function updateMatch(match, dt, now) {
   for (const b of match.bullets) {
     if (match.over) break;
     if (hitBulletIds.has(b.id)) continue;
-    if (b.launchDuration > 0) continue; // 띄우기 소용돌이는 터렛/닭에 영향 없이 통과
+    if (b.launchDuration > 0 || b.breakShield) continue; // 띄우기 소용돌이/파괴 바람은 터렛/닭에 영향 없이 통과
     if (b.lob) continue;
 
     for (const turret of match.turrets) {
@@ -7502,7 +7867,7 @@ function updateMatch(match, dt, now) {
   for (const b of match.bullets) {
     if (match.over) break;
     if (hitBulletIds.has(b.id)) continue;
-    if (b.launchDuration > 0) continue;
+    if (b.launchDuration > 0 || b.breakShield) continue;
     if (b.lob) continue;
     for (const chicken of match.chickens) {
       if (chicken.hp <= 0) continue;
@@ -8541,7 +8906,20 @@ function runAiBot(match, botId, ai, dt, now) {
     else if (g.type === 'reloadAmmo') use = p.ammo === 0;
     else if (g.type === 'reloadBoost') use = !!target && p.ammo <= 1;
     else if (g.type === 'ultCharge') use = !!target && p.ultimateCharge < 60;
-    else if (g.type === 'burst' || g.type === 'poopBomb') {
+    else if (g.type === 'samjang') {
+      use = escaping && !!target && dist < 380; // 위험할 때 탈출용: 적의 반대쪽(맵 안쪽 쪽으로 보정)으로 이동
+      if (use) {
+        let ex = p.x - target.x, ey = p.y - target.y;
+        const el = Math.hypot(ex, ey) || 1;
+        ex /= el; ey /= el;
+        const edge = aiEdgePush(p);
+        p.angle = Math.atan2(ey + edge.ey * 1.5, ex + edge.ex * 1.5);
+      }
+    } else if (g.type === 'windShot') {
+      const gr = g.speed * g.lifetime;
+      const enemyP = target && match.players[target.id];
+      use = !!enemyP && enemyP.shieldHp > 0 && dist < gr * 0.9 && losClear && offensiveOK; // 적의 보호막이 있을 때만 파괴 바람 사용
+    } else if (g.type === 'burst' || g.type === 'poopBomb') {
       const gr = g.speed && g.lifetime ? g.speed * g.lifetime : 350;
       use = offensiveOK && !!target && dist < gr * 0.9;
     } else if (g.type === 'powerCharge') use = (mode === 'fight' || mode === 'chase') && !!target && dist < 400;
