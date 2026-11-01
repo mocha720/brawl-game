@@ -1123,7 +1123,7 @@
     </div>
     <div class="mode-card" data-mode="ranked">
       <div class="mode-title">🏆 경쟁전</div>
-      <div class="mode-desc">1:1 티어전 · 티어가 높은 사람이 캐릭터를 먼저 골라요<br>승리 +50~100점 / 패배 -25~50점<br><b id="rankedTierText"></b></div>
+      <div class="mode-desc">1:1 티어전 · 티어가 높은 사람이 캐릭터를 먼저 골라요<br>참가 조건: Lv.9 이상 캐릭터 2개 이상<br>승리 +50~100점 / 패배 -25~50점<br><b id="rankedTierText"></b></div>
     </div>
     <div class="mode-card" data-mode="ai" data-difficulty="hard">
       <div class="mode-title">🤖 AI전</div>
@@ -3664,7 +3664,8 @@ function updateRankedCard() {
   if (!currentProfile) { el.textContent = ''; return; }
   const score = currentProfile.rankedScore || 0;
   const t = rankedTierOfScore(score);
-  el.textContent = `내 티어: ${t.icon} ${t.name} (${score.toLocaleString()}점)`;
+  const elig = currentProfile.rankedEligibility;
+  el.textContent = `내 티어: ${t.icon} ${t.name} (${score.toLocaleString()}점)` + (elig ? (elig.ok ? '' : ` · 🔒 Lv.${elig.level}↑ 캐릭터 ${elig.need}개 필요 (${elig.have}/${elig.need})`) : '');
 }
 
 let rdEndsAt = 0;
@@ -3763,6 +3764,8 @@ document.querySelectorAll('.mode-card').forEach((card) => {
     selectedMode = card.getAttribute('data-mode');
     if (selectedMode === 'ai') selectedAiDifficulty = 'hard';
     if (selectedMode === 'ranked') { // 경쟁전: 캐릭터는 매칭된 뒤 선택 단계에서 고르므로 바로 대기열로
+      const el = currentProfile && currentProfile.rankedEligibility; // 참가 조건 (최종 확인은 서버가 함)
+      if (el && !el.ok) { alert(`경쟁전은 Lv.${el.level} 이상 캐릭터를 ${el.need}개 이상 보유해야 참가할 수 있어요.\n(현재 ${el.have}개)`); return; }
       document.getElementById('modeOverlay').style.display = 'none';
       requestMatch();
       return;
