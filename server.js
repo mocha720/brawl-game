@@ -2571,6 +2571,7 @@ function publicProfile(u) {
     skinCatalog: skinCatalogPublic(), skins: ownedSkinsOf(u), equippedSkins, hypers: ownedHypersOf(u), gears: ownedGearsOf(u), gearShop: gearShopView(u), gearCatalog: GEAR_CATALOG.map((g) => ({ id: g.id, name: g.name, rarity: g.rarity, desc: g.desc, excludeChars: Object.keys(CHARACTERS).filter((cid) => !gearAllowedOn(g.id, cid)) })), gearRarities: Object.values(GEAR_RARITIES), gearMax: GEAR_MAX_PER_CHARACTER, gearSellRatio: GEAR_SELL_RATIO, hyperPrice: HYPER_PRICE, hyperRequiredLevel: HYPER_REQUIRED_LEVEL, trophyRoad: trophyRoadView(u), trophyRoadPlus: trophyRoadPlusView(u), rankedRoad: rankedRoadView(u), trophies, streaks, missions: missionsView(u), repeatMissions: repeatMissionsView(u), ranks: TROPHY_RANKS, characters: buildCharacterInfo(levels), levels, levelTable: LEVEL_TABLE_PUBLIC, maxLevel: MAX_CHARACTER_LEVEL, isAdmin: u.key === ADMIN_KEY, announcements: allAnnouncements(), dailyDraw: dailyDrawView(u),
     aiBonusEvent: halloweenBonusView(),
     gemExchange: GEM_EXCHANGE,
+    rankedEligibility: rankedEligibility(u),
     rankedScore: u.rankedScore || 0, rankedTiers: RANKED_TIERS.map((t) => ({ id: t.id, name: t.name, min: t.min, icon: t.icon })),
     events: activeEvents().map((e) => ({ id: e.id, name: e.name, coins: e.coins || 0, gems: e.gems || 0, desc: e.desc, endsAt: e.endsAt || null, claimed: (u.redeemed || []).includes(eventClaimCode(e)) })) };
 }
@@ -4328,6 +4329,11 @@ const RANKED_TIERS = [
 ];
 const RANKED_WIN_MIN = 50, RANKED_WIN_MAX = 100;   // 승리 시 얻는 점수 범위
 const RANKED_LOSS_MIN = 25, RANKED_LOSS_MAX = 50;  // 패배 시 잃는 점수 범위
+const RANKED_REQ_LEVEL = 9, RANKED_REQ_COUNT = 2;       // 경쟁전 참가 조건: 레벨 9 이상인 캐릭터를 2개 이상 보유
+function rankedEligibility(u) {
+  const have = effectiveUnlocked(u).filter((id) => levelOf(u, id) >= RANKED_REQ_LEVEL).length;
+  return { ok: have >= RANKED_REQ_COUNT, have, level: RANKED_REQ_LEVEL, need: RANKED_REQ_COUNT };
+}
 const RANKED_PICK_MS = 20000;                      // 캐릭터 선택 제한 시간 (시간이 지나면 무작위로 자동 선택)
 function rankedTierIndex(score) {
   let idx = 0;
@@ -6546,6 +6552,9 @@ io.on('connection', (socket) => {
     let rankedScore = 0; // 점수는 클라이언트가 보낸 값이 아니라 서버 저장소의 값을 사용
     try {
       const u = await db.findUser(userKey);
+      if (!u) { socket.emit('findMatchError', { message: '계정을 찾을 수 없습니다.' }); return; }
+      const el = rankedEligibility(u); // 참가 조건은 항상 서버가 저장소 기준으로 확인
+      if (!el.ok) { socket.emit('findMatchError', { message: `경쟁전은 Lv.${el.level} 이상 캐릭터를 ${el.need}개 이상 보유해야 참가할 수 있어요. (현재 ${el.have}개)` }); return; }
       rankedScore = (u && u.rankedScore) || 0;
     } catch (e) {
       console.error('경쟁전 점수 조회 실패', userKey, e);
