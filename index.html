@@ -238,7 +238,7 @@
   #joinOverlay > :last-child, #modeOverlay > :last-child { margin-bottom: auto; }
 
   /* ----- 창(모달) 메뉴 (계정 설정 / 랭킹 / 미션 / 코드 입력) 과 대기·결과·대결 화면: 게임 화면 위에 어둡게 깔린다 ----- */
-  #accountOverlay, #rankingOverlay, #missionOverlay, #trophyRoadOverlay, #trophyPlusOverlay, #gearShopOverlay, #codeOverlay, #adminOverlay, #noticeOverlay,
+  #accountOverlay, #rankingOverlay, #missionOverlay, #trophyRoadOverlay, #rankedRoadOverlay, #gemSkinOverlay, #trophyPlusOverlay, #gearShopOverlay, #codeOverlay, #adminOverlay, #noticeOverlay,
   #matchingOverlay, #matchResultOverlay, #versusOverlay {
     position: fixed; inset: 0; display: none;
     flex-direction: column; align-items: center; justify-content: flex-start;
@@ -247,12 +247,12 @@
     background: rgba(10, 11, 30, 0.86);
     -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
   }
-  #accountOverlay, #rankingOverlay, #missionOverlay, #trophyRoadOverlay, #trophyPlusOverlay, #gearShopOverlay, #codeOverlay, #adminOverlay, #noticeOverlay { z-index: 40; }
+  #accountOverlay, #rankingOverlay, #missionOverlay, #trophyRoadOverlay, #rankedRoadOverlay, #gemSkinOverlay, #trophyPlusOverlay, #gearShopOverlay, #codeOverlay, #adminOverlay, #noticeOverlay { z-index: 40; }
   #matchingOverlay, #matchResultOverlay { z-index: 10; }
   #versusOverlay { z-index: 30; background: rgba(10, 11, 30, 0.92); justify-content: center; }
-  #accountOverlay.open, #rankingOverlay.open, #missionOverlay.open, #trophyRoadOverlay.open, #trophyPlusOverlay.open, #gearShopOverlay.open, #codeOverlay.open, #adminOverlay.open, #noticeOverlay.open,
+  #accountOverlay.open, #rankingOverlay.open, #missionOverlay.open, #trophyRoadOverlay.open, #rankedRoadOverlay.open, #gemSkinOverlay.open, #trophyPlusOverlay.open, #gearShopOverlay.open, #codeOverlay.open, #adminOverlay.open, #noticeOverlay.open,
   #matchingOverlay.open, #matchResultOverlay.open, #versusOverlay.open { display: flex; }
-  #accountOverlay > .panel, #rankingOverlay > .panel, #missionOverlay > .panel, #trophyRoadOverlay > .panel, #trophyPlusOverlay > .panel, #gearShopOverlay > .panel, #codeOverlay > .panel, #adminOverlay > .panel, #noticeOverlay > .panel,
+  #accountOverlay > .panel, #rankingOverlay > .panel, #missionOverlay > .panel, #trophyRoadOverlay > .panel, #rankedRoadOverlay > .panel, #gemSkinOverlay > .panel, #trophyPlusOverlay > .panel, #gearShopOverlay > .panel, #codeOverlay > .panel, #adminOverlay > .panel, #noticeOverlay > .panel,
   #matchingOverlay > .panel, #matchResultOverlay > .panel { margin: auto; }
 
   /* ----- 경쟁전 캐릭터 선택 화면 ----- */
@@ -625,6 +625,19 @@
   #trophyPlusSummary b { color: var(--sun); font-family: var(--font-display); font-weight: 400; font-size: 20px; }
   #trophyPlusList { display: flex; flex-direction: column; gap: 10px; max-height: 44vh; overflow-y: auto; padding: 2px; -webkit-overflow-scrolling: touch; }
   #trophyPlusAllBtn { margin: 0 0 10px; }
+  #gemSkinOverlay > .panel { width: min(420px, 100%); }
+  #gemSkinList { display: flex; flex-direction: column; gap: 14px; max-height: 52vh; overflow-y: auto; padding: 2px; -webkit-overflow-scrolling: touch; }
+  .gemskin-card { box-sizing: border-box; padding: 12px; text-align: center; background: linear-gradient(160deg, #3a3170, #1f1a45); border: 3px solid #f0b429; border-radius: 18px; box-shadow: 0 0 18px rgba(240, 180, 41, 0.35); }
+  .gemskin-card canvas { width: 160px; height: 160px; display: block; margin: 0 auto 4px; }
+  .gemskin-name { font-family: var(--font-display); font-size: 22px; color: #ffd23f; }
+  .gemskin-char { font-size: 12px; color: var(--mute); margin-bottom: 6px; }
+  .gemskin-desc { font-size: 13px; line-height: 1.55; color: #d5d7f2; margin-bottom: 10px; }
+  .gemskin-card button { width: 100%; }
+  #rankedRoadOverlay > .panel { width: min(420px, 100%); }
+  #rankedRoadSummary { margin: 0 0 12px; font-size: 14px; line-height: 1.6; color: #d5d7f2; }
+  #rankedRoadSummary b { color: var(--sun); font-family: var(--font-display); font-weight: 400; font-size: 20px; }
+  #rankedRoadList { display: flex; flex-direction: column; gap: 10px; max-height: 44vh; overflow-y: auto; padding: 2px; -webkit-overflow-scrolling: touch; }
+  #rankedRoadAllBtn { margin: 0 0 10px; }
   #trophyRoadOverlay > .panel { width: min(420px, 100%); }
   #trophyRoadSummary { margin: 0 0 12px; font-size: 14px; line-height: 1.6; color: #d5d7f2; }
   #trophyRoadSummary b { color: var(--sun); font-family: var(--font-display); font-weight: 400; font-size: 20px; }
@@ -1131,6 +1144,8 @@
     <button id="openMissionBtn" class="btn btn-ghost">미션</button>
     <button id="openTrophyRoadBtn" class="btn btn-ghost">🏆 트로피 로드</button>
     <button id="openTrophyPlusBtn" class="btn btn-ghost">🏆 트로피 로드+</button>
+    <button id="openRankedRoadBtn" class="btn btn-ghost">🏅 경쟁전 로드</button>
+    <button id="openGemSkinBtn" class="btn btn-ghost">💎 스킨 상점</button>
     <button id="openCodeBtn" class="btn btn-ghost">코드 입력</button>
     <button id="openAccountBtn" class="btn btn-ghost">계정 설정</button>
     <button id="logoutBtn" class="btn btn-ghost">로그아웃</button>
@@ -1263,6 +1278,30 @@
     <div id="trophyPlusList"></div>
     <div id="trophyPlusMsg" class="panel-msg"></div>
     <button id="trophyPlusCloseBtn" class="btn btn-ghost">닫기</button>
+  </div>
+</div>
+
+<div id="gemSkinOverlay">
+  <div class="panel">
+    <h2 class="panel-title">💎 스킨 상점</h2>
+    <p class="panel-sub">보석으로 살 수 있는 특별한 스킨이에요. 구매한 뒤 캐릭터 선택 화면에서 장착하면 적용돼요. (외형만 바뀌고 성능은 그대로예요)</p>
+    <div class="profile-line"></div>
+    <div id="gemSkinList"></div>
+    <div id="gemSkinMsg" class="panel-msg"></div>
+    <button id="gemSkinCloseBtn" class="btn btn-ghost">닫기</button>
+  </div>
+</div>
+
+<div id="rankedRoadOverlay">
+  <div class="panel">
+    <h2 class="panel-title">🏅 경쟁전 로드</h2>
+    <p class="panel-sub">경쟁전 점수가 목표에 닿으면 코인과 보석 보상을 한 번 받을 수 있어요. 받은 보상은 점수가 줄어도 유지돼요.</p>
+    <div class="profile-line"></div>
+    <div id="rankedRoadSummary"></div>
+    <button id="rankedRoadAllBtn" class="btn">🎁 받을 수 있는 보상 모두 받기</button>
+    <div id="rankedRoadList"></div>
+    <div id="rankedRoadMsg" class="panel-msg"></div>
+    <button id="rankedRoadCloseBtn" class="btn btn-ghost">닫기</button>
   </div>
 </div>
 
@@ -1410,8 +1449,8 @@
 </div>
 
 <canvas id="gameCanvas"></canvas>
-<div id="hint">WASD / 방향키: 이동 &nbsp;|&nbsp; 마우스: 조준 &nbsp;|&nbsp; 좌클릭: 기본 공격(탄창 3발) &nbsp;|&nbsp; 우클릭: 오토에임 장전·해제(장전 후 좌클릭 발동) &nbsp;|&nbsp; E 또는 궁극기 버튼: 궁극기 장전 후 클릭으로 조준 발사</div>
-<div id="mobileHint">왼쪽 스틱: 이동 &nbsp;|&nbsp; 오른쪽 스틱: 당겨서 조준, 손을 떼면 발사 &nbsp;|&nbsp; 🎯 버튼: 오토에임 &nbsp;|&nbsp; 🤡 버튼: 궁극기</div>
+<div id="hint">WASD / 방향키: 이동 &nbsp;|&nbsp; 마우스: 조준 &nbsp;|&nbsp; 좌클릭: 기본 공격(탄창 3발) &nbsp;|&nbsp; 우클릭 누른 채 좌클릭: 오토에임 &nbsp;|&nbsp; E 또는 궁극기 버튼: 궁극기 장전 후 클릭으로 조준 발사</div>
+<div id="mobileHint">왼쪽 스틱: 이동 &nbsp;|&nbsp; 오른쪽 스틱: 당겨서 조준, 손을 떼면 발사 &nbsp;|&nbsp; 조준 스틱 짧게 탭: 오토에임 &nbsp;|&nbsp; 🤡 버튼: 궁극기</div>
 
 <!-- 모바일 전용 가상 조이스틱: 왼쪽=이동, 오른쪽=조준+발사 -->
 <div id="leftStick" class="stick-base"><div class="stick-nub" id="leftNub"></div></div>
@@ -1437,7 +1476,7 @@
 <!-- 가젯 버튼: 캐릭터에게 가젯이 있을 때만 표시. 쿨다운이 끝나면 탭(모바일) 또는 F키(PC)로 장전 -->
 <div id="gadgetButton"><div class="gad-inner"><div class="gad-cd"></div></div></div>
 <div id="autoAimButton" title="오토에임">🎯</div>
-<div id="autoAimStatus">🎯 오토에임 장전됨 — 좌클릭: 자동 조준 공격 · 우클릭: 해제</div>
+<div id="autoAimStatus">🎯 오토에임 — 우클릭을 누른 채 좌클릭: 자동 조준 공격</div>
 
 <!-- 채팅: Enter 또는 💬 버튼으로 입력창 열기, Enter로 전송, Esc로 취소 -->
 <button id="chatToggleBtn" title="채팅 (Enter)">💬</button>
@@ -1934,7 +1973,8 @@ function cancelCharge() {
   chargeLocal = false;
   socket.emit('chargeCancel');
 }
-window.addEventListener('mouseup', (e) => { if (e.button === 0 && !autoAimBusy) endCharge(); }); // 오토에임 충전 중에는 autoAim이 알아서 발사
+window.addEventListener('mouseup', (e) => { if (e.button === 2) setAutoAimArmed(false); if (e.button === 0 && !autoAimBusy) endCharge(); });
+window.addEventListener('blur', () => setAutoAimArmed(false)); // 오토에임 충전 중에는 autoAim이 알아서 발사
 window.addEventListener('blur', cancelCharge);
 
 function setupStick(baseId, nubId, onMove, onEnd, onStart) {
@@ -2014,6 +2054,7 @@ setupStick('leftStick', 'leftNub',
   }
 );
 
+let rightStickDownAt = 0; // 조준 스틱을 누른 시각 (짧은 탭 = 오토에임 판정용)
 setupStick('rightStick', 'rightNub',
   (nx, ny, dx, dy) => {
     // 아주 작은 움직임은 무시(오조준 방지)
@@ -2024,13 +2065,21 @@ setupStick('rightStick', 'rightNub',
     touchAimMag = Math.min(1, Math.hypot(nx, ny));
   },
   () => {
+    // 조준 스틱을 끌지 않고 짧게 탭하면 오토에임 발동 (가장 가까운 표적을 자동 조준해서 공격)
+    if (!rightStickDragged && Date.now() - rightStickDownAt < 350) {
+      autoAim();
+      touchAimActive = false;
+      rightStickDragged = false;
+      touchAimMag = 1;
+      return;
+    }
     // 손가락을 떼는 순간 마지막으로 조준한 방향으로 발사 (궁극기가 장전되어 있으면 궁극기가 나감)
     if (!endCharge()) fireAttack(); // 충전 공격 캐릭터는 충전한 만큼 발사
     touchAimActive = false;
     rightStickDragged = false;
     touchAimMag = 1;
   },
-  () => { beginCharge(); } // 스틱을 잡는 순간 충전 시작 (충전 공격 캐릭터만)
+  () => { rightStickDownAt = Date.now(); beginCharge(); } // 스틱을 잡는 순간 충전 시작 (충전 공격 캐릭터만)
 );
 
 // ===== 조인 처리: 닉네임 입력 -> 모드 선택 -> 캐릭터 선택 -> 매칭 대기 =====
@@ -2051,6 +2100,7 @@ function updateProfileUI() {
   renderAiBonusBanner();
   updateMissionUI();
   updateTrophyRoadUI();
+  updateRankedRoadUI();
   updateTrophyPlusUI();
   updateNoticeBadge();
   updateRankedCard();
@@ -2410,6 +2460,139 @@ function openTrophyRoadDialog() {
   if (item) listEl.scrollTop = Math.max(0, item.offsetTop - listEl.offsetTop - 4);
 }
 function closeTrophyRoadDialog() { document.getElementById('trophyRoadOverlay').classList.remove('open'); }
+
+// ===== 💎 스킨 상점 =====
+// 가격/보유/잠금해제 판단은 전부 서버가 하고, 클라이언트는 profile.skinCatalog(gemPrice 가 있는 스킨)를 그대로 보여주기만 한다
+let gemSkinPreviewTimer = null;
+function renderGemSkinShop() {
+  const listEl = document.getElementById('gemSkinList');
+  if (!listEl) return;
+  const catalog = ((currentProfile && currentProfile.skinCatalog) || []).filter((k) => k.gemPrice);
+  const ownedSkins = (currentProfile && currentProfile.skins) || [];
+  const unlocked = (currentProfile && currentProfile.unlocked) || [];
+  const gems = (currentProfile && currentProfile.gems) || 0;
+  if (!catalog.length) { listEl.innerHTML = '<div class="rank-empty">준비 중이에요!</div>'; return; }
+  listEl.innerHTML = catalog.map((k) => {
+    const ch = CHARACTERS.find((c) => c.id === k.characterId);
+    const have = ownedSkins.includes(k.id);
+    const hasChar = unlocked.includes(k.characterId);
+    const btn = have ? '<button disabled>✅ 보유 중 — 캐릭터 선택 화면에서 장착하세요</button>'
+      : !hasChar ? `<button disabled>🔒 먼저 ${escapeHtml(ch ? ch.name : '캐릭터')}를 잠금해제하세요</button>`
+      : `<button data-gemskin-buy="${escapeHtml(k.id)}" ${gems >= k.gemPrice ? '' : 'disabled'}>💎 ${k.gemPrice.toLocaleString()} 구매${gems >= k.gemPrice ? '' : ' (보석 부족)'}</button>`;
+    return `<div class="gemskin-card">
+      <canvas width="320" height="320" data-gemskin-preview="${escapeHtml(k.id)}"></canvas>
+      <div class="gemskin-name">${escapeHtml(k.name)}</div>
+      <div class="gemskin-char">${escapeHtml(ch ? ch.name : '')} 전용 스킨</div>
+      <div class="gemskin-desc">${escapeHtml(k.desc)}</div>
+      ${btn}
+    </div>`;
+  }).join('');
+  listEl.querySelectorAll('button[data-gemskin-buy]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-gemskin-buy');
+      const k = catalog.find((x) => x.id === id);
+      if (!k) return;
+      if (!confirm(`${k.name} 스킨을 💎 ${k.gemPrice.toLocaleString()} 보석으로 구매할까요?`)) return;
+      btn.disabled = true;
+      socket.timeout(8000).emit('buyGemSkin', { skinId: id }, (err, res) => {
+        if (err || !res) { setGemSkinMsg('서버 응답이 없습니다. 잠시 후 다시 시도해주세요.'); renderGemSkinShop(); return; }
+        if (res.profile) { currentProfile = res.profile; updateProfileUI(); }
+        setGemSkinMsg(res.message || (res.ok ? '구매 완료!' : '구매에 실패했습니다.'), res.ok);
+        renderGemSkinShop();
+      });
+    });
+  });
+}
+function animateGemSkinPreviews() {
+  document.querySelectorAll('#gemSkinList canvas[data-gemskin-preview]').forEach((cv) => {
+    if (cv.getAttribute('data-gemskin-preview') === 'minam_legend') drawLegendPreview(cv);
+  });
+}
+function setGemSkinMsg(text, ok) {
+  const el = document.getElementById('gemSkinMsg');
+  el.textContent = text || '';
+  el.classList.toggle('ok', !!ok);
+}
+function openGemSkinDialog() {
+  setGemSkinMsg('');
+  updateProfileUI();
+  renderGemSkinShop();
+  document.getElementById('gemSkinOverlay').classList.add('open');
+  animateGemSkinPreviews();
+  clearInterval(gemSkinPreviewTimer);
+  gemSkinPreviewTimer = setInterval(animateGemSkinPreviews, 60);
+}
+function closeGemSkinDialog() {
+  document.getElementById('gemSkinOverlay').classList.remove('open');
+  clearInterval(gemSkinPreviewTimer);
+  gemSkinPreviewTimer = null;
+}
+document.getElementById('openGemSkinBtn').addEventListener('click', openGemSkinDialog);
+document.getElementById('gemSkinCloseBtn').addEventListener('click', closeGemSkinDialog);
+
+// ===== 🏅 경쟁전 로드 =====
+// 점수/달성/수령 여부는 전부 서버가 판단하고, 클라이언트는 profile.rankedRoad 를 그대로 보여주기만 한다
+function updateRankedRoadUI() {
+  const road = (currentProfile && currentProfile.rankedRoad) || { score: 0, rewards: [] };
+  const claimable = road.rewards.some((r) => !r.claimed && road.score >= r.score);
+  const openBtn = document.getElementById('openRankedRoadBtn');
+  if (openBtn) openBtn.classList.toggle('has-claim', claimable);
+  const sumEl = document.getElementById('rankedRoadSummary');
+  const listEl = document.getElementById('rankedRoadList');
+  const allBtn = document.getElementById('rankedRoadAllBtn');
+  if (!sumEl || !listEl) return;
+  const next = road.rewards.find((r) => road.score < r.score);
+  sumEl.innerHTML = `내 경쟁전 점수 <b>🏅 ${road.score.toLocaleString()}</b>`
+    + (next ? `<br>다음 목표까지 ${(next.score - road.score).toLocaleString()}점 남았어요` : '<br>모든 목표를 달성했어요! 🎉');
+  allBtn.disabled = !claimable;
+  const prevScroll = listEl.scrollTop;
+  listEl.innerHTML = road.rewards.map((r) => {
+    const reached = road.score >= r.score;
+    const pct = Math.round((Math.min(road.score, r.score) / r.score) * 100);
+    const rewardText = `🪙 ${r.coins.toLocaleString()}${r.gems ? ` · 💎 ${r.gems.toLocaleString()}` : ''}`;
+    const btn = r.claimed
+      ? '<button disabled>✅ 수령 완료</button>'
+      : `<button data-ranked-reward="${escapeHtml(r.id)}" ${reached ? '' : 'disabled'}>${reached ? '🎁 보상 받기' : '🔒 잠김'}</button>`;
+    return `<div class="mission-item${reached ? ' done' : ''}${r.claimed ? ' claimed' : ''}">
+      <div class="mission-row"><span>🏅 ${r.score.toLocaleString()}점</span><span class="mission-reward">${rewardText}</span></div>
+      <div class="mission-bar"><div style="width:${pct}%"></div></div>
+      <div class="mission-foot"><span>${Math.min(road.score, r.score).toLocaleString()} / ${r.score.toLocaleString()}</span>${btn}</div>
+    </div>`;
+  }).join('');
+  listEl.scrollTop = prevScroll;
+  listEl.querySelectorAll('button[data-ranked-reward]').forEach((btn) => {
+    btn.addEventListener('click', () => claimRankedRoad(btn.getAttribute('data-ranked-reward'), btn));
+  });
+}
+function claimRankedRoad(rewardId, btn) {
+  if (btn) btn.disabled = true;
+  socket.timeout(8000).emit('claimRankedRoad', rewardId ? { rewardId } : {}, (err, res) => {
+    if (err || !res) { setRankedRoadMsg('서버 응답이 없습니다. 잠시 후 다시 시도해주세요.'); updateRankedRoadUI(); return; }
+    if (res.profile) { currentProfile = res.profile; updateProfileUI(); }
+    setRankedRoadMsg(res.message || (res.ok ? '완료!' : '실패했습니다.'), res.ok);
+  });
+}
+function setRankedRoadMsg(text, ok) {
+  const el = document.getElementById('rankedRoadMsg');
+  el.textContent = text || '';
+  el.classList.toggle('ok', !!ok);
+}
+function openRankedRoadDialog() {
+  setRankedRoadMsg('');
+  updateProfileUI();
+  document.getElementById('rankedRoadOverlay').classList.add('open');
+  const listEl = document.getElementById('rankedRoadList');
+  const road = (currentProfile && currentProfile.rankedRoad) || { score: 0, rewards: [] };
+  let idx = road.rewards.findIndex((r) => !r.claimed && road.score >= r.score);
+  if (idx < 0) idx = road.rewards.findIndex((r) => road.score < r.score);
+  if (idx < 0) idx = road.rewards.length - 1;
+  const item = listEl.children[idx];
+  if (item) listEl.scrollTop = Math.max(0, item.offsetTop - listEl.offsetTop - 4);
+}
+function closeRankedRoadDialog() { document.getElementById('rankedRoadOverlay').classList.remove('open'); }
+document.getElementById('openRankedRoadBtn').addEventListener('click', openRankedRoadDialog);
+document.getElementById('rankedRoadCloseBtn').addEventListener('click', closeRankedRoadDialog);
+document.getElementById('rankedRoadAllBtn').addEventListener('click', () => claimRankedRoad(null, document.getElementById('rankedRoadAllBtn')));
 
 // ===== 트로피 로드+ (캐릭터별 티어 보상) =====
 // 캐릭터별 트로피/달성/수령 여부는 전부 서버가 판단하고, 클라이언트는 profile.trophyRoadPlus 를 그대로 보여주기만 한다
@@ -3383,6 +3566,8 @@ document.getElementById('logoutBtn').addEventListener('click', () => {
     closeCodeDialog();
     closeMissionDialog();
     closeTrophyRoadDialog();
+  closeRankedRoadDialog();
+  closeGemSkinDialog();
     closeTrophyPlusDialog();
     closeAccountDialog();
     closeRankingDialog();
@@ -3404,6 +3589,8 @@ function forceReLogin(message) {
   closeCodeDialog();
   closeMissionDialog();
   closeTrophyRoadDialog();
+  closeRankedRoadDialog();
+  closeGemSkinDialog();
   closeTrophyPlusDialog();
   closeAccountDialog();
   closeRankingDialog();
@@ -3515,7 +3702,7 @@ socket.on('rankedCancelled', (d) => {
 // 경쟁전 결과: 점수 증감과 티어 변화를 결과 화면에 표시
 socket.on('rankedResult', (r) => {
   if (!r) return;
-  if (currentProfile) { currentProfile.rankedScore = r.score; updateRankedCard(); }
+  if (currentProfile) { currentProfile.rankedScore = r.score; if (currentProfile.rankedRoad) currentProfile.rankedRoad.score = r.score; updateRankedCard(); updateRankedRoadUI(); }
   const sign = r.delta > 0 ? '+' : (r.delta < 0 ? '' : '±');
   let text = `  |  🏆 경쟁전 ${sign}${r.delta}점 (${r.icon} ${r.tierName} · ${Number(r.score).toLocaleString()}점)`;
   if (r.tierChange > 0) text += `  ⬆ ${r.tierName} 승급!`;
@@ -3618,7 +3805,7 @@ function renderCharacterList() {
         ? `<button class="upgrade-btn" data-upgrade-id="${c.id}" ${currentProfile.coins >= next.cost ? '' : 'disabled'}>⬆ 강화 Lv.${lv} → ${lv + 1} · 🪙 ${next.cost.toLocaleString()}${currentProfile.coins >= next.cost ? '' : ' (코인 부족)'}</button>`
         : `<button class="upgrade-btn" disabled>★ 최고 레벨</button>`;
     // 스킨: 서버가 알려준 스킨 목록/보유/장착 상태를 그대로 보여준다 (가격/보유 판단은 서버가 함)
-    const charSkins = owned ? ((currentProfile && currentProfile.skinCatalog) || []).filter((k) => k.characterId === c.id) : [];
+    const charSkins = owned ? ((currentProfile && currentProfile.skinCatalog) || []).filter((k) => k.characterId === c.id && (!k.gemPrice || ((currentProfile && currentProfile.skins) || []).includes(k.id))) : []; // 💎 보석 스킨은 스킨 상점에서 사고, 보유하면 여기서 장착
     const ownedSkins = (currentProfile && currentProfile.skins) || [];
     const equippedSkin = (currentProfile && currentProfile.equippedSkins && currentProfile.equippedSkins[c.id]) || null;
     const skinBox = charSkins.length ? `
@@ -4424,7 +4611,7 @@ window.addEventListener('keydown', (e) => {
     openChatInput();
   }
 });
-// PC: 우클릭으로 오토에임 장전/해제, 장전 상태에서 좌클릭하면 발동 (캔버스 위에서만, 브라우저 우클릭 메뉴는 막음)
+// PC: 우클릭을 누른 채 좌클릭하면 오토에임 발동 (캔버스 위에서만, 브라우저 우클릭 메뉴는 막음)
 let autoAimArmed = false;
 function setAutoAimArmed(v) {
   autoAimArmed = !!v && joined && !isTouchDevice;
@@ -4516,7 +4703,7 @@ function drawAutoAimMark() { // 장전 중: 가장 가까운 표적에 조준 �
 function updateAutoAimButton() {
   if (autoAimArmed && !joined) setAutoAimArmed(false);
   const btn = document.getElementById('autoAimButton');
-  if (btn) btn.style.display = (isTouchDevice && joined) ? 'flex' : 'none';
+  if (btn) btn.style.display = 'none'; // 모바일 오토에임은 조준 스틱 가운데를 짧게 탭하는 방식으로 변경 (별도 버튼 사용 안 함)
 }
 (function setupAutoAimButton() {
   const btn = document.getElementById('autoAimButton');
@@ -4605,7 +4792,7 @@ canvas.addEventListener('mousedown', (e) => {
     else if (!beginCharge()) fireAttack(); // 충전 공격 캐릭터는 누르는 동안 충전, 그 외에는 즉시 발사
   } else if (e.button === 2 && joined) {
     e.preventDefault();
-    setAutoAimArmed(!autoAimArmed); // 우클릭: 오토에임 장전 / 해제 토글
+    setAutoAimArmed(true); // 우클릭을 누르고 있는 동안만 오토에임 상태 (이때 좌클릭하면 발동)
   }
 });
 
@@ -5014,10 +5201,176 @@ function drawHyperAura(p) {
   ctx.restore();
 }
 
+// ===== 💎 보석 스킨: 미남 [전설의 갑옷] =====
+// g: 그릴 2D 컨텍스트 (게임 화면과 상점 미리보기가 같이 씀), R: 몸통 반지름, t: 초 단위 시간 (깃털/반짝임 애니메이션)
+function drawLegendArmor(g, R, t) {
+  const GOLD1 = '#fff1a8', GOLD2 = '#f0b429', GOLD3 = '#8a5a00';
+  // --- 어깨 갑옷 (몸 바깥으로 튀어나온 황금 견갑) ---
+  for (const side of [-1, 1]) {
+    g.save();
+    g.translate(side * R * 0.84, R * 0.34);
+    g.rotate(side * 0.35);
+    const sg = g.createLinearGradient(0, -R * 0.35, 0, R * 0.35);
+    sg.addColorStop(0, GOLD1); sg.addColorStop(0.5, GOLD2); sg.addColorStop(1, GOLD3);
+    g.fillStyle = sg;
+    g.beginPath(); g.ellipse(0, 0, R * 0.3, R * 0.25, 0, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = '#5b3a00'; g.lineWidth = Math.max(1, R * 0.06); g.stroke();
+    // 견갑 능선 + 뿔
+    g.strokeStyle = 'rgba(255,255,255,0.65)'; g.lineWidth = Math.max(1, R * 0.05);
+    g.beginPath(); g.moveTo(-R * 0.2, -R * 0.02); g.quadraticCurveTo(0, -R * 0.16, R * 0.2, -R * 0.02); g.stroke();
+    g.fillStyle = '#e8edf5';
+    g.beginPath(); g.moveTo(side * R * 0.02, -R * 0.22); g.lineTo(side * R * 0.14, -R * 0.4); g.lineTo(side * R * 0.2, -R * 0.16); g.closePath(); g.fill();
+    g.strokeStyle = '#5b3a00'; g.lineWidth = Math.max(1, R * 0.04); g.stroke();
+    g.restore();
+  }
+  // --- 투구 위 붉은 깃털 (살랑살랑) ---
+  const sway = Math.sin(t * 3) * R * 0.1;
+  g.save();
+  const pg = g.createLinearGradient(0, -R * 1.3, 0, -R * 0.8);
+  pg.addColorStop(0, '#ff6b6b'); pg.addColorStop(0.6, '#d62839'); pg.addColorStop(1, '#7a0f1c');
+  g.fillStyle = pg;
+  g.beginPath();
+  g.moveTo(-R * 0.14, -R * 0.88);
+  g.bezierCurveTo(-R * 0.34 + sway, -R * 1.05, -R * 0.12 + sway, -R * 1.2, R * 0.24 + sway * 1.4, -R * 1.3);
+  g.bezierCurveTo(R * 0.24 + sway, -R * 1.1, R * 0.3 + sway * 0.6, -R * 1.0, R * 0.14, -R * 0.88);
+  g.closePath(); g.fill();
+  g.strokeStyle = '#5a0713'; g.lineWidth = Math.max(1, R * 0.04); g.stroke();
+  g.strokeStyle = 'rgba(255,200,200,0.55)'; g.lineWidth = Math.max(1, R * 0.03);
+  g.beginPath(); g.moveTo(0, -R * 0.92); g.quadraticCurveTo(R * 0.04 + sway * 0.6, -R * 1.1, R * 0.2 + sway * 1.2, -R * 1.27); g.stroke();
+  g.restore();
+  // --- 몸통 안쪽만: 투구 + 가슴 갑옷 ---
+  g.save();
+  g.beginPath(); g.arc(0, 0, R - 0.5, 0, Math.PI * 2); g.clip();
+  // 가슴 갑옷 (강철판 + 황금 테두리)
+  const cg = g.createLinearGradient(-R, 0, R, 0);
+  cg.addColorStop(0, '#6b7686'); cg.addColorStop(0.35, '#f4f7fb'); cg.addColorStop(0.65, '#aab4c3'); cg.addColorStop(1, '#4d5766');
+  g.fillStyle = cg;
+  g.beginPath();
+  g.moveTo(-R * 0.95, R * 0.2); g.lineTo(R * 0.95, R * 0.2); g.lineTo(R * 0.7, R); g.lineTo(-R * 0.7, R); g.closePath(); g.fill();
+  g.strokeStyle = GOLD2; g.lineWidth = Math.max(1.5, R * 0.1); g.stroke();
+  // 가슴 가운데 능선 + 판 이음선
+  g.strokeStyle = 'rgba(40,50,65,0.55)'; g.lineWidth = Math.max(1, R * 0.05);
+  g.beginPath(); g.moveTo(0, R * 0.22); g.lineTo(0, R); g.stroke();
+  g.beginPath(); g.moveTo(-R * 0.82, R * 0.55); g.quadraticCurveTo(0, R * 0.7, R * 0.82, R * 0.55); g.stroke();
+  // 황금 문장 + 붉은 보석
+  g.fillStyle = GOLD2; g.strokeStyle = '#5b3a00'; g.lineWidth = Math.max(1, R * 0.04);
+  g.beginPath(); g.moveTo(0, R * 0.3); g.lineTo(R * 0.3, R * 0.58); g.lineTo(0, R * 0.86); g.lineTo(-R * 0.3, R * 0.58); g.closePath(); g.fill(); g.stroke();
+  const gem = g.createRadialGradient(-R * 0.04, R * 0.52, 0, 0, R * 0.58, R * 0.2);
+  gem.addColorStop(0, '#ffd1d1'); gem.addColorStop(0.5, '#ff2e4d'); gem.addColorStop(1, '#7a0018');
+  g.fillStyle = gem;
+  g.beginPath(); g.moveTo(0, R * 0.42); g.lineTo(R * 0.14, R * 0.58); g.lineTo(0, R * 0.74); g.lineTo(-R * 0.14, R * 0.58); g.closePath(); g.fill();
+  // 투구 (위쪽 반): 강철 그라데이션
+  const hg = g.createLinearGradient(-R, -R, R, R * 0.2);
+  hg.addColorStop(0, '#8c97a8'); hg.addColorStop(0.3, '#f7f9fc'); hg.addColorStop(0.6, '#b7c0cd'); hg.addColorStop(1, '#566073');
+  g.fillStyle = hg;
+  g.beginPath();
+  g.moveTo(-R, R * 0.22); g.lineTo(-R, -R); g.lineTo(R, -R); g.lineTo(R, R * 0.22);
+  g.quadraticCurveTo(R * 0.55, R * 0.3, R * 0.5, R * 0.1); g.lineTo(-R * 0.5, R * 0.1); g.quadraticCurveTo(-R * 0.55, R * 0.3, -R, R * 0.22);
+  g.closePath(); g.fill();
+  // 이마 황금 띠 + 가운데 볏
+  g.fillStyle = GOLD2;
+  g.fillRect(-R, -R * 0.5, R * 2, R * 0.18);
+  g.fillStyle = 'rgba(255,255,255,0.55)'; g.fillRect(-R, -R * 0.5, R * 2, R * 0.05);
+  g.fillStyle = GOLD2; g.fillRect(-R * 0.08, -R, R * 0.16, R * 0.9);
+  // 바이저(눈 구멍) + 푸른 불꽃 눈빛
+  g.fillStyle = '#10141c';
+  g.beginPath(); g.moveTo(-R * 0.62, -R * 0.26); g.lineTo(R * 0.62, -R * 0.26); g.lineTo(R * 0.5, R * 0.08); g.lineTo(-R * 0.5, R * 0.08); g.closePath(); g.fill();
+  g.strokeStyle = GOLD2; g.lineWidth = Math.max(1, R * 0.05); g.stroke();
+  const glow = 0.75 + 0.25 * Math.sin(t * 5);
+  g.fillStyle = `rgba(110, 235, 255, ${glow})`;
+  for (const side of [-1, 1]) {
+    g.beginPath();
+    g.moveTo(side * R * 0.1, -R * 0.14); g.lineTo(side * R * 0.5, -R * 0.2); g.lineTo(side * R * 0.42, -R * 0.02); g.lineTo(side * R * 0.1, -R * 0.03);
+    g.closePath(); g.fill();
+  }
+  // 투구 볼 보호대 리벳
+  g.fillStyle = GOLD1;
+  for (const side of [-1, 1]) { g.beginPath(); g.arc(side * R * 0.78, -R * 0.4, Math.max(1, R * 0.06), 0, Math.PI * 2); g.fill(); }
+  g.restore();
+  // --- 바깥 황금 테두리 ---
+  g.strokeStyle = GOLD2; g.lineWidth = Math.max(1.5, R * 0.1);
+  g.beginPath(); g.arc(0, 0, R - R * 0.04, 0, Math.PI * 2); g.stroke();
+  g.strokeStyle = 'rgba(255,255,255,0.5)'; g.lineWidth = Math.max(1, R * 0.03);
+  g.beginPath(); g.arc(0, 0, R - R * 0.1, Math.PI * 1.05, Math.PI * 1.6); g.stroke();
+}
+// 몸 뒤에 깔리는 황금 오라 + 떠오르는 반짝이 (게임 화면용)
+function drawLegendAura(p) {
+  if (!p.alive) return;
+  const t = Date.now() / 1000;
+  const R = PLAYER_RADIUS;
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  const pulse = 1 + 0.08 * Math.sin(t * 3);
+  const ag = ctx.createRadialGradient(0, 0, R * 0.5, 0, 0, R * 2.4 * pulse);
+  ag.addColorStop(0, 'rgba(255, 224, 120, 0.55)');
+  ag.addColorStop(0.5, 'rgba(255, 190, 60, 0.22)');
+  ag.addColorStop(1, 'rgba(255, 190, 60, 0)');
+  ctx.fillStyle = ag;
+  ctx.beginPath(); ctx.arc(0, 0, R * 2.4 * pulse, 0, Math.PI * 2); ctx.fill();
+  for (let i = 0; i < 6; i++) { // 아래에서 위로 떠오르며 사라지는 금빛 불씨
+    const k = (t * 0.7 + i / 6) % 1;
+    const a = i * 2.1 + t * 0.4;
+    ctx.globalAlpha = (1 - k) * 0.9;
+    ctx.fillStyle = i % 2 ? '#fff4b0' : '#ffd23f';
+    const sx = Math.cos(a) * R * 1.05;
+    const sy = R * 0.7 - k * R * 2.3;
+    const s = R * 0.1 * (1 - k * 0.6) + 0.8;
+    ctx.beginPath(); ctx.moveTo(sx, sy - s * 1.6); ctx.lineTo(sx + s, sy); ctx.lineTo(sx, sy + s * 1.6); ctx.lineTo(sx - s, sy); ctx.closePath(); ctx.fill();
+  }
+  ctx.restore();
+}
+// 상점 미리보기: 작은 캔버스에 몸통 + 갑옷을 그림
+function drawLegendPreview(canvasEl) {
+  const g = canvasEl.getContext('2d');
+  const W = canvasEl.width, H = canvasEl.height;
+  const t = Date.now() / 1000;
+  const R = W * 0.26;
+  g.clearRect(0, 0, W, H);
+  g.save();
+  g.translate(W / 2, H * 0.58);
+  const pulse = 1 + 0.08 * Math.sin(t * 3);
+  const ag = g.createRadialGradient(0, 0, R * 0.5, 0, 0, R * 2.3 * pulse);
+  ag.addColorStop(0, 'rgba(255, 224, 120, 0.6)'); ag.addColorStop(0.5, 'rgba(255, 190, 60, 0.25)'); ag.addColorStop(1, 'rgba(255, 190, 60, 0)');
+  g.fillStyle = ag; g.beginPath(); g.arc(0, 0, R * 2.3 * pulse, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#5a6272'; g.beginPath(); g.arc(0, 0, R, 0, Math.PI * 2); g.fill();
+  drawLegendArmor(g, R, t);
+  g.restore();
+}
+// 기본공격: 황금빛 에너지탄
+function drawLegendBolt(b) {
+  const ang = Math.atan2(b.vy || 0, b.vx || 1);
+  const r = b.radius;
+  const L = r * 3.2, hw = r * 0.8;
+  const t = Date.now() / 1000;
+  ctx.save();
+  ctx.translate(b.x, b.y);
+  ctx.rotate(ang);
+  const trailLen = L * 2.2;
+  const tg = ctx.createLinearGradient(-L / 2 - trailLen, 0, -L / 2, 0);
+  tg.addColorStop(0, 'rgba(255, 190, 60, 0)'); tg.addColorStop(1, 'rgba(255, 215, 90, 0.65)');
+  ctx.strokeStyle = tg; ctx.lineWidth = hw * 1.5; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(-L / 2 - trailLen, 0); ctx.lineTo(-L / 2, 0); ctx.stroke();
+  const gl = ctx.createRadialGradient(0, 0, 0, 0, 0, L * 0.7);
+  gl.addColorStop(0, 'rgba(255, 240, 160, 0.8)'); gl.addColorStop(1, 'rgba(255, 190, 60, 0)');
+  ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(0, 0, L * 0.7, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#ffd23f';
+  ctx.beginPath(); ctx.moveTo(L / 2, 0); ctx.quadraticCurveTo(L * 0.1, -hw * 1.1, -L / 2, 0); ctx.quadraticCurveTo(L * 0.1, hw * 1.1, L / 2, 0); ctx.fill();
+  ctx.fillStyle = '#fffbe0';
+  ctx.beginPath(); ctx.moveTo(L * 0.4, 0); ctx.quadraticCurveTo(L * 0.1, -hw * 0.5, -L * 0.3, 0); ctx.quadraticCurveTo(L * 0.1, hw * 0.5, L * 0.4, 0); ctx.fill();
+  ctx.restore();
+}
+
 // ===== 캐릭터 스킨 외형 =====
 // 서버가 플레이어 정보에 skin(장착한 스킨 id)을 담아 보내므로, 상대방의 스킨도 모두에게 똑같이 보인다.
 // body: 몸통 색 (없으면 기본 색), draw: 바라보는 방향이 +x 가 되도록 회전된 좌표계에서 추가로 그리는 함수
 const SKIN_LOOKS = {
+  minam_legend: {
+    body: '#5a6272',
+    avatarRing: '#f0b429',
+    upright: true,
+    drawFx(p) { drawLegendAura(p); },
+    draw(R, p) { drawLegendArmor(ctx, R, Date.now() / 1000); },
+  },
   minam_ninja: {
     body: '#2b2f3a',
     avatarRing: '#d63031', // 캐릭터 선택 카드 아바타 테두리 색
@@ -8626,6 +8979,7 @@ function drawTeamPoolRing(pool, alpha) {
 // [front, half] = 판정 반경(r)의 몇 배까지 그려지는지 (front: 진행 방향 앞쪽 끝, half: 옆으로 퍼진 반폭). 새 스킨 탄을 만들면 여기에 한 줄 추가.
 const SKIN_FIT_MAX_HALF = 1.1;
 const SKIN_HIT_FIT = {
+  legendBolt: [1.6, 0.8],    // 미남 전설의 갑옷 황금 에너지탄
   shuriken: [2.2, 0.7],      // 미남 닌자 표창
   bigShuriken: [1.7, 1.7],   // 미남 닌자 수리검
   chickenThrow: [1.4, 1.4],  // 지기 치킨
@@ -9198,6 +9552,7 @@ function drawBulletShape(b) {
     ctx.restore();
     return;
   }
+  if (b.visual === 'legendBolt') { drawLegendBolt(b); return; }
   if (b.visual === 'shuriken') {
     // 미남 닌자 스킨 기본공격: 표창 - 진행 방향을 향한 강철 표창 (꼬리에 붉은 끈) + 은빛 궤적
     const ang = Math.atan2(b.vy || 0, b.vx || 1);
