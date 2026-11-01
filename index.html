@@ -586,6 +586,11 @@
   #gateHud .gate-bar-label { display: flex; justify-content: space-between; margin-bottom: 1px; }
   #gateHud .gate-bar-track { height: 10px; border-radius: 6px; background: rgba(0, 0, 0, 0.6); overflow: hidden; border: 1px solid rgba(255, 255, 255, 0.5); }
   #gateHud .gate-bar-fill { height: 100%; }
+  #gateHud .boss-bar { width: min(360px, 82vw); }
+  #gateHud .boss-bar .gate-bar-track { height: 16px; }
+  #gateHud .boss-bar-fill { height: 100%; background: linear-gradient(90deg, #8e24aa, #e53935); transition: width 0.12s linear; }
+  #gateHud .boss-lives { font-size: 18px; letter-spacing: 3px; line-height: 1.1; }
+  .mode-card.boss-used { opacity: 0.55; }
   #gateHud .gate-bar.mine .gate-bar-fill { background: #2ecc71; }
   #gateHud .gate-bar.enemy .gate-bar-fill { background: #e74c3c; }
   #gateHud .gate-bar.gemb .gate-bar-fill { background: linear-gradient(90deg, #c58bff, #8e44ff); } /* 쨍그랩: 팀 보석 진행바는 보라색 */
@@ -947,6 +952,11 @@
   #autoAimButton:active { background: #7a1f2f; }
   @media (max-width: 480px) { #autoAimButton { right: calc(98px + env(safe-area-inset-right, 0px)); bottom: calc(227px + env(safe-area-inset-bottom, 0px)); width: 48px; height: 48px; font-size: 22px; } }
   #autoAimStatus { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 6; display: none; padding: 6px 14px; border-radius: 16px; font-size: 14px; font-weight: 700; color: #fff; background: rgba(122,31,47,0.85); border: 2px solid #ff5470; pointer-events: none; white-space: nowrap; }
+  /* ===== 사망 화면: 죽으면 화면이 검게 변하고 부활까지 남은 시간만 보여준다 (죽은 동안 적 위치를 알 수 없게) ===== */
+  #deathOverlay { position: fixed; inset: 0; z-index: 9; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: #000; color: #fff; text-align: center; pointer-events: none; user-select: none; -webkit-user-select: none; }
+  #deathOverlay .death-skull { font-size: 44px; line-height: 1; opacity: 0.9; }
+  #deathOverlay .death-text { font-size: clamp(26px, 6vw, 44px); font-weight: 900; letter-spacing: 1px; text-shadow: 0 0 14px rgba(255,255,255,0.35); }
+  #deathOverlay .death-sub { font-size: 14px; color: rgba(255,255,255,0.55); }
   /* ===== 탄창(탄약) 표시 ===== */
   #ammoDisplay {
     position: fixed;
@@ -1128,6 +1138,10 @@
     <div class="mode-card" data-mode="ai" data-difficulty="hard">
       <div class="mode-title">🤖 AI전</div>
       <div class="mode-desc">접속자가 없어도 AI와 대결 (강한 AI)<br>이기면 🪙 50코인 + 🏆 트로피 30<br>(전적·연승에는 영향이 없어요)</div>
+    </div>
+    <div class="mode-card" data-mode="boss">
+      <div class="mode-title">👹 보스전</div>
+      <div class="mode-desc">혼자서 오늘의 보스에 도전! 목숨 3개 · 하루 1번</div>
     </div>
   </div>
   <div id="eventList"></div>
@@ -1453,6 +1467,7 @@
 </div>
 
 <canvas id="gameCanvas"></canvas>
+<div id="deathOverlay"><div class="death-skull">💀</div><div class="death-text" id="deathText"></div><div class="death-sub" id="deathSub">곧 다시 돌아와요</div></div>
 <div id="hint">WASD / 방향키: 이동 &nbsp;|&nbsp; 마우스: 조준 &nbsp;|&nbsp; 좌클릭: 기본 공격(탄창 3발) &nbsp;|&nbsp; 우클릭 누른 채 좌클릭: 오토에임 &nbsp;|&nbsp; E 또는 궁극기 버튼: 궁극기 장전 후 클릭으로 조준 발사</div>
 <div id="mobileHint">왼쪽 스틱: 이동 &nbsp;|&nbsp; 오른쪽 스틱: 당겨서 조준, 손을 떼면 발사 &nbsp;|&nbsp; 조준 스틱 짧게 탭: 오토에임 &nbsp;|&nbsp; 🤡 버튼: 궁극기</div>
 
@@ -2058,20 +2073,43 @@ setupStick('leftStick', 'leftNub',
   }
 );
 
-let rightStickDownAt = 0; // 조준 스틱을 누른 시각 (짧은 탭 = 오토에임 판정용)
+// ===== 조준 스틱: 짧은 탭 = 오토에임 / 끌거나 오래 누르면 = 수동 조준 =====
+// 예전에는 스틱 '정중앙'이 아닌 곳을 살짝만 눌러도(4px 이상) 드래그로 판정돼서, 빠르게 연타하면 오토에임이 안 나가고
+// 손가락이 닿은 쪽으로 엉뚱하게 발사됐다. 이제는 '처음 터치한 지점'에서 충분히 움직였을 때만 드래그로 본다.
+const STICK_TAP_MS = 450;    // 이 시간 안에 (많이 움직이지 않고) 떼면 탭 → 오토에임
+const STICK_DRAG_PX = 14;    // 처음 터치한 지점에서 이만큼 움직이면 드래그 → 수동 조준
+let rightStickDownAt = 0;    // 조준 스틱을 누른 시각
+let rightStickStart = null;  // 처음 터치한 지점 { dx, dy } (스틱 중심 기준)
+let rightStickLast = null;   // 가장 최근 손가락 위치 { nx, ny, dx, dy }
+let rightStickHoldTimer = null;
+function applyStickAim(nx, ny, dx, dy) {
+  touchAimActive = true;
+  rightStickDragged = true;
+  touchAimAngle = Math.atan2(dy / TILT, dx); // 화면 방향 -> 월드 방향
+  touchAimMag = Math.min(1, Math.hypot(nx, ny));
+}
+function resetRightStickTap() {
+  if (rightStickHoldTimer) { clearTimeout(rightStickHoldTimer); rightStickHoldTimer = null; }
+  rightStickStart = null;
+  rightStickLast = null;
+}
 setupStick('rightStick', 'rightNub',
   (nx, ny, dx, dy) => {
-    // 아주 작은 움직임은 무시(오조준 방지)
-    if (Math.abs(dx) < 4 && Math.abs(dy) < 4) return;
-    touchAimActive = true;
-    rightStickDragged = true;
-    touchAimAngle = Math.atan2(dy / TILT, dx); // 화면 방향 -> 월드 방향
-    touchAimMag = Math.min(1, Math.hypot(nx, ny));
+    rightStickLast = { nx, ny, dx, dy };
+    if (!rightStickDragged) {
+      if (!rightStickStart) rightStickStart = { dx, dy };
+      // 처음 터치한 지점에서 거의 안 움직였으면 아직 '탭'으로 본다 (연타할 때 손가락이 살짝 흔들려도 OK)
+      if (Math.hypot(dx - rightStickStart.dx, dy - rightStickStart.dy) < STICK_DRAG_PX) return;
+    } else if (Math.abs(dx) < 4 && Math.abs(dy) < 4) {
+      return; // 아주 작은 움직임은 무시(오조준 방지)
+    }
+    applyStickAim(nx, ny, dx, dy);
   },
   () => {
-    // 조준 스틱을 끌지 않고 짧게 탭하면 오토에임 발동 (가장 가까운 표적을 자동 조준해서 공격)
-    if (!rightStickDragged && Date.now() - rightStickDownAt < 350) {
-      autoAim();
+    const wasTap = !rightStickDragged; // 끌지 않고 뗐으면 탭 (오래 눌렀어도 조준을 안 했다면 오토에임)
+    resetRightStickTap();
+    if (wasTap) {
+      autoAim(); // 가장 가까운 표적을 자동 조준해서 공격
       touchAimActive = false;
       rightStickDragged = false;
       touchAimMag = 1;
@@ -2083,12 +2121,34 @@ setupStick('rightStick', 'rightNub',
     rightStickDragged = false;
     touchAimMag = 1;
   },
-  () => { rightStickDownAt = Date.now(); beginCharge(); } // 스틱을 잡는 순간 충전 시작 (충전 공격 캐릭터만)
+  () => {
+    resetRightStickTap();
+    rightStickDownAt = Date.now();
+    rightStickDragged = false; // 이전 터치의 상태가 남아 있어도 새 터치는 항상 '탭 후보'로 시작
+    touchAimActive = false;
+    // 움직이지 않고 길게 누르고 있으면, 손가락이 닿은 방향으로 수동 조준 전환 (오토에임이 아니라 직접 조준하고 싶은 경우)
+    rightStickHoldTimer = setTimeout(() => {
+      rightStickHoldTimer = null;
+      const l = rightStickLast;
+      if (!rightStickDragged && l && (Math.abs(l.dx) >= 4 || Math.abs(l.dy) >= 4)) applyStickAim(l.nx, l.ny, l.dx, l.dy);
+    }, STICK_TAP_MS);
+    beginCharge(); // 스틱을 잡는 순간 충전 시작 (충전 공격 캐릭터만)
+  }
 );
 
 // ===== 조인 처리: 닉네임 입력 -> 모드 선택 -> 캐릭터 선택 -> 매칭 대기 =====
 // ===== 로그인 / 회원가입 =====
 let currentProfile = null; // 서버가 알려주는 내 계정 정보 { username, coins, wins, losses, unlocked, prices }
+
+function renderBossCard() {
+  const card = document.querySelector('.mode-card[data-mode="boss"]');
+  if (!card) return;
+  const desc = card.querySelector('.mode-desc');
+  const b = currentProfile && currentProfile.boss;
+  if (!b) { desc.textContent = '혼자서 오늘의 보스에 도전! 목숨 3개 · 하루 1번'; card.classList.remove('boss-used'); return; }
+  desc.innerHTML = `오늘의 보스: ${escapeHtml(b.emoji || '👹')} <b>${escapeHtml(b.name)}</b> (체력 ${Number(b.hp).toLocaleString()})<br>혼자서 도전 · 목숨 ${b.lives}개 · 하루 1번<br>쓰러뜨리면 🪙 ${Number(b.rewardCoins).toLocaleString()} 코인${b.used ? '<br><b>✅ 오늘은 이미 도전했어요</b>' : ''}`;
+  card.classList.toggle('boss-used', !!b.used);
+}
 
 function updateProfileUI() {
   const text = currentProfile
@@ -2102,6 +2162,7 @@ function updateProfileUI() {
   updateDrawBadge();
   renderEventCards();
   renderAiBonusBanner();
+  renderBossCard();
   updateMissionUI();
   updateTrophyRoadUI();
   updateRankedRoadUI();
@@ -3763,6 +3824,10 @@ document.querySelectorAll('.mode-card').forEach((card) => {
     if (serverPauseInfo.on) { alert(serverPauseInfo.message || '서버 점검 중입니다. 잠시 후 다시 시도해주세요.'); return; }
     selectedMode = card.getAttribute('data-mode');
     if (selectedMode === 'ai') selectedAiDifficulty = 'hard';
+    if (selectedMode === 'boss') { // 오늘 이미 도전했으면 캐릭터 선택으로 넘어가지 않음 (최종 확인은 서버가 함)
+      const bi = currentProfile && currentProfile.boss;
+      if (bi && bi.used) { alert('오늘의 보스전은 이미 도전했어요!\n내일 다시 도전해 주세요.'); return; }
+    }
     if (selectedMode === 'ranked') { // 경쟁전: 캐릭터는 매칭된 뒤 선택 단계에서 고르므로 바로 대기열로
       const el = currentProfile && currentProfile.rankedEligibility; // 참가 조건 (최종 확인은 서버가 함)
       if (el && !el.ok) { alert(`경쟁전은 Lv.${el.level} 이상 캐릭터를 ${el.need}개 이상 보유해야 참가할 수 있어요.\n(현재 ${el.have}개)`); return; }
@@ -3991,6 +4056,8 @@ let gemNextAt = 0;      // 다음 보석이 나올 시각 (클라이언트 시�
 const gemSeen = {};     // 보석 id -> 처음 본 시각 (튀어나오는 연출용)
 let prevMyGems = 0;     // 내 보석 수가 늘었을 때 효과음을 내기 위한 기록
 let matchIsAi = false;  // AI 대결 여부. matchFound에서 갱신됨
+let matchBossInfo = null; // 보스전 정보 { name, emoji, hp, jumpRadius, ... } (보스전이 아니면 null)
+let matchLives = 0;        // 보스전 시작 목숨 수
 let matchAiInfo = null; // AI 대결 난이도 정보 { id, name, coinReward, trophyReward }. matchFound에서 갱신됨
 
 function doJoin() {
@@ -4003,9 +4070,10 @@ function doJoin() {
 function requestMatch() {
   document.getElementById('matchResultOverlay').classList.remove('open');
   document.getElementById('matchingStatus').textContent =
-    selectedMode === 'ranked' ? '🏆 경쟁전 상대를 찾는 중입니다...' : selectedMode === 'ai' ? 'AI 상대를 준비하는 중입니다...' : selectedMode === '3v3' ? '3:3 상대를 찾는 중입니다...' : selectedMode === '2v2' ? '2:2 상대를 찾는 중입니다...' : '1:1 상대를 찾는 중입니다...';
+    selectedMode === 'ranked' ? '🏆 경쟁전 상대를 찾는 중입니다...' : selectedMode === 'ai' ? 'AI 상대를 준비하는 중입니다...' : selectedMode === 'boss' ? '👹 보스를 불러오는 중입니다...' : selectedMode === '3v3' ? '3:3 상대를 찾는 중입니다...' : selectedMode === '2v2' ? '2:2 상대를 찾는 중입니다...' : '1:1 상대를 찾는 중입니다...';
   document.getElementById('matchingOverlay').classList.add('open');
   if (selectedMode === 'ranked') socket.emit('findRankedMatch'); // 점수는 서버 저장소 기준, 캐릭터는 매칭 후 선택
+  else if (selectedMode === 'boss') socket.emit('findBossMatch', { characterId: selectedCharacterId }); // 보스전: 혼자서 오늘의 보스에 도전 (하루 1번, 서버가 확인)
   else if (selectedMode === 'ai') socket.emit('findAiMatch', { characterId: selectedCharacterId, difficulty: selectedAiDifficulty }); // AI 대결: 대기열 없이 바로 시작. 이기면 난이도별 코인 + 고정 트로피
   else socket.emit('findMatch', { name: myName, characterId: selectedCharacterId, mode: selectedMode });
 }
@@ -4039,13 +4107,13 @@ function inCountdown() { return Date.now() < countdownEndsAt; }
 
 function vsCardHtml(r, isMe, side) {
   const ch = CHARACTERS.find((c) => c.id === r.characterId);
-  const color = ch ? ch.color : '#777';
+  const color = r.boss ? '#6a1b9a' : (ch ? ch.color : '#777');
   const rk = rankInfo(r.trophies || 0);
   return `<div class="vs-card ${side}">
     <div class="vs-avatar" style="background:${color}">${escapeHtml((r.characterName || (ch && ch.name) || '?').slice(0, 1))}</div>
     <div class="vs-name">${escapeHtml(r.name)}${isMe ? ' (나)' : ''}</div>
     <div class="vs-char">${escapeHtml(r.characterName || (ch && ch.name) || '')}</div>
-    ${r.ai
+    ${r.boss ? `<div class="vs-trophy">👹 오늘의 보스</div>` : r.ai
       ? `<div class="vs-trophy">🤖 AI 상대 · Lv.${r.level || 1}</div>`
       : `<div class="vs-trophy">${rk.cur.icon || ''} ${escapeHtml(rk.cur.name || '')} · 🏆 ${(r.trophies || 0).toLocaleString()} · Lv.${r.level || 1}</div>
     <div class="vs-device ${r.device === 'mobile' ? 'mobile' : 'desktop'}">${DEVICE_LABEL[r.device] || DEVICE_LABEL.desktop}</div>`}
@@ -4082,6 +4150,7 @@ function showVersusScreen(data) {
       cdEl.textContent = 'START!';
       if (matchGameMode === 'gatekeeper' && joined) showStartBanner('문을 지키고, 상대를 쥑이뿌세요!!'); // 문지기 모드 시작 안내
       if (matchGameMode === 'gemgrab' && joined) showStartBanner(`보라색 보석 ${matchGemWin}개를 먼저 모으세요!`); // 쨍그랩 모드 시작 안내
+      if (matchGameMode === 'boss' && joined) showStartBanner(`👹 ${matchBossInfo ? matchBossInfo.name : '보스'}를 쓰러뜨리세요! 목숨은 ${matchLives}개!`); // 보스전 시작 안내
       if (matchGameMode === 'soccer' && joined) showStartBanner(`⚽ 공을 몰고 가서 차 넣으세요! ${matchSoccer.winGoals}골 선취!`); // 슈퍼 축구 시작 안내
       clearInterval(vsTimer); vsTimer = null;
       setTimeout(() => { if (!vsTimer) document.getElementById('versusOverlay').classList.remove('open'); }, 400);
@@ -4223,6 +4292,7 @@ function updateGateHud(state) {
   const modeLabel = mode === 'gatekeeper' ? '🚪 문지기 — 상대 문을 먼저 부수면 승리!'
     : mode === 'soccer' ? `⚽ 슈퍼 축구 — 상대 골대에 ${matchSoccer.winGoals}골을 먼저 넣으면 승리!`
     : mode === 'gemgrab' ? `💎 쨍그랩 — 팀 보석 ${matchGemWin}개를 먼저 모으면 승리!`
+    : mode === 'boss' ? `👹 보스전 — 보스를 쓰러뜨리세요! (목숨 ${matchLives}개)`
     : `⚔ 녹아우 — ${matchWinScore}킬 선취`;
   let html = `<div class="gate-mode">${modeLabel}</div>`;
   if (mode === 'gemgrab') {
@@ -4237,6 +4307,14 @@ function updateGateHud(state) {
     const enemyTeam = myTeam === 'A' ? 'B' : 'A';
     const sbar = (n, label, cls) => `<div class="gate-bar ${cls} gemb"><div class="gate-bar-label"><span>${label}</span><span>⚽ ${n} / ${matchSoccer.winGoals}</span></div><div class="gate-bar-track"><div class="gate-bar-fill" style="width:${Math.max(0, Math.min(100, (n / matchSoccer.winGoals) * 100))}%"></div></div></div>`;
     html += `<div class="gate-bars">${sbar(state.goals[myTeam] || 0, '우리 팀', 'mine')}${sbar(state.goals[enemyTeam] || 0, '상대 팀', 'enemy')}</div>`;
+  }
+  if (mode === 'boss') { // 보스 체력바 + 남은 목숨
+    const bossC = (state.chickens || []).find((c) => c.boss);
+    const hp = bossC ? Math.max(0, Math.round(bossC.hp)) : 0;
+    const max = bossC ? bossC.maxHp : ((matchBossInfo && matchBossInfo.hp) || 1);
+    const lives = Math.max(0, state.bossLives != null ? state.bossLives : matchLives);
+    const nm = (bossC && bossC.name) || (matchBossInfo && matchBossInfo.name) || '보스';
+    html += `<div class="gate-bar boss-bar"><div class="gate-bar-label"><span>👹 ${escapeHtml(nm)}</span><span>${hp.toLocaleString()} / ${Number(max).toLocaleString()}</span></div><div class="gate-bar-track"><div class="boss-bar-fill" style="width:${Math.max(0, Math.min(100, (hp / (max || 1)) * 100))}%"></div></div></div><div class="boss-lives">${'❤️'.repeat(lives)}${'🖤'.repeat(Math.max(0, matchLives - lives))}</div>`;
   }
   if (mode === 'gatekeeper') {
     const gates = (state.turrets || []).filter((t) => t.isGate);
@@ -4262,6 +4340,8 @@ socket.on('matchFound', (data) => {
   matchWinScore = data.winScore || 5;
   matchIsAi = !!data.ai;
   matchAiInfo = data.aiDifficulty || null;
+  matchBossInfo = data.boss || null;
+  matchLives = data.lives || 0;
   matchGameMode = data.gameMode || 'knockout';
   ballLastDraw = null; ballRot = 0;
   matchHole = null; gemList = []; gemNextAt = 0; prevMyGems = 0; // 쨍그랩 상태 초기화
@@ -4293,6 +4373,7 @@ socket.on('matchFound', (data) => {
   document.getElementById('matchingOverlay').classList.remove('open');
   document.getElementById('matchResultOverlay').classList.remove('open');
   document.getElementById('scoreboard').classList.add('open'); // 바로 전적을 보여줌
+  if (matchBossInfo) document.getElementById('scoreboard').classList.remove('open'); // 보스전은 혼자 하므로 1:1 전적판 없음
 
   // 매치 시작 안내를 시스템 메시지로 채팅창에 표시
   if (matchMode === '2v2' || matchMode === '3v3') {
@@ -4304,6 +4385,7 @@ socket.on('matchFound', (data) => {
     addChatMessage({ id: 'system', name: '시스템', color: '#f1c40f', text: matchIsAi ? `상대: ${opponent} (AI전 - 이기면 🪙 ${matchAiInfo ? matchAiInfo.coinReward : 0}코인 + 🏆 트로피 ${matchAiInfo ? matchAiInfo.trophyReward : 0}, 전적·연승에는 영향 없음)` : `상대: ${opponent}` });
   }
 
+  if (matchBossInfo) addChatMessage({ id: 'system', name: '시스템', color: '#f1c40f', text: `👹 보스전! ${matchBossInfo.name}을(를) 쓰러뜨리세요. 목숨 ${matchLives}개, 다 쓰면 패배예요.` });
   joined = true;
   showVersusScreen(data); // 상대 캐릭터/트로피를 보여주고 카운트다운 후 시작
   canvas.focus();
@@ -4334,6 +4416,8 @@ socket.on('aiBonus', (data) => {
   else alert(`🎃 할로윈 보너스 🪙 +${coins.toLocaleString()} 코인을 받았어요!`);
 });
 socket.on('matchOver', (data) => {
+  hideDeathOverlay();
+  { const rb = document.getElementById('rematchBtn'); if (rb) rb.style.display = data.boss ? 'none' : ''; } // 보스전은 하루 1번이라 '다시 매칭' 없음
   joined = false;
   countdownEndsAt = 0;
   hideVersusScreen();
@@ -4359,7 +4443,11 @@ socket.on('matchOver', (data) => {
     document.getElementById('matchResultOverlay').classList.add('open');
     return;
   }
-  if (data.reason === 'opponentLeft') {
+  if (data.boss) {
+    titleEl.textContent = iWon ? '🎉 보스 격파!' : '💀 패배...';
+    titleEl.classList.add(iWon ? 'win' : 'lose');
+    descEl.textContent = iWon ? `👹 ${data.bossName || '보스'}를 쓰러뜨렸어요!` : `목숨을 모두 잃었어요... 👹 ${data.bossName || '보스'}는 내일 다시 도전해 보세요.`;
+  } else if (data.reason === 'opponentLeft') {
     titleEl.textContent = iWon ? '상대가 나갔습니다' : '매치 종료';
     titleEl.classList.add(iWon ? 'win' : 'lose');
     descEl.textContent = '상대방의 연결이 끊어져 매치가 종료되었습니다.';
@@ -4397,6 +4485,32 @@ socket.on('matchOver', (data) => {
 // 이 동기화가 없으면 로컬 좌표가 초기값(맵 정중앙)에 머물러 있다가, 그 위치가
 // 벽과 겹칠 경우 "시작하자마자 벽에 낀 것처럼" 전혀 움직이지 못하는 문제가 생김.
 let wasAlive = false;
+// ===== 사망 화면: 죽으면 화면을 검게 덮고 'N초 후 부활'을 보여준다 =====
+const RESPAWN_DELAY_MS = 3000; // server.js의 RESPAWN_DELAY와 동일하게 유지
+let deadSince = null;
+function hideDeathOverlay() {
+  deadSince = null;
+  const el = document.getElementById('deathOverlay');
+  if (el && el.style.display !== 'none' && el.style.display !== '') el.style.display = 'none';
+}
+function updateDeathOverlay(me) {
+  const el = document.getElementById('deathOverlay');
+  if (!el) return;
+  const resultOpen = document.getElementById('matchResultOverlay').classList.contains('open');
+  if (!joined || !me || me.alive !== false || resultOpen) { hideDeathOverlay(); return; }
+  if (deadSince === null) deadSince = Date.now();
+  const left = Math.max(1, Math.ceil((RESPAWN_DELAY_MS - (Date.now() - deadSince)) / 1000)); // 부활 직전까지 1초로 유지
+  const txt = document.getElementById('deathText');
+  const label = left + '초 후 부활';
+  if (txt && txt.textContent !== label) txt.textContent = label;
+  const sub = document.getElementById('deathSub');
+  if (sub) {
+    const subText = matchGameMode === 'boss' ? `남은 목숨 ${'❤️'.repeat(Math.max(0, (latestState && latestState.bossLives) || 0))}` : '곧 다시 돌아와요';
+    if (sub.textContent !== subText) sub.textContent = subText;
+  }
+  if (el.style.display !== 'flex') el.style.display = 'flex';
+}
+
 
 // 효과음 트리거용 - 직전 상태에서의 내 체력/점수/궁극기 게이지를 기억해뒀다가 변화를 비교한다
 let prevMyHp = null;
@@ -4538,6 +4652,7 @@ socket.on('state', (state) => {
   trackHpChanges(state);
   updateGateHud(state);
   const me = state.players[myId];
+  updateDeathOverlay(me);
   if (me) {
     if (!me.alive) {
       // 사망 중에는 서버 위치를 계속 따라간다
@@ -4646,6 +4761,7 @@ canvas.addEventListener('contextmenu', (e) => { if (joined) e.preventDefault(); 
 
 // ===== 오토에임: 가장 가까운 표적(적 / 문 / 터렛 / 닭)을 자동으로 조준하고 공격 =====
 let autoAimOverride = null; // { angle, dist, until }
+let autoAimFlashUntil = 0; // 모바일 탭 오토에임 직후 표적 표시를 잠깐 보여주는 시각
 function autoAimActive() { return !!(autoAimOverride && Date.now() < autoAimOverride.until); }
 function findAutoAimTarget(me) {
   let best = null, bestD = Infinity;
@@ -4685,6 +4801,7 @@ function autoAim() {
     const t = findAutoAimTarget(me) || target;
     const angle = Math.atan2(t.y - myY, t.x - myX);
     autoAimOverride = { angle, dist: t.d, until: Date.now() + 150 };
+    autoAimFlashUntil = Date.now() + 250;
     myAngle = angle;
     // 서버는 마지막으로 받은 angle을 쓰므로 공격 직전에 먼저 보낸다 (소켓 순서가 보장됨)
     socket.emit('playerUpdate', { x: myX, y: myY, angle, aimX: t.x, aimY: t.y });
@@ -5359,6 +5476,47 @@ function drawLegendPreview(canvasEl) {
   g.fillStyle = '#5a6272'; g.beginPath(); g.arc(0, 0, R, 0, Math.PI * 2); g.fill();
   drawLegendArmor(g, R, t);
   g.restore();
+}
+// 궁극기: 황금색 덩어리 - 녹아내린 황금이 뭉친 듯 꿈틀거리며 빛나는 큰 덩어리 (모양은 판정 원 안에 들어오게 그림)
+function drawLegendOrb(b) {
+  const r = b.radius;
+  const t = Date.now() / 1000 + (b.id || 0) * 0.37;
+  const ang = Math.atan2(b.vy || 0, b.vx || 1);
+  ctx.save();
+  ctx.translate(b.x, b.y);
+  // 뒤로 길게 남는 황금빛 꼬리
+  ctx.save();
+  ctx.rotate(ang);
+  const tg = ctx.createLinearGradient(-r * 3.6, 0, -r * 0.5, 0);
+  tg.addColorStop(0, 'rgba(255, 190, 60, 0)'); tg.addColorStop(1, 'rgba(255, 215, 90, 0.55)');
+  ctx.fillStyle = tg;
+  ctx.beginPath(); ctx.moveTo(-r * 0.4, -r * 0.8); ctx.lineTo(-r * 3.6, 0); ctx.lineTo(-r * 0.4, r * 0.8); ctx.closePath(); ctx.fill();
+  ctx.restore();
+  // 바깥 후광
+  const halo = ctx.createRadialGradient(0, 0, r * 0.4, 0, 0, r * 1.5);
+  halo.addColorStop(0, 'rgba(255, 230, 130, 0.65)'); halo.addColorStop(1, 'rgba(255, 190, 60, 0)');
+  ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(0, 0, r * 1.5, 0, Math.PI * 2); ctx.fill();
+  // 꿈틀거리는 덩어리 (울퉁불퉁한 가장자리)
+  ctx.rotate(t * 2.2);
+  ctx.beginPath();
+  const N = 12;
+  for (let i = 0; i <= N; i++) {
+    const a = (i / N) * Math.PI * 2;
+    const rr = r * (0.88 + 0.12 * Math.sin(a * 3 + t * 6) + 0.06 * Math.sin(a * 5 - t * 9));
+    const x = Math.cos(a) * rr, y = Math.sin(a) * rr;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  const body = ctx.createRadialGradient(-r * 0.3, -r * 0.35, r * 0.1, 0, 0, r);
+  body.addColorStop(0, '#fffbe0'); body.addColorStop(0.35, '#ffd23f'); body.addColorStop(0.8, '#e09a10'); body.addColorStop(1, '#8a5a00');
+  ctx.fillStyle = body; ctx.fill();
+  ctx.strokeStyle = '#fff2a8'; ctx.lineWidth = Math.max(1.5, r * 0.08); ctx.stroke();
+  // 안쪽 반짝이는 금속 하이라이트
+  ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = Math.max(1, r * 0.06);
+  ctx.beginPath(); ctx.arc(0, 0, r * 0.55, Math.PI * 1.1, Math.PI * 1.55); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  ctx.beginPath(); ctx.arc(-r * 0.3, -r * 0.35, r * 0.12, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
 }
 // 기본공격: 황금빛 에너지탄
 function drawLegendBolt(b) {
@@ -9003,6 +9161,7 @@ function drawTeamPoolRing(pool, alpha) {
 // [front, half] = 판정 반경(r)의 몇 배까지 그려지는지 (front: 진행 방향 앞쪽 끝, half: 옆으로 퍼진 반폭). 새 스킨 탄을 만들면 여기에 한 줄 추가.
 const SKIN_FIT_MAX_HALF = 1.1;
 const SKIN_HIT_FIT = {
+  legendOrb: [1.0, 1.0],     // 미남 전설의 갑옷 황금 덩어리 (궁극기)
   legendBolt: [1.6, 0.8],    // 미남 전설의 갑옷 황금 에너지탄
   shuriken: [2.2, 0.7],      // 미남 닌자 표창
   bigShuriken: [1.7, 1.7],   // 미남 닌자 수리검
@@ -9577,6 +9736,7 @@ function drawBulletShape(b) {
     return;
   }
   if (b.visual === 'legendBolt') { drawLegendBolt(b); return; }
+  if (b.visual === 'legendOrb') { drawLegendOrb(b); return; }
   if (b.visual === 'shuriken') {
     // 미남 닌자 스킨 기본공격: 표창 - 진행 방향을 향한 강철 표창 (꼬리에 붉은 끈) + 은빛 궤적
     const ang = Math.atan2(b.vy || 0, b.vx || 1);
@@ -11043,7 +11203,61 @@ function drawBlackCat(c) {
   drawHpBar(c.x, c.y - c.radius - 17, 52, 11, c.hp, c.maxHp || 1);
 }
 
+// 보스: 큰 몸집 + 가시 돌기. 점프 중에는 몸이 떠오르고(그림자는 땅에 남음), 착지 지점은 drawEffect 의 'bossWarn' 이 바닥에 표시한다.
+function drawBoss(c) {
+  const jp = c.jump;
+  const lift = jp && jp.total > 0 ? Math.sin(Math.PI * Math.max(0, Math.min(1, jp.t / jp.total))) * 110 : 0;
+  const r = c.radius;
+  const tm = Date.now() / 1000;
+  ctx.save(); // 땅 그림자
+  ctx.translate(c.x, c.y);
+  ctx.globalAlpha = 0.38 - Math.min(0.2, lift / 600);
+  ctx.fillStyle = '#000';
+  ctx.beginPath();
+  ctx.ellipse(0, r * 0.6, r * (1 - lift / 420), r * 0.34 * (1 - lift / 420), 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+
+  ctx.save();
+  ctx.translate(c.x, c.y - lift);
+  const pulse = 1 + 0.04 * Math.sin(tm * 4);
+  const aura = ctx.createRadialGradient(0, 0, r * 0.6, 0, 0, r * 1.7);
+  aura.addColorStop(0, 'rgba(229, 57, 53, 0.35)');
+  aura.addColorStop(1, 'rgba(229, 57, 53, 0)');
+  ctx.fillStyle = aura;
+  ctx.beginPath(); ctx.arc(0, 0, r * 1.7 * pulse, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#4a148c'; // 가시 돌기
+  for (let i = 0; i < 14; i += 1) {
+    const a = (i / 14) * Math.PI * 2 + tm * 0.25;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a - 0.14) * r * 0.9, Math.sin(a - 0.14) * r * 0.9);
+    ctx.lineTo(Math.cos(a) * r * 1.3, Math.sin(a) * r * 1.3);
+    ctx.lineTo(Math.cos(a + 0.14) * r * 0.9, Math.sin(a + 0.14) * r * 0.9);
+    ctx.closePath(); ctx.fill();
+  }
+  const body = ctx.createRadialGradient(-r * 0.3, -r * 0.35, r * 0.1, 0, 0, r);
+  body.addColorStop(0, '#9c27b0');
+  body.addColorStop(1, '#311b92');
+  ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.fillStyle = body; ctx.fill();
+  ctx.lineWidth = 4; ctx.strokeStyle = '#e53935'; ctx.stroke();
+  ctx.font = `${r * 1.45}px sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('👹', 0, 2);
+  ctx.restore();
+
+  drawHpBar(c.x, c.y - lift - r - 26, 120, 12, c.hp, c.maxHp || 1);
+  ctx.save();
+  ctx.font = 'bold 14px sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+  ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.8)'; ctx.fillStyle = '#fff';
+  ctx.strokeText(c.name || '보스', c.x, c.y - lift - r - 29);
+  ctx.fillText(c.name || '보스', c.x, c.y - lift - r - 29);
+  ctx.restore();
+}
+
 function drawChicken(c) {
+  if (c.boss) { drawBoss(c); return; }
   if (c.visual === 'blackCat') { drawBlackCat(c); return; }
   const isAlly = c.ownerId === myId || (myTeam && c.team === myTeam);
   const peck = c.peckTimer > 0 ? 4 : 0; // 쪼는 순간 살짝 튀어나오는 연출
@@ -11377,6 +11591,28 @@ function drawEffect(e) {
     ctx.lineWidth = 3;
     ctx.strokeStyle = `rgba(200, 150, 255, ${0.8 * (1 - prog)})`;
     ctx.stroke();
+    ctx.restore();
+  } else if (e.type === 'bossWarn') {
+    // 보스 점프 착지 지점 경고: 빨간 원이 점점 차오르다가 착지하면 광역 피해
+    const prog = 1 - Math.max(0, Math.min(1, e.life / (e.maxLife || 1)));
+    ctx.save();
+    ctx.beginPath(); ctx.arc(e.x, e.y, e.radius, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(229, 57, 53, ${0.1 + 0.2 * prog})`; ctx.fill();
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = `rgba(255, 82, 82, ${0.55 + 0.4 * Math.abs(Math.sin(Date.now() / 120))})`;
+    ctx.setLineDash([12, 8]); ctx.stroke(); ctx.setLineDash([]);
+    ctx.beginPath(); ctx.arc(e.x, e.y, e.radius * prog, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 82, 82, 0.28)'; ctx.fill();
+    ctx.restore();
+  } else if (e.type === 'bossSlam') {
+    // 보스 착지 충격파
+    const prog = 1 - Math.max(0, Math.min(1, e.life / (e.maxLife || 0.5)));
+    ctx.save();
+    ctx.globalAlpha = 1 - prog;
+    ctx.beginPath(); ctx.arc(e.x, e.y, e.radius * (0.5 + 0.55 * prog), 0, Math.PI * 2);
+    ctx.lineWidth = 7; ctx.strokeStyle = 'rgba(255, 138, 101, 0.95)'; ctx.stroke();
+    ctx.beginPath(); ctx.arc(e.x, e.y, e.radius * (0.35 + 0.5 * prog), 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(229, 57, 53, 0.4)'; ctx.fill();
     ctx.restore();
   } else if (e.type === 'airLanding') {
     // 하늘에서 떨어져 땅에 닿은 충격파
@@ -13087,7 +13323,7 @@ function render() {
 
   drawFloatTexts(); // 데미지(빨강)/회복(초록)/보호막 흡수(파랑) 숫자
 
-  if (autoAimArmed) drawAutoAimMark();
+  if (autoAimArmed || Date.now() < autoAimFlashUntil) drawAutoAimMark();
   const meForAim = latestState.players[myId];
   if (isLeapUltimateArmed(meForAim)) drawLeapIndicator(meForAim, meForAim.ultimate);
   else if (isLeapGadgetArmed(meForAim)) drawLeapIndicator(meForAim, meForAim.gadget);
