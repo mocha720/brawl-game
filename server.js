@@ -58,6 +58,30 @@ const GAME_MODES = {
   soccer: { name: '슈퍼 축구', desc: '공을 몰고 가서 차 넣어요! 상대 골대에 3골을 먼저 넣으면 승리' },
 };
 const MODE_VOTE_MS = 8000;        // 게임 종류 투표 시간 (모두 투표하면 바로 끝남)
+// ===== 보스전 (혼자 하는 PvE) =====
+// 하루에 1번(한국 시간 기준) 도전할 수 있고, 오늘의 보스는 날짜에 따라 정해진다. 목숨은 3개이고 다 쓰면 패배, 보스를 쓰러뜨리면 승리.
+const BOSS_LIVES = 3;              // 목숨 개수
+const BOSS_REWARD_COINS = 1000;    // 보스를 쓰러뜨렸을 때 받는 코인 (원하는 값으로 바꾸세요)
+const BOSS_PLAYER_SPEED = 152;     // 클라이언트 MOVE_SPEED(플레이어 기본 이동속도)와 같은 값. 보스 속도 = 이 값 x speedRatio
+const BOSSES = [
+  {
+    id: 'su', name: '수', emoji: '👹',
+    hp: 80000, radius: 52,
+    speedRatio: 0.5,                  // 이동속도 = 플레이어의 50%
+    thorn: { count: 3, spreadDeg: 60, damage: 1000, speed: 430, radius: 10, lifetime: 1.7 }, // 가시 3개, 탄퍼짐 60도, 1개당 1000 피해
+    attackInterval: 2, attackRepeats: 3, // 2초에 1번씩 3번 공격한 뒤
+    jump: { time: 1.8, radius: 150, damage: 2000 }, // 플레이어 위치로 느리게 점프(1.8초) -> 착지 시 반경 150px 광역 2000 피해
+    firstDelay: 1.0, jumpRecover: 1.5,
+  },
+  // 보스를 더 만들고 싶으면 여기에 같은 모양으로 추가하면 '오늘의 보스'가 날짜마다 돌아가며 나온다
+];
+function bossOfDay(day) { let h = 0; for (const ch of String(day)) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return BOSSES[h % BOSSES.length]; }
+function bossPublicInfo(spec) { return { id: spec.id, name: spec.name, emoji: spec.emoji, hp: spec.hp, radius: spec.radius, jumpRadius: spec.jump.radius, jumpTime: spec.jump.time, lives: BOSS_LIVES }; }
+function bossView(u) { // 메인 화면용: 오늘의 보스와 오늘 이미 도전했는지
+  const spec = bossOfDay(missionDay());
+  return { ...bossPublicInfo(spec), rewardCoins: BOSS_REWARD_COINS, used: !!(u && u.bossDay === missionDay()) };
+}
+
 const GATE_HP = 100000;           // 문지기 모드: 문의 체력 (모든 공격이 문에 통함)
 const JINWOOPARK_GATE_DAMAGE = 4000; // 문지기 모드: 진우Park 하트(현재 체력 비율 피해)가 문에 주는 피해. 문은 체력이 매우 커서 비율 피해가 과하게 들어가므로 4000으로 고정
 const GATE_RADIUS = 36;           // 문의 크기(피격 반경)
@@ -1674,8 +1698,8 @@ const SKINS = {
     price: null,
     gemPrice: 50,
     premium: true,
-    desc: '황금빛 문양이 새겨진 전설의 갑옷을 입은 미남! 투구의 붉은 깃털과 어깨 갑옷, 몸을 감싸는 황금 오라가 빛나요. 기본공격은 황금빛 에너지탄이 나가요. (외형만 바뀌고 성능은 그대로예요)',
-    visuals: { rifleBullet: 'legendBolt' },
+    desc: '황금빛 문양이 새겨진 전설의 갑옷을 입은 미남! 투구의 붉은 깃털과 어깨 갑옷, 몸을 감싸는 황금 오라가 빛나요. 기본공격은 황금빛 에너지탄, 궁극기는 황금색 덩어리가 날아가요. (외형만 바뀌고 성능은 그대로예요)',
+    visuals: { rifleBullet: 'legendBolt', clown: 'legendOrb' }, // 기본공격 = 황금 에너지탄, 궁극기 = 황금색 덩어리
   },
   minam_ninja: {
     id: 'minam_ninja',
@@ -2568,7 +2592,7 @@ function publicProfile(u) {
   const equippedSkins = {};
   for (const id in CHARACTERS) { const sk = equippedSkinOf(u, id); if (sk) equippedSkins[id] = sk; }
   return { username: u.name, coins: u.coins, gems: u.gems || 0, gemResetCost: GEM_SHOP_RESET_COST, wins: u.wins || 0, losses: u.losses || 0, unlocked: effectiveUnlocked(u), prices: allPrices(),
-    skinCatalog: skinCatalogPublic(), skins: ownedSkinsOf(u), equippedSkins, hypers: ownedHypersOf(u), gears: ownedGearsOf(u), gearShop: gearShopView(u), gearCatalog: GEAR_CATALOG.map((g) => ({ id: g.id, name: g.name, rarity: g.rarity, desc: g.desc, excludeChars: Object.keys(CHARACTERS).filter((cid) => !gearAllowedOn(g.id, cid)) })), gearRarities: Object.values(GEAR_RARITIES), gearMax: GEAR_MAX_PER_CHARACTER, gearSellRatio: GEAR_SELL_RATIO, hyperPrice: HYPER_PRICE, hyperRequiredLevel: HYPER_REQUIRED_LEVEL, trophyRoad: trophyRoadView(u), trophyRoadPlus: trophyRoadPlusView(u), rankedRoad: rankedRoadView(u), trophies, streaks, missions: missionsView(u), repeatMissions: repeatMissionsView(u), ranks: TROPHY_RANKS, characters: buildCharacterInfo(levels), levels, levelTable: LEVEL_TABLE_PUBLIC, maxLevel: MAX_CHARACTER_LEVEL, isAdmin: u.key === ADMIN_KEY, announcements: allAnnouncements(), dailyDraw: dailyDrawView(u),
+    skinCatalog: skinCatalogPublic(), skins: ownedSkinsOf(u), equippedSkins, hypers: ownedHypersOf(u), gears: ownedGearsOf(u), gearShop: gearShopView(u), gearCatalog: GEAR_CATALOG.map((g) => ({ id: g.id, name: g.name, rarity: g.rarity, desc: g.desc, excludeChars: Object.keys(CHARACTERS).filter((cid) => !gearAllowedOn(g.id, cid)) })), gearRarities: Object.values(GEAR_RARITIES), gearMax: GEAR_MAX_PER_CHARACTER, gearSellRatio: GEAR_SELL_RATIO, hyperPrice: HYPER_PRICE, hyperRequiredLevel: HYPER_REQUIRED_LEVEL, trophyRoad: trophyRoadView(u), trophyRoadPlus: trophyRoadPlusView(u), rankedRoad: rankedRoadView(u), trophies, streaks, missions: missionsView(u), repeatMissions: repeatMissionsView(u), ranks: TROPHY_RANKS, characters: buildCharacterInfo(levels), levels, levelTable: LEVEL_TABLE_PUBLIC, maxLevel: MAX_CHARACTER_LEVEL, isAdmin: u.key === ADMIN_KEY, announcements: allAnnouncements(), dailyDraw: dailyDrawView(u), boss: bossView(u),
     aiBonusEvent: halloweenBonusView(),
     gemExchange: GEM_EXCHANGE,
     rankedEligibility: rankedEligibility(u),
@@ -2785,6 +2809,19 @@ function createFileDb() {
       u.dailyDraw = { at: now, tier, coins };
       scheduleSave();
       return { ok: true, user: cloneUser(u) };
+    },
+    // 보스전: 오늘(day) 아직 도전하지 않았을 때만 도전 기록을 남긴다 (하루 1번)
+    async claimBossAttempt(key, day) {
+      const u = users[key];
+      if (!u) return { ok: false, reason: 'noUser' };
+      if (u.bossDay === day) return { ok: false, reason: 'used', user: cloneUser(u) };
+      u.bossDay = day;
+      scheduleSave();
+      return { ok: true, user: cloneUser(u) };
+    },
+    async releaseBossAttempt(key, day) { // 매치가 시작되지 못했을 때 도전 기회를 돌려줌
+      const u = users[key];
+      if (u && u.bossDay === day) { delete u.bossDay; scheduleSave(); }
     },
     // 코인만 지급 (AI 대결 승리 보상 등)
     async addCoins(key, coins) {
@@ -3173,6 +3210,17 @@ function createMongoDb(uri) {
       const user = await col.findOne({ key }, { projection });
       if (!user) return { ok: false, reason: 'noUser' };
       return { ok: false, reason: 'used', user };
+    },
+    async claimBossAttempt(key, day) {
+      // 오늘 아직 도전하지 않은 계정만 한 번의 원자적 연산으로 도전 기록 (동시에 여러 번 눌러도 한 번만 성공)
+      const updated = await col.findOneAndUpdate({ key, bossDay: { $ne: day } }, { $set: { bossDay: day } }, { returnDocument: 'after', projection });
+      if (updated) return { ok: true, user: updated };
+      const user = await col.findOne({ key }, { projection });
+      if (!user) return { ok: false, reason: 'noUser' };
+      return { ok: false, reason: 'used', user };
+    },
+    async releaseBossAttempt(key, day) {
+      await col.updateOne({ key, bossDay: day }, { $unset: { bossDay: '' } });
     },
     async addCoins(key, coins) {
       return col.findOneAndUpdate({ key }, { $inc: { coins } }, { returnDocument: 'after', projection });
@@ -5342,6 +5390,11 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter, chain, n
   if (target.hp <= 0) {
     target.hp = 0;
     target.alive = false;
+    if (match.boss) { // 보스전: 죽을 때마다 목숨이 하나 줄고, 다 쓰면 패배 (남아 있으면 아래 일반 부활 처리로 3초 뒤 부활)
+      target.lives = (target.lives || 0) - 1;
+      match.bossLives = Math.max(0, target.lives);
+      if (target.lives <= 0) { finishBossMatch(match, false); return; }
+    }
     if (match.gameMode === 'gemgrab') dropGems(match, target); // 쨍그랩: 가지고 있던 보석을 모두 떨구고 죽음
     if (match.gameMode === 'soccer') dropBall(match, target, false); // 슈퍼 축구: 죽으면 공을 놓침
 
@@ -6184,6 +6237,7 @@ function startMatch(mode, entries, opts = {}) {
     match.settled = true;  // 일반 정산(트로피/전적)은 건너뜀. AI 보상은 settleAiMatch 가 따로 처리
     match.aiBots = {};     // botSocketId -> AI 상태
   }
+  if (opts.boss) setupBossMatch(match, opts.boss); // 보스전: 혼자 보스와 싸움 (투표/문/보석 없음)
   if (opts.ranked) match.ranked = true; // 경쟁전: 일반 1:1 정산에 더해 경쟁전 점수도 정산 (settleRankedMatch)
   matches[matchId] = match;
 
@@ -6203,11 +6257,15 @@ function startMatch(mode, entries, opts = {}) {
     }
   });
 
+  if (opts.boss) { for (const pid in match.players) match.players[pid].lives = BOSS_LIVES; match.bossLives = BOSS_LIVES; } // 목숨 3개
+
   // 대결 화면용 참가자 목록: 닉네임, 팀, 캐릭터, 그 캐릭터의 트로피
   const roster = entries.map((e) => {
     const pl = match.players[e.socket.id];
     return { id: pl.id, name: pl.name, team: pl.team, characterId: pl.characterId, characterName: pl.characterName, trophies: e.trophies || 0, level: pl.level, device: e.socket.data.device || 'desktop', ai: !!e.isBot };
   });
+
+  if (opts.boss) roster.push({ id: 'boss', name: opts.boss.name, team: 'B', characterId: 'boss', characterName: opts.boss.name, trophies: 0, level: 1, device: 'desktop', ai: true, boss: true });
 
   entries.forEach((e) => {
     const self = match.players[e.socket.id];
@@ -6230,12 +6288,14 @@ function startMatch(mode, entries, opts = {}) {
       bushes: map.bushes,
       winScore: cfg.winScore,
       teammateNames,
-      opponentNames,
+      opponentNames: opts.boss ? [opts.boss.name] : opponentNames,
       roster,
+      boss: opts.boss ? bossPublicInfo(opts.boss) : null, // 보스전 정보 (이름/체력/점프 범위 등)
+      lives: opts.boss ? BOSS_LIVES : 0,
       ai: !!opts.ai, // AI 연습 대결 여부
       ranked: !!opts.ranked, // 경쟁전 여부
       aiDifficulty: opts.ai ? aiDifficultyOf(opts.aiDifficulty) : null, // { id, name, coinReward, trophyReward }
-      gameMode: 'knockout',
+      gameMode: match.gameMode,
       vote: match.voteOpen ? { options: Object.keys(GAME_MODES).map((id) => ({ id, name: GAME_MODES[id].name, desc: GAME_MODES[id].desc })), maps: MAP_LAYOUTS.map((m) => ({ id: m.id, name: m.name, walls: m.walls, bushes: m.bushes })), endsInMs: MODE_VOTE_MS } : null,
       startsInMs: match.voteOpen ? MODE_VOTE_MS : MATCH_COUNTDOWN_MS,
     });
@@ -6611,6 +6671,56 @@ io.on('connection', (socket) => {
     if (socketToMatch[socket.id] || isQueued(socket.id)) return;
     if (serverPause.on) { socket.emit('findMatchError', { message: serverPause.message }); return; }
     startAiMatch(socket, requestedId, userKey, level, trophies, skin, hyper, difficulty, gear);
+  });
+
+  // 보스전: 혼자서 오늘의 보스와 대결. 하루(한국 시간 기준)에 한 번만 도전할 수 있고, 목숨은 3개.
+  socket.on('findBossMatch', async (data) => {
+    if (socketToMatch[socket.id]) return;
+    if (isQueued(socket.id)) return;
+    if (!socket.data.userKey) { socket.emit('findMatchError', { message: '로그인이 필요합니다.' }); return; }
+    if (serverPause.on) { socket.emit('findMatchError', { message: serverPause.message }); return; }
+    const requestedId = data && data.characterId;
+    if (!CHARACTERS[requestedId] || !socket.data.unlocked.has(requestedId)) {
+      socket.emit('findMatchError', { message: '잠금해제되지 않은 캐릭터입니다.' });
+      return;
+    }
+    const userKey = socket.data.userKey;
+    let level = 1; let trophies = 0; let skin = null; let hyper = false; let gear = null;
+    try {
+      const u = await db.findUser(userKey);
+      trophies = (u && u.trophies && u.trophies[requestedId]) || 0;
+      level = levelOf(u, requestedId);
+      skin = equippedSkinOf(u, requestedId);
+      hyper = hasHyper(u, requestedId);
+      gear = gearBonusOf(u, requestedId);
+    } catch (e) {
+      console.error('보스전 캐릭터 조회 실패', userKey, e);
+    }
+    if (!socket.connected || socket.data.userKey !== userKey) return;
+    if (socketToMatch[socket.id] || isQueued(socket.id)) return;
+    if (serverPause.on) { socket.emit('findMatchError', { message: serverPause.message }); return; }
+
+    const day = missionDay();
+    let claim;
+    try {
+      claim = await db.claimBossAttempt(userKey, day); // 하루 1번: 도전 기록은 원자적으로 한 번만 성공
+    } catch (e) {
+      console.error('보스전 도전 기록 실패', userKey, e);
+      socket.emit('findMatchError', { message: '서버 오류가 발생했습니다.' });
+      return;
+    }
+    if (!claim.ok) {
+      if (claim.user) socket.emit('profileUpdate', publicProfile(claim.user));
+      socket.emit('findMatchError', { message: claim.reason === 'used' ? '오늘의 보스전은 이미 도전했어요!\n내일 다시 도전해 주세요.' : '보스전을 시작할 수 없습니다.' });
+      return;
+    }
+    if (!socket.connected || socket.data.userKey !== userKey || socketToMatch[socket.id] || isQueued(socket.id) || serverPause.on) {
+      db.releaseBossAttempt(userKey, day).catch(() => {}); // 시작하지 못했으니 도전 기회를 돌려줌
+      return;
+    }
+    socket.emit('profileUpdate', publicProfile(claim.user)); // 메인 화면에 '오늘 도전 완료' 반영
+    console.log(`[보스전] ${socket.data.displayName} 도전 시작 (${bossOfDay(day).name})`);
+    startBossMatch(socket, requestedId, userKey, level, trophies, skin, hyper, gear);
   });
 
   registerGameplayHandlers(socket); // 이동/공격/충전/가젯/궁극기 입력 처리 (AI 봇도 같은 함수를 써서 사람과 똑같은 규칙으로 행동함)
@@ -7775,6 +7885,7 @@ function updateMatch(match, dt, now) {
   // 추격할 적이 없으면 주인 곁을 따라다닌다
   for (const chicken of match.chickens) {
     if (match.over) break;
+    if (chicken.boss) continue; // 보스는 updateBoss 가 따로 움직임
     chicken.life -= dt;
     if (chicken.attackCooldown > 0) chicken.attackCooldown -= dt;
     if (chicken.peckTimer > 0) chicken.peckTimer -= dt;
@@ -9185,6 +9296,145 @@ function startAiMatch(socket, characterId, userKey, level, trophies, skin, hyper
   startMatch('1v1', entries, { ai: true, aiDifficulty: diff.id });
 }
 
+// ===== 보스전 =====
+// 보스는 '닭'과 같은 구조물(match.chickens 에 boss:true 로 들어감)이라서, 기존의 모든 공격(총알/근접/폭발/웅덩이 등)이 그대로 보스에게 통한다.
+function findFreeSpot(walls, x, y, r) { // 벽에 겹치지 않는 가장 가까운 자리 (큰 보스가 벽에 끼지 않게)
+  const ok = (px, py) => px >= r && px <= ARENA_WIDTH - r && py >= r && py <= ARENA_HEIGHT - r && !collidesWithWalls(walls, px, py, r);
+  if (ok(x, y)) return { x, y };
+  for (let d = 16; d <= 400; d += 16) {
+    for (let a = 0; a < 12; a += 1) {
+      const px = x + Math.cos((a * Math.PI) / 6) * d;
+      const py = y + Math.sin((a * Math.PI) / 6) * d;
+      if (ok(px, py)) return { x: px, y: py };
+    }
+  }
+  return { x: Math.max(r, Math.min(ARENA_WIDTH - r, x)), y: Math.max(r, Math.min(ARENA_HEIGHT - r, y)) };
+}
+
+function setupBossMatch(match, spec) {
+  match.gameMode = 'boss';
+  match.voteOpen = false;                       // 혼자 하므로 투표 없음
+  match.startsAt = Date.now() + MATCH_COUNTDOWN_MS;
+  match.settled = true;                         // 일반 정산(트로피/전적) 안 함. 보상은 finishBossMatch 가 처리
+  match.bossSpec = spec;
+  const spawnB = teamSpawnPoint(match.walls, 'B', 0, 1);
+  const sp = findFreeSpot(match.walls, spawnB.x, spawnB.y, spec.radius);
+  chickenIdCounter += 1;
+  const boss = {
+    id: chickenIdCounter, boss: true, bossId: spec.id, name: spec.name, visual: 'boss',
+    ownerId: 'boss', team: 'B', x: sp.x, y: sp.y, hp: spec.hp, maxHp: spec.hp, radius: spec.radius,
+    damage: 0, attackRange: 0, attackCooldown: 0, moveSpeed: BOSS_PLAYER_SPEED * spec.speedRatio,
+    life: 1e9, peckTimer: 0, charging: false,
+    jump: null,                                  // 점프 중이면 { fromX, fromY, tx, ty, t, total } (클라이언트가 높이/그림자를 그림)
+    phase: 'shoot', shotsDone: 0, nextActionAt: match.startsAt + spec.firstDelay * 1000,
+  };
+  match.boss = boss;
+  match.chickens.push(boss);
+}
+
+function bossFireThorns(match, boss, spec, angle) { // 가시 N개를 부채꼴(탄퍼짐)로 발사
+  const t = spec.thorn;
+  for (let i = 0; i < t.count; i += 1) {
+    const off = t.count > 1 ? (i / (t.count - 1) - 0.5) * ((t.spreadDeg * Math.PI) / 180) : 0;
+    const dx = Math.cos(angle + off);
+    const dy = Math.sin(angle + off);
+    bulletIdCounter += 1;
+    match.bullets.push({
+      id: bulletIdCounter,
+      x: boss.x + dx * (boss.radius + 5),
+      y: boss.y + dy * (boss.radius + 5),
+      sweep: true, prevX: boss.x, prevY: boss.y,
+      vx: dx * t.speed, vy: dy * t.speed,
+      ownerId: 'boss', team: 'B',
+      life: t.lifetime, damage: t.damage, radius: t.radius,
+      isUltimate: true, visual: 'thorn', pierceWalls: false,
+    });
+  }
+}
+
+function updateBoss(match, dt, now) {
+  const boss = match.boss;
+  const spec = match.bossSpec;
+  if (!boss || match.over) return;
+  if (boss.hp <= 0) { finishBossMatch(match, true); return; }
+  if (now < match.startsAt) return; // 대결 화면(카운트다운) 중에는 가만히
+  const pl = Object.values(match.players)[0];
+  if (!pl) return;
+
+  if (boss.phase === 'jump') { // 느리게 점프: 시작할 때 정한 목표 지점으로 날아가 착지하면 광역 피해
+    const j = boss.jump;
+    j.t += dt;
+    const p = Math.min(1, j.t / j.total);
+    boss.x = j.fromX + (j.tx - j.fromX) * p;
+    boss.y = j.fromY + (j.ty - j.fromY) * p;
+    if (p >= 1) {
+      const land = findFreeSpot(match.walls, j.tx, j.ty, boss.radius);
+      boss.x = land.x; boss.y = land.y;
+      for (const pid in match.players) {
+        const t = match.players[pid];
+        if (!t.alive) continue;
+        if (Math.hypot(t.x - j.tx, t.y - j.ty) <= spec.jump.radius + PLAYER_RADIUS) applyDamage(match, t, spec.jump.damage, 'boss', { chargeShooter: false, noLifesteal: true });
+        if (match.over) return;
+      }
+      effectIdCounter += 1;
+      match.effects.push({ id: effectIdCounter, type: 'bossSlam', x: j.tx, y: j.ty, radius: spec.jump.radius, life: 0.5, maxLife: 0.5 });
+      boss.jump = null;
+      boss.phase = 'shoot';
+      boss.shotsDone = 0;
+      boss.nextActionAt = now + spec.jumpRecover * 1000;
+    }
+    return;
+  }
+
+  if (!pl.alive) { // 플레이어가 부활을 기다리는 동안은 멈춰서 기다림
+    if (boss.nextActionAt < now + 400) boss.nextActionAt = now + 400;
+    return;
+  }
+
+  const dx = pl.x - boss.x;
+  const dy = pl.y - boss.y;
+  const dist = Math.hypot(dx, dy) || 1;
+  const stopDist = boss.radius + PLAYER_RADIUS + 6;
+  if (dist > stopDist) moveChicken(match, boss, dx / dist, dy / dist, Math.min(boss.moveSpeed * dt, dist - stopDist)); // 플레이어 속도의 50%로 따라감
+
+  if (now >= boss.nextActionAt) {
+    if (boss.shotsDone < spec.attackRepeats) { // 2초에 한 번 가시 발사, 총 3번
+      bossFireThorns(match, boss, spec, Math.atan2(dy, dx));
+      boss.shotsDone += 1;
+      boss.nextActionAt = now + spec.attackInterval * 1000;
+    } else { // 3번 쏜 뒤: 지금 플레이어 위치로 점프 시작 (착지 지점은 바닥에 경고 표시)
+      boss.phase = 'jump';
+      boss.jump = { fromX: boss.x, fromY: boss.y, tx: pl.x, ty: pl.y, t: 0, total: spec.jump.time };
+      effectIdCounter += 1;
+      match.effects.push({ id: effectIdCounter, type: 'bossWarn', x: pl.x, y: pl.y, radius: spec.jump.radius, life: spec.jump.time, maxLife: spec.jump.time });
+    }
+  }
+}
+
+function finishBossMatch(match, won) { // 보스를 쓰러뜨리면 승리, 목숨을 다 쓰면 패배
+  if (match.over) return;
+  match.over = true;
+  const coins = won ? BOSS_REWARD_COINS : 0;
+  io.to(match.id).emit('matchOver', { reason: won ? 'bossDefeated' : 'bossFailed', winnerTeam: won ? 'A' : 'B', teamScore: match.teamScore, coinReward: coins, boss: true, bossName: match.bossSpec.name });
+  if (won) {
+    for (const pid in match.players) {
+      const key = match.accounts[pid];
+      if (!key) continue;
+      db.addCoins(key, coins).then((user) => {
+        const s = io.sockets.sockets.get(pid);
+        if (s && user) s.emit('profileUpdate', publicProfile(user));
+      }).catch((e) => console.error('보스전 보상 지급 실패', key, e));
+    }
+  }
+  setTimeout(() => endMatch(match.id), MATCH_CLEANUP_DELAY_MS);
+}
+
+function startBossMatch(socket, characterId, userKey, level, trophies, skin, hyper, gear) {
+  const spec = bossOfDay(missionDay());
+  const entries = [{ socket, name: socket.data.displayName, characterId, userKey, trophies: trophies || 0, level, skin: skin || null, hyper: !!hyper, gear: gear || null }];
+  startMatch('1v1', entries, { boss: spec });
+}
+
 // ===== 서버 게임 루프 =====
 // 진행 중인 모든 매치를 독립적으로 갱신하고, 각 매치의 상태는 그 매치에 속한 플레이어들에게만 전송한다
 // (덤불/은신 은닉을 위해 방 전체 브로드캐스트 대신 플레이어별로 필터링해서 개별 전송한다.
@@ -9199,6 +9449,7 @@ function gameLoop() {
 
     if (match.aiBots) updateAiBots(match, dt, now); // AI 연습 대결의 봇 행동
     updateMatch(match, dt, now);
+    if (match.boss) updateBoss(match, dt, now); // 보스전: 보스 행동 패턴
     checkGates(match); // 문지기 모드: 문이 부서졌는지 확인
     updateGemGrab(match, now); // 쨍그랩 모드: 보석 생성/획득/승리 판정
     updateSoccer(match, dt, now); // 슈퍼 축구 모드: 공 이동/획득/골 판정
@@ -9218,6 +9469,7 @@ function gameLoop() {
         turrets: match.turrets,
         bombs: match.bombs,
         chickens: match.chickens,
+        bossLives: match.boss ? match.bossLives : undefined,
       });
     }
   }
