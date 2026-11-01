@@ -96,7 +96,8 @@ const AI_DEFAULT_DIFFICULTY = 'hard'; // 옛 클라이언트가 'easy' 등 어�
 // ===== 🎃 할로윈 이벤트: AI전 승리 보너스 코인 =====
 // 켜져 있는 동안 AI전에서 사람이 이길 때마다 기본 보상에 더해 min~max 코인(step 단위, 무작위)을 추가로 지급한다.
 // 끝내려면 enabled 를 false 로 바꾸고 재배포하면 된다. (endsAt 에 종료 시각(ms)을 넣으면 그 시각에 자동 종료. 지금은 null = 직접 중단할 때까지 계속)
-const HALLOWEEN_AI_BONUS = { enabled: true, min: 50, max: 500, step: 10, endsAt: null };
+const HALLOWEEN_AI_BONUS = { enabled: false, // 2026-11-01 이벤트 종료. 다시 열려면 true 로 바꾸고 재배포
+   min: 50, max: 500, step: 10, endsAt: null };
 function halloweenBonusActive() {
   return !!HALLOWEEN_AI_BONUS.enabled && (!HALLOWEEN_AI_BONUS.endsAt || Date.now() < HALLOWEEN_AI_BONUS.endsAt);
 }
@@ -562,9 +563,10 @@ const CHARACTERS = {
       damage: 1750,
       speed: 600,
       radius: 8,
-      lifetime: 0.49,    // 초 (사거리 ≈ 294px) - 기존 1.4초(≈ 840px)에서 50% 감소 후, 다시 30% 더 감소
+      lifetime: 0.735,   // 초 (사거리 ≈ 441px) - 기존 294px에서 50% 증가
       visual: 'knife',
-      pierceWalls: true, // 벽(장애물)을 그대로 통과해서 날아감
+      bounceWalls: true, // 벽(장애물)/맵 끝에 닿으면 사라지지 않고 튕겨 나옴 (적에게 맞으면 사라짐)
+      bounceRangeBonus: 0.5, // 처음 튕기는 순간 사거리(날아가는 시간)가 원래 사거리의 이 비율만큼 추가로 늘어남 (0.5 = 50%, 한 번만 적용)
     },
     ultimate: {
       name: '저격 터렛 설치',
@@ -1018,6 +1020,7 @@ const CHARACTERS = {
       radius: 9,
       lifetime: 2.2,         // 초 (사거리 약 572)
       wave: { amplitude: 24, length: 130 }, // 직선이 아니라 구불구불한 궤도: 좌우로 amplitude(px)만큼 흔들리며, 한 번 구불거리는 데 length(px)만큼 나아감
+      closeRange: { distance: 150, damageMultiplier: 0.5 }, // 발사 지점에서 이 거리(px) 안에서 적중하면 피해가 damageMultiplier배로 줄어듦 (멀리서 맞히면 그대로)
       visual: 'thorn',
     },
     ultimate: {
@@ -1147,7 +1150,7 @@ function describeBasic(b) {
     const r = rangeOf(b);
     if (r) parts.push(`사거리 약 ${r}`);
   } else if (b.wave && b.pelletCount > 1) {
-    parts.push(`가시 ${b.pelletCount}개를 탄퍼짐 ${b.spreadDegrees}도로 발사 (${b.centerStraight ? `가운데 1개는 직선으로 곧게 날아가 ${fmtNum(b.damage)} 피해, 양옆 ${b.pelletCount - 1}개는 개당 ${fmtNum(b.sideDamage != null ? b.sideDamage : b.damage)} 피해` : `개당 ${fmtNum(b.damage)} 피해`}), ${b.centerStraight ? '양옆 가시는' : '가시는 직선이 아니라'} 구불구불한 궤도를 그리며 느리게 날아감`);
+    parts.push(`가시 ${b.pelletCount}개를 탄퍼짐 ${b.spreadDegrees}도로 발사 (${b.centerStraight ? `가운데 1개는 직선으로 곧게 날아가 ${fmtNum(b.damage)} 피해, 양옆 ${b.pelletCount - 1}개는 개당 ${fmtNum(b.sideDamage != null ? b.sideDamage : b.damage)} 피해` : `개당 ${fmtNum(b.damage)} 피해`}${b.closeRange ? `, 발사 지점에서 ${b.closeRange.distance}px 안에서 맞히면 피해 ${Math.round((1 - b.closeRange.damageMultiplier) * 100)}% 감소` : ''}), ${b.centerStraight ? '양옆 가시는' : '가시는 직선이 아니라'} 구불구불한 궤도를 그리며 느리게 날아감`);
     const r = rangeOf(b);
     if (r) parts.push(`사거리 약 ${r}`);
   } else if (b.pelletCount > 1) {
@@ -1160,6 +1163,7 @@ function describeBasic(b) {
     if (r) parts.push(`사거리 약 ${r}`);
   }
   if (b.pierceWalls) parts.push('벽(장애물)을 그대로 통과');
+  if (b.bounceWalls) parts.push(`벽(장애물)이나 맵 끝에 닿으면 튕겨 나옴${b.bounceRangeBonus ? `, 튕기면 사거리 ${Math.round(b.bounceRangeBonus * 100)}% 추가 증가` : ''}`);
   if (b.ammoRegenSeconds && b.ammoRegenSeconds > AMMO_REGEN_SECONDS) {
     parts.push(`재장전 시간 ${Math.round((b.ammoRegenSeconds / AMMO_REGEN_SECONDS - 1) * 100)}% 증가`);
   } else if (b.ammoRegenSeconds && b.ammoRegenSeconds < AMMO_REGEN_SECONDS) {
@@ -1658,7 +1662,19 @@ function allPrices() {
 // visuals: { 원래 발사체 모양: 스킨 적용 시 모양 } - 여기에 적힌 모양만 바뀌고 나머지는 그대로다.
 // 새 스킨은 아래에 한 줄(블록)만 추가하면 상점/장착/구매 처리가 자동으로 따라온다.
 const SKIN_PRICE = 500;
+// ===== 💎 보석 스킨 (스킨 상점 전용 프리미엄 스킨) =====
+// gemPrice 가 있는 스킨은 코인 스킨(캐릭터 선택 화면)이 아니라 '💎 스킨 상점'에서 보석으로만 살 수 있다. 장착은 캐릭터 선택 화면에서 다른 스킨과 똑같이 한다.
 const SKINS = {
+  minam_legend: {
+    id: 'minam_legend',
+    characterId: 'minam',
+    name: '전설의 갑옷',
+    price: null,
+    gemPrice: 50,
+    premium: true,
+    desc: '황금빛 문양이 새겨진 전설의 갑옷을 입은 미남! 투구의 붉은 깃털과 어깨 갑옷, 몸을 감싸는 황금 오라가 빛나요. 기본공격은 황금빛 에너지탄이 나가요. (외형만 바뀌고 성능은 그대로예요)',
+    visuals: { rifleBullet: 'legendBolt' },
+  },
   minam_ninja: {
     id: 'minam_ninja',
     characterId: 'minam',
@@ -1798,7 +1814,7 @@ function getSkin(id) {
   return typeof id === 'string' && Object.prototype.hasOwnProperty.call(SKINS, id) ? SKINS[id] : null;
 }
 function skinCatalogPublic() {
-  return Object.values(SKINS).map((k) => ({ id: k.id, characterId: k.characterId, name: k.name, price: k.price, desc: k.desc }));
+  return Object.values(SKINS).map((k) => ({ id: k.id, characterId: k.characterId, name: k.name, price: k.price, gemPrice: k.gemPrice || 0, desc: k.desc }));
 }
 function ownedSkinsOf(u) {
   return (u && u.skins ? u.skins : []).filter((id) => SKINS[id]);
@@ -2026,6 +2042,16 @@ function repeatMissionsView(u) {
 // id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
+  {
+    id: '2026-11-01-halloween-end',
+    date: '2026-11-01',
+    tag: 'etc',
+    title: '🎃 할로윈 이벤트 종료',
+    items: [
+      '할로윈 이벤트가 끝났어요. 함께해 주셔서 고마워요! 🎃👻',
+      'AI전 승리 보너스 코인(50~500코인)은 더 이상 지급되지 않아요. 이미 받은 코인은 그대로 유지돼요.',
+    ],
+  },
   {
     id: '2026-10-31-gwari-gadget',
     date: '2026-10-31',
@@ -2540,7 +2566,7 @@ function publicProfile(u) {
   const equippedSkins = {};
   for (const id in CHARACTERS) { const sk = equippedSkinOf(u, id); if (sk) equippedSkins[id] = sk; }
   return { username: u.name, coins: u.coins, gems: u.gems || 0, gemResetCost: GEM_SHOP_RESET_COST, wins: u.wins || 0, losses: u.losses || 0, unlocked: effectiveUnlocked(u), prices: allPrices(),
-    skinCatalog: skinCatalogPublic(), skins: ownedSkinsOf(u), equippedSkins, hypers: ownedHypersOf(u), gears: ownedGearsOf(u), gearShop: gearShopView(u), gearCatalog: GEAR_CATALOG.map((g) => ({ id: g.id, name: g.name, rarity: g.rarity, desc: g.desc, excludeChars: Object.keys(CHARACTERS).filter((cid) => !gearAllowedOn(g.id, cid)) })), gearRarities: Object.values(GEAR_RARITIES), gearMax: GEAR_MAX_PER_CHARACTER, gearSellRatio: GEAR_SELL_RATIO, hyperPrice: HYPER_PRICE, hyperRequiredLevel: HYPER_REQUIRED_LEVEL, trophyRoad: trophyRoadView(u), trophyRoadPlus: trophyRoadPlusView(u), trophies, streaks, missions: missionsView(u), repeatMissions: repeatMissionsView(u), ranks: TROPHY_RANKS, characters: buildCharacterInfo(levels), levels, levelTable: LEVEL_TABLE_PUBLIC, maxLevel: MAX_CHARACTER_LEVEL, isAdmin: u.key === ADMIN_KEY, announcements: allAnnouncements(), dailyDraw: dailyDrawView(u),
+    skinCatalog: skinCatalogPublic(), skins: ownedSkinsOf(u), equippedSkins, hypers: ownedHypersOf(u), gears: ownedGearsOf(u), gearShop: gearShopView(u), gearCatalog: GEAR_CATALOG.map((g) => ({ id: g.id, name: g.name, rarity: g.rarity, desc: g.desc, excludeChars: Object.keys(CHARACTERS).filter((cid) => !gearAllowedOn(g.id, cid)) })), gearRarities: Object.values(GEAR_RARITIES), gearMax: GEAR_MAX_PER_CHARACTER, gearSellRatio: GEAR_SELL_RATIO, hyperPrice: HYPER_PRICE, hyperRequiredLevel: HYPER_REQUIRED_LEVEL, trophyRoad: trophyRoadView(u), trophyRoadPlus: trophyRoadPlusView(u), rankedRoad: rankedRoadView(u), trophies, streaks, missions: missionsView(u), repeatMissions: repeatMissionsView(u), ranks: TROPHY_RANKS, characters: buildCharacterInfo(levels), levels, levelTable: LEVEL_TABLE_PUBLIC, maxLevel: MAX_CHARACTER_LEVEL, isAdmin: u.key === ADMIN_KEY, announcements: allAnnouncements(), dailyDraw: dailyDrawView(u),
     aiBonusEvent: halloweenBonusView(),
     rankedScore: u.rankedScore || 0, rankedTiers: RANKED_TIERS.map((t) => ({ id: t.id, name: t.name, min: t.min, icon: t.icon })),
     events: activeEvents().map((e) => ({ id: e.id, name: e.name, coins: e.coins || 0, gems: e.gems || 0, desc: e.desc, endsAt: e.endsAt || null, claimed: (u.redeemed || []).includes(eventClaimCode(e)) })) };
@@ -2612,13 +2638,14 @@ function createFileDb() {
       scheduleSave();
       return { ok: true, user: cloneUser(u) };
     },
-    async buySkin(key, skinId, price) {
+    async buySkin(key, skinId, price, currency = 'coins') {
       const u = users[key];
       if (!u) return { ok: false, reason: 'noUser' };
       u.skins = u.skins || [];
       if (u.skins.includes(skinId)) return { ok: false, reason: 'already', user: cloneUser(u) };
-      if (u.coins < price) return { ok: false, reason: 'coins', user: cloneUser(u) };
-      u.coins -= price;
+      const field = currency === 'gems' ? 'gems' : 'coins';
+      if ((u[field] || 0) < price) return { ok: false, reason: 'coins', user: cloneUser(u) };
+      u[field] = (u[field] || 0) - price;
       u.skins.push(skinId);
       scheduleSave();
       return { ok: true, user: cloneUser(u) };
@@ -2960,11 +2987,12 @@ function createMongoDb(uri) {
       if ((user.unlocked || []).includes(charId)) return { ok: false, reason: 'already', user };
       return { ok: false, reason: 'coins', user };
     },
-    async buySkin(key, skinId, price) {
-      // 코인 차감과 스킨 지급을 한 번의 원자적 연산으로 처리 (중복 클릭/동시 요청으로 코인이 이중 차감되지 않음)
+    async buySkin(key, skinId, price, currency = 'coins') {
+      // 코인(또는 보석) 차감과 스킨 지급을 한 번의 원자적 연산으로 처리 (중복 클릭/동시 요청으로 이중 차감되지 않음)
+      const field = currency === 'gems' ? 'gems' : 'coins';
       const updated = await col.findOneAndUpdate(
-        { key, coins: { $gte: price }, skins: { $ne: skinId } },
-        { $inc: { coins: -price }, $push: { skins: skinId } },
+        { key, [field]: { $gte: price }, skins: { $ne: skinId } },
+        { $inc: { [field]: -price }, $push: { skins: skinId } },
         { returnDocument: 'after', projection }
       );
       if (updated) return { ok: true, user: updated };
@@ -3722,6 +3750,43 @@ function registerAuthHandlers(socket) {
     }
   });
 
+  // 경쟁전 로드: 점수 보상 받기 (rewardId 를 주면 그 보상 하나, 없으면 지금 받을 수 있는 보상 전부)
+  socket.on('claimRankedRoad', async (data, ack) => {
+    if (typeof ack !== 'function') return;
+    try {
+      const key = socket.data.userKey;
+      if (!key) return ack({ ok: false, message: '로그인이 필요합니다.' });
+      const rewardId = data && typeof data.rewardId === 'string' ? data.rewardId : null;
+      if (rewardId && !RANKED_ROAD.some((r) => r.id === rewardId)) return ack({ ok: false, message: '존재하지 않는 보상입니다.' });
+      let user = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const before = await db.findUser(key);
+        if (!before) return ack({ ok: false, message: '계정을 찾을 수 없습니다.' });
+        user = before;
+        let list = rankedRoadClaimable(before);
+        if (rewardId) {
+          if ((before.redeemed || []).includes(rankedRoadCode(RANKED_ROAD.find((r) => r.id === rewardId)))) return ack({ ok: false, message: '이미 받은 보상입니다.', profile: publicProfile(before) });
+          list = list.filter((r) => r.id === rewardId);
+          if (!list.length) return ack({ ok: false, message: '아직 경쟁전 점수가 부족합니다.', profile: publicProfile(before) });
+        }
+        if (!list.length) return ack({ ok: false, message: '지금 받을 수 있는 보상이 없어요.', profile: publicProfile(before) });
+        const coins = list.reduce((a, x) => a + x.coins, 0);
+        const gems = list.reduce((a, x) => a + x.gems, 0);
+        const r = await db.redeemCodes(key, list.map(rankedRoadCode), coins, gems);
+        if (r.ok) {
+          console.log(`[경쟁전 로드] ${socket.data.displayName}: 보상 ${list.length}개 수령 (${coins}코인 ${gems}보석)`);
+          return ack({ ok: true, message: `🎉 경쟁전 보상 ${list.length}개를 받았어요! 🪙 ${coins.toLocaleString()}${gems ? ` + 💎 ${gems.toLocaleString()}` : ''}`, profile: publicProfile(r.user) });
+        }
+        if (r.reason !== 'used') break; // 동시에 다른 곳에서 받은 경우에만 목록을 다시 계산해서 재시도
+        user = r.user || before;
+      }
+      ack({ ok: false, message: '보상 받기에 실패했습니다. 잠시 후 다시 시도해주세요.', profile: user ? publicProfile(user) : undefined });
+    } catch (e) {
+      console.error('claimRankedRoad 오류', e);
+      ack({ ok: false, message: '서버 오류가 발생했습니다.' });
+    }
+  });
+
   // 트로피 로드+: 캐릭터 한 명의 티어 보상 하나 받기
   socket.on('claimTrophyPlus', async (data, ack) => {
     if (typeof ack !== 'function') return;
@@ -3839,6 +3904,7 @@ function registerAuthHandlers(socket) {
       if (socketToMatch[socket.id] || isQueued(socket.id)) return ack({ ok: false, message: '매치 중이거나 대기 중에는 스킨을 구매할 수 없습니다.' });
       const skin = getSkin(data && data.skinId);
       if (!skin) return ack({ ok: false, message: '존재하지 않는 스킨입니다.' });
+      if (skin.gemPrice) return ack({ ok: false, message: '이 스킨은 💎 스킨 상점에서 보석으로만 살 수 있어요.' });
       if (!socket.data.unlocked.has(skin.characterId)) return ack({ ok: false, message: '먼저 캐릭터를 잠금해제해야 합니다.' });
 
       const r = await db.buySkin(key, skin.id, skin.price);
@@ -3850,6 +3916,31 @@ function registerAuthHandlers(socket) {
       ack({ ok: false, message, profile: r.user ? publicProfile(r.user) : undefined });
     } catch (e) {
       console.error('buySkin 오류', e);
+      ack({ ok: false, message: '서버 오류가 발생했습니다.' });
+    }
+  });
+
+  // 💎 스킨 상점: 보석 스킨 구매. 가격/보유 여부/캐릭터 잠금해제는 항상 서버 기준
+  socket.on('buyGemSkin', async (data, ack) => {
+    if (typeof ack !== 'function') return;
+    try {
+      const key = socket.data.userKey;
+      if (!key) return ack({ ok: false, message: '로그인이 필요합니다.' });
+      if (socketToMatch[socket.id] || isQueued(socket.id)) return ack({ ok: false, message: '매치 중이거나 대기 중에는 스킨을 구매할 수 없습니다.' });
+      const skin = getSkin(data && data.skinId);
+      if (!skin || !skin.gemPrice) return ack({ ok: false, message: '존재하지 않는 스킨입니다.' });
+      if (!socket.data.unlocked.has(skin.characterId)) return ack({ ok: false, message: '먼저 캐릭터를 잠금해제해야 합니다.' });
+      const r = await db.buySkin(key, skin.id, skin.gemPrice, 'gems');
+      if (r.ok) {
+        console.log(`[스킨 상점] ${socket.data.displayName}: ${skin.name} 구매 (💎${skin.gemPrice})`);
+        return ack({ ok: true, message: `${skin.name} 스킨을 구매했어요! 캐릭터 선택 화면에서 장착하면 적용돼요.`, profile: publicProfile(r.user) });
+      }
+      const message = r.reason === 'coins' ? '보석이 부족합니다.'
+        : r.reason === 'already' ? '이미 보유한 스킨입니다.'
+        : '스킨 구매에 실패했습니다.';
+      ack({ ok: false, message, profile: r.user ? publicProfile(r.user) : undefined });
+    } catch (e) {
+      console.error('buyGemSkin 오류', e);
       ack({ ok: false, message: '서버 오류가 발생했습니다.' });
     }
   });
@@ -4201,6 +4292,40 @@ function rankedTierIndex(score) {
   return idx;
 }
 function rankedTierOf(score) { return RANKED_TIERS[rankedTierIndex(score)]; }
+// ===== 🏅 경쟁전 로드 =====
+// 경쟁전 점수가 목표에 닿으면 코인/보석 보상을 한 번 받을 수 있다. 받은 기록은 redeemed 에 `RANKEDROAD:id` 로 저장되어 점수가 내려가도 유지된다.
+// 보상을 바꾸려면 아래 표만 고치면 된다. (id 는 한 번 정하면 바꾸지 말 것: 받은 기록의 기준이 됨)
+const RANKED_ROAD = [
+  { id: 'rr_50', score: 50, coins: 30, gems: 3 },
+  { id: 'rr_100', score: 100, coins: 50, gems: 10 },     // 실버 진입
+  { id: 'rr_200', score: 200, coins: 60, gems: 12 },
+  { id: 'rr_300', score: 300, coins: 80, gems: 18 },     // 골드 진입
+  { id: 'rr_400', score: 400, coins: 100, gems: 20 },
+  { id: 'rr_500', score: 500, coins: 150, gems: 30 },     // 다이아 진입
+  { id: 'rr_650', score: 650, coins: 150, gems: 32 },
+  { id: 'rr_800', score: 800, coins: 200, gems: 38 },
+  { id: 'rr_1000', score: 1000, coins: 300, gems: 60 }, // 페인 진입
+  { id: 'rr_1250', score: 1250, coins: 250, gems: 45 },
+  { id: 'rr_1500', score: 1500, coins: 300, gems: 55 },
+  { id: 'rr_1750', score: 1750, coins: 350, gems: 65 },
+  { id: 'rr_2000', score: 2000, coins: 500, gems: 110 }, // 초인 진입
+  { id: 'rr_2500', score: 2500, coins: 500, gems: 110 },
+  { id: 'rr_3000', score: 3000, coins: 800, gems: 170 }, // 프로 진입
+  { id: 'rr_4000', score: 4000, coins: 900, gems: 200 },
+  { id: 'rr_5000', score: 5000, coins: 1500, gems: 300 },
+];
+function rankedRoadCode(r) { return `RANKEDROAD:${r.id}`; }
+function rankedRoadView(u) {
+  const redeemed = new Set(u.redeemed || []);
+  return {
+    score: u.rankedScore || 0,
+    rewards: RANKED_ROAD.map((r) => ({ id: r.id, score: r.score, coins: r.coins, gems: r.gems, claimed: redeemed.has(rankedRoadCode(r)) })),
+  };
+}
+function rankedRoadClaimable(u) {
+  const redeemed = new Set(u.redeemed || []);
+  return RANKED_ROAD.filter((r) => (u.rankedScore || 0) >= r.score && !redeemed.has(rankedRoadCode(r)));
+}
 function randIntRange(min, max) { return min + Math.floor(Math.random() * (max - min + 1)); }
 
 queues.ranked = []; // 경쟁전 대기열: { socket, name, userKey, rankedScore } (MODES 에는 넣지 않음 - 인원/보상 설정은 일반 1:1 을 그대로 씀)
@@ -5072,6 +5197,7 @@ function bulletDamageFor(b, target) {
   // 처형: 현재 체력이 기준 이하면 보호막까지 뚫고 확실히 죽을 만큼의 피해를 줌
   if (b.executeBelowHp > 0 && (target.hp || 0) <= b.executeBelowHp) return (target.hp || 0) + (target.shieldHp || 0) + 1;
   if (b.currentHpRatio > 0) return Math.max(1, Math.round(((target.hp || 0) + (target.shieldHp || 0)) * b.currentHpRatio));
+  if (b.closeRange && Math.hypot(b.x - b.originX, b.y - b.originY) < b.closeRange.distance) return b.damage * b.closeRange.damageMultiplier; // 가까운 거리 피해 감소
   return b.damage;
 }
 
@@ -5439,6 +5565,7 @@ function moveBouncingBullet(match, b, dt) {
       if (!flipY && collidesWithWalls(match.walls, b.x, ny, r)) flipY = true;
       if (!flipX && !flipY && collidesWithWalls(match.walls, nx, ny, r)) { flipX = true; flipY = true; } // 벽 모서리
     }
+    if ((flipX || flipY) && b.bounceBonus > 0) { b.life += b.bounceBonus; b.bounceBonus = 0; } // 처음 튕기는 순간 사거리 추가 증가 (한 번만)
     if (flipX) { b.vx = -b.vx; nx = b.x; }
     if (flipY) { b.vy = -b.vy; ny = b.y; }
     if ((flipX || flipY) && b.hitIds && b.hitIds.length) {
@@ -5562,6 +5689,7 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
       life: bounceTime > 0 ? bounceTime : bulletLife,
       maxLife: bounceTime > 0 ? bounceTime : bulletLife, // 처음 수명 (폭탄 똥이 터지기 직전에 더 빠르게 깜빡이는 연출용)
       damage: pelletDamage,
+      closeRange: spec.closeRange || null, // 가까운 거리에서 맞으면 피해 감소 (근수니의 가시)
       executeBelowHp: spec.executeBelowHp || 0, // 0보다 크면 맞은 대상의 현재 체력이 이 값 이하일 때 즉사 (진우Park의 하트)
       currentHpRatio: spec.currentHpRatio || 0, // 0보다 크면 고정 피해 대신 대상 현재 체력(+보호막)의 비율만큼 피해 (진우Park의 하트)
       radius: spec.radius * hyperUltRadius, // 하이퍼 차지 발동 중 궁극기(시스템)는 크기가 커짐
@@ -5579,7 +5707,9 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
       outLeft: spec.boomerang ? (spec.boomerangOutTime || 1.2) / gearProjSpeed : 0,
       baseSpeed: spec.speed * gearProjSpeed,
       bounce: bounceTime > 0, // true면 벽/맵 끝에 닿아도 사라지지 않고 튕김 (moveBouncingBullet)
-      pierceWalls: !!spec.pierceWalls, // 성스럽다의 칼 던지기처럼 벽(장애물)을 무시하고 통과하는 발사체
+      pierceWalls: !!spec.pierceWalls || !!spec.bounceWalls, // 벽(장애물)을 무시하고 통과하는 발사체. 벽에 튕기는 발사체(bounceWalls)는 직접 튕김 처리를 하므로 '벽에 닿아 멈춤' 판정만 건너뜀
+      wallBounce: !!spec.bounceWalls, // true면 벽/맵 끝에 튕김 (성스럽다의 칼). 적 관통은 하지 않음
+      bounceBonus: spec.bounceWalls && spec.bounceRangeBonus ? bulletLife * spec.bounceRangeBonus : 0, // 처음 튕길 때 늘어나는 수명(초)
       breakShield: !!spec.breakShield, // true면 피해 없이 맞은 적의 보호막만 즉시 파괴 (시스템의 가젯 '파괴 바람')
       // 원효대사의 해골물 뿌리기처럼 벽/적에 닿으면 물웅덩이를 생성하는 발사체를 위한 부가 정보
       poolOnImpact: !!spec.poolOnImpact,
@@ -7700,7 +7830,7 @@ function updateMatch(match, dt, now) {
       if (b.fresh) { b.prevX = b.originX; b.prevY = b.originY; b.fresh = false; } // 첫 틱: 발사한 사람 위치부터 판정 (근접 적/얇은 벽 통과 방지)
       else { b.prevX = b.x; b.prevY = b.y; }
     }
-    if (b.bounce) {
+    if (b.bounce || b.wallBounce) {
       moveBouncingBullet(match, b, dt); // 하이퍼 차지 꽈리의 고추: 벽에 튕김
     } else if (b.waveAmp) {
       moveWavyBullet(b, dt); // 근수니의 가시: 구불구불한 궤도
