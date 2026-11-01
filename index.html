@@ -5353,8 +5353,10 @@ function drawHyperAura(p) {
 
 // ===== 💎 보석 스킨: 미남 [전설의 갑옷] =====
 // g: 그릴 2D 컨텍스트 (게임 화면과 상점 미리보기가 같이 씀), R: 몸통 반지름, t: 초 단위 시간 (깃털/반짝임 애니메이션)
-function drawLegendArmor(g, R, t) {
-  const GOLD1 = '#fff1a8', GOLD2 = '#f0b429', GOLD3 = '#8a5a00';
+// dark: true 면 흑기사 모습 (하이퍼 차지 발동 중에만 사용): 강철/황금 갑옷을 검은 갑옷으로 바꿔 그림. 붉은 깃털과 푸른 눈빛, 붉은 보석은 그대로.
+function drawLegendArmor(g, R, t, dark) {
+  const GOLD1 = dark ? '#9aa1b8' : '#fff1a8', GOLD2 = dark ? '#555b70' : '#f0b429', GOLD3 = dark ? '#1a1c24' : '#8a5a00';
+  const OUTLINE = dark ? '#06070a' : '#5b3a00';
   // --- 어깨 갑옷 (몸 바깥으로 튀어나온 황금 견갑) ---
   for (const side of [-1, 1]) {
     g.save();
@@ -5364,13 +5366,13 @@ function drawLegendArmor(g, R, t) {
     sg.addColorStop(0, GOLD1); sg.addColorStop(0.5, GOLD2); sg.addColorStop(1, GOLD3);
     g.fillStyle = sg;
     g.beginPath(); g.ellipse(0, 0, R * 0.3, R * 0.25, 0, 0, Math.PI * 2); g.fill();
-    g.strokeStyle = '#5b3a00'; g.lineWidth = Math.max(1, R * 0.06); g.stroke();
+    g.strokeStyle = OUTLINE; g.lineWidth = Math.max(1, R * 0.06); g.stroke();
     // 견갑 능선 + 뿔
     g.strokeStyle = 'rgba(255,255,255,0.65)'; g.lineWidth = Math.max(1, R * 0.05);
     g.beginPath(); g.moveTo(-R * 0.2, -R * 0.02); g.quadraticCurveTo(0, -R * 0.16, R * 0.2, -R * 0.02); g.stroke();
-    g.fillStyle = '#e8edf5';
+    g.fillStyle = dark ? '#2c303b' : '#e8edf5'; // 어깨 뿔
     g.beginPath(); g.moveTo(side * R * 0.02, -R * 0.22); g.lineTo(side * R * 0.14, -R * 0.4); g.lineTo(side * R * 0.2, -R * 0.16); g.closePath(); g.fill();
-    g.strokeStyle = '#5b3a00'; g.lineWidth = Math.max(1, R * 0.04); g.stroke();
+    g.strokeStyle = OUTLINE; g.lineWidth = Math.max(1, R * 0.04); g.stroke();
     g.restore();
   }
   // --- 투구 위 붉은 깃털 (살랑살랑) ---
@@ -5393,7 +5395,8 @@ function drawLegendArmor(g, R, t) {
   g.beginPath(); g.arc(0, 0, R - 0.5, 0, Math.PI * 2); g.clip();
   // 가슴 갑옷 (강철판 + 황금 테두리)
   const cg = g.createLinearGradient(-R, 0, R, 0);
-  cg.addColorStop(0, '#6b7686'); cg.addColorStop(0.35, '#f4f7fb'); cg.addColorStop(0.65, '#aab4c3'); cg.addColorStop(1, '#4d5766');
+  if (dark) { cg.addColorStop(0, '#0f1116'); cg.addColorStop(0.35, '#3a3f4e'); cg.addColorStop(0.65, '#1b1e27'); cg.addColorStop(1, '#07080b'); }
+  else { cg.addColorStop(0, '#6b7686'); cg.addColorStop(0.35, '#f4f7fb'); cg.addColorStop(0.65, '#aab4c3'); cg.addColorStop(1, '#4d5766'); }
   g.fillStyle = cg;
   g.beginPath();
   g.moveTo(-R * 0.95, R * 0.2); g.lineTo(R * 0.95, R * 0.2); g.lineTo(R * 0.7, R); g.lineTo(-R * 0.7, R); g.closePath(); g.fill();
@@ -5403,7 +5406,7 @@ function drawLegendArmor(g, R, t) {
   g.beginPath(); g.moveTo(0, R * 0.22); g.lineTo(0, R); g.stroke();
   g.beginPath(); g.moveTo(-R * 0.82, R * 0.55); g.quadraticCurveTo(0, R * 0.7, R * 0.82, R * 0.55); g.stroke();
   // 황금 문장 + 붉은 보석
-  g.fillStyle = GOLD2; g.strokeStyle = '#5b3a00'; g.lineWidth = Math.max(1, R * 0.04);
+  g.fillStyle = GOLD2; g.strokeStyle = OUTLINE; g.lineWidth = Math.max(1, R * 0.04);
   g.beginPath(); g.moveTo(0, R * 0.3); g.lineTo(R * 0.3, R * 0.58); g.lineTo(0, R * 0.86); g.lineTo(-R * 0.3, R * 0.58); g.closePath(); g.fill(); g.stroke();
   const gem = g.createRadialGradient(-R * 0.04, R * 0.52, 0, 0, R * 0.58, R * 0.2);
   gem.addColorStop(0, '#ffd1d1'); gem.addColorStop(0.5, '#ff2e4d'); gem.addColorStop(1, '#7a0018');
@@ -5411,7 +5414,8 @@ function drawLegendArmor(g, R, t) {
   g.beginPath(); g.moveTo(0, R * 0.42); g.lineTo(R * 0.14, R * 0.58); g.lineTo(0, R * 0.74); g.lineTo(-R * 0.14, R * 0.58); g.closePath(); g.fill();
   // 투구 (위쪽 반): 강철 그라데이션
   const hg = g.createLinearGradient(-R, -R, R, R * 0.2);
-  hg.addColorStop(0, '#8c97a8'); hg.addColorStop(0.3, '#f7f9fc'); hg.addColorStop(0.6, '#b7c0cd'); hg.addColorStop(1, '#566073');
+  if (dark) { hg.addColorStop(0, '#12141a'); hg.addColorStop(0.3, '#454b5c'); hg.addColorStop(0.6, '#1f222b'); hg.addColorStop(1, '#08090c'); }
+  else { hg.addColorStop(0, '#8c97a8'); hg.addColorStop(0.3, '#f7f9fc'); hg.addColorStop(0.6, '#b7c0cd'); hg.addColorStop(1, '#566073'); }
   g.fillStyle = hg;
   g.beginPath();
   g.moveTo(-R, R * 0.22); g.lineTo(-R, -R); g.lineTo(R, -R); g.lineTo(R, R * 0.22);
@@ -5560,7 +5564,11 @@ const SKIN_LOOKS = {
     avatarRing: '#f0b429',
     upright: true,
     drawFx(p) { drawLegendAura(p); },
-    draw(R, p) { drawLegendArmor(ctx, R, Date.now() / 1000); },
+    draw(R, p) {
+      const dark = !!(p && p.hyperLeft > 0); // 하이퍼 차지 발동 중에만 흑기사 (끝나면 다시 황금 갑옷)
+      if (dark) { ctx.fillStyle = '#14161d'; ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.fill(); } // 갑옷 사이로 보이는 몸통도 검게
+      drawLegendArmor(ctx, R, Date.now() / 1000, dark);
+    },
   },
   minam_ninja: {
     body: '#2b2f3a',
