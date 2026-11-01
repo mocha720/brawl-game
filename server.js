@@ -80,7 +80,7 @@ const BOSSES = [
     speedRatio: 0.5,                  // 이동속도 = 플레이어의 50%
     bone: { count: 3, gap: 0.18, damage: 1200, speed: 440, radius: 17, lifetime: 1.6 }, // 커다란 뼈다귀 3개를 0.18초 간격으로 연사(조준은 쏘는 순간의 플레이어 위치), 1개당 1200 피해
     attackInterval: 2, attackRepeats: 3, // 연사 한 세트를 2초에 1번씩 3번 한 뒤
-    summon: { statScale: 0.5 }, // 플레이어와 같은 캐릭터의 AI를 소환 (체력/공격력 50%). 소환 수 제한 없음: 쓰러뜨리지 않으면 계속 쌓임 (제한을 두고 싶으면 maxAlive: 숫자 를 추가)
+    summon: { statScale: 0.5, maxAlive: 2 }, // 플레이어와 같은 캐릭터의 AI를 소환 (체력/공격력 50%). 동시에 최대 maxAlive 마리까지만 쌓임 (이미 그만큼 살아 있으면 이번 소환은 건너뜀. 제한을 없애려면 maxAlive 를 지우세요)
     firstDelay: 1.0, summonRecover: 1.5,
   },
   // 보스를 더 만들고 싶으면 여기에 같은 모양으로 추가하면 '오늘의 보스'가 날짜마다 돌아가며 나온다
