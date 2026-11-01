@@ -2145,14 +2145,14 @@ function renderBossCard() {
   if (!card) return;
   const desc = card.querySelector('.mode-desc');
   const b = currentProfile && currentProfile.boss;
-  if (!b) { desc.textContent = '혼자서 오늘의 보스에 도전! 목숨 3개 · 하루 1번'; card.classList.remove('boss-used'); return; }
-  desc.innerHTML = `오늘의 보스: ${escapeHtml(b.emoji || '👹')} <b>${escapeHtml(b.name)}</b> (체력 ${Number(b.hp).toLocaleString()})<br>혼자서 도전 · 목숨 ${b.lives}개 · 하루 1번<br>쓰러뜨리면 🪙 ${Number(b.rewardCoins).toLocaleString()} 코인${b.used ? '<br><b>✅ 오늘은 이미 도전했어요</b>' : ''}`;
+  if (!b) { desc.textContent = '혼자서 오늘의 보스에 도전! 목숨 3개 · 하루 1번 무료 (이후 💎 10개로 추가 도전)'; card.classList.remove('boss-used'); return; }
+  desc.innerHTML = `오늘의 보스: ${escapeHtml(b.emoji || '👹')} <b>${escapeHtml(b.name)}</b> (체력 ${Number(b.hp).toLocaleString()})<br>혼자서 도전 · 목숨 ${b.lives}개 · 하루 1번 무료<br>쓰러뜨리면 ✨ ${Number(b.rewardBling || 0).toLocaleString()} 블링${b.used ? `<br><b>✅ 오늘 무료 도전 완료 · 💎 ${b.extraGemCost || 10}개로 다시 도전!</b>` : ''}`;
   card.classList.toggle('boss-used', !!b.used);
 }
 
 function updateProfileUI() {
   const text = currentProfile
-    ? `👤 ${currentProfile.username}  |  🪙 ${currentProfile.coins.toLocaleString()} 코인  |  💎 ${(currentProfile.gems || 0).toLocaleString()} 보석  |  🏆 ${currentProfile.wins}승 ${currentProfile.losses}패`
+    ? `👤 ${currentProfile.username}  |  🪙 ${currentProfile.coins.toLocaleString()} 코인  |  💎 ${(currentProfile.gems || 0).toLocaleString()} 보석  |  ✨ ${(currentProfile.bling || 0).toLocaleString()} 블링  |  🏆 ${currentProfile.wins}승 ${currentProfile.losses}패`
     : '';
   document.querySelectorAll('.profile-line').forEach((el) => { el.textContent = text; });
   const adminBtn = document.getElementById('openAdminBtn');
@@ -3824,9 +3824,16 @@ document.querySelectorAll('.mode-card').forEach((card) => {
     if (serverPauseInfo.on) { alert(serverPauseInfo.message || '서버 점검 중입니다. 잠시 후 다시 시도해주세요.'); return; }
     selectedMode = card.getAttribute('data-mode');
     if (selectedMode === 'ai') selectedAiDifficulty = 'hard';
-    if (selectedMode === 'boss') { // 오늘 이미 도전했으면 캐릭터 선택으로 넘어가지 않음 (최종 확인은 서버가 함)
+    bossUseGems = false;
+    if (selectedMode === 'boss') { // 오늘 무료 도전을 이미 썼으면 보석으로 추가 도전할지 물어봄 (최종 확인/차감은 서버가 함)
       const bi = currentProfile && currentProfile.boss;
-      if (bi && bi.used) { alert('오늘의 보스전은 이미 도전했어요!\n내일 다시 도전해 주세요.'); return; }
+      if (bi && bi.used) {
+        const cost = bi.extraGemCost || 10;
+        const have = (currentProfile && currentProfile.gems) || 0;
+        if (have < cost) { alert(`오늘의 무료 보스전은 이미 도전했어요!\n추가 도전에는 💎 보석 ${cost}개가 필요해요. (보유: 💎 ${have}개)`); return; }
+        if (!confirm(`💎 보석 ${cost}개를 내고 보스전에 한 번 더 도전할까요?\n(보유: 💎 ${have}개)`)) return;
+        bossUseGems = true;
+      }
     }
     if (selectedMode === 'ranked') { // 경쟁전: 캐릭터는 매칭된 뒤 선택 단계에서 고르므로 바로 대기열로
       const el = currentProfile && currentProfile.rankedEligibility; // 참가 조건 (최종 확인은 서버가 함)
@@ -4056,6 +4063,7 @@ let gemNextAt = 0;      // 다음 보석이 나올 시각 (클라이언트 시�
 const gemSeen = {};     // 보석 id -> 처음 본 시각 (튀어나오는 연출용)
 let prevMyGems = 0;     // 내 보석 수가 늘었을 때 효과음을 내기 위한 기록
 let matchIsAi = false;  // AI 대결 여부. matchFound에서 갱신됨
+let bossUseGems = false; // 보스전: 무료 도전을 이미 써서 보석 10개로 추가 도전하려는 경우 true
 let matchBossInfo = null; // 보스전 정보 { name, emoji, hp, jumpRadius, ... } (보스전이 아니면 null)
 let matchLives = 0;        // 보스전 시작 목숨 수
 let matchAiInfo = null; // AI 대결 난이도 정보 { id, name, coinReward, trophyReward }. matchFound에서 갱신됨
@@ -4073,7 +4081,7 @@ function requestMatch() {
     selectedMode === 'ranked' ? '🏆 경쟁전 상대를 찾는 중입니다...' : selectedMode === 'ai' ? 'AI 상대를 준비하는 중입니다...' : selectedMode === 'boss' ? '👹 보스를 불러오는 중입니다...' : selectedMode === '3v3' ? '3:3 상대를 찾는 중입니다...' : selectedMode === '2v2' ? '2:2 상대를 찾는 중입니다...' : '1:1 상대를 찾는 중입니다...';
   document.getElementById('matchingOverlay').classList.add('open');
   if (selectedMode === 'ranked') socket.emit('findRankedMatch'); // 점수는 서버 저장소 기준, 캐릭터는 매칭 후 선택
-  else if (selectedMode === 'boss') socket.emit('findBossMatch', { characterId: selectedCharacterId }); // 보스전: 혼자서 오늘의 보스에 도전 (하루 1번, 서버가 확인)
+  else if (selectedMode === 'boss') socket.emit('findBossMatch', { characterId: selectedCharacterId, useGems: bossUseGems }); // 보스전: 하루 첫 도전은 무료, 이후엔 보석 10개 (useGems 는 동의했을 때만 true, 차감은 서버가 함)
   else if (selectedMode === 'ai') socket.emit('findAiMatch', { characterId: selectedCharacterId, difficulty: selectedAiDifficulty }); // AI 대결: 대기열 없이 바로 시작. 이기면 난이도별 코인 + 고정 트로피
   else socket.emit('findMatch', { name: myName, characterId: selectedCharacterId, mode: selectedMode });
 }
@@ -4446,7 +4454,7 @@ socket.on('matchOver', (data) => {
   if (data.boss) {
     titleEl.textContent = iWon ? '🎉 보스 격파!' : '💀 패배...';
     titleEl.classList.add(iWon ? 'win' : 'lose');
-    descEl.textContent = iWon ? `👹 ${data.bossName || '보스'}를 쓰러뜨렸어요!` : `목숨을 모두 잃었어요... 👹 ${data.bossName || '보스'}는 내일 다시 도전해 보세요.`;
+    descEl.textContent = iWon ? `👹 ${data.bossName || '보스'}를 쓰러뜨렸어요!` : `목숨을 모두 잃었어요... 👹 ${data.bossName || '보스'}에게 💎 보석으로 다시 도전해 보세요.`;
   } else if (data.reason === 'opponentLeft') {
     titleEl.textContent = iWon ? '상대가 나갔습니다' : '매치 종료';
     titleEl.classList.add(iWon ? 'win' : 'lose');
@@ -4470,6 +4478,7 @@ socket.on('matchOver', (data) => {
   }
 
   if (iWon && data.coinReward) descEl.textContent += `  |  🪙 +${data.coinReward} 코인`;
+  if (iWon && data.blingReward) descEl.textContent += `  |  ✨ +${Number(data.blingReward).toLocaleString()} 블링`;
   if (data.ai) {
     if (iWon && data.aiTrophyReward) descEl.textContent += `  |  🏆 +${data.aiTrophyReward} 트로피`;
     descEl.textContent += `  |  🤖 AI전은 전적·연승에 영향이 없어요`;
@@ -9342,6 +9351,27 @@ function drawBulletShape(b) {
   if (b.boomerang) drawBoomerangGlow(b); // 부메랑 궁극기의 후광/꼬리를 먼저 깔고, 그 위에 원래 모양(피에로/표창)을 그림
   if (b.lob) { drawSlipperBullet(b); return; } // 나이의 실내화 (포물선 투척)
   if (b.visual === 'stone' || b.visual === 'stoneShard') { drawStoneBullet(b); return; } // 미지의 돌: 돌 / 갈라진 조각
+  if (b.visual === 'bone') { // 보신의 뼈다귀: 날아가는 방향으로 길쭉한 뼈 (양 끝이 두 갈래로 볼록)
+    const ang = Math.atan2(b.vy || 0, b.vx || 1);
+    const r = b.radius;
+    const L = r * 1.35;
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.rotate(ang);
+    ctx.shadowColor = 'rgba(255, 82, 82, 0.8)';
+    ctx.shadowBlur = 8;
+    ctx.fillStyle = '#fffde7';
+    ctx.strokeStyle = '#8d6e63';
+    ctx.lineWidth = 2.5;
+    for (const sx of [-1, 1]) for (const sy of [-1, 1]) { // 양 끝의 볼록한 마디 4개
+      ctx.beginPath(); ctx.arc(sx * L, sy * r * 0.42, r * 0.42, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    }
+    ctx.beginPath(); ctx.rect(-L, -r * 0.3, L * 2, r * 0.6); ctx.fill(); ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.fillRect(-L, -r * 0.3 + 1.2, L * 2, r * 0.6 - 2.4); // 몸통 위 테두리 지우기
+    ctx.restore();
+    return;
+  }
   if (b.visual === 'thorn') {
     // 근수니의 가시: 구불구불 날아가는 방향(실제 이동 방향)으로 뾰족한 끝이 향함. 블랙홀 중앙에 모이면(captured) 빙글빙글 돎
     const t = Date.now() / 1000;
@@ -11209,6 +11239,7 @@ function drawBoss(c) {
   const lift = jp && jp.total > 0 ? Math.sin(Math.PI * Math.max(0, Math.min(1, jp.t / jp.total))) * 110 : 0;
   const r = c.radius;
   const tm = Date.now() / 1000;
+  const dog = c.bossId === 'bosin'; // 보신: 악마 강아지 (가시 돌기 대신 뿔)
   ctx.save(); // 땅 그림자
   ctx.translate(c.x, c.y);
   ctx.globalAlpha = 0.38 - Math.min(0.2, lift / 600);
@@ -11227,7 +11258,7 @@ function drawBoss(c) {
   ctx.fillStyle = aura;
   ctx.beginPath(); ctx.arc(0, 0, r * 1.7 * pulse, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = '#4a148c'; // 가시 돌기
-  for (let i = 0; i < 14; i += 1) {
+  for (let i = 0; i < (dog ? 0 : 14); i += 1) {
     const a = (i / 14) * Math.PI * 2 + tm * 0.25;
     ctx.beginPath();
     ctx.moveTo(Math.cos(a - 0.14) * r * 0.9, Math.sin(a - 0.14) * r * 0.9);
@@ -11235,15 +11266,25 @@ function drawBoss(c) {
     ctx.lineTo(Math.cos(a + 0.14) * r * 0.9, Math.sin(a + 0.14) * r * 0.9);
     ctx.closePath(); ctx.fill();
   }
+  if (dog) { // 악마 뿔
+    ctx.fillStyle = '#b71c1c';
+    for (const sx of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(sx * r * 0.3, -r * 0.8);
+      ctx.lineTo(sx * r * 0.78, -r * 1.5);
+      ctx.lineTo(sx * r * 0.85, -r * 0.55);
+      ctx.closePath(); ctx.fill();
+    }
+  }
   const body = ctx.createRadialGradient(-r * 0.3, -r * 0.35, r * 0.1, 0, 0, r);
-  body.addColorStop(0, '#9c27b0');
-  body.addColorStop(1, '#311b92');
+  body.addColorStop(0, dog ? '#ef5350' : '#9c27b0');
+  body.addColorStop(1, dog ? '#7f0000' : '#311b92');
   ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2);
   ctx.fillStyle = body; ctx.fill();
   ctx.lineWidth = 4; ctx.strokeStyle = '#e53935'; ctx.stroke();
   ctx.font = `${r * 1.45}px sans-serif`;
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('👹', 0, 2);
+  ctx.fillText(c.emoji || '👹', 0, 2);
   ctx.restore();
 
   drawHpBar(c.x, c.y - lift - r - 26, 120, 12, c.hp, c.maxHp || 1);
