@@ -626,6 +626,9 @@
   #trophyPlusList { display: flex; flex-direction: column; gap: 10px; max-height: 44vh; overflow-y: auto; padding: 2px; -webkit-overflow-scrolling: touch; }
   #trophyPlusAllBtn { margin: 0 0 10px; }
   #gemSkinOverlay > .panel { width: min(420px, 100%); }
+  #gemExchangeBox { margin: 0 0 12px; padding: 10px 12px; text-align: center; background: var(--dusk); border: 3px solid var(--lift); border-radius: 14px; }
+  #gemExchangeBox .gem-ex-title { margin-bottom: 8px; font-size: 14px; color: #d5d7f2; }
+  #gemExchangeBox button { width: 100%; }
   #gemSkinList { display: flex; flex-direction: column; gap: 14px; max-height: 52vh; overflow-y: auto; padding: 2px; -webkit-overflow-scrolling: touch; }
   .gemskin-card { box-sizing: border-box; padding: 12px; text-align: center; background: linear-gradient(160deg, #3a3170, #1f1a45); border: 3px solid #f0b429; border-radius: 18px; box-shadow: 0 0 18px rgba(240, 180, 41, 0.35); }
   .gemskin-card canvas { width: 160px; height: 160px; display: block; margin: 0 auto 4px; }
@@ -1286,6 +1289,7 @@
     <h2 class="panel-title">💎 스킨 상점</h2>
     <p class="panel-sub">보석으로 살 수 있는 특별한 스킨이에요. 구매한 뒤 캐릭터 선택 화면에서 장착하면 적용돼요. (외형만 바뀌고 성능은 그대로예요)</p>
     <div class="profile-line"></div>
+    <div id="gemExchangeBox"></div>
     <div id="gemSkinList"></div>
     <div id="gemSkinMsg" class="panel-msg"></div>
     <button id="gemSkinCloseBtn" class="btn btn-ghost">닫기</button>
@@ -2467,6 +2471,23 @@ let gemSkinPreviewTimer = null;
 function renderGemSkinShop() {
   const listEl = document.getElementById('gemSkinList');
   if (!listEl) return;
+  const exBox = document.getElementById('gemExchangeBox');
+  const ex = (currentProfile && currentProfile.gemExchange) || null;
+  if (exBox && ex) {
+    const canEx = !!currentProfile && currentProfile.coins >= ex.coins;
+    exBox.innerHTML = `<div class="gem-ex-title">코인으로 보석 사기</div><button id="gemExchangeBtn" ${canEx ? '' : 'disabled'}>🪙 ${ex.coins.toLocaleString()} → 💎 ${ex.gems.toLocaleString()} 교환${canEx ? '' : ' (코인 부족)'}</button>`;
+    document.getElementById('gemExchangeBtn').addEventListener('click', (e) => {
+      const btn = e.currentTarget;
+      if (!confirm(`🪙 ${ex.coins.toLocaleString()} 코인을 💎 ${ex.gems.toLocaleString()} 보석으로 교환할까요?`)) return;
+      btn.disabled = true;
+      socket.timeout(8000).emit('exchangeGems', {}, (err, res) => {
+        if (err || !res) { setGemSkinMsg('서버 응답이 없습니다. 잠시 후 다시 시도해주세요.'); renderGemSkinShop(); return; }
+        if (res.profile) { currentProfile = res.profile; updateProfileUI(); }
+        setGemSkinMsg(res.message || (res.ok ? '교환 완료!' : '교환에 실패했습니다.'), res.ok);
+        renderGemSkinShop();
+      });
+    });
+  }
   const catalog = ((currentProfile && currentProfile.skinCatalog) || []).filter((k) => k.gemPrice);
   const ownedSkins = (currentProfile && currentProfile.skins) || [];
   const unlocked = (currentProfile && currentProfile.unlocked) || [];
