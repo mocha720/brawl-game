@@ -1662,6 +1662,8 @@ function allPrices() {
 // visuals: { 원래 발사체 모양: 스킨 적용 시 모양 } - 여기에 적힌 모양만 바뀌고 나머지는 그대로다.
 // 새 스킨은 아래에 한 줄(블록)만 추가하면 상점/장착/구매 처리가 자동으로 따라온다.
 const SKIN_PRICE = 500;
+// 💎 스킨 상점의 코인 → 보석 교환 (한 번에 coins 를 내면 gems 를 받음)
+const GEM_EXCHANGE = { coins: 1000, gems: 15 };
 // ===== 💎 보석 스킨 (스킨 상점 전용 프리미엄 스킨) =====
 // gemPrice 가 있는 스킨은 코인 스킨(캐릭터 선택 화면)이 아니라 '💎 스킨 상점'에서 보석으로만 살 수 있다. 장착은 캐릭터 선택 화면에서 다른 스킨과 똑같이 한다.
 const SKINS = {
@@ -2568,6 +2570,7 @@ function publicProfile(u) {
   return { username: u.name, coins: u.coins, gems: u.gems || 0, gemResetCost: GEM_SHOP_RESET_COST, wins: u.wins || 0, losses: u.losses || 0, unlocked: effectiveUnlocked(u), prices: allPrices(),
     skinCatalog: skinCatalogPublic(), skins: ownedSkinsOf(u), equippedSkins, hypers: ownedHypersOf(u), gears: ownedGearsOf(u), gearShop: gearShopView(u), gearCatalog: GEAR_CATALOG.map((g) => ({ id: g.id, name: g.name, rarity: g.rarity, desc: g.desc, excludeChars: Object.keys(CHARACTERS).filter((cid) => !gearAllowedOn(g.id, cid)) })), gearRarities: Object.values(GEAR_RARITIES), gearMax: GEAR_MAX_PER_CHARACTER, gearSellRatio: GEAR_SELL_RATIO, hyperPrice: HYPER_PRICE, hyperRequiredLevel: HYPER_REQUIRED_LEVEL, trophyRoad: trophyRoadView(u), trophyRoadPlus: trophyRoadPlusView(u), rankedRoad: rankedRoadView(u), trophies, streaks, missions: missionsView(u), repeatMissions: repeatMissionsView(u), ranks: TROPHY_RANKS, characters: buildCharacterInfo(levels), levels, levelTable: LEVEL_TABLE_PUBLIC, maxLevel: MAX_CHARACTER_LEVEL, isAdmin: u.key === ADMIN_KEY, announcements: allAnnouncements(), dailyDraw: dailyDrawView(u),
     aiBonusEvent: halloweenBonusView(),
+    gemExchange: GEM_EXCHANGE,
     rankedScore: u.rankedScore || 0, rankedTiers: RANKED_TIERS.map((t) => ({ id: t.id, name: t.name, min: t.min, icon: t.icon })),
     events: activeEvents().map((e) => ({ id: e.id, name: e.name, coins: e.coins || 0, gems: e.gems || 0, desc: e.desc, endsAt: e.endsAt || null, claimed: (u.redeemed || []).includes(eventClaimCode(e)) })) };
 }
@@ -2635,6 +2638,16 @@ function createFileDb() {
       if (u.coins < price) return { ok: false, reason: 'coins', user: cloneUser(u) };
       u.coins -= price;
       u.unlocked.push(charId);
+      scheduleSave();
+      return { ok: true, user: cloneUser(u) };
+    },
+    // 코인 → 보석 교환: 코인 차감과 보석 지급을 한 번에 처리
+    async exchangeGems(key, coinCost, gems) {
+      const u = users[key];
+      if (!u) return { ok: false, reason: 'noUser' };
+      if ((u.coins || 0) < coinCost) return { ok: false, reason: 'coins', user: cloneUser(u) };
+      u.coins -= coinCost;
+      u.gems = (u.gems || 0) + gems;
       scheduleSave();
       return { ok: true, user: cloneUser(u) };
     },
@@ -2985,6 +2998,18 @@ function createMongoDb(uri) {
       const user = await col.findOne({ key }, { projection });
       if (!user) return { ok: false, reason: 'noUser' };
       if ((user.unlocked || []).includes(charId)) return { ok: false, reason: 'already', user };
+      return { ok: false, reason: 'coins', user };
+    },
+    // 코인 → 보석 교환: 코인 차감과 보석 지급을 한 번의 원자적 연산으로 처리 (중복 클릭/동시 요청으로 이중 차감되지 않음)
+    async exchangeGems(key, coinCost, gems) {
+      const updated = await col.findOneAndUpdate(
+        { key, coins: { $gte: coinCost } },
+        { $inc: { coins: -coinCost, gems } },
+        { returnDocument: 'after', projection }
+      );
+      if (updated) return { ok: true, user: updated };
+      const user = await col.findOne({ key }, { projection });
+      if (!user) return { ok: false, reason: 'noUser' };
       return { ok: false, reason: 'coins', user };
     },
     async buySkin(key, skinId, price, currency = 'coins') {
@@ -3916,6 +3941,24 @@ function registerAuthHandlers(socket) {
       ack({ ok: false, message, profile: r.user ? publicProfile(r.user) : undefined });
     } catch (e) {
       console.error('buySkin 오류', e);
+      ack({ ok: false, message: '서버 오류가 발생했습니다.' });
+    }
+  });
+
+  // 💎 스킨 상점: 코인 → 보석 교환 (교환 비율은 항상 서버 기준)
+  socket.on('exchangeGems', async (data, ack) => {
+    if (typeof ack !== 'function') return;
+    try {
+      const key = socket.data.userKey;
+      if (!key) return ack({ ok: false, message: '로그인이 필요합니다.' });
+      const r = await db.exchangeGems(key, GEM_EXCHANGE.coins, GEM_EXCHANGE.gems);
+      if (r.ok) {
+        console.log(`[보석 교환] ${socket.data.displayName}: 🪙${GEM_EXCHANGE.coins} → 💎${GEM_EXCHANGE.gems}`);
+        return ack({ ok: true, message: `🪙 ${GEM_EXCHANGE.coins.toLocaleString()} 코인을 💎 ${GEM_EXCHANGE.gems.toLocaleString()} 보석으로 교환했어요!`, profile: publicProfile(r.user) });
+      }
+      ack({ ok: false, message: r.reason === 'coins' ? '코인이 부족합니다.' : '교환에 실패했습니다.', profile: r.user ? publicProfile(r.user) : undefined });
+    } catch (e) {
+      console.error('exchangeGems 오류', e);
       ack({ ok: false, message: '서버 오류가 발생했습니다.' });
     }
   });
