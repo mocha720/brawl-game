@@ -1714,7 +1714,7 @@ const CHARACTERS = [
     name: '똥파리',
     color: '#6b8e23',
     maxHp: 5500,
-    basic: { name: '똥 날리기', desc: '탄창 없는 충전 공격: 누르고 있는 동안 최대 2초까지 충전, 충전할수록 800~3,000 피해, 충전 중 이동속도 10% 감소, 발사 후 1.5초 동안 다음 발사 불가, 사거리 약 672' },
+    basic: { name: '똥 날리기', desc: '탄창 없는 충전 공격: 누르고 있는 동안 최대 2초까지 충전, 충전할수록 800~3,000 피해, 충전 중 이동속도 10% 감소, 발사 후 0.5초 동안 다음 발사 불가, 사거리 약 672' },
     ultimate: { name: '가시 발사', damage: 2500, desc: '조준한 방향으로 발사 (사거리 약 988), 벽을 통과함' },
     gadget: { name: '폭탄 똥', desc: '조준한 방향으로 폭발하는 똥을 발사 (사거리 약 572). 적이나 벽에 닿으면 폭발해서 반경 130 안의 적에게 1,500 피해 (15초마다 사용 가능)' },
   },
@@ -1743,6 +1743,7 @@ const CHARACTERS = [
     maxHp: 5500,
     basic: { name: '돌 던지기', damage: 2000, desc: '짧은 거리를 날아가는 돌 (갈라지기 전 적중 2,000 피해). 사거리 끝에서 5조각으로 100도 퍼지며 조각 1개당 400 피해' },
     ultimate: { name: '바위 돌진', damage: 1500, desc: '앞으로 돌진해 닿은 적에게 1,500 피해, 적은 돌진이 끝날 때까지 밀려가며 0.5초마다 500 피해' },
+    gadget: { name: '충격파', desc: '주변에 충격파를 일으켜 반경 200 안의 적을 200px 밀쳐냄, 피해는 주지 않음 (15초마다 사용 가능)' },
   },
 ];
 let selectedCharacterId = CHARACTERS[0].id;
@@ -10288,14 +10289,59 @@ function drawBulletShape(b) {
   }
 
   if (b.visual === 'knife') {
-    // 성스럽다의 칼 던지기 - 날아가는 방향으로 회전한 칼 (벽을 통과해서 날아감)
+    // 성스럽다의 칼 던지기 (스킨이 없을 때): 금빛 십자 가드가 달린 성스러운 단검. 칼끝이 날아가는 방향을 향하고, 뒤로 금빛 광채 꼬리가 남음 (벽을 통과/튕겨 날아감)
+    const s = b.radius * 0.8;
+    const t = Date.now() / 1000 + (b.id || 0) * 0.3;
     ctx.save();
     ctx.translate(b.x, b.y);
     ctx.rotate(Math.atan2(b.vy || 0, b.vx || 1));
-    ctx.font = `${b.radius * 2.4}px sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('🔪', 0, 1);
+    // 금빛 광채 꼬리
+    const tl = s * 6;
+    const tg = ctx.createLinearGradient(-s * 2.4 - tl, 0, -s * 2.4, 0);
+    tg.addColorStop(0, 'rgba(255, 236, 160, 0)');
+    tg.addColorStop(1, 'rgba(255, 244, 190, 0.6)');
+    ctx.fillStyle = tg;
+    ctx.beginPath(); ctx.moveTo(-s * 2.4, -s * 0.5); ctx.lineTo(-s * 2.4 - tl, 0); ctx.lineTo(-s * 2.4, s * 0.5); ctx.closePath(); ctx.fill();
+    // 은은한 후광
+    const halo = ctx.createRadialGradient(s * 0.4, 0, 0, s * 0.4, 0, s * 3.6);
+    halo.addColorStop(0, 'rgba(255, 240, 170, 0.4)');
+    halo.addColorStop(1, 'rgba(255, 240, 170, 0)');
+    ctx.fillStyle = halo;
+    ctx.beginPath(); ctx.arc(s * 0.4, 0, s * 3.6, 0, Math.PI * 2); ctx.fill();
+    // 손잡이: 가죽 감김 + 금실
+    ctx.lineJoin = 'round';
+    ctx.fillStyle = '#5a3a22'; ctx.strokeStyle = '#2b1a0d'; ctx.lineWidth = Math.max(1, s * 0.14);
+    ctx.beginPath(); ctx.rect(-s * 2.2, -s * 0.3, s * 1.5, s * 0.6); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = 'rgba(240, 180, 41, 0.95)'; ctx.lineWidth = Math.max(1, s * 0.12);
+    for (let i = 0; i < 3; i++) { const x = -s * 2.0 + i * s * 0.45; ctx.beginPath(); ctx.moveTo(x, -s * 0.3); ctx.lineTo(x + s * 0.2, s * 0.3); ctx.stroke(); }
+    // 손잡이 끝 금 구슬
+    ctx.fillStyle = '#f0b429'; ctx.strokeStyle = '#8a5a00'; ctx.lineWidth = Math.max(1, s * 0.12);
+    ctx.beginPath(); ctx.arc(-s * 2.35, 0, s * 0.42, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    // 칼날: 양날 강철 + 가운데 홈 + 윗날 반짝임
+    const bg = ctx.createLinearGradient(0, -s * 0.75, 0, s * 0.75);
+    bg.addColorStop(0, '#ffffff'); bg.addColorStop(0.5, '#c4cfe0'); bg.addColorStop(1, '#8896ad');
+    ctx.fillStyle = bg; ctx.strokeStyle = '#46506a'; ctx.lineWidth = Math.max(1, s * 0.14);
+    ctx.beginPath();
+    ctx.moveTo(-s * 0.7, -s * 0.75); ctx.lineTo(s * 2.0, -s * 0.75); ctx.lineTo(s * 3.2, 0); ctx.lineTo(s * 2.0, s * 0.75); ctx.lineTo(-s * 0.7, s * 0.75);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = 'rgba(70, 80, 106, 0.55)'; ctx.lineWidth = Math.max(1, s * 0.1);
+    ctx.beginPath(); ctx.moveTo(-s * 0.4, 0); ctx.lineTo(s * 2.6, 0); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)'; ctx.lineWidth = Math.max(1, s * 0.1);
+    ctx.beginPath(); ctx.moveTo(-s * 0.4, -s * 0.55); ctx.lineTo(s * 2.1, -s * 0.55); ctx.stroke();
+    // 금빛 가드(손잡이와 칼날 사이) + 붉은 보석
+    ctx.fillStyle = '#f0b429'; ctx.strokeStyle = '#8a5a00'; ctx.lineWidth = Math.max(1, s * 0.12);
+    ctx.beginPath(); ctx.rect(-s * 0.95, -s * 1.5, s * 0.5, s * 3); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#ff2e4d';
+    ctx.beginPath(); ctx.arc(-s * 0.7, 0, s * 0.2, 0, Math.PI * 2); ctx.fill();
+    // 칼끝의 성스러운 반짝임 (십자 별)
+    const tw = 0.55 + 0.45 * Math.sin(t * 9);
+    ctx.globalAlpha = tw;
+    ctx.fillStyle = '#fffbe0';
+    const sx = s * 3.2, sr = s * 1.0 * tw;
+    ctx.beginPath();
+    ctx.moveTo(sx, -sr * 1.4); ctx.lineTo(sx + sr * 0.25, -sr * 0.25); ctx.lineTo(sx + sr * 1.4, 0); ctx.lineTo(sx + sr * 0.25, sr * 0.25);
+    ctx.lineTo(sx, sr * 1.4); ctx.lineTo(sx - sr * 0.25, sr * 0.25); ctx.lineTo(sx - sr * 1.4, 0); ctx.lineTo(sx - sr * 0.25, -sr * 0.25);
+    ctx.closePath(); ctx.fill();
     ctx.restore();
     return;
   }
@@ -11442,7 +11488,7 @@ function drawWaterPool(pool) {
   if (pool.visual === 'eggWhite') { drawEggWhite(pool); return; }
   if (pool.visual === 'frostPool') { drawFrostPool(pool); drawTeamPoolRing(pool, pool.life + 0.4); return; }
   if (pool.visual === 'poisonPool') { drawPoisonPool(pool); drawTeamPoolRing(pool, pool.life + 0.4); return; }
-  const isPoisonGas = !pool.heal; // heal이 0(또는 없음)이면 회복 효과가 없는 독가스 구름(똥가루)으로 간주
+  const isPoisonGas = !pool.heal || !!pool.gas; // heal이 0(또는 없음)이면 회복 효과가 없는 독가스 구름(똥가루)으로 간주. 하이퍼 차지로 회복이 붙은 똥가루(gas)도 똥가루로 그림
   // 내 팀(자신/아군)이 만든 원은 초록색, 적군이 만든 원은 빨간색으로 구분
   const isAlly = pool.ownerId === myId || (myTeam && pool.team === myTeam);
   const inner = isAlly ? '#82e0aa' : '#f1948a';
@@ -11468,6 +11514,15 @@ function drawWaterPool(pool) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(isPoisonGas ? '💩' : '💧', pool.x, pool.y);
+  if (pool.gas && pool.heal) { // 회복 효과가 있는 똥가루: 작은 하트가 떠오름 (아군/자신이 회복됨을 표시)
+    const tt = Date.now() / 1000;
+    ctx.font = `${Math.min(20, pool.radius * 0.28)}px sans-serif`;
+    for (let i = 0; i < 3; i++) {
+      const k = (tt * 0.9 + i / 3) % 1;
+      ctx.globalAlpha = Math.min(1, (1 - k) * 1.2) * Math.min(1, alpha + 0.3);
+      ctx.fillText('💚', pool.x + (i - 1) * pool.radius * 0.45, pool.y + pool.radius * 0.1 - k * pool.radius * 0.6);
+    }
+  }
   ctx.restore();
 }
 
@@ -11840,6 +11895,39 @@ function drawEffect(e) {
     ctx.beginPath();
     ctx.arc(e.x, e.y, e.radius * (0.25 + 0.75 * prog), 0, Math.PI * 2);
     ctx.fill();
+    ctx.restore();
+  } else if (e.type === 'shockwave') {
+    // 미지의 돌 가젯 '충격파': 땅이 갈라지듯 흙빛 고리가 퍼지고 먼지 조각이 튐 (밀치는 범위 = 반경). 피해는 없음
+    const prog = 1 - Math.max(0, Math.min(1, e.life / (e.maxLife || 0.5)));
+    const rr = e.radius * (0.2 + 0.8 * prog);
+    ctx.save();
+    ctx.globalAlpha = (1 - prog) * 0.3;
+    ctx.fillStyle = 'rgba(176, 150, 112, 1)';
+    ctx.beginPath(); ctx.arc(e.x, e.y, rr, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = (1 - prog) * 0.95;
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = 'rgba(120, 98, 70, 1)';
+    ctx.lineWidth = 9 * (1 - prog) + 2;
+    ctx.beginPath(); ctx.arc(e.x, e.y, rr, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = 'rgba(235, 220, 190, 1)';
+    ctx.lineWidth = 3 * (1 - prog) + 1;
+    ctx.beginPath(); ctx.arc(e.x, e.y, rr * 0.92, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = 'rgba(70, 58, 44, 1)'; // 사방으로 갈라지는 땅 금
+    ctx.lineWidth = 3 * (1 - prog) + 1;
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * Math.PI * 2 + 0.3;
+      ctx.beginPath();
+      ctx.moveTo(e.x + Math.cos(a) * rr * 0.35, e.y + Math.sin(a) * rr * 0.35);
+      ctx.lineTo(e.x + Math.cos(a + 0.08) * rr * 0.75, e.y + Math.sin(a + 0.08) * rr * 0.75);
+      ctx.lineTo(e.x + Math.cos(a) * rr * 0.98, e.y + Math.sin(a) * rr * 0.98);
+      ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(150, 150, 158, 1)'; // 튀어 오르는 돌 조각
+    for (let i = 0; i < 14; i++) {
+      const a = (i / 14) * Math.PI * 2 + 0.17;
+      const d = rr * (0.8 + 0.25 * ((i * 7) % 5) / 5);
+      ctx.beginPath(); ctx.arc(e.x + Math.cos(a) * d, e.y + Math.sin(a) * d - 14 * prog * (1 - prog) * 4, 3.2 * (1 - prog) + 0.8, 0, Math.PI * 2); ctx.fill();
+    }
     ctx.restore();
   } else if (e.type === 'hyperActivate') {
     // 하이퍼 차지 발동 순간: 보랏빛 충격파가 퍼지고 불꽃 불씨가 사방으로 튐
