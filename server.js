@@ -627,6 +627,17 @@ const CHARACTERS = {
       visual: 'sniperBullet',
       sweep: true,         // 한 틱에 90px 가까이 날아가므로, 이동 경로 전체로 적중/벽 충돌을 판정해서 얇은 대상을 건너뛰지 않게 함
     },
+    // 하이퍼 차지: 캐릭터를 최고 레벨(11)까지 키운 뒤 코인으로 획득하는 추가 스킬. 기본공격(칼)을 적중시켜 게이지를 채우고, 가득 차면 발동한다.
+    hyper: {
+      name: '하이퍼 차지',
+      duration: 10,             // 지속 시간(초)
+      chargeMultiplier: 0.45,   // 게이지 충전량 배율 (0.45 = 궁극기 충전량의 45%, 거기에 전체 보너스 +15%가 곱해짐). 발동 중에는 충전되지 않음
+      speedMultiplier: 1.2,     // 이동속도 배율 (1.2 = 20% 증가)
+      damageMultiplier: 1.25,   // 공격력 배율 (1.25 = 25% 강화)
+      damageTakenMultiplier: 0.95, // 받는 피해 배율 (0.95 = 5% 감소)
+      rangeMultiplier: 2,       // 발동 중 사거리 배율 (2 = 2배). 칼(기본공격)은 날아가는 시간이 늘어나고, 저격 터렛은 조준 사거리와 총알 사거리가 늘어남
+      turretBulletBounce: true, // 발동 중 저격 터렛의 총알이 벽/맵 끝에 닿으면 튕겨 나옴 (적에게 맞으면 사라짐)
+    },
   },
   yeoddongi: {
     id: 'yeoddongi',
@@ -664,6 +675,17 @@ const CHARACTERS = {
       radius: 18,          // 크기가 큰 감자칩 (기본공격 똥 14보다 큼)
       lifetime: 0.85,      // 초 (사거리 ≈ 595px)
       visual: 'pringles',
+    },
+    // 하이퍼 차지: 캐릭터를 최고 레벨(11)까지 키운 뒤 코인으로 획득하는 추가 스킬. 기본공격(똥가루)을 적중시켜 게이지를 채우고, 가득 차면 발동한다.
+    hyper: {
+      name: '하이퍼 차지',
+      duration: 10,             // 지속 시간(초)
+      chargeMultiplier: 0.45,   // 게이지 충전량 배율 (0.45 = 궁극기 충전량의 45%, 거기에 전체 보너스 +15%가 곱해짐). 발동 중에는 충전되지 않음
+      speedMultiplier: 1.2,     // 이동속도 배율 (1.2 = 20% 증가)
+      damageMultiplier: 1.2,    // 공격력 배율 (1.2 = 20% 강화)
+      damageTakenMultiplier: 0.9, // 받는 피해 배율 (0.9 = 10% 감소)
+      poolRadiusMultiplier: 1.2,  // 발동 중 기본공격 똥가루 구름 범위 배율 (1.2 = 20% 증가)
+      poolHeal: 200,            // 발동 중 기본공격 구름 안의 아군/자신이 구름 주기(0.2초)마다 회복하는 양 (1레벨 기준 - 캐릭터 레벨의 공격력 배율만큼 커짐)
     },
   },
   bobae: {
@@ -950,7 +972,7 @@ const CHARACTERS = {
       damageMultiplier: 1.25,   // 공격력 배율 (1.25 = 25% 증가)
       damageTakenMultiplier: 0.95, // 받는 피해 배율 (0.95 = 5% 감소)
       ultimateRadiusMultiplier: 1.5, // 발동 중 궁극기(거대 소용돌이)의 공격 범위(크기) 배율 (1.5 = 50% 증가)
-      ultimateLandStun: 2,      // 발동 중 궁극기로 띄운 적이 땅에 떨어졌을 때 추가로 기절하는 시간(초)
+      ultimateLandStun: 1.2,    // 발동 중 궁극기로 띄운 적이 땅에 떨어졌을 때 추가로 기절하는 시간(초) (기존 2초에서 단축)
     },
     gadget: {
       name: '점프 강타',
@@ -976,7 +998,7 @@ const CHARACTERS = {
       maxDamage: 3000,         // 완전히 충전했을 때 피해 (1레벨 기준)
       chargeTime: 2,           // 완전 충전까지 걸리는 시간(초) (기존 3초에서 단축)
       chargeSpeedMultiplier: 0.85, // 충전하는 동안 이동속도 배율 (0.85 = 15% 감소) (기존 0.9, 그전 0.7)
-      fireCooldown: 1.5,       // 똥을 발사한 뒤 다음 똥을 발사할 수 있기까지 걸리는 시간(초)
+      fireCooldown: 0.5,       // 똥을 발사한 뒤 다음 똥을 발사할 수 있기까지 걸리는 시간(초) (기존 1.5초에서 단축)
       speed: 560,
       radius: 10,              // 충전 없이 쐈을 때 똥 크기
       lifetime: 1.2,           // 사거리 ≈ 672px
@@ -1110,6 +1132,13 @@ const CHARACTERS = {
       speed: 480,            // 돌진 속도(px/초)
       duration: 1.5,         // 돌진 시간(초). 벽에 닿으면 그 자리에서 멈춤
       range: Math.round(480 * 1.5 * PUSH_DASH_DIST_FACTOR), // 총 돌진 거리(px) - 조준선/AI/설명용 (≈ 639)
+    },
+    gadget: {
+      name: '충격파',
+      type: 'shockwave',     // 조준 불필요, 즉시 발동. 주변의 적을 바깥으로 밀쳐냄 (피해/기절/보호막은 없음)
+      instant: true,
+      pushRadius: 200,       // 이 거리 안에 있는 적을 밀쳐냄
+      pushDistance: 200,     // 밀려나는 거리(px). 시전자에서 멀어지는 방향으로 밀림
     },
   },
 };
@@ -1336,6 +1365,9 @@ function describeGadget(g) {
     case 'shieldPush':
       desc = `${fmtNum(g.shieldHp)} 피해를 막아주는 보호막을 두르고, 반경 ${g.pushRadius} 안의 적을 ${g.pushDistance}px 밀쳐냄 (피해는 주지 않음)`;
       break;
+    case 'shockwave':
+      desc = `주변에 충격파를 일으켜 반경 ${g.pushRadius} 안의 적을 ${g.pushDistance}px 밀쳐냄 (피해는 주지 않음)`;
+      break;
     case 'poopBomb': {
       const r = rangeOf(g);
       desc = `조준한 방향으로 폭발하는 똥을 발사${r ? ` (사거리 약 ${r})` : ''}. 적이나 벽에 닿으면 폭발해서 반경 ${g.explodeRadius} 안의 적에게 ${fmtNum(g.explodeDamage)} 피해`;
@@ -1353,7 +1385,7 @@ function describeGadget(g) {
 // 밸런스 기준: 11레벨 = 체력 +35%, 공격력 +30%. (1레벨 상대로 맞붙으면 약 1.75배 유리 -> 실력으로 뒤집을 수 있는 수준)
 // 레벨 1->11 강화 총비용은 2,720코인 (1:1 승리 보상 45코인 기준 약 60승). 수치를 바꾸고 싶으면 이 표만 고치면 된다.
 const MAX_CHARACTER_LEVEL = 11;
-// 하이퍼 차지(추가 스킬): 최고 레벨을 찍은 캐릭터가 코인으로 획득. hyper 스펙이 있는 캐릭터에만 존재한다. (현재는 미남, 지기, 슈, 변기통, 시스템, 모카, 원효대사, 보배)
+// 하이퍼 차지(추가 스킬): 최고 레벨을 찍은 캐릭터가 코인으로 획득. hyper 스펙이 있는 캐릭터에만 존재한다. (현재는 미남, 지기, 슈, 변기통, 시스템, 모카, 원효대사, 보배, 성스럽다, 여똥이)
 const HYPER_PRICE = 1000;
 const HYPER_REQUIRED_LEVEL = MAX_CHARACTER_LEVEL;
 const LEVEL_TABLE = [
@@ -1432,9 +1464,11 @@ function describeHyper(hy) {
   if (hy.dashDistanceMultiplier) parts.push(`발동 중 기본공격(돌진) 거리 ${pct(hy.dashDistanceMultiplier)}% 증가`);
   if (hy.ultimateBounceTime) parts.push(`발동 중 궁극기의 고추가 적을 관통하고 벽에 튕기며 ${hy.ultimateBounceTime}초 동안 날아다니다 사라짐`);
   if (hy.poolRadiusMultiplier) parts.push(`발동 중 기본공격 웅덩이 범위 ${pct(hy.poolRadiusMultiplier)}% 증가`);
+  if (hy.poolHeal) parts.push(`발동 중 기본공격 구름 안의 아군과 자신이 0.2초마다 ${hy.poolHeal} 회복 (1레벨 기준)`);
   if (hy.poolLifetimeMultiplier) parts.push(`발동 중 기본공격 웅덩이 지속시간 ${pct(hy.poolLifetimeMultiplier)}% 증가`);
   if (hy.ultimateWallPass) parts.push('발동 중 궁극기(은신)를 쓰면 은신하는 동안 벽을 통과할 수 있고, 은신이 끝났을 때 벽 안에 있으면 밖으로 밀려남');
-  if (hy.rangeMultiplier) parts.push(`발동 중 기본공격과 궁극기 사거리 ${pct(hy.rangeMultiplier)}% 증가`);
+  if (hy.rangeMultiplier) parts.push(hy.rangeMultiplier >= 2 ? `발동 중 기본공격과 궁극기 사거리 ${hy.rangeMultiplier}배` : `발동 중 기본공격과 궁극기 사거리 ${pct(hy.rangeMultiplier)}% 증가`);
+  if (hy.turretBulletBounce) parts.push('발동 중 저격 터렛의 총알이 벽/맵 끝에 닿으면 튕겨 나옴 (적에게 맞으면 사라짐)');
   return { name: hy.name, desc: parts.join('. ') + '.' };
 }
 // 하이퍼 차지를 획득한 캐릭터 id 목록 (하이퍼 스펙이 있는 캐릭터만 인정)
@@ -5829,6 +5863,8 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
   const hyperPoolOn = !isUltimate && p.hasHyper && p.hyper && p.hyperUntil && Date.now() < p.hyperUntil;
   const hyperPoolRadius = hyperPoolOn && p.hyper.poolRadiusMultiplier ? p.hyper.poolRadiusMultiplier : 1;
   const hyperPoolLife = hyperPoolOn && p.hyper.poolLifetimeMultiplier ? p.hyper.poolLifetimeMultiplier : 1;
+  // 하이퍼 차지 발동 중 여똥이의 기본공격: 구름 안의 아군/자신을 회복 (1레벨 기준 수치에 캐릭터 레벨의 공격력 배율을 곱함, 5 단위 반올림)
+  const hyperPoolHeal = hyperPoolOn && p.hyper.poolHeal ? roundTo(p.hyper.poolHeal * LEVEL_TABLE[clampLevel(p.level)].atk, 5) : 0;
 
   for (let i = 0; i < pelletCount; i++) {
     const angleOffset = pelletCount > 1 ? -halfSpread + (spreadRad * i) / (pelletCount - 1) : 0;
@@ -5886,7 +5922,8 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
       poolLifetime: spec.poolLifetime ? spec.poolLifetime * hyperPoolLife : spec.poolLifetime,
       poolTickInterval: spec.poolTickInterval,
       poolDamage: spec.poolDamage,
-      poolHeal: spec.poolHeal,
+      poolHeal: hyperPoolHeal && spec.poolOnImpact ? (spec.poolHeal || 0) + hyperPoolHeal : spec.poolHeal,
+      poolGas: spec.type === 'poopgas', // 똥가루 구름 여부 (회복이 붙어도 클라이언트가 물이 아니라 똥가루로 그리게 함)
       poolVisual,                         // 웅덩이 모양(예: 계란 흰자, 불 스킨의 불꽃)
       poolOnExpire: !!spec.poolOnExpire, // 사거리 끝에서도 깨져서 웅덩이를 남기는 발사체(계란)
       directDamage: spec.directDamage || 0, // 물웅덩이 생성 전 적에게 직접 적중 시 주는 대미지
@@ -6207,6 +6244,7 @@ function spawnWaterPool(match, b) {
     tickInterval: b.poolTickInterval,
     damage: b.poolDamage,
     heal: b.poolHeal,
+    gas: !!b.poolGas,
     visual: b.poolVisual || null,
   });
 }
@@ -7189,10 +7227,13 @@ function registerGameplayHandlers(socket) {
       // 슈의 가젯: shieldHp만큼 피해를 막는 보호막 (재사용 시 남은 양이 아니라 새로 shieldHp로 채워짐)
       p.shieldHp = gadget.shieldHp || 1000;
       p.shieldMax = p.shieldHp;
-    } else if (gadget.type === 'shieldPush') {
-      // 엑헤의 가젯: 보호막을 두르고(재사용 시 새로 shieldHp로 채워짐), 주변의 적을 시전자에게서 멀어지는 방향으로 밀쳐냄. 피해/기절은 없음
-      p.shieldHp = gadget.shieldHp || 2000;
-      p.shieldMax = p.shieldHp;
+    } else if (gadget.type === 'shieldPush' || gadget.type === 'shockwave') {
+      // 엑헤의 가젯(shieldPush): 보호막을 두르고(재사용 시 새로 shieldHp로 채워짐), 주변의 적을 시전자에게서 멀어지는 방향으로 밀쳐냄. 피해/기절은 없음
+      // 미지의 돌의 가젯(shockwave): 보호막 없이 밀쳐내기만 함
+      if (gadget.type === 'shieldPush') {
+        p.shieldHp = gadget.shieldHp || 2000;
+        p.shieldMax = p.shieldHp;
+      }
       const now = Date.now();
       for (const pid in match.players) {
         if (pid === p.id) continue;
@@ -7212,7 +7253,7 @@ function registerGameplayHandlers(socket) {
         target.knockbackTotalTime = KNOCKBACK_DURATION;
       }
       effectIdCounter += 1;
-      match.effects.push({ id: effectIdCounter, type: 'shieldPush', ownerId: p.id, x: p.x, y: p.y, radius: gadget.pushRadius, life: 0.5, maxLife: 0.5 }); // 퍼져나가는 파동 연출
+      match.effects.push({ id: effectIdCounter, type: gadget.type === 'shockwave' ? 'shockwave' : 'shieldPush', ownerId: p.id, x: p.x, y: p.y, radius: gadget.pushRadius, life: 0.5, maxLife: 0.5 }); // 퍼져나가는 파동 연출
     } else if (gadget.type === 'reflect') {
       // 나이의 가젯: duration초 동안 반사 방어막 (재사용 시 새로 duration초로 갱신). 실제 반사는 updateMatch 의 총알-플레이어 충돌 판정에서 일어남
       p.reflectUntil = Date.now() + (gadget.duration || 2) * 1000;
@@ -7915,6 +7956,13 @@ function updateMatch(match, dt, now) {
     turret.fireCooldown -= dt;
     if (turret.fireCooldown > 0) continue;
 
+    // 주인이 하이퍼 차지 발동 중이면 (성스럽다) 이 터렛의 사거리가 늘어나고 총알이 벽에 튕김 - 발동 전에 설치한 터렛도 발동 중에는 똑같이 적용
+    const turretOwner = match.players[turret.ownerId];
+    const turretHyper = turretOwner && turretOwner.hasHyper && turretOwner.hyper && turretOwner.hyperUntil && Date.now() < turretOwner.hyperUntil ? turretOwner.hyper : null;
+    const turretRangeMult = turretHyper && turretHyper.rangeMultiplier ? turretHyper.rangeMultiplier : 1;
+    const turretBounce = !!(turretHyper && turretHyper.turretBulletBounce);
+    const turretRange = turret.range * turretRangeMult;
+
     let nearest = null;
     let nearestDist = Infinity;
     for (const pid in match.players) {
@@ -7926,7 +7974,7 @@ function updateMatch(match, dt, now) {
       const ddx = target.x - turret.x;
       const ddy = target.y - turret.y;
       const ddist = Math.sqrt(ddx * ddx + ddy * ddy);
-      if (ddist <= turret.range && ddist < nearestDist) {
+      if (ddist <= turretRange && ddist < nearestDist) {
         nearestDist = ddist;
         nearest = target;
       }
@@ -7936,7 +7984,7 @@ function updateMatch(match, dt, now) {
       for (const g of Object.values(match.gates)) {
         if (!g || g.hp <= 0 || g.team === turret.team) continue;
         const gd = Math.hypot(g.x - turret.x, g.y - turret.y);
-        if (gd <= turret.range + g.radius && gd < nearestDist) { nearestDist = gd; nearest = g; }
+        if (gd <= turretRange + g.radius && gd < nearestDist) { nearestDist = gd; nearest = g; }
       }
     }
     if (!nearest) continue;
@@ -7957,12 +8005,13 @@ function updateMatch(match, dt, now) {
       vy: (ndy / ndist) * turret.bulletSpeed,
       ownerId: turret.ownerId,
       team: turret.team,
-      life: turret.bulletLifetime,
+      life: turret.bulletLifetime * turretRangeMult, // 사거리 배율만큼 더 오래 날아감
       damage: turret.damage,
       radius: turret.bulletRadius,
       isUltimate: true,
       visual: 'sniperBullet',
-      pierceWalls: false,
+      pierceWalls: turretBounce, // 튕기는 총알은 '벽에 닿아 멈춤' 판정을 건너뛰고 대신 직접 튕김 처리 (성스럽다의 칼과 같은 방식)
+      wallBounce: turretBounce,  // true면 벽/맵 끝에 튕김 (적에게 맞으면 사라짐)
     });
     turret.fireCooldown = turret.fireInterval;
   }
@@ -9345,7 +9394,7 @@ function runAiBot(match, botId, ai, dt, now) {
       use = offensiveOK && !!target && dist < gr * 0.9;
     } else if (g.type === 'powerCharge') use = (mode === 'fight' || mode === 'chase') && !!target && dist < 400;
     else if (g.type === 'teleport') use = escaping && !!target && dist < 350; // 위험할 때 탈출용
-    else if (g.type === 'shieldPush') use = !!target && dist < gadgetRangeFor(g) && mode !== 'hide'; // 적이 파동 범위 안에 있을 때만 사용
+    else if (g.type === 'shieldPush' || g.type === 'shockwave') use = !!target && dist < gadgetRangeFor(g) && mode !== 'hide'; // 적이 파동 범위 안에 있을 때만 사용
     else if (g.type === 'reflect') {
       // 적의 투사체가 자신 쪽으로 날아오고 있으면 사용
       use = match.bullets.some((b) => !b.lob && b.team !== p.team && Math.hypot(b.x - p.x, b.y - p.y) < 400 && (b.vx * (p.x - b.x) + b.vy * (p.y - b.y)) > 0);
