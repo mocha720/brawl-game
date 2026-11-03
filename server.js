@@ -748,6 +748,8 @@ const CHARACTERS = {
       poolHeal: 0,          // 아군/자신에게는 아무 효과 없음
       directDamage: 1440,   // 계란이 깨지는 자리(directRadius 안)에 있던 적이 받는 대미지 (기존 720의 2배)
       directRadius: 40,     // 직접 적중으로 치는 범위(px): 깨진 자리에서 이 거리 안(적 몸 가장자리 기준)
+      poolChargesUlt: true, // 흰자 지속 피해로도 궁극기 게이지가 충전됨
+      poolChargeScale: 0.2, // 틱 1번당 충전량(기본 적중 1회 대비 비율). 0.2초 틱 × 5번 = 흰자에 1초 내내 서 있으면 직접 적중 1회만큼 충전
     },
     ultimate: {
       name: '닭 소환',
@@ -2128,6 +2130,16 @@ function repeatMissionsView(u) {
 // id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
+  {
+    id: '2026-11-03-ekhe-pool-charge',
+    date: '2026-11-03',
+    tag: 'balance',
+    title: '엑헤 궁극기 충전 변경',
+    items: [
+      '엑헤의 흰자 지속 피해로도 궁극기 게이지가 충전돼요.',
+      '흰자 위에 1초 내내 서 있는 적에게 지속 피해를 주면, 계란 직접 적중 1번만큼 충전돼요.',
+    ],
+  },
   {
     id: '2026-11-03-jinwoopark-buff',
     date: '2026-11-03',
@@ -5700,6 +5712,8 @@ function spawnLob(match, p, spec, sentDistance) {
     poolDamage: spec.poolDamage || 0,
     poolHeal: spec.poolHeal || 0,
     poolVisual: spec.poolVisual ? skinVisual(p, spec.poolVisual) : null, // 엑헤 독 마법사 스킨: 흰자 대신 독 장판
+    poolChargesUlt: !!spec.poolChargesUlt,       // 웅덩이 지속 피해로 궁극기 충전 여부 (엑헤)
+    poolChargeScale: spec.poolChargeScale != null ? spec.poolChargeScale : 1,
   });
 }
 
@@ -6246,6 +6260,8 @@ function spawnWaterPool(match, b) {
     heal: b.poolHeal,
     gas: !!b.poolGas,
     visual: b.poolVisual || null,
+    chargesUlt: !!b.poolChargesUlt,                                  // true 면 틱 피해가 궁극기 게이지를 충전함
+    chargeScale: b.poolChargeScale != null ? b.poolChargeScale : 1, // 틱당 충전 비율
   });
 }
 
@@ -8399,7 +8415,7 @@ function updateMatch(match, dt, now) {
           target.hp = Math.min(target.maxHp, target.hp + pool.heal * (target.gearHealMult || 1)); // 회복 기어: 회복받는 쪽의 회복량 증가
         } else {
           // 적 -> 대미지 (궁극기 게이지는 충전하지 않음)
-          applyDamage(match, target, pool.damage, pool.ownerId, { chargeShooter: false, noLifesteal: true }); // 지속 피해는 기어 '흡수' 제외
+          applyDamage(match, target, pool.damage, pool.ownerId, { chargeShooter: !!pool.chargesUlt, chargeScale: pool.chargeScale, noLifesteal: true }); // 지속 피해는 기어 '흡수' 제외. 엑헤의 흰자는 궁극기도 충전
           if (match.over) break;
         }
       }
