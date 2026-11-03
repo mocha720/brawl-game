@@ -1661,7 +1661,7 @@ const CHARACTERS = [
     name: '엑헤',
     color: '#f5b041',
     maxHp: 6500,
-    basic: { name: '계란 던지기', desc: '적 직접 적중 시 720 피해 + 깨지면서 흰자가 퍼짐 (닿은 적에게 0.2초마다 180 피해, 1초 후 소멸, 벽에 닿거나 최대 사거리에서도 깨짐)' },
+    basic: { name: '계란 던지기', desc: '계란을 포물선으로 던져 땅에 떨어지면 깨짐 (벽을 넘어감, 조준한 거리 100~546px에 1초 뒤 착지). 깨진 자리의 적에게 720 피해 + 흰자가 반경 85로 퍼져 닿은 적에게 0.2초마다 180 피해 (1초 후 소멸)' },
     ultimate: { name: '닭 소환', desc: '조준 불필요, 체력 5,000의 닭을 소환. 8초 동안 적을 추격하다가 적에게 돌격해서 1,500 피해 (1.5초마다 돌격 가능)' },
   },
   {
@@ -1873,7 +1873,7 @@ let myAngle = 0;
 // 자신의 로컬 위치(부드러운 이동을 위해 클라이언트에서 계산 후 서버로 전송)
 let myX = 0, myY = 0;
 let joined = false;
-const MOVE_SPEED = 152; // px/초 (기존 190에서 20% 감소)
+const MOVE_SPEED = 106.4; // px/초 (기존 152에서 30% 감소). 서버의 AI_MOVE_SPEED / BOSS_PLAYER_SPEED 와 같은 값으로 유지
 
 // ===== 모바일(터치) 지원 =====
 const isTouchDevice = ('ontouchstart' in window)
@@ -8751,6 +8751,12 @@ function drawSlipperBullet(b) {
   ctx.scale(1 + 0.12 * (h / arcH), 1 + 0.12 * (h / arcH));
   ctx.rotate(now * 11 + b.id);
   ctx.lineJoin = 'round';
+  if (b.visual === 'egg' || b.visual === 'poisonVial') { // 엑헤: 포물선으로 던지는 계란 / 독 마법사 스킨의 독병 (직선 발사체와 같은 그림을 재사용)
+    if (b.visual === 'poisonVial') ctx.rotate(-(now * 11 + b.id)); // 독병은 자체 회전 연출이 있어서 위에서 건 회전은 취소
+    drawBulletShape({ ...b, lob: false, x: 0, y: 0, vx: 0, vy: 0 });
+    ctx.restore();
+    return;
+  }
   if (b.visual === 'tray') { drawTrayBody(r, now, t); ctx.restore(); return; } // 나이 주방장: 실내화 대신 은쟁반
   if (b.visual === 'gravitySphere') { drawGravitySphere(r, now); ctx.restore(); return; } // 근수니: 중력 덩어리
   // 밑창
@@ -9628,7 +9634,7 @@ function drawCarriedFx(p) {
 }
 
 function drawBullet(b) {
-  if (SKIN_TEAM_BULLETS[b.visual]) drawTeamHalo(b); // 스킨 기본공격 탄: 팀 색 후광(= 실제 판정 크기)을 먼저 깔고 그 위에 스킨 모양을 그림
+  if (SKIN_TEAM_BULLETS[b.visual] && !b.lob) drawTeamHalo(b); // 스킨 기본공격 탄: 팀 색 후광(= 실제 판정 크기)을 먼저 깔고 그 위에 스킨 모양을 그림
   const fit = b.lob ? null : SKIN_HIT_FIT[b.visual];
   if (!fit) { drawBulletShape(b); return; }
   const r = b.radius;
@@ -13660,7 +13666,7 @@ function drawLobIndicator(me) {
   const dist = getAimDistanceFor(me, spec);
   const lx = Math.max(0, Math.min(ARENA_WIDTH, me.x + Math.cos(angle) * dist));
   const ly = Math.max(0, Math.min(ARENA_HEIGHT, me.y + Math.sin(angle) * dist));
-  const R = spec.explodeRadius || 100;
+  const R = spec.explodeRadius || spec.poolRadius || 100; // 폭발 범위 / 엑헤 계란은 흰자가 퍼지는 범위
 
   ctx.save();
   // 던질 수 있는 최대 거리 (연한 점선 원)
