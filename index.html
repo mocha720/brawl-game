@@ -1935,14 +1935,6 @@ function isLeapUltimateArmed(me) {
 function fireAttack() {
   if (!joined || inCountdown()) return;
   const me = latestState.players[myId];
-  if (me && me.hasBall && matchGameMode === 'soccer') {
-    // 슈퍼 축구: 공을 가지고 있으면 기본 공격이 공 차기. 궁극기/가젯 장전은 취소
-    ultimateArmed = false; gadgetArmed = false;
-    updateUltimateButton(); updateGadgetButton();
-    socket.emit('shoot');
-    SFX.shoot();
-    return;
-  }
   if (ultimateArmed && me && me.ultimateCharge >= 100) {
     if (me.ultimate && (me.ultimate.type === 'leap' || me.ultimate.type === 'blackhole')) socket.emit('ultimate', { distance: Math.round(getLeapAimDistance(me)) });
     else socket.emit('ultimate');
@@ -2588,7 +2580,9 @@ function renderGemSkinShop() {
 }
 function animateGemSkinPreviews() {
   document.querySelectorAll('#gemSkinList canvas[data-gemskin-preview]').forEach((cv) => {
-    if (cv.getAttribute('data-gemskin-preview') === 'minam_legend') drawLegendPreview(cv);
+    const pid = cv.getAttribute('data-gemskin-preview');
+    if (pid === 'minam_legend') drawLegendPreview(cv);
+    else if (pid === 'jigi_storm') drawStormPreview(cv);
   });
 }
 function setGemSkinMsg(text, ok) {
@@ -4051,11 +4045,8 @@ let matchMode = '1v1';  // 'matchFound'에서 서버가 알려주는 실제 매�
 let matchWinScore = 5;  // 팀이 승리하는 데 필요한 누적 킬 수. matchFound에서 갱신됨
 let matchGameMode = 'knockout'; // 게임 종류: 'knockout'(녹아우) / 'gatekeeper'(문지기). 투표 결과(modeVoteResult)와 매 상태(state)로 갱신됨
 let voteState = null;           // 매칭 직후 게임 모드 투표 진행 상태 { resolved, myVote, counts }
-const GAME_MODE_NAMES = { knockout: '녹아우', gatekeeper: '문지기', gemgrab: '쨍그랩', soccer: '슈퍼 축구' };
-// 슈퍼 축구 모드: 서버가 modeVoteResult 로 골대/공 크기를 알려줌
-let matchSoccer = { goalW: 120, goalDepth: 46, ballR: 15, winGoals: 3 };
-let ballRot = 0;            // 공이 굴러가는 모양(회전 각도)
-let ballLastDraw = null;    // 직전에 그린 공 위치 (회전 계산용)
+const GAME_MODE_NAMES = { knockout: '녹아우', gatekeeper: '문지기', gemgrab: '쨍그랩' };
+let matchRounds = null;     // 녹아우 2:2·3:3 라운드제면 { max, toWin }. modeVoteResult 로 알려줌 (아니면 null)
 // 쨍그랩 모드: 중앙 구멍에서 5초마다 나오는 보라색 보석. 서버가 바뀔 때만 'gems' 이벤트로 목록을 보내준다
 let matchGemWin = 20;   // 팀 보석이 이 수가 되면 승리 (modeVoteResult 로 서버가 알려줌)
 let matchHole = null;   // 중앙 구멍 { x, y, r }
@@ -4160,7 +4151,7 @@ function showVersusScreen(data) {
       if (matchGameMode === 'gatekeeper' && joined) showStartBanner('문을 지키고, 상대를 쥑이뿌세요!!'); // 문지기 모드 시작 안내
       if (matchGameMode === 'gemgrab' && joined) showStartBanner(`보라색 보석 ${matchGemWin}개를 먼저 모으세요!`); // 쨍그랩 모드 시작 안내
       if (matchGameMode === 'boss' && joined) showStartBanner(`👹 ${matchBossInfo ? matchBossInfo.name : '보스'}를 쓰러뜨리세요! 목숨은 ${matchLives}개!`); // 보스전 시작 안내
-      if (matchGameMode === 'soccer' && joined) showStartBanner(`⚽ 공을 몰고 가서 차 넣으세요! ${matchSoccer.winGoals}골 선취!`); // 슈퍼 축구 시작 안내
+      if (matchGameMode === 'knockout' && matchRounds && joined) showStartBanner(`⚔ 라운드 1 시작! 죽으면 이번 라운드가 끝날 때까지 부활 못 해요 (${matchRounds.max}라운드 중 ${matchRounds.toWin}승)`); // 녹아우 라운드제 안내
       clearInterval(vsTimer); vsTimer = null;
       setTimeout(() => { if (!vsTimer) document.getElementById('versusOverlay').classList.remove('open'); }, 400);
       return;
@@ -4191,7 +4182,7 @@ function setupVoteUi(vote) {
     el.innerHTML = '';
     return;
   }
-  voteState = { resolved: false, myVote: null, counts: { knockout: 0, gatekeeper: 0, gemgrab: 0, soccer: 0 }, options: vote.options || [], mapOptions: vote.maps || [], myMapVote: null, mapCounts: {} };
+  voteState = { resolved: false, myVote: null, counts: { knockout: 0, gatekeeper: 0, gemgrab: 0 }, options: vote.options || [], mapOptions: vote.maps || [], myMapVote: null, mapCounts: {} };
   el.classList.add('open');
   renderVoteUi();
 }
@@ -4265,10 +4256,23 @@ socket.on('gems', (data) => {
   for (const id in gemSeen) if (!alive[id]) delete gemSeen[id];
 });
 
-socket.on('soccerGoal', (data) => {
-  showStartBanner(data.team === myTeam ? '⚽ GOAL! 우리 팀 득점!' : '⚽ 상대 팀이 골을 넣었어요...');
-  SFX.ultimateReady();
+// ===== 녹아우 라운드제 (2:2, 3:3) =====
+// 라운드가 끝나면: 결과를 잠깐 보여주고(모두 입력 잠금) -> 모두 시작 위치/풀 체력으로 돌아가 카운트다운 -> 다음 라운드
+socket.on('roundOver', (data) => {
+  const rw = data.roundWins || { A: 0, B: 0 };
+  const won = data.winnerTeam === myTeam;
+  const mine = rw[myTeam] || 0, opp = rw[myTeam === 'A' ? 'B' : 'A'] || 0;
+  countdownEndsAt = Date.now() + (data.startsInMs || 0); // 다음 라운드가 시작될 때까지 입력 잠금 (결과 화면 + 카운트다운)
+  ultimateArmed = false; gadgetArmed = false;
+  chargeLocal = false;
+  const cb = document.getElementById('chargeBar'); if (cb) cb.style.display = 'none';
+  showStartBanner(`${won ? '🏆 라운드 승리!' : '💀 라운드 패배...'} (${data.round}라운드 · 우리 ${mine} : ${opp} 상대)`);
+  if (won) SFX.ultimateReady(); else SFX.death();
+});
+socket.on('roundStart', (data) => {
+  countdownEndsAt = Date.now() + (data.startsInMs || 0);
   wasAlive = false; // 서버가 모두를 시작 위치로 옮기므로 내 위치도 다시 맞춤
+  showStartBanner(`⚔ ${data.round}라운드 — 준비하세요!`);
 });
 
 socket.on('modeVoteResult', (data) => {
@@ -4276,7 +4280,7 @@ socket.on('modeVoteResult', (data) => {
   if (data.winScore) matchWinScore = data.winScore;
   matchGemWin = data.gemWin || 20;
   matchHole = data.hole || null;
-  if (data.soccer) matchSoccer = data.soccer;
+  matchRounds = data.rounds || null;
   // 투표로 정해진 맵으로 교체: 벽/덤불을 바꾸고, 서버가 옮겨준 새 스폰 위치로 내 위치도 다시 맞춘다
   if (data.walls) WALLS = data.walls;
   if (data.bushes) BUSHES = data.bushes;
@@ -4299,9 +4303,9 @@ function updateGateHud(state) {
   const mode = state.gameMode || matchGameMode;
   matchGameMode = mode;
   const modeLabel = mode === 'gatekeeper' ? '🚪 문지기 — 상대 문을 먼저 부수면 승리!'
-    : mode === 'soccer' ? `⚽ 슈퍼 축구 — 상대 골대에 ${matchSoccer.winGoals}골을 먼저 넣으면 승리!`
     : mode === 'gemgrab' ? `💎 쨍그랩 — 팀 보석 ${matchGemWin}개를 먼저 모으면 승리!`
     : mode === 'boss' ? `👹 보스전 — 보스를 쓰러뜨리세요! (목숨 ${matchLives}개)`
+    : (mode === 'knockout' && state.round) ? `⚔ 녹아우 — ${state.round.n}라운드 / 먼저 ${state.round.toWin}승 (우리 ${state.round[myTeam] || 0} : ${state.round[myTeam === 'A' ? 'B' : 'A'] || 0} 상대)`
     : `⚔ 녹아우 — ${matchWinScore}킬 선취`;
   let html = `<div class="gate-mode">${modeLabel}</div>`;
   if (mode === 'gemgrab') {
@@ -4311,11 +4315,6 @@ function updateGateHud(state) {
     const enemyTeam = myTeam === 'A' ? 'B' : 'A';
     const gbar = (n, label, cls) => `<div class="gate-bar ${cls} gemb"><div class="gate-bar-label"><span>${label}</span><span>💎 ${n} / ${matchGemWin}</span></div><div class="gate-bar-track"><div class="gate-bar-fill" style="width:${Math.max(0, Math.min(100, (n / matchGemWin) * 100))}%"></div></div></div>`;
     html += `<div class="gate-bars">${gbar(totals[myTeam] || 0, '우리 팀', 'mine')}${gbar(totals[enemyTeam] || 0, '상대 팀', 'enemy')}</div>`;
-  }
-  if (mode === 'soccer' && state.goals) {
-    const enemyTeam = myTeam === 'A' ? 'B' : 'A';
-    const sbar = (n, label, cls) => `<div class="gate-bar ${cls} gemb"><div class="gate-bar-label"><span>${label}</span><span>⚽ ${n} / ${matchSoccer.winGoals}</span></div><div class="gate-bar-track"><div class="gate-bar-fill" style="width:${Math.max(0, Math.min(100, (n / matchSoccer.winGoals) * 100))}%"></div></div></div>`;
-    html += `<div class="gate-bars">${sbar(state.goals[myTeam] || 0, '우리 팀', 'mine')}${sbar(state.goals[enemyTeam] || 0, '상대 팀', 'enemy')}</div>`;
   }
   if (mode === 'boss') { // 보스 체력바 + 남은 목숨
     const bossC = (state.chickens || []).find((c) => c.boss);
@@ -4352,7 +4351,7 @@ socket.on('matchFound', (data) => {
   matchBossInfo = data.boss || null;
   matchLives = data.lives || 0;
   matchGameMode = data.gameMode || 'knockout';
-  ballLastDraw = null; ballRot = 0;
+  matchRounds = null; // 라운드제 여부는 투표 결과(modeVoteResult)에서 다시 정해짐
   matchHole = null; gemList = []; gemNextAt = 0; prevMyGems = 0; // 쨍그랩 상태 초기화
   for (const k in gemSeen) delete gemSeen[k];
   ARENA_WIDTH = data.arena.width;
@@ -4464,10 +4463,11 @@ socket.on('matchOver', (data) => {
     titleEl.textContent = iWon ? '승리!' : '패배';
     titleEl.classList.add(iWon ? 'win' : 'lose');
     descEl.textContent = iWon ? `💎 보석 ${matchGemWin}개를 모았어요!` : `💎 상대 팀이 보석 ${matchGemWin}개를 먼저 모았어요...`;
-  } else if (data.reason === 'goalsScored') {
+  } else if (data.reason === 'roundsWon') {
+    const rw = data.roundWins || { A: 0, B: 0 };
     titleEl.textContent = iWon ? '승리!' : '패배';
     titleEl.classList.add(iWon ? 'win' : 'lose');
-    descEl.textContent = `⚽ ${myScore} : ${oppScore} (${matchSoccer.winGoals}골 선취)`;
+    descEl.textContent = `라운드 ${rw[myTeam] || 0} : ${rw[myTeam === 'A' ? 'B' : 'A'] || 0} (${data.rounds || 0}라운드 · 먼저 ${(matchRounds && matchRounds.toWin) || 2}승)`;
   } else if (data.reason === 'gateDestroyed') {
     titleEl.textContent = iWon ? '승리!' : '패배';
     titleEl.classList.add(iWon ? 'win' : 'lose');
@@ -4511,11 +4511,12 @@ function updateDeathOverlay(me) {
   if (deadSince === null) deadSince = Date.now();
   const left = Math.max(1, Math.ceil((RESPAWN_DELAY_MS - (Date.now() - deadSince)) / 1000)); // 부활 직전까지 1초로 유지
   const txt = document.getElementById('deathText');
-  const label = left + '초 후 부활';
+  const roundMode = !!(latestState && latestState.round); // 녹아우 라운드제: 시간이 지나도 부활하지 않고 라운드가 끝나야 돌아옴
+  const label = roundMode ? '라운드가 끝날 때까지 기다려요' : left + '초 후 부활';
   if (txt && txt.textContent !== label) txt.textContent = label;
   const sub = document.getElementById('deathSub');
   if (sub) {
-    const subText = matchGameMode === 'boss' ? `남은 목숨 ${'❤️'.repeat(Math.max(0, (latestState && latestState.bossLives) || 0))}` : '곧 다시 돌아와요';
+    const subText = matchGameMode === 'boss' ? `남은 목숨 ${'❤️'.repeat(Math.max(0, (latestState && latestState.bossLives) || 0))}` : roundMode ? '살아 있는 팀원이 싸우는 중이에요. 응원해 주세요!' : '곧 다시 돌아와요';
     if (sub.textContent !== subText) sub.textContent = subText;
   }
   if (el.style.display !== 'flex') el.style.display = 'flex';
@@ -4956,7 +4957,6 @@ function activateUltimateControl() {
   const me = latestState.players[myId];
   if (!me || !me.alive) return;
   if (me.ultimateCharge < 100) return;
-  if (matchGameMode === 'soccer' && me.hasBall) return; // 공을 가진 동안은 궁극기 사용 불가
 
   if (me.ultimate && me.ultimate.type === 'lightning') {
     socket.emit('ultimate');
@@ -5032,7 +5032,6 @@ function activateGadgetControl() {
   const me = latestState.players[myId];
   if (!me || !me.alive || !me.gadget) return;
   if (me.gadgetCooldownLeft > 0) return;
-  if (matchGameMode === 'soccer' && me.hasBall) return; // 공을 가진 동안은 가젯 사용 불가
 
   if (me.gadget.instant) {
     socket.emit('gadget');
@@ -5448,6 +5447,286 @@ function drawLegendArmor(g, R, t, dark) {
   g.strokeStyle = 'rgba(255,255,255,0.5)'; g.lineWidth = Math.max(1, R * 0.03);
   g.beginPath(); g.arc(0, 0, R - R * 0.1, Math.PI * 1.05, Math.PI * 1.6); g.stroke();
 }
+
+// ===== 💎 보석 스킨: 지기 [번개 마법사] =====
+// 평소: 푸른 로브 + 뾰족 모자 + 번개 지팡이 / 하이퍼 차지 발동 중(awake): 하얗게 빛나는 각성 모습 (모자가 높아지고 번개 왕관, 눈에서 번개, 하늘에서 내리꽂는 번개 기둥)
+function stormRnd(n) { const x = Math.sin(n * 127.1) * 43758.5453; return x - Math.floor(x); }
+// 지그재그 번개 경로: (x1,y1)->(x2,y2)를 seg 구간으로 나눠 수직 방향으로 흔듦 (seed 가 바뀌면 모양이 바뀜)
+function stormBoltPath(g, x1, y1, x2, y2, seg, amp, seed) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const len = Math.hypot(dx, dy) || 1;
+  const nx = -dy / len, ny = dx / len;
+  g.beginPath();
+  g.moveTo(x1, y1);
+  for (let i = 1; i < seg; i++) {
+    const k = i / seg;
+    const off = (stormRnd(seed * 31 + i * 7.7) - 0.5) * 2 * amp;
+    g.lineTo(x1 + dx * k + nx * off, y1 + dy * k + ny * off);
+  }
+  g.lineTo(x2, y2);
+}
+function stormBolt(g, x1, y1, x2, y2, seg, amp, seed, color, glow, width) { // 굵고 흐린 광채 선 위에 밝은 심지를 한 번 더 그림
+  const a0 = g.globalAlpha;
+  g.lineJoin = 'round';
+  g.lineCap = 'round';
+  stormBoltPath(g, x1, y1, x2, y2, seg, amp, seed);
+  g.globalAlpha = a0 * 0.6; g.strokeStyle = glow; g.lineWidth = width * 3.2; g.stroke();
+  g.globalAlpha = a0; g.strokeStyle = color; g.lineWidth = width; g.stroke();
+}
+// g: 그릴 2D 컨텍스트 (게임 화면과 상점 미리보기가 같이 씀), R: 몸통 반지름, t: 초 단위 시간, awake: 하이퍼 차지 각성 여부
+function drawStormWizard(g, R, t, awake) {
+  const GLOW = awake ? '#ffffff' : '#7fe7ff';
+  const GLOW2 = awake ? 'rgba(190, 150, 255, 0.9)' : 'rgba(80, 200, 255, 0.9)';
+  const BOLT = awake ? '#f1e6ff' : '#ffe94d';
+  const seed = Math.floor(t * 16);
+  const lw = Math.max(1, R * 0.05);
+  // --- 번개 지팡이 (몸 오른쪽 바깥, 몸 뒤에 걸침) + 끝의 전기 구슬 ---
+  const stX = R * 1.2, stTop = -R * 1.0, stBot = R * 0.95;
+  g.save();
+  g.lineCap = 'round';
+  g.strokeStyle = awake ? '#e4d6ff' : '#6b4a2b';
+  g.lineWidth = Math.max(2, R * 0.16);
+  g.beginPath(); g.moveTo(stX - R * 0.1, stBot); g.lineTo(stX + R * 0.08, stTop); g.stroke();
+  g.strokeStyle = awake ? '#a98bff' : '#3c2815';
+  g.lineWidth = Math.max(1, R * 0.05);
+  g.beginPath(); g.moveTo(stX - R * 0.1, stBot); g.lineTo(stX + R * 0.08, stTop); g.stroke();
+  const orbR = R * (awake ? 0.42 : 0.3) * (1 + 0.1 * Math.sin(t * 9));
+  const ox = stX + R * 0.1, oy = stTop - orbR * 0.4;
+  const halo = g.createRadialGradient(ox, oy, 0, ox, oy, orbR * 2.4);
+  halo.addColorStop(0, awake ? 'rgba(255,255,255,0.9)' : 'rgba(200,250,255,0.85)');
+  halo.addColorStop(0.4, awake ? 'rgba(190,150,255,0.45)' : 'rgba(80,200,255,0.4)');
+  halo.addColorStop(1, 'rgba(80,200,255,0)');
+  g.fillStyle = halo;
+  g.beginPath(); g.arc(ox, oy, orbR * 2.4, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#fff';
+  g.beginPath(); g.arc(ox, oy, orbR * 0.7, 0, Math.PI * 2); g.fill();
+  for (let i = 0; i < (awake ? 5 : 3); i++) { // 구슬에서 튀는 전기
+    const a = stormRnd(seed * 3 + i) * Math.PI * 2;
+    stormBolt(g, ox + Math.cos(a) * orbR * 0.6, oy + Math.sin(a) * orbR * 0.6, ox + Math.cos(a + 0.3) * orbR * 2.0, oy + Math.sin(a + 0.3) * orbR * 2.0, 3, R * 0.09, seed * 13 + i, '#ffffff', GLOW2, lw);
+  }
+  g.restore();
+  // --- 몸통 안쪽(원 안만): 로브 + 번개 무늬 + 얼굴 + 수염 + 눈 ---
+  g.save();
+  g.beginPath(); g.arc(0, 0, R - 0.5, 0, Math.PI * 2); g.clip();
+  const rg = g.createLinearGradient(-R, -R, R, R);
+  if (awake) { rg.addColorStop(0, '#d9c8ff'); rg.addColorStop(0.45, '#8a62f0'); rg.addColorStop(1, '#3a1fa8'); }
+  else { rg.addColorStop(0, '#4d63e0'); rg.addColorStop(0.5, '#2b3bb0'); rg.addColorStop(1, '#121a55'); }
+  g.fillStyle = rg;
+  g.fillRect(-R, -R, R * 2, R * 2);
+  g.strokeStyle = BOLT; g.lineWidth = Math.max(1.2, R * 0.1); g.lineJoin = 'round'; g.lineCap = 'round';
+  for (const side of [-1, 1]) { // 로브의 번개 무늬 (양쪽 지그재그)
+    g.beginPath();
+    g.moveTo(side * R * 0.75, R * 0.3); g.lineTo(side * R * 0.35, R * 0.52); g.lineTo(side * R * 0.5, R * 0.68); g.lineTo(side * R * 0.08, R * 0.95);
+    g.stroke();
+  }
+  g.fillStyle = awake ? '#fff1e2' : '#f6d3ae'; // 얼굴
+  g.beginPath(); g.ellipse(0, -R * 0.2, R * 0.5, R * 0.46, 0, 0, Math.PI * 2); g.fill();
+  g.fillStyle = awake ? '#ffffff' : '#e9eefc'; // 수염
+  g.strokeStyle = awake ? 'rgba(150, 120, 230, 0.7)' : 'rgba(60, 70, 140, 0.55)'; g.lineWidth = lw;
+  g.beginPath();
+  g.moveTo(-R * 0.46, -R * 0.08);
+  g.quadraticCurveTo(-R * 0.5, R * 0.38, -R * 0.04, R * 0.8);
+  g.quadraticCurveTo(0, R * 0.86, R * 0.04, R * 0.8);
+  g.quadraticCurveTo(R * 0.5, R * 0.38, R * 0.46, -R * 0.08);
+  g.quadraticCurveTo(R * 0.22, R * 0.12, 0, R * 0.06);
+  g.quadraticCurveTo(-R * 0.22, R * 0.12, -R * 0.46, -R * 0.08);
+  g.closePath(); g.fill(); g.stroke();
+  const ey = -R * 0.26;
+  for (const side of [-1, 1]) { // 눈썹 + 번개빛 눈
+    g.strokeStyle = awake ? '#8f6bff' : '#2a2f5a'; g.lineWidth = Math.max(1.2, R * 0.07);
+    g.beginPath(); g.moveTo(side * R * 0.08, ey - R * 0.13); g.lineTo(side * R * 0.36, ey - R * 0.22); g.stroke();
+    if (awake) { g.fillStyle = 'rgba(70, 30, 140, 0.6)'; g.beginPath(); g.ellipse(side * R * 0.21, ey, R * 0.18, R * 0.105, 0, 0, Math.PI * 2); g.fill(); } // 눈두덩 그늘 (하얀 눈빛이 묻히지 않게)
+    g.shadowColor = GLOW; g.shadowBlur = R * (awake ? 0.6 : 0.35);
+    g.fillStyle = GLOW;
+    g.beginPath(); g.ellipse(side * R * 0.21, ey, R * (awake ? 0.16 : 0.11), R * (awake ? 0.1 : 0.06), 0, 0, Math.PI * 2); g.fill();
+    g.shadowBlur = 0;
+    if (awake) { // 각성: 눈에서 번개가 뻗어나옴
+      g.strokeStyle = '#ffffff'; g.lineWidth = lw;
+      g.beginPath(); g.moveTo(side * R * 0.34, ey); g.lineTo(side * R * 0.5, ey - R * 0.07 * (stormRnd(seed + side) + 0.5)); g.lineTo(side * R * 0.62, ey + R * 0.03); g.stroke();
+    }
+  }
+  g.restore();
+  // --- 뾰족 모자 (몸 바깥으로 솟음). 각성하면 더 높아지고 번개 왕관이 생김 ---
+  const hatTop = awake ? -R * 2.1 : -R * 1.75;
+  const bend = R * 0.1 + Math.sin(t * 2.2) * R * 0.1;
+  const hg = g.createLinearGradient(0, -R * 0.6, 0, hatTop);
+  if (awake) { hg.addColorStop(0, '#5a35d0'); hg.addColorStop(1, '#e6dbff'); }
+  else { hg.addColorStop(0, '#141b5e'); hg.addColorStop(1, '#2f42c8'); }
+  g.fillStyle = hg;
+  g.strokeStyle = awake ? '#ffffff' : '#0b1040'; g.lineWidth = Math.max(1, R * 0.06);
+  g.beginPath();
+  g.moveTo(-R * 0.58, -R * 0.62);
+  g.quadraticCurveTo(-R * 0.3, -R * 1.2, bend, hatTop);
+  g.quadraticCurveTo(R * 0.3 + bend * 0.3, -R * 1.15, R * 0.58, -R * 0.62);
+  g.closePath(); g.fill(); g.stroke();
+  g.fillStyle = awake ? '#7c58e8' : '#1d2a8a'; // 챙
+  g.beginPath(); g.ellipse(0, -R * 0.62, R * 0.88, R * 0.2, 0, 0, Math.PI * 2); g.fill(); g.stroke();
+  g.fillStyle = BOLT; // 모자의 번개 문장
+  g.beginPath();
+  g.moveTo(R * 0.06, -R * 1.28); g.lineTo(-R * 0.16, -R * 0.98); g.lineTo(-R * 0.02, -R * 0.98); g.lineTo(-R * 0.13, -R * 0.74); g.lineTo(R * 0.17, -R * 1.06); g.lineTo(R * 0.03, -R * 1.06);
+  g.closePath(); g.fill();
+  const tipPulse = 0.6 + 0.4 * Math.sin(t * 8); // 모자 끝의 불꽃
+  const tg = g.createRadialGradient(bend, hatTop, 0, bend, hatTop, R * (awake ? 0.5 : 0.32));
+  tg.addColorStop(0, `rgba(255,255,255,${tipPulse})`);
+  tg.addColorStop(1, awake ? 'rgba(170,120,255,0)' : 'rgba(80,200,255,0)');
+  g.fillStyle = tg;
+  g.beginPath(); g.arc(bend, hatTop, R * (awake ? 0.5 : 0.32), 0, Math.PI * 2); g.fill();
+  if (awake) { // 각성: 모자 둘레에 번개 왕관
+    for (let i = 0; i < 5; i++) {
+      const a = Math.PI * (1.12 + i * 0.19);
+      stormBolt(g, Math.cos(a) * R * 0.62, -R * 0.78 + Math.sin(a) * R * 0.14, Math.cos(a) * R * 1.55, -R * 0.78 + Math.sin(a) * R * 1.25, 3, R * 0.14, seed * 9 + i, '#ffffff', GLOW2, Math.max(1.2, R * 0.06));
+    }
+  }
+  // --- 바깥 테두리 (각성하면 하얗게 빛남) ---
+  g.save();
+  if (awake) { g.shadowColor = 'rgba(200, 170, 255, 1)'; g.shadowBlur = R * 0.7; }
+  g.strokeStyle = awake ? '#ffffff' : '#5ab8ff';
+  g.lineWidth = Math.max(1.5, R * 0.08);
+  g.beginPath(); g.arc(0, 0, R - R * 0.04, 0, Math.PI * 2); g.stroke();
+  g.restore();
+}
+// 몸 뒤에 깔리는 전기 오라 (원점 중심). 각성하면 훨씬 크고 하얗게 빛나며 번개 호/기둥/발밑 고리가 생김
+function drawStormAuraG(g, R, t, awake) {
+  const seed = Math.floor(t * 14);
+  const pulse = 1 + 0.08 * Math.sin(t * (awake ? 6 : 3));
+  const rad = R * (awake ? 3.4 : 2.1) * pulse;
+  const ag = g.createRadialGradient(0, 0, R * 0.4, 0, 0, rad);
+  if (awake) { ag.addColorStop(0, 'rgba(235,220,255,0.5)'); ag.addColorStop(0.45, 'rgba(160,110,255,0.34)'); ag.addColorStop(1, 'rgba(140,90,255,0)'); }
+  else { ag.addColorStop(0, 'rgba(160,235,255,0.5)'); ag.addColorStop(0.5, 'rgba(70,160,255,0.2)'); ag.addColorStop(1, 'rgba(60,140,255,0)'); }
+  g.fillStyle = ag;
+  g.beginPath(); g.arc(0, 0, rad, 0, Math.PI * 2); g.fill();
+  const n = awake ? 6 : 3;
+  for (let i = 0; i < n; i++) { // 몸 주위를 도는 전기 호
+    const a = t * (awake ? 1.7 : 0.9) + (i * Math.PI * 2) / n;
+    const r1 = R * 1.05, r2 = R * (awake ? 2.3 : 1.6);
+    stormBolt(g, Math.cos(a) * r1, Math.sin(a) * r1, Math.cos(a + 0.28) * r2, Math.sin(a + 0.28) * r2, 4, R * 0.2, seed * 5 + i, awake ? '#ffffff' : '#c4f4ff', awake ? 'rgba(170,120,255,0.9)' : 'rgba(70,170,255,0.9)', Math.max(1, R * 0.07));
+  }
+  for (let i = 0; i < (awake ? 10 : 5); i++) { // 떠오르는 불씨
+    const k = (t * 0.8 + i / (awake ? 10 : 5)) % 1;
+    const a = i * 2.3 + t * 0.5;
+    g.globalAlpha = (1 - k) * 0.9;
+    g.fillStyle = awake ? '#f3eaff' : '#bff3ff';
+    g.beginPath(); g.arc(Math.cos(a) * R * 1.1, R * 0.8 - k * R * 2.6, R * 0.07 * (1 - k * 0.5) + 0.7, 0, Math.PI * 2); g.fill();
+  }
+  g.globalAlpha = 1;
+  if (awake) {
+    stormBolt(g, Math.sin(t * 3) * R * 0.3, -R * 5.4, 0, -R * 1.3, 7, R * 0.38, seed * 3, '#ffffff', 'rgba(180,140,255,0.9)', Math.max(1.5, R * 0.1)); // 하늘에서 내리꽂는 번개 기둥
+    g.lineWidth = Math.max(1.5, R * 0.08);
+    for (let i = 0; i < 2; i++) { // 발밑 번개 고리
+      g.strokeStyle = `rgba(210, 185, 255, ${(0.7 - i * 0.3) * (0.7 + 0.3 * Math.sin(t * 8 + i))})`;
+      g.beginPath(); g.ellipse(0, R * 0.8, R * (1.7 + i * 0.7 + 0.1 * Math.sin(t * 5)), R * (0.55 + i * 0.2), 0, 0, Math.PI * 2); g.stroke();
+    }
+  }
+}
+function drawStormAura(p) {
+  if (!p.alive) return;
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  drawStormAuraG(ctx, PLAYER_RADIUS, Date.now() / 1000, p.hyperLeft > 0);
+  ctx.restore();
+}
+// 보석 상점 미리보기: 평소 모습과 각성 모습을 번갈아 보여줌
+function drawStormPreview(canvasEl) {
+  const g = canvasEl.getContext('2d');
+  const W = canvasEl.width, H = canvasEl.height;
+  const t = Date.now() / 1000;
+  const awake = Math.floor(t / 2.6) % 2 === 1;
+  const R = W * 0.2;
+  g.clearRect(0, 0, W, H);
+  g.save();
+  g.translate(W / 2, H * 0.62);
+  drawStormAuraG(g, R, t, awake);
+  g.fillStyle = '#2b3bb0'; g.beginPath(); g.arc(0, 0, R, 0, Math.PI * 2); g.fill();
+  drawStormWizard(g, R, t, awake);
+  g.restore();
+  g.font = 'bold 22px sans-serif'; g.textAlign = 'center'; g.fillStyle = awake ? '#e6d8ff' : '#9fe9ff';
+  g.fillText(awake ? '⚡ 하이퍼 차지 각성! ⚡' : '평소 모습', W / 2, H - 12);
+}
+// 기본공격: 지직거리는 전기 덩어리 (awake: 하이퍼 차지 중 더 밝은 보랏빛 + 더 많은 번개)
+function drawStormOrb(b, awake) {
+  const r = b.radius;
+  const t = Date.now() / 1000;
+  const seed = Math.floor(t * 20) + (b.id || 0) * 13;
+  const ang = Math.atan2(b.vy || 0, b.vx || 1);
+  ctx.save();
+  ctx.translate(b.x, b.y);
+  ctx.rotate(ang);
+  const tl = r * (awake ? 4.2 : 3);
+  const tg = ctx.createLinearGradient(-tl, 0, 0, 0);
+  tg.addColorStop(0, awake ? 'rgba(180,130,255,0)' : 'rgba(90,200,255,0)');
+  tg.addColorStop(1, awake ? 'rgba(210,175,255,0.55)' : 'rgba(120,215,255,0.5)');
+  ctx.fillStyle = tg;
+  ctx.beginPath(); ctx.moveTo(0, -r * 0.7); ctx.lineTo(-tl, 0); ctx.lineTo(0, r * 0.7); ctx.closePath(); ctx.fill();
+  ctx.rotate(-ang);
+  const gl = ctx.createRadialGradient(0, 0, 0, 0, 0, r * 1.1);
+  gl.addColorStop(0, '#ffffff');
+  gl.addColorStop(0.35, awake ? '#f0e4ff' : '#d6f7ff');
+  gl.addColorStop(0.7, awake ? 'rgba(170,120,255,0.75)' : 'rgba(70,190,255,0.7)');
+  gl.addColorStop(1, awake ? 'rgba(140,90,255,0)' : 'rgba(40,140,255,0)');
+  ctx.fillStyle = gl;
+  ctx.beginPath(); ctx.arc(0, 0, r * 1.1, 0, Math.PI * 2); ctx.fill();
+  const n = awake ? 7 : 5;
+  for (let i = 0; i < n; i++) {
+    const a = stormRnd(seed * 3 + i) * Math.PI * 2;
+    const r2 = r * (0.85 + 0.3 * stormRnd(seed + i * 5));
+    stormBolt(ctx, Math.cos(a) * r * 0.25, Math.sin(a) * r * 0.25, Math.cos(a + 0.4) * r2, Math.sin(a + 0.4) * r2, 3, r * 0.22, seed * 7 + i, '#ffffff', awake ? 'rgba(170,120,255,0.9)' : 'rgba(70,190,255,0.9)', Math.max(1.2, r * 0.14));
+  }
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath(); ctx.arc(0, 0, r * 0.38, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+// 궁극기: 정해진 자리에 하늘에서 내리꽂히는 번개 (판정은 기존 번개와 같은 원 범위). awake: 더 굵고 하얗고 가지가 많음
+function drawStormStrike(e) {
+  const awake = e.visual === 'stormStrikeHyper';
+  const maxLife = e.maxLife || 0.55;
+  const t = Math.max(0, Math.min(1, 1 - e.life / maxLife));
+  const seed = Math.floor(Date.now() / 45) + Math.floor(e.x * 0.37 + e.y * 0.11);
+  const R = e.radius;
+  const glow = awake ? 'rgb(150, 90, 255)' : 'rgb(40, 170, 255)';
+  ctx.save();
+  ctx.globalAlpha = (1 - t) * 0.5; // 번개가 닿은 땅의 번쩍임
+  ctx.beginPath(); ctx.arc(e.x, e.y, R * (0.55 + 0.45 * Math.min(1, t * 3)), 0, Math.PI * 2);
+  ctx.fillStyle = awake ? 'rgba(190, 150, 255, 0.4)' : 'rgba(110, 210, 255, 0.32)';
+  ctx.fill();
+  if (t < 0.55) { // 하늘에서 내리꽂는 번개 기둥 + 곁가지
+    const f = 1 - t / 0.55;
+    ctx.globalAlpha = Math.min(1, f * 1.6) * (0.75 + 0.25 * Math.sin(Date.now() / 30));
+    const top = e.y - R * 7;
+    stormBolt(ctx, e.x + (stormRnd(seed) - 0.5) * R * 0.5, top, e.x, e.y, 9, R * 0.38, seed, '#ffffff', glow, R * (awake ? 0.17 : 0.1));
+    if (awake) stormBolt(ctx, e.x + (stormRnd(seed + 9) - 0.5) * R * 0.8, top + R * 0.5, e.x + (stormRnd(seed + 4) - 0.5) * R * 0.3, e.y, 8, R * 0.3, seed + 77, '#f1e6ff', glow, R * 0.09);
+    for (let i = 0; i < (awake ? 4 : 2); i++) {
+      const yy = e.y - R * (1.4 + i * 1.3);
+      const dir = i % 2 ? 1 : -1;
+      stormBolt(ctx, e.x, yy, e.x + dir * R * (0.7 + 0.25 * stormRnd(seed + i)), yy - R * 0.9, 3, R * 0.2, seed * 5 + i, '#ffffff', glow, R * 0.07);
+    }
+  }
+  const ringT = Math.min(1, t / 0.7); // 바닥으로 퍼지는 충격 고리 (판정 반경 안쪽까지만)
+  ctx.globalAlpha = (1 - ringT) * 0.95;
+  ctx.lineWidth = R * 0.14 * (1 - ringT) + 2;
+  ctx.strokeStyle = awake ? 'rgba(230, 210, 255, 1)' : 'rgba(170, 240, 255, 1)';
+  ctx.beginPath(); ctx.arc(e.x, e.y, R * (0.3 + 0.7 * ringT), 0, Math.PI * 2); ctx.stroke();
+  if (awake) {
+    ctx.globalAlpha = (1 - ringT) * 0.7;
+    ctx.lineWidth = R * 0.08 * (1 - ringT) + 1.5;
+    ctx.beginPath(); ctx.arc(e.x, e.y, R * (0.15 + 0.5 * ringT), 0, Math.PI * 2); ctx.stroke();
+  }
+  if (t < 0.25) { // 내리꽂는 순간 하얗게 번쩍
+    const fl = 1 - t / 0.25;
+    const fg = ctx.createRadialGradient(e.x, e.y, 0, e.x, e.y, R * (awake ? 1.0 : 0.8));
+    fg.addColorStop(0, `rgba(255,255,255,${0.95 * fl})`);
+    fg.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = fg;
+    ctx.beginPath(); ctx.arc(e.x, e.y, R * (awake ? 1.0 : 0.8), 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.globalAlpha = (1 - t) * 0.9;
+  for (let i = 0; i < (awake ? 8 : 5); i++) { // 바닥을 기는 방전
+    const a = (i / (awake ? 8 : 5)) * Math.PI * 2 + stormRnd(seed + i) * 0.5;
+    stormBolt(ctx, e.x + Math.cos(a) * R * 0.15, e.y + Math.sin(a) * R * 0.15, e.x + Math.cos(a) * R * 0.85, e.y + Math.sin(a) * R * 0.85, 3, R * 0.12, seed * 3 + i, '#ffffff', glow, Math.max(1.2, R * 0.04));
+  }
+  ctx.restore();
+}
+
 // 몸 뒤에 깔리는 황금 오라 + 떠오르는 반짝이 (게임 화면용)
 function drawLegendAura(p) {
   if (!p.alive) return;
@@ -5570,6 +5849,13 @@ const SKIN_LOOKS = {
       if (dark) { ctx.fillStyle = '#14161d'; ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.fill(); } // 갑옷 사이로 보이는 몸통도 검게
       drawLegendArmor(ctx, R, Date.now() / 1000, dark);
     },
+  },
+  jigi_storm: {
+    body: '#2b3bb0',
+    avatarRing: '#7fe7ff',
+    upright: true,
+    drawFx(p) { drawStormAura(p); },
+    draw(R, p) { drawStormWizard(ctx, R, Date.now() / 1000, !!(p && p.hyperLeft > 0)); }, // 하이퍼 차지 발동 중에는 각성 모습
   },
   minam_ninja: {
     body: '#2b2f3a',
@@ -9139,7 +9425,7 @@ function drawBoomerangGlow(b) {
 function isAllyOwner(o) {
   return o.ownerId === myId || (myTeam && o.team === myTeam);
 }
-const SKIN_TEAM_BULLETS = { fireball: 1, iceShard: 1, poisonVial: 1, tire: 1, chip: 1, battery: 1, machine: 1 };
+const SKIN_TEAM_BULLETS = { stormOrb: 1, stormOrbHyper: 1, fireball: 1, iceShard: 1, poisonVial: 1, tire: 1, chip: 1, battery: 1, machine: 1 };
 function drawTeamHalo(b) {
   const ally = isAllyOwner(b);
   ctx.save();
@@ -9184,6 +9470,8 @@ const SKIN_HIT_FIT = {
   shuriken: [2.2, 0.7],      // 미남 닌자 표창
   bigShuriken: [1.7, 1.7],   // 미남 닌자 수리검
   chickenThrow: [1.4, 1.4],  // 지기 치킨
+  stormOrb: [1.1, 1.1],      // 지기 번개 마법사 전기 덩어리
+  stormOrbHyper: [1.1, 1.1], // 지기 번개 마법사 (각성) 전기 덩어리
   smallFist: [1.8, 1.6],     // 슈 작은 주먹
   bigFist: [1.25, 1.1],      // 슈 큰 주먹
   fireball: [1.1, 1.1],      // 원효대사 화염구
@@ -9774,6 +10062,8 @@ function drawBulletShape(b) {
     ctx.restore();
     return;
   }
+  if (b.visual === 'stormOrb') { drawStormOrb(b, false); return; }
+  if (b.visual === 'stormOrbHyper') { drawStormOrb(b, true); return; }
   if (b.visual === 'legendBolt') { drawLegendBolt(b); return; }
   if (b.visual === 'legendOrb') { drawLegendOrb(b); return; }
   if (b.visual === 'shuriken') {
@@ -11775,6 +12065,8 @@ function drawEffect(e) {
       ctx.fillText('✨', e.x + e.radius * 0.7 * (0.5 + landT), e.y - e.radius * 0.45);
     }
     ctx.restore();
+  } else if (e.type === 'lightning' && (e.visual === 'stormStrike' || e.visual === 'stormStrikeHyper')) {
+    drawStormStrike(e);
   } else if (e.type === 'lightning') {
     const alpha = Math.max(0, Math.min(1, e.life / 0.4));
     ctx.save();
@@ -12764,119 +13056,6 @@ function drawGemShape(cx, cy, s) {
 }
 
 
-// ===== 슈퍼 축구: 골대 / 공 =====
-function drawSoccerGoals() {
-  const { goalW, goalDepth } = matchSoccer;
-  const x0 = ARENA_WIDTH / 2 - goalW / 2;
-  for (const team of ['A', 'B']) {
-    const top = team === 'A';
-    const y0 = top ? 0 : ARENA_HEIGHT - goalDepth;
-    const mine = team === myTeam;
-    const col = mine ? '60, 140, 255' : '255, 90, 90';
-    ctx.save();
-    // 그물 바닥
-    ctx.fillStyle = `rgba(${col}, 0.22)`;
-    ctx.fillRect(x0, y0, goalW, goalDepth);
-    // 그물 무늬
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    for (let x = x0; x <= x0 + goalW; x += 16) { ctx.moveTo(x, y0); ctx.lineTo(x, y0 + goalDepth); }
-    for (let y = y0; y <= y0 + goalDepth; y += 12) { ctx.moveTo(x0, y); ctx.lineTo(x0 + goalW, y); }
-    ctx.stroke();
-    // 골라인(입구)과 양쪽 골대 기둥
-    const lineY = top ? y0 + goalDepth : y0;
-    ctx.strokeStyle = `rgba(${col}, 0.95)`;
-    ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.moveTo(x0, lineY); ctx.lineTo(x0 + goalW, lineY); ctx.stroke();
-    ctx.fillStyle = '#ffffff';
-    ctx.strokeStyle = `rgba(${col}, 1)`;
-    for (const px of [x0, x0 + goalW]) {
-      ctx.beginPath(); ctx.arc(px, lineY, 7, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-    }
-    ctx.restore();
-  }
-  // 가운데 원 (킥오프 자리)
-  ctx.save();
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
-  ctx.lineWidth = 3;
-  ctx.beginPath(); ctx.arc(ARENA_WIDTH / 2, ARENA_HEIGHT / 2, 90, 0, Math.PI * 2); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(0, ARENA_HEIGHT / 2); ctx.lineTo(ARENA_WIDTH, ARENA_HEIGHT / 2); ctx.stroke();
-  ctx.restore();
-}
-
-// 서버가 보낸 공 위치를 부드럽게: 몰고 가는 중이면 들고 있는 사람 앞에, 굴러가는 중이면 속도로 조금 앞서 예측
-function soccerBallRenderPos() {
-  const b = latestState.ball;
-  if (!b) return null;
-  const R = matchSoccer.ballR;
-  let x = b.x, y = b.y;
-  if (b.carrier && latestState.players[b.carrier]) {
-    const cp = latestState.players[b.carrier];
-    const rp = renderPos[b.carrier];
-    const cx = rp ? rp.x : cp.x, cy = rp ? rp.y : cp.y;
-    if (typeof cx === 'number' && typeof cy === 'number') {
-      x = cx + Math.cos(cp.angle || 0) * (PLAYER_RADIUS + R - 2);
-      y = cy + Math.sin(cp.angle || 0) * (PLAYER_RADIUS + R - 2);
-    }
-  } else if (b.vx || b.vy) {
-    const dt = Math.min(0.1, (Date.now() - (window.__lastStateAt || Date.now())) / 1000);
-    x += b.vx * dt; y += b.vy * dt;
-  }
-  if (ballLastDraw) ballRot += Math.hypot(x - ballLastDraw.x, y - ballLastDraw.y) / R;
-  ballLastDraw = { x, y };
-  return { x, y, carried: !!b.carrier, frozen: b.frozen > 0 };
-}
-
-function drawSoccerBall(bp) {
-  const R = matchSoccer.ballR;
-  // 바닥 그림자 (눌린 바닥 좌표계)
-  ctx.save();
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-  ctx.beginPath();
-  ctx.ellipse(bp.x, bp.y + R * 0.2, R * 0.95, R * 0.4, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-  ctx.save();
-  uprightAt(bp.y);
-  ctx.translate(bp.x, bp.y - R);
-  if (bp.frozen) ctx.globalAlpha = 0.6 + 0.4 * Math.sin(Date.now() / 90); // 킥오프 전 깜빡임
-  const g = ctx.createRadialGradient(-R * 0.3, -R * 0.3, R * 0.1, 0, 0, R);
-  g.addColorStop(0, '#ffffff');
-  g.addColorStop(1, '#cfd3dc');
-  ctx.beginPath();
-  ctx.arc(0, 0, R, 0, Math.PI * 2);
-  ctx.fillStyle = g;
-  ctx.fill();
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = '#1b1e2b';
-  ctx.stroke();
-  // 굴러가는 검은 조각 무늬
-  ctx.save();
-  ctx.beginPath(); ctx.arc(0, 0, R - 1, 0, Math.PI * 2); ctx.clip();
-  ctx.fillStyle = '#1b1e2b';
-  for (let i = 0; i < 5; i++) {
-    const a = ballRot + (i * Math.PI * 2) / 5;
-    const px = Math.cos(a) * R * 0.62, py = Math.sin(a) * R * 0.62;
-    ctx.beginPath();
-    for (let k = 0; k < 5; k++) {
-      const aa = a + (k * Math.PI * 2) / 5;
-      const x = px + Math.cos(aa) * R * 0.26, y = py + Math.sin(aa) * R * 0.26;
-      if (k === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    }
-    ctx.closePath(); ctx.fill();
-  }
-  ctx.beginPath();
-  for (let k = 0; k < 5; k++) {
-    const aa = ballRot + (k * Math.PI * 2) / 5;
-    const x = Math.cos(aa) * R * 0.28, y = Math.sin(aa) * R * 0.28;
-    if (k === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-  }
-  ctx.closePath(); ctx.fill();
-  ctx.restore();
-  ctx.restore();
-}
-
 // 맵 한가운데의 구멍: 어두운 구덩이 + 보라빛 가장자리. 가장자리 호가 차오르다가 가득 차면 보석이 튀어나옴
 function drawGemHole() {
   const hole = matchHole || { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT / 2, r: 46 };
@@ -13399,7 +13578,6 @@ function render() {
   ctx.drawImage(getFloorCanvas(theme), 0, 0, ARENA_WIDTH, ARENA_HEIGHT); // 맵별 바닥 (맵마다 한 번만 그려 캐시)
 
   drawBushes(); // 덤불 바닥(납작한 부분). 솟아오른 잎은 아래에서 깊이 순서대로 그림
-  if (matchGameMode === 'soccer') drawSoccerGoals(); // 슈퍼 축구: 양쪽 끝의 작은 골대
   if (matchGameMode === 'gemgrab') { drawGemHole(); drawGems(); } // 쨍그랩: 중앙 구멍과 바닥의 보석 (플레이어보다 아래에 그림)
 
   const poolsArr = Array.isArray(latestState.waterPools) ? latestState.waterPools : [];
@@ -13432,10 +13610,6 @@ function render() {
     const rp = renderPos[pid];
     const pv = rp ? Object.assign({}, p, { x: rp.x, y: rp.y }) : p; // 부드럽게 보정된 위치로 그림
     upright.push({ y: pv.y, fn: () => { drawPlayer(pv, pid === myId); drawChatBubble(pv); } });
-  }
-  if (matchGameMode === 'soccer' && latestState.ball) {
-    const bp = soccerBallRenderPos();
-    if (bp) upright.push({ y: bp.y + 1, fn: () => { drawSoccerBall(bp); } });
   }
   upright.sort((a, b) => a.y - b.y);
   for (const it of upright) it.fn();
