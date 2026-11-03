@@ -69,7 +69,7 @@ const ROUND_COUNTDOWN_MS = 2500;   // 모두 시작 위치로 돌아간 뒤 다�
 const BOSS_LIVES = 3;              // 목숨 개수
 const BOSS_EXTRA_GEM_COST = 10;    // 오늘의 무료 도전을 다 쓴 뒤 1판 더 하는 데 드는 보석 (보석만 있으면 횟수 제한 없음)
 const BOSS_REWARD_BLING = 1000;    // 보스를 쓰러뜨렸을 때 받는 블링(✨) - 아직 쓸 곳은 없지만 나중을 위해 모아 두는 재화 (원하는 값으로 바꾸세요)
-const BOSS_PLAYER_SPEED = 152;     // 클라이언트 MOVE_SPEED(플레이어 기본 이동속도)와 같은 값. 보스 속도 = 이 값 x speedRatio
+const BOSS_PLAYER_SPEED = 106.4;   // 클라이언트 MOVE_SPEED(플레이어 기본 이동속도)와 같은 값 (기존 152에서 30% 감소). 보스 속도 = 이 값 x speedRatio
 const BOSSES = [
   {
     id: 'su', name: '수', emoji: '👹',
@@ -730,21 +730,24 @@ const CHARACTERS = {
     maxHp: 6500,
     basic: {
       name: '계란 던지기',
-      type: 'eggthrow',   // 계란이 깨지면(적 적중 / 벽 / 최대 사거리 도달) 흰자가 퍼져 광역 피해
+      type: 'lob',        // 포물선으로 던져 땅에 떨어지면 깨지는 투척 (나이의 실내화처럼 비행 중에는 벽/적에 막히지 않고 벽을 넘음). 깨지면 흰자가 퍼져 광역 피해
+      eggSplat: true,     // 착지하면 폭발 대신 계란이 깨짐: 깨진 자리의 적에게 직접 피해(directDamage) + 흰자 웅덩이
       damage: 0,          // 직접 대미지는 directDamage로 처리
-      speed: 420,
+      distance: 546,      // 최대 투척 거리(px) - 기존 직선 사거리와 같음
+      minDistance: 100,   // 최소 투척 거리(px). 조준(PC 마우스 위치 / 모바일 스틱 당김)에 따라 minDistance ~ distance 사이로 조절됨
+      flightTime: 1,      // 던진 뒤 땅에 떨어져 깨질 때까지 걸리는 시간(초). 던지는 거리와 상관없이 항상 같음
+      arcHeight: 90,      // 포물선 최고 높이(px) - 화면 연출용 (판정에는 영향 없음)
       radius: 13,
-      lifetime: 1.3,       // 초 (사거리 ≈ 546px). 수명이 끝나면 그 자리에서 깨짐
       visual: 'egg',
-      poolOnImpact: true,   // 벽 또는 적과 충돌 시 흰자 웅덩이 생성
-      poolOnExpire: true,   // 아무것도 안 맞고 최대 사거리에 도달해도 깨져서 흰자가 퍼짐
+      poolOnImpact: true,   // 착지하면 흰자 웅덩이 생성
       poolVisual: 'eggWhite',
       poolRadius: 85,       // 흰자가 퍼지는 반경
       poolLifetime: 1,       // 퍼진 계란이 유지되는 시간(초)
       poolTickInterval: 0.2, // 0.2초마다 대미지 적용
       poolDamage: 180,      // 흰자에 닿은 적이 주기(0.2초)마다 입는 대미지 (기존 300에서 40% 감소)
       poolHeal: 0,          // 아군/자신에게는 아무 효과 없음
-      directDamage: 720,    // 계란에 직접 맞았을 때의 대미지 (기존 1200에서 40% 감소)
+      directDamage: 720,    // 계란이 깨지는 자리(directRadius 안)에 있던 적이 받는 대미지 (기존 1200에서 40% 감소)
+      directRadius: 40,     // 직접 적중으로 치는 범위(px): 깨진 자리에서 이 거리 안(적 몸 가장자리 기준)
     },
     ultimate: {
       name: '닭 소환',
@@ -1168,6 +1171,11 @@ function describeBasic(b) {
     if (b.fireCooldown > 0) parts.push(`발사 후 ${b.fireCooldown}초 동안 다음 발사 불가`);
     const r = rangeOf(b);
     if (r) parts.push(`사거리 약 ${r}`);
+  } else if (b.type === 'lob' && b.eggSplat) {
+    // 엑헤: 포물선으로 던져 착지하면 깨지는 계란 (깨진 자리 직접 피해 + 흰자 웅덩이)
+    damage = b.directDamage;
+    parts.push(`계란을 포물선으로 던져 땅에 떨어지면 깨짐 (벽을 넘어감), 던지는 거리는 조준으로 ${fmtNum(b.minDistance || 0)}~${fmtNum(b.distance)}px 조절 (거리와 상관없이 ${b.flightTime || 1}초 뒤에 착지)`);
+    parts.push(`깨진 자리에 있던 적에게 ${fmtNum(b.directDamage)} 피해 + 흰자가 반경 ${b.poolRadius}로 퍼져 닿은 적에게 ${b.poolTickInterval}초마다 ${fmtNum(b.poolDamage)} 피해 (${b.poolLifetime}초 후 소멸)`);
   } else if (b.type === 'lob') {
     // 나이: 포물선으로 던져 착지하면 폭발하는 실내화
     damage = b.explodeDamage;
@@ -5593,6 +5601,33 @@ function explodePoopBomb(match, b) {
   match.chickens = match.chickens.filter((c) => c.hp > 0);
 }
 
+// 엑헤의 계란: 착지 지점(b.x, b.y)에서 깨진다. 바로 그 자리(directRadius)에 있던 적에게는 직접 피해(directDamage)를 주고,
+// 이어서 흰자 웅덩이가 퍼져 지속 피해를 준다 (웅덩이 피해는 updateMatch 의 웅덩이 루프가 처리).
+function eggSplat(match, b) {
+  const mult = getDamageMultiplier(match.players[b.ownerId]);
+  for (const pid in match.players) {
+    if (match.over) return;
+    const target = match.players[pid];
+    if (!target.alive) continue;
+    if (!FRIENDLY_FIRE && target.team === b.team) continue;
+    if (Math.hypot(target.x - b.x, target.y - b.y) >= PLAYER_RADIUS + b.directRadius) continue;
+    applyDamage(match, target, b.directDamage, b.ownerId, { chargeShooter: true }); // 기본공격 직접 적중: 궁극기 게이지 충전
+  }
+  if (match.over) return;
+  for (const turret of match.turrets) {
+    if (!FRIENDLY_FIRE && turret.team === b.team) continue;
+    if (Math.hypot(turret.x - b.x, turret.y - b.y) < turret.radius + b.directRadius) turret.hp -= b.directDamage * mult;
+  }
+  match.turrets = match.turrets.filter((t) => t.hp > 0);
+  for (const chicken of match.chickens) {
+    if (chicken.hp <= 0) continue;
+    if (!FRIENDLY_FIRE && chicken.team === b.team) continue;
+    if (Math.hypot(chicken.x - b.x, chicken.y - b.y) < chicken.radius + b.directRadius) hitChicken(match, chicken, b.directDamage * mult, b.ownerId, { charge: true });
+  }
+  match.chickens = match.chickens.filter((c) => c.hp > 0);
+  spawnWaterPool(match, b);
+}
+
 // 나이의 실내화: 조준한 방향/거리의 한 지점으로 포물선을 그리며 날아가 착지하면 폭발한다.
 // 날아가는 동안에는 벽/적/터렛/닭에 전혀 막히지 않고(벽을 넘음), 착지 지점은 던지는 순간 정해진다. 착지까지 걸리는 시간은 거리와 무관하게 spec.flightTime 으로 고정.
 // 거리는 클라이언트가 보낸 값(PC: 마우스까지의 거리 / 모바일: 스틱을 당긴 정도)을 minDistance ~ distance 로 제한해서 사용한다.
@@ -5621,11 +5656,21 @@ function spawnLob(match, p, spec, sentDistance) {
     lob: true,                       // 포물선 투척: 비행 중 충돌 판정 없음, 수명이 끝나면(착지) 폭발
     arcHeight: spec.arcHeight || 100, // 화면 연출용 최고 높이
     explodeDamage: spec.explodeDamage,
-    explodeRadius: spec.explodeRadius,
+    explodeRadius: spec.explodeRadius != null ? spec.explodeRadius : (spec.poolRadius || 0), // 엑헤의 계란은 흰자 범위 (반사 방어막/AI 회피 판정에 쓰임)
     explodeVisual: skinVisual(p, 'slipperExplosion') === 'trayExplosion' ? 'trayExplosion' : 'slipper',
     explodeChargesUlt: !spec.blackHole, // 기본공격이므로 적중 시 궁극기 게이지 충전 (블랙홀 구체는 폭발 피해 없음)
     blackHole: spec.blackHole ? { radius: spec.explodeRadius, duration: spec.duration, pullSpeed: spec.bulletPullSpeed } : null, // 근수니의 중력 덩어리: 착지하면 폭발 대신 블랙홀 생성
     selfKnockback: spec.selfKnockback || 0, // 폭발 범위 안의 던진 본인을 밀쳐내는 거리(px)
+    // 엑헤의 계란: 착지하면 폭발 대신 깨져서 직접 피해 + 흰자 웅덩이 (eggSplat)
+    eggSplat: !!spec.eggSplat,
+    directDamage: spec.directDamage || 0,
+    directRadius: spec.directRadius || 0,
+    poolRadius: spec.poolRadius || 0,
+    poolLifetime: spec.poolLifetime || 0,
+    poolTickInterval: spec.poolTickInterval || 0.2,
+    poolDamage: spec.poolDamage || 0,
+    poolHeal: spec.poolHeal || 0,
+    poolVisual: spec.poolVisual ? skinVisual(p, spec.poolVisual) : null, // 엑헤 독 마법사 스킨: 흰자 대신 독 장판
   });
 }
 
@@ -8096,6 +8141,7 @@ function updateMatch(match, dt, now) {
           }
         }
         if (b.blackHole) { createBlackHole(match, b); return false; } // 근수니의 중력 덩어리: 폭발 대신 블랙홀 생성
+        if (b.eggSplat) { eggSplat(match, { ...b, x: b.targetX, y: b.targetY }); return false; } // 엑헤의 계란: 폭발 대신 깨짐
         explodePoopBomb(match, { ...b, x: b.targetX, y: b.targetY });
         return false;
       }
@@ -8571,7 +8617,7 @@ function buildVisibleBullets(match, viewerId) {
 // ===== AI 봇 (연습 대결) =====
 // 봇은 '가짜 소켓'으로 사람과 똑같은 입력 핸들러(playerUpdate/shoot/ultimate/gadget/chargeStart...)를 호출한다.
 // 그래서 쿨다운, 탄약, 기절, 카운트다운, 덤불 은닉 같은 규칙이 사람과 똑같이 적용된다. (봇은 '보이는' 적만 노린다)
-const AI_MOVE_SPEED = 152; // 클라이언트의 MOVE_SPEED 와 같은 값 (px/초, 기존 190에서 20% 감소)
+const AI_MOVE_SPEED = 106.4; // 클라이언트의 MOVE_SPEED 와 같은 값 (px/초, 기존 152에서 30% 감소)
 let aiBotCounter = 0;
 
 // AI전 봇 성능 (예전 '어려움'보다 더 강하게 조정됨)
