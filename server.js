@@ -746,7 +746,8 @@ const CHARACTERS = {
       poolTickInterval: 0.2, // 0.2초마다 대미지 적용
       poolDamage: 360,      // 흰자에 닿은 적이 주기(0.2초)마다 입는 대미지 (기존 180의 2배)
       poolHeal: 0,          // 아군/자신에게는 아무 효과 없음
-      directDamage: 1440,   // 계란이 깨지는 자리(directRadius 안)에 있던 적이 받는 대미지 (기존 720의 2배)
+      directDamage: 0,      // 직접 피해 없앰 (깨진 자리에 있어도 따로 피해를 받지 않음)
+      poolFirstDamage: 1440, // 흰자 지속 피해를 처음 받을 때(대상마다 1번)의 피해 (1레벨 기준). 이후 틱은 poolDamage
       directRadius: 40,     // 직접 적중으로 치는 범위(px): 깨진 자리에서 이 거리 안(적 몸 가장자리 기준)
       poolChargesUlt: true, // 흰자 지속 피해로도 궁극기 게이지가 충전됨
       poolChargeScale: 0.2, // 틱 1번당 충전량(기본 적중 1회 대비 비율). 0.2초 틱 × 5번 = 흰자에 1초 내내 서 있으면 직접 적중 1회만큼 충전
@@ -1175,9 +1176,10 @@ function describeBasic(b) {
     if (r) parts.push(`사거리 약 ${r}`);
   } else if (b.type === 'lob' && b.eggSplat) {
     // 엑헤: 포물선으로 던져 착지하면 깨지는 계란 (깨진 자리 직접 피해 + 흰자 웅덩이)
-    damage = b.directDamage;
+    damage = b.directDamage || b.poolFirstDamage;
     parts.push(`계란을 포물선으로 던져 땅에 떨어지면 깨짐 (벽을 넘어감), 던지는 거리는 조준으로 ${fmtNum(b.minDistance || 0)}~${fmtNum(b.distance)}px 조절 (거리와 상관없이 ${b.flightTime || 1}초 뒤에 착지)`);
-    parts.push(`깨진 자리에 있던 적에게 ${fmtNum(b.directDamage)} 피해 + 흰자가 반경 ${b.poolRadius}로 퍼져 닿은 적에게 ${b.poolTickInterval}초마다 ${fmtNum(b.poolDamage)} 피해 (${b.poolLifetime}초 후 소멸)`);
+    if (b.directDamage > 0) parts.push(`깨진 자리에 있던 적에게 ${fmtNum(b.directDamage)} 피해 + 흰자가 반경 ${b.poolRadius}로 퍼져 닿은 적에게 ${b.poolTickInterval}초마다 ${fmtNum(b.poolDamage)} 피해 (${b.poolLifetime}초 후 소멸)`);
+    else parts.push(`깨진 자리에 흰자가 반경 ${b.poolRadius}로 퍼져, 닿은 적은 처음 ${fmtNum(b.poolFirstDamage || b.poolDamage)} 피해를 받고 이후 ${b.poolTickInterval}초마다 ${fmtNum(b.poolDamage)} 피해 (${b.poolLifetime}초 후 소멸)`);
   } else if (b.type === 'lob') {
     // 나이: 포물선으로 던져 착지하면 폭발하는 실내화
     damage = b.explodeDamage;
@@ -1408,7 +1410,7 @@ const LEVEL_TABLE = [
   { hp: 1.350, atk: 1.30, cost: 700 },
 ];
 const LEVEL_TABLE_PUBLIC = LEVEL_TABLE.slice(1).map((t, i) => ({ level: i + 1, hp: t.hp, atk: t.atk, cost: t.cost }));
-const DAMAGE_KEYS = new Set(['damage', 'sideDamage', 'minDamage', 'maxDamage', 'directDamage', 'poolDamage', 'tickDamage', 'explodeDamage', 'landDamage']); // 공격력 배율을 적용할 수치 이름
+const DAMAGE_KEYS = new Set(['damage', 'sideDamage', 'minDamage', 'maxDamage', 'directDamage', 'poolDamage', 'poolFirstDamage', 'tickDamage', 'explodeDamage', 'landDamage']); // 공격력 배율을 적용할 수치 이름
 function clampLevel(v) {
   const n = Math.floor(Number(v));
   if (!Number.isFinite(n) || n < 1) return 1;
@@ -2130,6 +2132,16 @@ function repeatMissionsView(u) {
 // id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
+  {
+    id: '2026-11-03-ekhe-first-tick',
+    date: '2026-11-03',
+    tag: 'balance',
+    title: '엑헤 기본공격 변경',
+    items: [
+      '엑헤의 계란은 이제 깨진 자리에 직접 주는 피해가 없어요.',
+      '흰자에 닿은 적은 첫 번째 피해로 1,440(1레벨 기준)을 받고, 그 뒤로는 0.2초마다 360 피해를 받아요.',
+    ],
+  },
   {
     id: '2026-11-03-ekhe-pool-charge',
     date: '2026-11-03',
@@ -5645,6 +5657,7 @@ function explodePoopBomb(match, b) {
 // 엑헤의 계란: 착지 지점(b.x, b.y)에서 깨진다. 바로 그 자리(directRadius)에 있던 적에게는 직접 피해(directDamage)를 주고,
 // 이어서 흰자 웅덩이가 퍼져 지속 피해를 준다 (웅덩이 피해는 updateMatch 의 웅덩이 루프가 처리).
 function eggSplat(match, b) {
+  if (!(b.directDamage > 0)) { spawnWaterPool(match, b); return; } // 직접 피해가 없으면 흰자 웅덩이만 만든다
   const mult = getDamageMultiplier(match.players[b.ownerId]);
   for (const pid in match.players) {
     if (match.over) return;
@@ -5713,6 +5726,7 @@ function spawnLob(match, p, spec, sentDistance) {
     poolHeal: spec.poolHeal || 0,
     poolVisual: spec.poolVisual ? skinVisual(p, spec.poolVisual) : null, // 엑헤 독 마법사 스킨: 흰자 대신 독 장판
     poolChargesUlt: !!spec.poolChargesUlt,       // 웅덩이 지속 피해로 궁극기 충전 여부 (엑헤)
+    poolFirstDamage: spec.poolFirstDamage || 0,  // 웅덩이 피해를 처음 받을 때의 피해 (0이면 사용 안 함)
     poolChargeScale: spec.poolChargeScale != null ? spec.poolChargeScale : 1,
   });
 }
@@ -6242,6 +6256,14 @@ function moveChicken(match, c, dirX, dirY, step) {
   if (!collidesWithWalls(match.walls, c.x, ny, c.radius)) c.y = ny;
 }
 
+// 웅덩이 틱 피해량: firstDamage 가 있는 웅덩이(엑헤의 흰자)는 대상마다 첫 피해에만 firstDamage, 이후는 damage
+function poolDamageFor(pool, key) {
+  if (!(pool.firstDamage > 0)) return pool.damage;
+  if (pool.firstHitIds.includes(key)) return pool.damage;
+  pool.firstHitIds.push(key);
+  return pool.firstDamage;
+}
+
 // 물웅덩이(원효대사): 벽 또는 적과 충돌한 poolOnImpact 발사체가 남기는 물웅덩이를 생성한다
 function spawnWaterPool(match, b) {
   waterPoolIdCounter += 1;
@@ -6260,6 +6282,8 @@ function spawnWaterPool(match, b) {
     heal: b.poolHeal,
     gas: !!b.poolGas,
     visual: b.poolVisual || null,
+    firstDamage: b.poolFirstDamage || 0,   // 0보다 크면: 이 웅덩이 피해를 처음 받는 대상(플레이어/터렛/닭)은 damage 대신 이 값을 받음
+    firstHitIds: [],                       // 이미 첫 피해를 받은 대상('p:아이디', 't:아이디', 'c:아이디')
     chargesUlt: !!b.poolChargesUlt,                                  // true 면 틱 피해가 궁극기 게이지를 충전함
     chargeScale: b.poolChargeScale != null ? b.poolChargeScale : 1, // 틱당 충전 비율
   });
@@ -8415,7 +8439,7 @@ function updateMatch(match, dt, now) {
           target.hp = Math.min(target.maxHp, target.hp + pool.heal * (target.gearHealMult || 1)); // 회복 기어: 회복받는 쪽의 회복량 증가
         } else {
           // 적 -> 대미지 (궁극기 게이지는 충전하지 않음)
-          applyDamage(match, target, pool.damage, pool.ownerId, { chargeShooter: !!pool.chargesUlt, chargeScale: pool.chargeScale, noLifesteal: true }); // 지속 피해는 기어 '흡수' 제외. 엑헤의 흰자는 궁극기도 충전
+          applyDamage(match, target, poolDamageFor(pool, 'p:' + pid), pool.ownerId, { chargeShooter: !!pool.chargesUlt, chargeScale: pool.chargeScale, noLifesteal: true }); // 지속 피해는 기어 '흡수' 제외. 엑헤의 흰자는 궁극기도 충전
           if (match.over) break;
         }
       }
@@ -8427,7 +8451,7 @@ function updateMatch(match, dt, now) {
         const tdx = turret.x - pool.x;
         const tdy = turret.y - pool.y;
         if (Math.sqrt(tdx * tdx + tdy * tdy) >= turret.radius + pool.radius) continue;
-        turret.hp -= pool.damage;
+        turret.hp -= poolDamageFor(pool, 't:' + turret.id);
       }
       match.turrets = match.turrets.filter((t) => t.hp > 0);
 
@@ -8437,7 +8461,7 @@ function updateMatch(match, dt, now) {
         const cdx = chicken.x - pool.x;
         const cdy = chicken.y - pool.y;
         if (Math.sqrt(cdx * cdx + cdy * cdy) >= chicken.radius + pool.radius) continue;
-        hitChicken(match, chicken, pool.damage * getDamageMultiplier(match.players[pool.ownerId]), pool.ownerId, { noLifesteal: true }); // 지속 피해는 기어 '흡수' 제외
+        hitChicken(match, chicken, poolDamageFor(pool, 'c:' + chicken.id) * getDamageMultiplier(match.players[pool.ownerId]), pool.ownerId, { noLifesteal: true }); // 지속 피해는 기어 '흡수' 제외
       }
       match.chickens = match.chickens.filter((c) => c.hp > 0);
     }
