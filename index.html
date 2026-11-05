@@ -68,6 +68,20 @@
     transition: background 0.1s;
   }
   .stick-base.dragging .stick-nub { background: rgba(255, 255, 255, 0.85); }
+  /* 공격 스틱: 끄는 동안 가운데에 '공격 취소' 영역(점선 원)이 보이고, 손가락이 그 안에 있으면 붉게 바뀐다 (이 상태로 떼면 공격이 취소됨) */
+  #rightStick.dragging::before {
+    content: '';
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 23%; height: 23%;
+    transform: translate(-50%, -50%);
+    border-radius: 50%;
+    border: 2px dashed rgba(255, 255, 255, 0.55);
+    pointer-events: none;
+  }
+  #rightStick.cancel { background: rgba(255, 70, 70, 0.22); border-color: rgba(255, 90, 90, 0.85); }
+  #rightStick.cancel::before { border-color: rgba(255, 120, 120, 0.95); background: rgba(255, 70, 70, 0.25); }
+  #rightStick.cancel .stick-nub { background: rgba(255, 120, 120, 0.85); }
   body.touch-device .stick-base { display: block; }
   body.touch-device #hint { display: none; }
   #mobileHint {
@@ -1989,10 +2003,14 @@ window.addEventListener('mouseup', (e) => { if (e.button === 2) setAutoAimArmed(
 window.addEventListener('blur', () => setAutoAimArmed(false)); // 오토에임 충전 중에는 autoAim이 알아서 발사
 window.addEventListener('blur', cancelCharge);
 
-function setupStick(baseId, nubId, onMove, onEnd, onStart) {
+// follow=true 이면 '따라다니는 조이스틱': 손가락이 스틱 가장자리를 넘어 더 멀리 가면 스틱 베이스가 손가락을 따라 같이 움직이고,
+// 손가락을 떼면 원래 자리로 돌아간다. (이동 스틱에 사용: 엄지가 조금씩 밀려도 스틱 밖으로 벗어나 조작이 끊기는 일이 없음)
+function setupStick(baseId, nubId, onMove, onEnd, onStart, follow) {
   const base = document.getElementById(baseId);
   const nub = document.getElementById(nubId);
   let activeTouchId = null;
+  let offX = 0, offY = 0;      // 베이스가 원래 자리에서 이동한 거리(px)
+  let homeRect = null;         // 터치를 시작할 때의 베이스 원래 위치/크기 (이동 전)
 
   // CSS 미디어쿼리에 따라 조이스틱 크기가 달라지므로, 매번 실제 렌더링된 크기로 최대 반경을 계산
   function getGeometry() {
@@ -2005,10 +2023,28 @@ function setupStick(baseId, nubId, onMove, onEnd, onStart) {
   }
 
   function handleMove(clientX, clientY) {
-    const { cx, cy, maxDist } = getGeometry();
+    let { cx, cy, maxDist } = getGeometry();
     let dx = clientX - cx;
     let dy = clientY - cy;
-    const dist = Math.sqrt(dx * dx + dy * dy);
+    let dist = Math.sqrt(dx * dx + dy * dy);
+    if (follow && homeRect && dist > maxDist) {
+      // 손가락이 벗어난 만큼 베이스를 손가락 쪽으로 옮긴다 (화면 밖/오른쪽 조준 스틱 쪽으로는 나가지 않게 제한)
+      const excess = dist - maxDist;
+      const minL = 4;
+      const maxL = Math.max(minL, Math.min(window.innerWidth - homeRect.width - 4, window.innerWidth * 0.55 - homeRect.width));
+      const minT = 4;
+      const maxT = Math.max(minT, window.innerHeight - homeRect.height - 4);
+      const newL = Math.min(maxL, Math.max(minL, homeRect.left + offX + (dx / dist) * excess));
+      const newT = Math.min(maxT, Math.max(minT, homeRect.top + offY + (dy / dist) * excess));
+      offX = newL - homeRect.left;
+      offY = newT - homeRect.top;
+      base.style.transform = `translate(${offX}px, ${offY}px)`;
+      const g = getGeometry();
+      cx = g.cx; cy = g.cy;
+      dx = clientX - cx;
+      dy = clientY - cy;
+      dist = Math.sqrt(dx * dx + dy * dy);
+    }
     if (dist > maxDist) {
       dx = (dx / dist) * maxDist;
       dy = (dy / dist) * maxDist;
@@ -2019,6 +2055,10 @@ function setupStick(baseId, nubId, onMove, onEnd, onStart) {
 
   function resetNub() {
     nub.style.transform = 'translate(0px, 0px)';
+    if (follow) { // 손가락을 떼면 스틱도 원래 자리로
+      offX = 0; offY = 0; homeRect = null;
+      base.style.transform = '';
+    }
   }
 
   base.addEventListener('touchstart', (e) => {
@@ -2026,6 +2066,13 @@ function setupStick(baseId, nubId, onMove, onEnd, onStart) {
     const t = e.changedTouches[0];
     activeTouchId = t.identifier;
     base.classList.add('dragging');
+    if (follow) {
+      // 이전에 옮겨진 흔적을 지우고, 원래 자리 기준 위치를 기억해 둔다
+      offX = 0; offY = 0;
+      base.style.transform = '';
+      const r = base.getBoundingClientRect();
+      homeRect = { left: r.left, top: r.top, width: r.width, height: r.height };
+    }
     if (onStart) onStart();
     handleMove(t.clientX, t.clientY);
   }, { passive: false });
@@ -2063,7 +2110,9 @@ setupStick('leftStick', 'leftNub',
     touchMoveActive = false;
     touchMoveX = 0;
     touchMoveY = 0;
-  }
+  },
+  null,
+  true // 이동 스틱은 손가락을 따라다님
 );
 
 // ===== 조준 스틱: 짧은 탭 = 오토에임 / 끌거나 오래 누르면 = 수동 조준 =====
@@ -2071,6 +2120,15 @@ setupStick('leftStick', 'leftNub',
 // 손가락이 닿은 쪽으로 엉뚱하게 발사됐다. 이제는 '처음 터치한 지점'에서 충분히 움직였을 때만 드래그로 본다.
 const STICK_TAP_MS = 450;    // 이 시간 안에 (많이 움직이지 않고) 떼면 탭 → 오토에임
 const STICK_DRAG_PX = 14;    // 처음 터치한 지점에서 이만큼 움직이면 드래그 → 수동 조준
+const STICK_CANCEL_NORM = 0.25; // 조준하려고 끌었다가 손가락을 스틱 중심 쪽(스틱 반경의 25% 안)으로 되돌리면 '공격 취소' 구역
+let rightStickCancel = false;   // 지금 손가락이 공격 취소 구역 안에 있는가 (이 상태로 떼면 발사하지 않음)
+function setRightStickCancel(on) {
+  if (rightStickCancel === on) return;
+  rightStickCancel = on;
+  const el = document.getElementById('rightStick');
+  if (el) el.classList.toggle('cancel', on);
+  if (on) touchAimActive = false; // 취소 구역에서는 조준선도 숨김 (다시 바깥으로 끌면 applyStickAim 이 조준선을 되살림)
+}
 let rightStickDownAt = 0;    // 조준 스틱을 누른 시각
 let rightStickStart = null;  // 처음 터치한 지점 { dx, dy } (스틱 중심 기준)
 let rightStickLast = null;   // 가장 최근 손가락 위치 { nx, ny, dx, dy }
@@ -2089,6 +2147,11 @@ function resetRightStickTap() {
 setupStick('rightStick', 'rightNub',
   (nx, ny, dx, dy) => {
     rightStickLast = { nx, ny, dx, dy };
+    if (rightStickDragged) {
+      // 이미 조준 중이었는데 손가락이 스틱 중심으로 돌아오면 공격 취소 구역
+      if (Math.hypot(nx, ny) < STICK_CANCEL_NORM) { setRightStickCancel(true); return; }
+      setRightStickCancel(false);
+    }
     if (!rightStickDragged) {
       if (!rightStickStart) rightStickStart = { dx, dy };
       // 처음 터치한 지점에서 거의 안 움직였으면 아직 '탭'으로 본다 (연타할 때 손가락이 살짝 흔들려도 OK)
@@ -2100,7 +2163,16 @@ setupStick('rightStick', 'rightNub',
   },
   () => {
     const wasTap = !rightStickDragged; // 끌지 않고 뗐으면 탭 (오래 눌렀어도 조준을 안 했다면 오토에임)
+    const cancelled = !wasTap && rightStickCancel; // 조준하다가 중심(취소 구역)으로 되돌린 채 뗐으면 공격 취소
     resetRightStickTap();
+    if (cancelled) {
+      cancelCharge(); // 충전 공격 캐릭터는 충전도 취소 (발사 안 함)
+      setRightStickCancel(false);
+      touchAimActive = false;
+      rightStickDragged = false;
+      touchAimMag = 1;
+      return;
+    }
     if (wasTap) {
       autoAim(); // 가장 가까운 표적을 자동 조준해서 공격
       touchAimActive = false;
@@ -2118,6 +2190,7 @@ setupStick('rightStick', 'rightNub',
     resetRightStickTap();
     rightStickDownAt = Date.now();
     rightStickDragged = false; // 이전 터치의 상태가 남아 있어도 새 터치는 항상 '탭 후보'로 시작
+    setRightStickCancel(false);
     touchAimActive = false;
     // 움직이지 않고 길게 누르고 있으면, 손가락이 닿은 방향으로 수동 조준 전환 (오토에임이 아니라 직접 조준하고 싶은 경우)
     rightStickHoldTimer = setTimeout(() => {
