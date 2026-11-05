@@ -744,7 +744,7 @@ const CHARACTERS = {
       poolRadius: 85,       // 흰자가 퍼지는 반경
       poolLifetime: 1,       // 퍼진 계란이 유지되는 시간(초)
       poolTickInterval: 0.2, // 0.2초마다 대미지 적용
-      poolDamage: 360,      // 흰자에 닿은 적이 주기(0.2초)마다 입는 대미지 (기존 180의 2배)
+      poolDamage: 252,      // 흰자에 닿은 적이 주기(0.2초)마다 입는 대미지 (첫 피해 제외). 기존 360에서 30% 감소
       poolHeal: 0,          // 아군/자신에게는 아무 효과 없음
       directDamage: 0,      // 직접 피해 없앰 (깨진 자리에 있어도 따로 피해를 받지 않음)
       poolFirstDamage: 1440, // 흰자 지속 피해를 처음 받을 때(대상마다 1번)의 피해 (1레벨 기준). 이후 틱은 poolDamage
@@ -948,7 +948,7 @@ const CHARACTERS = {
       combo: [
         { name: '원거리 구슬', damage: 1000, speed: 800, radius: 9, lifetime: 1.0, visual: 'sysOrb' },   // 사거리 약 800 (원거리)
         { name: '던지는 구슬', damage: 1500, speed: 480, radius: 14, lifetime: 1.0, visual: 'sysThrow' }, // 사거리 약 480 (중거리)
-        { name: '소용돌이', damage: 3000, speed: 300, radius: 55, lifetime: 0.5, pierceTargets: true, pierceWalls: true, visual: 'vortex' }, // 큰 소용돌이 (벽을 통과함) 1개 (판정 반경 55px의 광역, 맞은 적을 관통해서 범위 안의 여러 명에게 각각 3000 피해), 사거리 약 150
+        { name: '소용돌이', damage: 2500, speed: 300, radius: 55, lifetime: 0.5, pierceTargets: true, pierceWalls: true, visual: 'vortex' }, // 큰 소용돌이 (벽을 통과함) 1개 (판정 반경 55px의 광역, 맞은 적을 관통해서 범위 안의 여러 명에게 각각 2500 피해, 기존 3000에서 변경), 사거리 약 150
       ],
     },
     ultimate: {
@@ -1653,6 +1653,7 @@ function normalizeCode(raw) {
 // 보석(gems): 코인과 별개의 재화. 이벤트(gems 항목)로 받고, 지금은 기어 상점 리셋에 쓴다. 이벤트 한 개에 coins 와 gems 를 함께 줄 수 있다.
 const GEM_SHOP_RESET_COST = 5; // 기어 상점 리셋 비용(보석)
 const EVENTS = [
+  { id: 'coin_10000', enabled: true, name: '1만 코인 대방출', coins: 10000, gems: 0, desc: '모든 유저에게 10,000코인을 무료로 드려요!', endsAt: null },
   { id: 'gem_100', enabled: true, name: '보석 대방출', coins: 0, gems: 100, desc: '모든 유저에게 보석 100개를 무료로 드려요! 보석 5개로 기어 상점을 리셋할 수 있어요.', endsAt: null },
   { id: 'anggimochi', enabled: false, name: '앙기모찌', coins: 2000, desc: '모든 유저에게 2,000코인을 무료로 드려요!', endsAt: null },
 ];
@@ -2133,13 +2134,32 @@ function repeatMissionsView(u) {
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
   {
+    id: '2026-11-06-coin-10000-event',
+    date: '2026-11-06',
+    tag: 'new',
+    title: '🪙 1만 코인 대방출 이벤트!',
+    items: [
+      '모든 유저에게 10,000코인을 무료로 드려요!',
+      '메인 화면의 이벤트 카드에서 받을 수 있고, 계정마다 한 번씩 받을 수 있어요. 새로 가입한 분도 받을 수 있어요.',
+    ],
+  },
+  {
+    id: '2026-11-06-system-third-ammo',
+    date: '2026-11-06',
+    tag: 'balance',
+    title: '시스템 기본공격 조정',
+    items: [
+      '시스템의 3번째 탄창(소용돌이) 공격력: 3,000 → 2,500 (1레벨 기준)',
+    ],
+  },
+  {
     id: '2026-11-03-ekhe-first-tick',
     date: '2026-11-03',
     tag: 'balance',
     title: '엑헤 기본공격 변경',
     items: [
       '엑헤의 계란은 이제 깨진 자리에 직접 주는 피해가 없어요.',
-      '흰자에 닿은 적은 첫 번째 피해로 1,440(1레벨 기준)을 받고, 그 뒤로는 0.2초마다 360 피해를 받아요.',
+      '흰자에 닿은 적은 첫 번째 피해로 1,440(1레벨 기준)을 받고, 그 뒤로는 0.2초마다 252 피해를 받아요. (지속 피해 30% 감소: 360 → 252)',
     ],
   },
   {
