@@ -368,10 +368,26 @@ const PUSH_DASH_DIST_FACTOR = 0.7 + 0.3 * ((1 + 0.25) / 2); // 위 곡선의 평
 const PUSH_DASH_CARRY_STUN_MS = 120; // 밀려가는 동안 매 틱 이 시간만큼 기절을 갱신해서 아무것도 못 하게 함
 
 // ===== 캐릭터 정의 (나중에 여기에 캐릭터를 추가하면 됩니다) =====
+// ===== 이동속도 단계 =====
+// 캐릭터마다 moveSpeedTier 로 이동속도 단계를 정한다. (적지 않으면 'normal')
+//   slow   = 느림: 보통보다 10% 느림
+//   normal = 보통: 현재 기본 이동속도
+//   fast   = 빠름: 보통보다 10% 빠름
+// 가젯/하이퍼 차지/기어/감속 등 다른 이동속도 배율과는 곱해져서 적용된다.
+const MOVE_SPEED_TIERS = {
+  slow: { label: '느림', mult: 0.9 },
+  normal: { label: '보통', mult: 1 },
+  fast: { label: '빠름', mult: 1.1 },
+};
+function getMoveSpeedTier(spec) {
+  return MOVE_SPEED_TIERS[spec && spec.moveSpeedTier] ? spec.moveSpeedTier : 'normal';
+}
+
 const CHARACTERS = {
   minam: {
     id: 'minam',
     name: '미남',
+    moveSpeedTier: 'normal', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
     maxHp: 6500, // 1레벨 기준 (기존 7000에서 너프)
     basic: {
       name: '총 쏘기',
@@ -417,6 +433,7 @@ const CHARACTERS = {
   jigi: {
     id: 'jigi',
     name: '지기',
+    moveSpeedTier: 'normal', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
     maxHp: 6000,
     basic: {
       name: '던지기',
@@ -453,6 +470,7 @@ const CHARACTERS = {
   syu: {
     id: 'syu',
     name: '슈',
+    moveSpeedTier: 'fast', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
     maxHp: 6000, // 체력이 별도로 지정되지 않아 다른 캐릭터와 비슷한 수준으로 설정 (조정 가능)
     // 샷건은 한 번에 펠릿이 10개나 나가기 때문에, 다른 캐릭터와 같은 충전량을 쓰면
     // 근거리에서 한 번만 쏴도 펠릿 여러 개가 동시에 맞아 궁극기가 거의 바로 차버림.
@@ -499,6 +517,7 @@ const CHARACTERS = {
   wonhyo: {
     id: 'wonhyo',
     name: '원효대사',
+    moveSpeedTier: 'normal', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
     maxHp: 6500, // 기존 7500에서 너프
     basic: {
       name: '해골물 뿌리기',
@@ -545,6 +564,7 @@ const CHARACTERS = {
   byeongitong: {
     id: 'byeongitong',
     name: '변기통',
+    moveSpeedTier: 'normal', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
     maxHp: 6800, // 1레벨 기준 (기존 7200에서 너프, 그전 7500)
     basic: {
       name: '뚫어뻥 휘두르기',
@@ -586,6 +606,7 @@ const CHARACTERS = {
   seongseureopda: {
     id: 'seongseureopda',
     name: '성스럽다',
+    moveSpeedTier: 'fast', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
     maxHp: 6000,
     basic: {
       name: '칼 던지기',
@@ -637,6 +658,7 @@ const CHARACTERS = {
   yeoddongi: {
     id: 'yeoddongi',
     name: '여똥이',
+    moveSpeedTier: 'normal', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
     maxHp: 5000,
     basic: {
       name: '똥가루 뿌리기',
@@ -686,6 +708,7 @@ const CHARACTERS = {
   bobae: {
     id: 'bobae',
     name: '보배',
+    moveSpeedTier: 'normal', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
     maxHp: 7000,
     basic: {
       name: '보배 던지기',
@@ -727,6 +750,7 @@ const CHARACTERS = {
   ekhe: {
     id: 'ekhe',
     name: '엑헤',
+    moveSpeedTier: 'normal', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
     maxHp: 6500,
     basic: {
       name: '계란 던지기',
@@ -781,6 +805,7 @@ const CHARACTERS = {
   gwari: {
     id: 'gwari',
     name: '꽈리',
+    moveSpeedTier: 'normal', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
     maxHp: 5500,
     basic: {
       name: '돌진 박치기',
@@ -824,6 +849,7 @@ const CHARACTERS = {
   mocha: {
     id: 'mocha',
     name: '모카',
+    moveSpeedTier: 'fast', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
     maxHp: 4800, // 1레벨 기준 (기존 4500에서 버프, 그전 5500)
     // 찌르기 4번이 한 번에 나가므로, 다른 캐릭터와 같은 충전량을 쓰면 궁극기가 너무 빨리 참.
     // 그래서 슈처럼 '찌르기 1번 적중당' 충전량을 낮게 따로 설정함 (콤보 4번 전부 적중 = 약 20%)
@@ -874,6 +900,7 @@ const CHARACTERS = {
   uphal: {
     id: 'uphal',
     name: '업할',
+    moveSpeedTier: 'normal', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
     maxHp: 10000,          // 1레벨 기준 (기존 9000에서 버프)
     basic: {
       name: '망치 지진',
@@ -906,6 +933,7 @@ const CHARACTERS = {
   jinwoopark: {
     id: 'jinwoopark',
     name: '진우Park',
+    moveSpeedTier: 'normal', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
     maxHp: 6500,
     basic: {
       name: '하트 발사하기',
@@ -938,6 +966,7 @@ const CHARACTERS = {
   system: {
     id: 'system',
     name: '시스템',
+    moveSpeedTier: 'normal', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
     maxHp: 6000, // 1레벨 기준 (기존 6500에서 너프)
     basic: {
       name: '시스템 콤보',
@@ -991,6 +1020,7 @@ const CHARACTERS = {
   ddongpari: {
     id: 'ddongpari',
     name: '똥파리',
+    moveSpeedTier: 'normal', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
     maxHp: 5500,
     basic: {
       name: '똥 날리기',
@@ -1029,6 +1059,7 @@ const CHARACTERS = {
   nai: {
     id: 'nai',
     name: '나이',
+    moveSpeedTier: 'normal', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
     maxHp: 6000, // 1레벨 기준 (투척수)
     basic: {
       name: '실내화 던지기',
@@ -1064,6 +1095,7 @@ const CHARACTERS = {
   geunsuni: {
     id: 'geunsuni',
     name: '근수니',
+    moveSpeedTier: 'normal', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
     maxHp: 5500, // 1레벨 기준 체력
     ultimateChargePerHit: 8.5, // 가시가 적중할 때마다 충전되는 궁극기 게이지(%). 기본값(17)의 50% (궁극기 충전 속도 50% 감소)
     basic: {
@@ -1102,6 +1134,7 @@ const CHARACTERS = {
   dol: {
     id: 'dol',
     name: '미지의 돌',
+    moveSpeedTier: 'normal', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
     maxHp: 5500, // 1레벨 기준 체력
     basic: {
       name: '돌 던지기',
@@ -1621,6 +1654,7 @@ function buildCharacterInfo(levels) {
         name: c.name,
         level: lv,
         maxHp: c.maxHp,
+        moveSpeedLabel: MOVE_SPEED_TIERS[getMoveSpeedTier(c)].label, // 캐릭터 카드에 표시할 이동속도 단계
         basic: describeBasic(c.basic),
         ultimate: describeUltimate(c.ultimate),
         gadget: c.gadget ? describeGadget(c.gadget) : null,
@@ -2133,6 +2167,17 @@ function repeatMissionsView(u) {
 // id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
+  {
+    id: '2026-11-06-move-speed-tier',
+    date: '2026-11-06',
+    tag: 'balance',
+    title: '캐릭터별 이동속도 단계 추가',
+    items: [
+      '캐릭터마다 이동속도가 느림(보통보다 10% 느림) / 보통 / 빠름(보통보다 10% 빠름) 세 단계로 나뉘어요.',
+      '모카, 슈, 성스럽다의 이동속도가 빠름이 됐어요. 다른 캐릭터는 지금과 같은 보통이에요.',
+      '캐릭터 카드에서 이동속도 단계를 볼 수 있어요.',
+    ],
+  },
   {
     id: '2026-11-06-mobile-attack-cancel',
     date: '2026-11-06',
@@ -5199,6 +5244,7 @@ function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hy
     gearUltChargeMult: 1 + ((gear && gear.ultChargeBonus) || 0),       // 장착한 기어: 궁극기 충전 속도 배율 (1.1 = 10% 빠름)
     gearProjectileSpeedMult: 1 + ((gear && gear.projectileSpeedBonus) || 0), // 장착한 기어: 투사체 속도 배율 (1.1 = 10% 빠름)
     gearMoveSpeedMult: (gear && gear.moveSpeedMult) || 1, // 장착한 기어(큰 탄창): 이동속도 배율 (0.9 = 10% 감소)
+    moveSpeedTierMult: MOVE_SPEED_TIERS[getMoveSpeedTier(character)].mult, // 캐릭터의 이동속도 단계 배율 (느림 0.9 / 보통 1 / 빠름 1.1)
     gearLowHpSpeedBonus: (gear && gear.lowHpSpeedBonus) || 0,         // 장착한 기어: 체력 30% 이하일 때 이동속도 증가율
     gearChainBonus: (gear && gear.chainDamageBonus) || 0, // 장착한 기어(파죽지세): 1초 안에 이어서 평타를 칠 때의 추가 피해율 (0.25 = 25%)
     lastBasicAttackAt: 0,   // 마지막으로 기본공격을 한 시각(ms) - 파죽지세용
@@ -8573,6 +8619,7 @@ function updateMatch(match, dt, now) {
     const p = match.players[pid];
     if (p.speedBoostUntil && now < p.speedBoostUntil) p.speedMultiplier *= p.speedBoostMultiplier || 1;
     if (p.gearMoveSpeedMult && p.gearMoveSpeedMult !== 1) p.speedMultiplier *= p.gearMoveSpeedMult; // 기어 '큰 탄창': 이동속도 감소
+    if (p.moveSpeedTierMult && p.moveSpeedTierMult !== 1) p.speedMultiplier *= p.moveSpeedTierMult; // 캐릭터 이동속도 단계 (느림/보통/빠름)
     // 기어: 체력이 30% 이하이면 이동속도 증가
     if (p.gearLowHpSpeedBonus > 0 && p.alive && p.hp <= p.maxHp * GEAR_LOW_HP_SPEED_RATIO) p.speedMultiplier *= 1 + p.gearLowHpSpeedBonus;
     // 하이퍼 차지: 발동 중에는 이동속도 증가. 남은 시간(초)은 클라이언트 표시용으로 매 틱 갱신
