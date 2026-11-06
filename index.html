@@ -3932,6 +3932,7 @@ function applyServerCharacterInfo() {
     if (!c) { c = { id, color: '#888' }; CHARACTERS.push(c); } // 서버에만 있는 새 캐릭터도 자동으로 표시
     c.name = sc.name;
     c.maxHp = sc.maxHp;
+    c.moveSpeedLabel = sc.moveSpeedLabel || '보통';
     c.basic = sc.basic;
     c.ultimate = sc.ultimate;
     if (sc.gadget) c.gadget = sc.gadget; else delete c.gadget;
@@ -4012,6 +4013,7 @@ function renderCharacterList() {
       ${bonusLine}
       ${gearLine}
       <div class="stat-line">❤️ 체력: ${c.maxHp.toLocaleString()}</div>
+      <div class="stat-line">👟 이동속도: ${escapeHtml(c.moveSpeedLabel || '보통')}</div>
       <div class="stat-line">🎯 ${escapeHtml(c.basic.name)}${c.basic.damage ? `: ${c.basic.damage.toLocaleString()}` : ''}${c.basic.desc ? ` (${escapeHtml(c.basic.desc)})` : ''}</div>
       <div class="stat-line">✨ ${escapeHtml(c.ultimate.name)}${c.ultimate.damage ? `: ${c.ultimate.damage.toLocaleString()}` : ''}${c.ultimate.desc ? ` (${escapeHtml(c.ultimate.desc)})` : ''}</div>
       ${c.gadget ? `<div class="stat-line">🔧 ${escapeHtml(c.gadget.name)}${c.gadget.desc ? ` (${escapeHtml(c.gadget.desc)})` : ''}</div>` : ''}
