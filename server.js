@@ -1186,9 +1186,9 @@ const CHARACTERS = {
     basic: {
       name: '로켓 발사',
       damage: 1250,        // 로켓 1개당 피해 (1레벨 기준)
-      speed: 480,          // px/초 (기존 640에서 감소)
+      speed: 384,          // px/초 (기존 480에서 20% 감소)
       radius: 8,
-      lifetime: 1.133,     // 초 -> 사거리 ≈ 544px (탄속을 낮춘 만큼 늘려 사거리 유지)
+      lifetime: 0.992,     // 초 -> 사거리 ≈ 381px (기존 약 544px에서 30% 감소)
       visual: 'rocket',
       pelletCount: 3,      // 한 번에 나가는 로켓 개수
       spreadDegrees: 60,   // 로켓이 퍼지는 전체 탄퍼짐 각도
@@ -2294,6 +2294,16 @@ function repeatMissionsView(u) {
 // id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
+  {
+    id: '2026-11-07-chacha-nerf',
+    date: '2026-11-07',
+    tag: 'balance',
+    title: '[차차] 기본공격 조정',
+    items: [
+      '기본공격 [로켓 발사] 탄속 20% 감소: 480 → 384',
+      '기본공격 [로켓 발사] 사거리 30% 감소: 약 544 → 약 381',
+    ],
+  },
   {
     id: '2026-11-07-chacha-balance',
     date: '2026-11-07',
