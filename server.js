@@ -1176,6 +1176,93 @@ const CHARACTERS = {
       pushDistance: 200,     // 밀려나는 거리(px). 시전자에서 멀어지는 방향으로 밀림
     },
   },
+  chacha: {
+    id: 'chacha',
+    name: '차차',
+    moveSpeedTier: 'normal', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
+    maxHp: 6000, // 1레벨 기준 체력
+    ultimateChargePerHit: 8.5, // 로켓이 3개씩 나가서(근수니의 가시와 같은 구조) 기본값(17)의 50%로 설정
+    basic: {
+      name: '로켓 발사',
+      damage: 1250,        // 로켓 1개당 피해 (1레벨 기준)
+      speed: 640,          // px/초
+      radius: 8,
+      lifetime: 0.85,      // 초 -> 사거리 ≈ 544px
+      visual: 'rocket',
+      pelletCount: 3,      // 한 번에 나가는 로켓 개수
+      spreadDegrees: 60,   // 로켓이 퍼지는 전체 탄퍼짐 각도
+    },
+    // 궁극기: 게이지가 다 차면 아래 4개 중 하나가 무작위로 정해지고(플레이어 객체의 ultimate 가 그 궁극기로 바뀜),
+    // 클라이언트는 궁극기 버튼 밑에 그 이름을 보여준다. 궁극기를 쓰면 다음 궁극기가 다시 무작위로 정해진다.
+    ultimate: {
+      name: '랜덤 궁극기',
+      type: 'randomUlt',
+      options: [
+        {
+          key: 'i',
+          name: '이',
+          label: '거대 로켓',
+          type: 'projectile',  // 조준한 방향으로 날아가는 궁극기
+          projectileName: '거대한 로켓',
+          damage: 3000,        // (표시용) 폭발 피해와 같음 - 실제 피해는 explodeDamage 로 들어감
+          explodeDamage: 3000, // 적/벽에 닿거나 사거리 끝에서 폭발해 범위 안의 모든 적에게 주는 광역 피해 (1레벨 기준)
+          explodeRadius: 150,  // 폭발 범위(px)
+          explodeVisual: 'rocketExplosion',
+          speed: 520,
+          radius: 20,
+          lifetime: 1.5,       // 사거리 ≈ 780px
+          visual: 'bigRocket',
+        },
+        {
+          key: 'seo',
+          name: '서',
+          label: '소형 로켓 5연발',
+          type: 'burst',       // 조준한 방향으로 작은 로켓을 짧은 간격으로 연달아 발사 (첫 발은 즉시)
+          projectileName: '작은 로켓',
+          bulletCount: 5,
+          interval: 0.08,      // 로켓 사이 발사 간격(초)
+          damage: 1300,        // 로켓 1개당 피해 (1레벨 기준)
+          speed: 820,
+          radius: 7,
+          lifetime: 0.95,      // 사거리 ≈ 779px
+          visual: 'miniRocket',
+        },
+        {
+          key: 'hwang',
+          name: '황',
+          label: '로켓 6발 산탄',
+          type: 'projectile',
+          projectileName: '로켓',
+          pelletCount: 6,      // 로켓 6발
+          spreadDegrees: 60,   // 기본공격과 같은 탄퍼짐 각도
+          damage: 1000,        // 로켓 1개당 피해 (1레벨 기준)
+          speed: 640,
+          radius: 8,
+          lifetime: 0.85,      // 사거리 ≈ 544px
+          visual: 'rocket',
+        },
+        {
+          key: 'mun',
+          name: '문',
+          label: '불덩이 투척',
+          type: 'fireLob',     // 불덩이를 포물선으로 던져(벽을 넘음) 착지 지점에 불길을 만듦. 불길 안의 적은 느려지고 지속 피해를 받음
+          distance: 440,       // 최대 투척 거리(px) - 조준으로 minDistance ~ distance 사이 조절
+          minDistance: 100,
+          flightTime: 1,       // 던진 뒤 착지까지 걸리는 시간(초)
+          arcHeight: 120,      // 포물선 최고 높이(px) - 화면 연출용
+          radius: 14,
+          visual: 'fireball',
+          poolRadius: 120,     // 불길 반경(px)
+          poolLifetime: 4,     // 불길이 유지되는 시간(초)
+          poolTickInterval: 0.25, // 이 간격(초)마다 피해
+          poolDamage: 125,     // 틱당 피해 (1레벨 기준) -> 0.25초마다 125 = 1초당 500
+          poolVisual: 'firePool',
+          slowMultiplier: 0.7, // 불길 안에 있는 적의 이동속도 배율 (0.7 = 30% 감소)
+        },
+      ],
+    },
+    // 가젯 없음
+  },
 };
 
 // ===== 캐릭터 설명(캐릭터 선택 화면용) 자동 생성 =====
@@ -1258,7 +1345,7 @@ function describeBasic(b) {
     const r = rangeOf(b);
     if (r) parts.push(`사거리 약 ${r}`);
   } else if (b.pelletCount > 1) {
-    parts.push(`펠릿 ${b.pelletCount}발 동시 발사 (발당 ${fmtNum(b.damage)} 피해, 탄퍼짐 ${b.spreadDegrees}도)`);
+    parts.push(`${b.visual === 'rocket' ? '로켓' : '펠릿'} ${b.pelletCount}발 동시 발사 (발당 ${fmtNum(b.damage)} 피해, 탄퍼짐 ${b.spreadDegrees}도)`);
     const r = rangeOf(b);
     if (r) parts.push(`사거리 약 ${r}`);
   } else {
@@ -1284,8 +1371,10 @@ function describeUltimate(u) {
       const r = rangeOf(u);
       if (u.launchDuration > 0) {
         desc = `조준한 방향으로 거대한 소용돌이를 발사${r ? ` (사거리 약 ${r})` : ''}${u.pierceWalls ? ', 벽을 통과함' : ''}. 맞은 적들(관통)은 ${u.launchDuration}초 동안 하늘로 떠올라 조작 불가가 되고, 땅에 떨어질 때 ${fmtNum(u.landDamage)} 피해`;
+      } else if (u.explodeDamage > 0) {
+        desc = `조준한 방향으로 ${u.projectileName || '폭발하는 투사체'} 발사${r ? ` (사거리 약 ${r})` : ''}. 적이나 벽에 닿거나 사거리 끝에서 폭발해 반경 ${u.explodeRadius} 안의 모든 적에게 ${fmtNum(u.explodeDamage)} 광역 피해`;
       } else if (u.pelletCount > 1) {
-        desc = `조준한 방향으로 큰 총알 ${u.pelletCount}발 발사 (발당 ${fmtNum(u.damage)} 피해${r ? `, 사거리 약 ${r}` : ''})`;
+        desc = `조준한 방향으로 ${u.projectileName || '큰 총알'} ${u.pelletCount}발${u.projectileName ? ` 탄퍼짐 ${u.spreadDegrees}도로` : ''} 발사 (발당 ${fmtNum(u.damage)} 피해${r ? `, 사거리 약 ${r}` : ''})`;
       } else {
         damage = u.damage;
         desc = `조준한 방향으로 발사${r ? ` (사거리 약 ${r})` : ''}${u.pierceWalls ? ', 벽을 통과함' : ''}`;
@@ -1317,7 +1406,7 @@ function describeUltimate(u) {
       break;
     case 'burst': {
       const r = rangeOf(u);
-      desc = `조준한 방향으로 고추 ${u.bulletCount}개를 연달아 발사 (개당 ${fmtNum(u.damage)} 피해${r ? `, 사거리 약 ${r}` : ''})`;
+      desc = `조준한 방향으로 ${u.projectileName || '고추'} ${u.bulletCount}개를 연달아 발사 (개당 ${fmtNum(u.damage)} 피해${r ? `, 사거리 약 ${r}` : ''})`;
       break;
     }
     case 'leap':
@@ -1333,6 +1422,12 @@ function describeUltimate(u) {
       break;
     case 'summonChicken':
       desc = `조준 불필요, 체력 ${fmtNum(u.hp)}의 닭을 소환. ${u.duration}초 동안 적을 자동으로 추격하다가 사거리 안에 들어오면 적에게 돌격해서 ${fmtNum(u.damage)} 피해 (${u.attackInterval}초마다 돌격 가능)`;
+      break;
+    case 'fireLob':
+      desc = `조준한 거리(${fmtNum(u.minDistance || 0)}~${fmtNum(u.distance)}px)로 불덩이를 포물선으로 던져(벽을 넘음, ${u.flightTime}초 뒤 착지) 착지 지점에 반경 ${u.poolRadius}의 불길을 ${u.poolLifetime}초 동안 만듦. 불길 안의 적은 이동속도 ${Math.round((1 - u.slowMultiplier) * 100)}% 감소 + 1초당 ${fmtNum(Math.round(u.poolDamage / u.poolTickInterval))} 피해`;
+      break;
+    case 'randomUlt':
+      desc = `궁극기가 다 충전되면 ${u.options.length}개 중 하나가 무작위로 정해지고, 어떤 궁극기인지 궁극기 버튼 밑에 표시됨. ` + u.options.map((o) => `[${o.name}] ${describeUltimate(o).desc}`).join(' / ');
       break;
     default:
       if (u.damage) damage = u.damage;
@@ -1757,6 +1852,7 @@ const CHARACTER_PRICES = {
   nai: 300,
   geunsuni: 300,
   dol: 300,
+  chacha: 300,
 };
 CHARACTER_PRICES[DEFAULT_CHARACTER_ID] = 0; // 기본 캐릭터는 항상 무료 (사용 가능한 캐릭터가 하나도 없는 상황 방지)
 function priceOf(id) {
@@ -2168,6 +2264,21 @@ function repeatMissionsView(u) {
 // id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
+  {
+    id: '2026-11-07-chacha',
+    date: '2026-11-07',
+    tag: 'new',
+    title: '신규 캐릭터 [차차] 추가',
+    items: [
+      '체력 6,000 (1레벨 기준)',
+      '기본공격 [로켓 발사]: 로켓 3개를 탄퍼짐 60도로 발사 (개당 1,250 피해)',
+      '궁극기는 충전이 끝나면 [이] [서] [황] [문] 중 하나가 무작위로 정해지고, 궁극기 버튼 밑에 표시돼요.',
+      '[이]: 거대한 로켓을 발사, 폭발 범위 안의 적에게 3,000 광역 피해',
+      '[서]: 작은 로켓 5개를 빠르게 연사, 로켓당 1,300 피해',
+      '[황]: 탄퍼짐 60도로 로켓 6개 발사, 개당 1,000 피해',
+      '[문]: 불덩이를 던져 불길을 만듦, 범위 안의 적은 이동속도 30% 감소 + 1초당 500 피해',
+    ],
+  },
   {
     id: '2026-11-07-ekhe-pool-nerf',
     date: '2026-11-07',
@@ -5347,7 +5458,8 @@ function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hy
     characterId: character.id,
     characterName: character.name,
     basic: character.basic,
-    ultimate: character.ultimate,
+    ultimate: rollRandomUltimate(character.ultimate), // 차차처럼 궁극기가 랜덤인 캐릭터는 4개 중 지금 뽑힌 궁극기 (클라이언트도 이 값을 그대로 씀)
+    ultimateRandom: !!(character.ultimate && character.ultimate.type === 'randomUlt'), // true 면 궁극기 버튼 밑에 지금 뽑힌 궁극기 이름을 보여줌
     ultimateChargePerHit: character.ultimateChargePerHit || ULTIMATE_CHARGE_PER_HIT, // 캐릭터별로 다르게 설정 가능 (예: 슈는 펠릿이 많아 더 낮게)
     ultimateCharge: 0, // 0~100
     // 하이퍼 차지: 획득한 플레이어(+hyper 스펙이 있는 캐릭터)만 가짐. 게이지는 궁극기처럼 기본공격 적중으로 참
@@ -5403,6 +5515,18 @@ function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hy
     lastShotAt: 0,
     lastDamageAt: Date.now(),
   };
+}
+
+// 랜덤 궁극기(차차): options 중 하나를 같은 확률로 뽑는다. 일반 캐릭터의 궁극기는 그대로 돌려줌
+function rollRandomUltimate(base) {
+  if (!base || base.type !== 'randomUlt' || !Array.isArray(base.options) || !base.options.length) return base;
+  return base.options[Math.floor(Math.random() * base.options.length)];
+}
+// 궁극기를 쓴 뒤 다음 궁극기를 다시 무작위로 뽑는다 (레벨이 적용된 수치로)
+function rerollRandomUltimate(p) {
+  if (!p.ultimateRandom) return;
+  const base = getLeveledCharacter(p.characterId, p.level).ultimate;
+  if (base && base.type === 'randomUlt') p.ultimate = rollRandomUltimate(base);
 }
 
 // 대미지 적용 + 사망/리스폰/점수/승리 판정을 한 곳에서 관리 (총알 피격, 번개 피격이 공용으로 사용)
@@ -5883,6 +6007,7 @@ function spawnLob(match, p, spec, sentDistance) {
     poolChargesUlt: !!spec.poolChargesUlt,       // 웅덩이 지속 피해로 궁극기 충전 여부 (엑헤)
     poolFirstDamage: spec.poolFirstDamage || 0,  // 웅덩이 피해를 처음 받을 때의 피해 (0이면 사용 안 함)
     poolChargeScale: spec.poolChargeScale != null ? spec.poolChargeScale : 1,
+    slowMultiplier: spec.slowMultiplier != null ? spec.slowMultiplier : 1, // 웅덩이 안에 있는 적의 이동속도 배율 (차차의 불덩이)
   });
 }
 
@@ -6112,6 +6237,7 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
       directDamage: spec.directDamage || 0, // 물웅덩이 생성 전 적에게 직접 적중 시 주는 대미지
       explodeDamage: spec.explodeDamage || 0, // 0보다 크면 적/벽에 닿거나 사거리 끝에서 폭발 (똥파리의 가젯 '폭탄 똥')
       explodeRadius: spec.explodeRadius || 0, // 폭발 범위(px)
+      explodeVisual: spec.explodeVisual || null, // 폭발 이펙트 모양 (차차의 거대 로켓: rocketExplosion). 없으면 기본 폭발
       // 미지의 돌의 돌: 사거리 끝(수명 종료)에서 여러 조각으로 갈라짐 (updateMatch 의 총알 정리에서 spawnStoneShards 로 처리). 기어 투사체 속도 배율도 조각에 같이 적용
       splitInto: spec.split && !isUltimate ? { ...spec.split, gearSpeed: gearProjSpeed } : null,
       // 근수니의 가시: 직선이 아니라 진행 방향 좌우로 사인 곡선을 그리며 날아감 (moveWavyBullet). 이 값들은 파동 투사체에만 붙음
@@ -6441,6 +6567,7 @@ function spawnWaterPool(match, b) {
     firstHitIds: [],                       // 이미 첫 피해를 받은 대상('p:아이디', 't:아이디', 'c:아이디')
     chargesUlt: !!b.poolChargesUlt,                                  // true 면 틱 피해가 궁극기 게이지를 충전함
     chargeScale: b.poolChargeScale != null ? b.poolChargeScale : 1, // 틱당 충전 비율
+    slowMultiplier: b.slowMultiplier != null ? b.slowMultiplier : 1, // 1보다 작으면 웅덩이 안에 있는 적의 이동속도가 이 배율로 느려짐
   });
 }
 
@@ -7693,6 +7820,9 @@ function registerGameplayHandlers(socket) {
     } else if (ult.type === 'quake') {
       // 업할의 대지 강타: 조준한 방향으로 넓고 먼 부채꼴 지진 (피해 + 기절). 궁극기 게이지는 충전하지 않음
       performMeleeAttack(match, p, ult, true);
+    } else if (ult.type === 'fireLob') {
+      // 차차의 '문': 조준한 거리(서버가 minDistance ~ distance 로 제한)로 불덩이를 던져 착지 지점에 불길을 만듦 (벽을 넘어감)
+      spawnLob(match, p, { ...ult, eggSplat: true }, data && data.distance);
     } else {
       // 조준한 방향으로 날아가는 궁극기 (예: 피에로 발사, 메가 샷건)
       // 하이퍼 차지 발동 중이면 더 강해짐: 앞으로 날아갔다가 다시 돌아오는 부메랑 궁극기 (미남)
@@ -7712,7 +7842,7 @@ function registerGameplayHandlers(socket) {
 
     // 기어 '암살자': 궁극기를 쓰면 잠깐 은신 (은신이 궁극기인 캐릭터는 이미 은신하므로 제외)
     if (p.gearUltStealthSec > 0 && ult.type !== 'stealth' && p.alive && !match.over) startStealth(match, p, p.gearUltStealthSec);
-    if (!match.over) p.ultimateCharge = 0;
+    if (!match.over) { p.ultimateCharge = 0; rerollRandomUltimate(p); } // 랜덤 궁극기(차차): 다음 궁극기를 다시 뽑음
   });
 }
 
@@ -8633,6 +8763,18 @@ function updateMatch(match, dt, now) {
     match.players[pid].speedMultiplier = 1;
   }
 
+  // 이동속도를 늦추는 웅덩이(차차 '문' 궁극기의 불길): 범위 안의 적은 이동속도가 slowMultiplier 배율로 느려짐 (아군은 영향 없음)
+  for (const pool of match.waterPools) {
+    if (!(pool.slowMultiplier < 1) || !(pool.life > 0)) continue;
+    for (const pid in match.players) {
+      const target = match.players[pid];
+      if (!target.alive || target.team === pool.team) continue;
+      if (Math.hypot(target.x - pool.x, target.y - pool.y) < PLAYER_RADIUS + pool.radius) {
+        target.speedMultiplier = Math.min(target.speedMultiplier, pool.slowMultiplier);
+      }
+    }
+  }
+
   // 보배 폭발(보배 궁극기): 설치 직후에는 '보배의 잔소리'로 주기적인 지속 피해를 주다가,
   // 퓨즈(fuseLeft)가 다 되면 한 번 크게 폭발하고 사라진다
   for (const bomb of match.bombs) {
@@ -9534,7 +9676,7 @@ function runAiBot(match, botId, ai, dt, now) {
     if (ult.type === 'heal') use = myR < 0.55;
     else if (ult.type === 'stealth') use = !!target && dist < (mode === 'flee' ? 650 : 500) && mode !== 'hide'; // 도망칠 때 적극적으로 사용
     else if (!offensiveOK) use = false; // 도망/은신 중에는 공격 궁극기를 아낌
-    else if (ult.type === 'leap' || ult.type === 'blackhole') {
+    else if (ult.type === 'leap' || ult.type === 'blackhole' || ult.type === 'fireLob') {
       use = !!target && dist <= ult.distance * 0.95 && dist >= Math.min(ult.distance, ult.minDistance || 0);
       arg = { distance: dist };
     } else if (ult.type === 'dash' || ult.type === 'burst' || ult.type === 'pushDash') use = !!target && dist < ur * (mode === 'chase' ? 1.0 : 0.9) && (losClear || !!ult.pierceWalls);
