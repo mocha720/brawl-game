@@ -433,7 +433,7 @@ const CHARACTERS = {
   jigi: {
     id: 'jigi',
     name: '지기',
-    moveSpeedTier: 'normal', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
+    moveSpeedTier: 'fast', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
     maxHp: 6000,
     basic: {
       name: '던지기',
@@ -517,7 +517,7 @@ const CHARACTERS = {
   wonhyo: {
     id: 'wonhyo',
     name: '원효대사',
-    moveSpeedTier: 'normal', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
+    moveSpeedTier: 'slow', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
     maxHp: 6500, // 기존 7500에서 너프
     basic: {
       name: '해골물 뿌리기',
@@ -658,7 +658,7 @@ const CHARACTERS = {
   yeoddongi: {
     id: 'yeoddongi',
     name: '여똥이',
-    moveSpeedTier: 'normal', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
+    moveSpeedTier: 'slow', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
     maxHp: 5000,
     basic: {
       name: '똥가루 뿌리기',
@@ -768,7 +768,7 @@ const CHARACTERS = {
       poolRadius: 85,       // 흰자가 퍼지는 반경
       poolLifetime: 1,       // 퍼진 계란이 유지되는 시간(초)
       poolTickInterval: 0.2, // 0.2초마다 대미지 적용
-      poolDamage: 252,      // 흰자에 닿은 적이 주기(0.2초)마다 입는 대미지 (첫 피해 제외). 기존 360에서 30% 감소
+      poolDamage: 176.4,    // 흰자에 닿은 적이 주기(0.2초)마다 입는 대미지 (첫 피해 제외). 252에서 30% 감소 (그전 360). 실제 적용 시 반올림됨 (1레벨 기준 176)
       poolHeal: 0,          // 아군/자신에게는 아무 효과 없음
       directDamage: 0,      // 직접 피해 없앰 (깨진 자리에 있어도 따로 피해를 받지 않음)
       poolFirstDamage: 1440, // 흰자 지속 피해를 처음 받을 때(대상마다 1번)의 피해 (1레벨 기준). 이후 틱은 poolDamage
@@ -907,9 +907,10 @@ const CHARACTERS = {
       type: 'quake',         // 망치를 내려쳐서 조준 방향으로 즉시 판정되는 지진 (부채꼴 범위 + 기절)
       damage: 2000,
       stunDuration: 0.3,     // 맞은 적을 기절시키는 시간(초) - 기존 0.5초에서 감소
-      angleDegrees: 28,      // 지진이 퍼지는 부채꼴 전체 각도 (조준 방향 기준) - 기존 40도에서 30% 감소
+      angleDegrees: 33.6,    // 지진이 퍼지는 부채꼴 전체 각도 (조준 방향 기준) - 28도에서 20% 증가 (기존 40도 → 30% 감소 → 20% 증가)
       range: 196,            // 사거리 - 기존 280에서 30% 감소
-      windup: 1,             // 공격 버튼을 누른 뒤 이 시간(초)이 지나야 지진이 실제로 나감. 그동안 이동 불가 (조준 방향만 돌릴 수 있음)
+      windupMin: 0.2,        // 체력이 매우 적을 때도 선딜이 이 시간(초)보다 짧아지지는 않음
+      windup: 1.5,           // 체력이 가득 찼을 때의 선딜(초) - 기존 1초에서 1.5초로. 체력이 줄어들수록 비례해서 짧아짐 (체력 50%면 0.75초, 최소 windupMin). 공격 버튼을 누른 뒤 이 시간이 지나야 지진이 실제로 나감. 그동안 이동 불가 + 조준 방향도 고정 (공격 버튼을 누른 순간의 방향으로 나감)
       effectLife: 0.5,
       visual: 'quake',
     },
@@ -1020,7 +1021,7 @@ const CHARACTERS = {
   ddongpari: {
     id: 'ddongpari',
     name: '똥파리',
-    moveSpeedTier: 'normal', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
+    moveSpeedTier: 'fast', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
     maxHp: 5500,
     basic: {
       name: '똥 날리기',
@@ -1070,7 +1071,7 @@ const CHARACTERS = {
       minDistance: 100,       // 최소 투척 거리(px). 조준(PC 마우스 위치 / 모바일 스틱 당김)에 따라 minDistance ~ distance 사이로 조절됨
       selfKnockback: 220,     // 폭발 범위 안에 자신(나이)이 있으면 폭발 중심 바깥쪽으로 이만큼(px) 날아감. 자신에게는 피해 없음
       ammoRegenSeconds: AMMO_REGEN_SECONDS * 1.4, // 기본공격 재장전 시간이 다른 캐릭터보다 40% 느림 (1.8초 -> 2.52초)
-      flightTime: 2,          // 던진 뒤 땅에 떨어져 폭발할 때까지 걸리는 시간(초) - 기존 1.5초에서 2초로. 던지는 거리와 상관없이 항상 같음 (가까울수록 느리게, 멀수록 빠르게 날아감)
+      flightTime: 1.25,       // 던진 뒤 땅에 떨어져 폭발할 때까지 걸리는 시간(초) - 공격 후 1.25초 뒤 착지 (기존 2초). 던지는 거리와 상관없이 항상 같음 (가까울수록 느리게, 멀수록 빠르게 날아감)
       radius: 12,
       arcHeight: 110,         // 포물선 최고 높이(px) - 화면 연출용 (판정에는 영향 없음)
       visual: 'slipper',
@@ -1134,7 +1135,7 @@ const CHARACTERS = {
   dol: {
     id: 'dol',
     name: '미지의 돌',
-    moveSpeedTier: 'normal', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
+    moveSpeedTier: 'slow', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
     maxHp: 5500, // 1레벨 기준 체력
     basic: {
       name: '돌 던지기',
@@ -1216,7 +1217,7 @@ function describeBasic(b) {
   } else if (b.type === 'lob') {
     // 나이: 포물선으로 던져 착지하면 폭발하는 실내화
     damage = b.explodeDamage;
-    parts.push(`실내화를 포물선으로 던져 땅에 착지하면 폭발 (벽을 넘어감), 던지는 거리는 조준으로 ${fmtNum(b.minDistance || 0)}~${fmtNum(b.distance)}px 조절 (거리와 상관없이 ${b.flightTime || 2}초 뒤에 착지), 폭발 반경 ${b.explodeRadius} 안의 적에게 ${fmtNum(b.explodeDamage)} 피해${b.selfKnockback ? ' (폭발 범위 안에 자신이 있으면 피해 없이 날아감)' : ''}`);
+    parts.push(`실내화를 포물선으로 던져 땅에 착지하면 폭발 (벽을 넘어감), 던지는 거리는 조준으로 ${fmtNum(b.minDistance || 0)}~${fmtNum(b.distance)}px 조절 (거리와 상관없이 ${b.flightTime || 1.25}초 뒤에 착지), 폭발 반경 ${b.explodeRadius} 안의 적에게 ${fmtNum(b.explodeDamage)} 피해${b.selfKnockback ? ' (폭발 범위 안에 자신이 있으면 피해 없이 날아감)' : ''}`);
   } else if (b.type === 'dash') {
     damage = b.damage;
     parts.push(`바라보는 방향으로 약 ${fmtNum(Math.round(b.speed * b.duration))}px를 돌진, 적을 관통하며 지나간 모든 적에게 ${fmtNum(b.damage)} 피해`);
@@ -1231,7 +1232,7 @@ function describeBasic(b) {
     parts.push(`양손으로 ${b.stabCount}번 빠르게 찌름 (한 번당 ${fmtNum(b.damage)} 피해, 전방 ${b.angleDegrees}도, 사거리 ${b.range}로 짧음)`);
   } else if (b.type === 'quake') {
     damage = b.damage;
-    parts.push(`망치를 내려쳐 조준 방향 전방 ${b.angleDegrees}도 부채꼴(사거리 ${b.range})에 지진을 일으켜 ${fmtNum(b.damage)} 피해 + ${b.stunDuration}초 기절${b.windup ? ` (공격 후 ${b.windup}초 뒤에 발동, 그동안 이동 불가)` : ''}`);
+    parts.push(`망치를 내려쳐 조준 방향 전방 ${b.angleDegrees}도 부채꼴(사거리 ${b.range})에 지진을 일으켜 ${fmtNum(b.damage)} 피해 + ${b.stunDuration}초 기절${b.windup ? ` (체력이 가득 차면 공격 후 ${b.windup}초 뒤에 발동, 체력이 적을수록 비례해서 더 빨리 발동(최소 ${b.windupMin || 0}초), 그동안 이동 불가 + 공격 방향 고정)` : ''}`);
   } else if (b.type === 'melee') {
     damage = b.damage;
     parts.push(`전방 ${b.angleDegrees}도 부채꼴 범위(사거리 ${b.range})를 휘둘러 ${fmtNum(b.damage)} 피해를 주고 ${b.knockback}만큼 뒤로 밀쳐냄`);
@@ -1562,8 +1563,8 @@ const GEAR_CATALOG = [
   { id: 'comeback_power', name: '위기의 힘', rarity: 'super_rare', desc: '체력이 50% 이하일 때 공격력 15% 강화', effect: { lowHpDamageBonus: 0.15 } },
   { id: 'heal_boost', name: '회복 기어', rarity: 'super_rare', desc: '모든 회복량 50% 증가', effect: { healBonus: 0.5 } },
   { id: 'fast_ult', name: '궁극기 가속', rarity: 'super_rare', desc: '궁극기 충전 속도 10% 증가', effect: { ultChargeBonus: 0.1 } },
-  { id: 'fast_projectile', name: '빠른 투사체', rarity: 'epic', desc: '투사체가 날아가는 속도 10% 증가', effect: { projectileSpeedBonus: 0.1 } },
-  { id: 'quick_reload', name: '빠른 재장전', rarity: 'epic', desc: '재장전 속도 10% 증가', effect: { reloadSpeed: 0.1 } },
+  { id: 'fast_projectile', name: '빠른 투사체', rarity: 'epic', desc: '투사체가 날아가는 속도 20% 증가', effect: { projectileSpeedBonus: 0.2 } },
+  { id: 'quick_reload', name: '빠른 재장전', rarity: 'epic', desc: '재장전 속도 15% 증가', effect: { reloadSpeed: 0.15 } },
   { id: 'regen_shield', name: '재생 보호막', rarity: 'epic', desc: '시작할 때 900 피해를 흡수하는 보호막을 두름. 보호막이 사라져도 체력이 가득 찬 채로 5초 동안 피해를 입지 않으면 다시 생김', effect: { startShield: 900 } },
   { id: 'desperate_dash', name: '필사의 질주', rarity: 'mythic', desc: '체력이 30% 이하일 때 이동속도 10% 증가', effect: { lowHpSpeedBonus: 0.1 } },
   { id: 'overwhelming', name: '파죽지세', rarity: 'legendary', desc: '기본공격 후 1초 안에 다시 기본공격을 하면 25% 추가 피해 (연속으로 공격해도 25%만 적용)', effect: { chainDamageBonus: 0.25 } },
@@ -2167,6 +2168,73 @@ function repeatMissionsView(u) {
 // id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
+  {
+    id: '2026-11-07-ekhe-pool-nerf',
+    date: '2026-11-07',
+    tag: 'balance',
+    title: '엑헤 기본공격 너프',
+    items: [
+      '엑헤 흰자 지속 피해(첫 피해 제외): 0.2초마다 252 → 약 176 (30% 감소, 1레벨 기준)',
+    ],
+  },
+  {
+    id: '2026-11-07-move-speed-tier-2',
+    date: '2026-11-07',
+    tag: 'balance',
+    title: '캐릭터 이동속도 조정',
+    items: [
+      '지기 이동속도: 보통 → 빠름 (+10%)',
+      '똥파리 이동속도: 보통 → 빠름 (+10%)',
+      '원효대사 이동속도: 보통 → 느림 (-10%)',
+      '여똥이 이동속도: 보통 → 느림 (-10%)',
+    ],
+  },
+  {
+    id: '2026-11-07-gear-quick-reload',
+    date: '2026-11-07',
+    tag: 'balance',
+    title: '기어 [빠른 재장전] 버프',
+    items: [
+      '기어 [빠른 재장전]: 재장전 속도 증가량 10% → 15%',
+    ],
+  },
+  {
+    id: '2026-11-07-gear-fast-projectile',
+    date: '2026-11-07',
+    tag: 'balance',
+    title: '기어 [빠른 투사체] 버프',
+    items: [
+      '기어 [빠른 투사체]: 투사체 속도 증가량 10% → 20%',
+    ],
+  },
+  {
+    id: '2026-11-07-uphal-windup-hp',
+    date: '2026-11-07',
+    tag: 'balance',
+    title: '업할 기본공격 선딜 조정',
+    items: [
+      '업할 기본공격(망치 지진)의 선딜이 체력에 비례해서 줄어들어요. 체력이 가득 차 있으면 1.5초 뒤, 체력이 줄어들수록 더 빨리 내리쳐요. (체력 50% → 0.75초, 최소 0.2초)',
+    ],
+  },
+  {
+    id: '2026-11-07-uphal-balance',
+    date: '2026-11-07',
+    tag: 'balance',
+    title: '업할 기본공격 조정',
+    items: [
+      '업할 기본공격(망치 지진) 공격 범위: 28도 → 33.6도 (20% 증가)',
+      '업할 기본공격(망치 지진) 선딜(1초) 동안 공격 방향을 바꿀 수 없어요. 공격 버튼을 누른 순간의 방향으로 지진이 나가요.',
+    ],
+  },
+  {
+    id: '2026-11-07-nai-flight-time',
+    date: '2026-11-07',
+    tag: 'balance',
+    title: '나이 기본공격 착지 시간 조정',
+    items: [
+      '나이의 실내화가 던진 뒤 땅에 떨어지기까지 걸리는 시간: 2초 → 1.25초',
+    ],
+  },
   {
     id: '2026-11-06-move-speed-tier',
     date: '2026-11-06',
@@ -5265,8 +5333,9 @@ function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hy
     reloadBoostUntil: 0,       // 이 시각(ms) 전까지 재장전 속도 증가 (꽈리의 가젯 '재장전 가속')
     reloadBoostMultiplier: 1,
     stunnedUntil: 0,   // 이 시각(ms, Date.now() 기준) 전까지는 기절 상태 (이동/공격 불가)
-    windupUntil: 0,    // 이 시각(ms) 전까지는 공격 선딜 중 (업할의 망치 지진) - 이동 불가, 조준 방향만 변경 가능
+    windupUntil: 0,    // 이 시각(ms) 전까지는 공격 선딜 중 (업할의 망치 지진) - 이동 불가, 조준 방향도 고정
     windupTotal: 0,    // 이번 선딜의 전체 길이(ms) - 클라이언트가 경고 범위 진행도를 그릴 때 사용
+    windupAngle: 0,    // 이번 선딜이 시작된 순간의 조준 방향 - 선딜 중에는 이 방향으로 고정
     windupId: 0,       // 선딜 취소/무효화용 번호 (타이머 핸들은 상태에 넣지 않음 - 클라이언트로 전송되는 객체이므로)
     knockbackDirX: 0,   // 넉백(밀쳐냄) 진행 방향
     knockbackDirY: 0,
@@ -5778,7 +5847,7 @@ function spawnLob(match, p, spec, sentDistance) {
   const dist = Math.max(minD, Math.min(maxD, sent));
   const tx = Math.max(0, Math.min(ARENA_WIDTH, p.x + Math.cos(p.angle) * dist));
   const ty = Math.max(0, Math.min(ARENA_HEIGHT, p.y + Math.sin(p.angle) * dist));
-  const travel = spec.flightTime || 2; // 거리와 상관없이 고정된 비행 시간
+  const travel = spec.flightTime || 1.25; // 거리와 상관없이 고정된 비행 시간
   bulletIdCounter += 1;
   match.bullets.push({
     id: bulletIdCounter,
@@ -7057,9 +7126,9 @@ function registerGameplayHandlers(socket) {
     }
     if (typeof data.x !== 'number' || typeof data.y !== 'number') return;
 
-    // 공격 선딜 중(업할)에는 위치를 바꿀 수 없고 조준 방향만 돌릴 수 있다
+    // 공격 선딜 중(업할)에는 위치도, 조준 방향도 바꿀 수 없다 (공격 버튼을 누른 순간의 방향으로 고정)
     if (p.windupUntil && Date.now() < p.windupUntil) {
-      if (typeof data.angle === 'number') p.angle = data.angle;
+      if (typeof p.windupAngle === 'number') p.angle = p.windupAngle;
       return;
     }
 
@@ -7146,11 +7215,15 @@ function registerGameplayHandlers(socket) {
       }
     } else if ((p.basic.type === 'melee' || p.basic.type === 'quake') && p.basic.windup > 0) {
       // 업할의 망치 지진: 버튼을 누르면 windup초 동안 이동 불가 상태로 망치를 치켜들고, 시간이 지나면 그때의 조준 방향으로 지진 발동
-      const windupMs = p.basic.windup * 1000;
+      // 체력에 비례해서 선딜 단축: 체력 가득 = windup초, 체력이 줄어들수록 짧아짐 (공격 버튼을 누른 순간의 체력 기준, 최소 windupMin초)
+      const hpRatio = p.maxHp > 0 ? Math.max(0, Math.min(1, p.hp / p.maxHp)) : 1;
+      const windupMs = Math.max((p.basic.windupMin || 0) * 1000, p.basic.windup * 1000 * hpRatio);
       p.windupId = (p.windupId || 0) + 1;
       const myWindupId = p.windupId;
       p.windupUntil = now + windupMs;
       p.windupTotal = windupMs;
+      p.windupAngle = p.angle; // 선딜이 시작된 순간의 조준 방향 - 선딜이 끝날 때까지 고정
+      const lockedAngle = p.angle;
       const attackerId = p.id;
       const atkSpec = p.basic;
       const matchId = match.id;
@@ -7161,7 +7234,8 @@ function registerGameplayHandlers(socket) {
         if (!s || !s.alive || s.windupId !== myWindupId) return; // 죽었거나 리스폰/취소된 경우
         s.windupUntil = 0;
         if (s.leaping || (s.stunnedUntil && Date.now() < s.stunnedUntil)) return; // 선딜 중 기절당하면 공격이 취소됨
-        performMeleeAttack(m, s, atkSpec, false);
+        s.angle = lockedAngle; // 선딜 중 방향이 바뀌지 않았으므로 같은 값이지만, 만약을 위해 고정된 방향으로 발동
+        performMeleeAttack(m, s, atkSpec, false, lockedAngle);
       }, windupMs);
     } else if (p.basic.type === 'melee' || p.basic.type === 'quake') {
       performMeleeAttack(match, p, p.basic, false);
@@ -9176,7 +9250,7 @@ function runAiBot(match, botId, ai, dt, now) {
     // 조준: 투사체는 탄속과 적의 속도로 '만나는 지점'을 계산하고, 포물선 투척은 착지 시간만큼 적의 이동을 예측
     let tx = target.x, ty = target.y;
     if (basic.type === 'lob') {
-      const lt = (basic.flightTime || 2) * 0.8 * ai.profile.leadScale;
+      const lt = (basic.flightTime || 1.25) * 0.8 * ai.profile.leadScale;
       tx = target.x + ai.vx * lt; ty = target.y + ai.vy * lt;
     } else if (projSpeed > 0) {
       const ip = aiInterceptPoint(p, target, ai.vx, ai.vy, projSpeed);
