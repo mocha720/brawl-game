@@ -252,7 +252,7 @@
   #joinOverlay > :last-child, #modeOverlay > :last-child { margin-bottom: auto; }
 
   /* ----- 창(모달) 메뉴 (계정 설정 / 랭킹 / 미션 / 코드 입력) 과 대기·결과·대결 화면: 게임 화면 위에 어둡게 깔린다 ----- */
-  #accountOverlay, #rankingOverlay, #missionOverlay, #trophyRoadOverlay, #rankedRoadOverlay, #gemSkinOverlay, #trophyPlusOverlay, #gearShopOverlay, #codeOverlay, #adminOverlay, #noticeOverlay,
+  #accountOverlay, #rankingOverlay, #missionOverlay, #trophyRoadOverlay, #rankedRoadOverlay, #gemSkinOverlay, #trophyPlusOverlay, #gearShopOverlay, #buffyOverlay, #codeOverlay, #adminOverlay, #noticeOverlay,
   #matchingOverlay, #matchResultOverlay, #versusOverlay {
     position: fixed; inset: 0; display: none;
     flex-direction: column; align-items: center; justify-content: flex-start;
@@ -261,13 +261,60 @@
     background: rgba(10, 11, 30, 0.86);
     -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
   }
-  #accountOverlay, #rankingOverlay, #missionOverlay, #trophyRoadOverlay, #rankedRoadOverlay, #gemSkinOverlay, #trophyPlusOverlay, #gearShopOverlay, #codeOverlay, #adminOverlay, #noticeOverlay { z-index: 40; }
+  #accountOverlay, #rankingOverlay, #missionOverlay, #trophyRoadOverlay, #rankedRoadOverlay, #gemSkinOverlay, #trophyPlusOverlay, #gearShopOverlay, #buffyOverlay, #codeOverlay, #adminOverlay, #noticeOverlay { z-index: 40; }
   #matchingOverlay, #matchResultOverlay { z-index: 10; }
   #versusOverlay { z-index: 30; background: rgba(10, 11, 30, 0.92); justify-content: center; }
-  #accountOverlay.open, #rankingOverlay.open, #missionOverlay.open, #trophyRoadOverlay.open, #rankedRoadOverlay.open, #gemSkinOverlay.open, #trophyPlusOverlay.open, #gearShopOverlay.open, #codeOverlay.open, #adminOverlay.open, #noticeOverlay.open,
+  #accountOverlay.open, #rankingOverlay.open, #missionOverlay.open, #trophyRoadOverlay.open, #rankedRoadOverlay.open, #gemSkinOverlay.open, #trophyPlusOverlay.open, #gearShopOverlay.open, #buffyOverlay.open, #codeOverlay.open, #adminOverlay.open, #noticeOverlay.open,
   #matchingOverlay.open, #matchResultOverlay.open, #versusOverlay.open { display: flex; }
-  #accountOverlay > .panel, #rankingOverlay > .panel, #missionOverlay > .panel, #trophyRoadOverlay > .panel, #rankedRoadOverlay > .panel, #gemSkinOverlay > .panel, #trophyPlusOverlay > .panel, #gearShopOverlay > .panel, #codeOverlay > .panel, #adminOverlay > .panel, #noticeOverlay > .panel,
+  #accountOverlay > .panel, #rankingOverlay > .panel, #missionOverlay > .panel, #trophyRoadOverlay > .panel, #rankedRoadOverlay > .panel, #gemSkinOverlay > .panel, #trophyPlusOverlay > .panel, #gearShopOverlay > .panel, #buffyOverlay > .panel, #codeOverlay > .panel, #adminOverlay > .panel, #noticeOverlay > .panel,
   #matchingOverlay > .panel, #matchResultOverlay > .panel { margin: auto; }
+
+  /* ----- 버피 상점 ----- */
+  #buffyOverlay > .panel { width: min(560px, 100%); position: relative; overflow: hidden; background: radial-gradient(120% 70% at 50% -10%, #2f6b4f 0%, var(--night) 55%); }
+  #buffyOverlay > .panel::before { content: ''; position: absolute; inset: 0 0 auto 0; height: 4px; background: linear-gradient(90deg, #58e08a, #3db8ff, #ffc933); }
+  #buffyBling { font-size: 16px; margin: 4px 0 8px; }
+  #buffyDrawBtn { width: 100%; margin: 6px 0 10px; font-size: 18px; }
+  #buffyResult { min-height: 22px; margin: 4px 0 8px; font-size: 15px; }
+  .buffy-char { text-align: left; margin: 10px 0; padding: 8px 10px; border-radius: 10px; background: rgba(255,255,255,0.06); }
+  .buffy-char h4 { margin: 0 0 6px; font-size: 15px; }
+  .buffy-row { display: flex; gap: 8px; align-items: flex-start; padding: 4px 0; font-size: 13px; opacity: 0.55; }
+  .buffy-row.owned { opacity: 1; }
+  .buffy-row b { min-width: 104px; }
+  .gear-cta.buffy-cta { --bg: linear-gradient(135deg, #58e08a 0%, #3db8ff 100%); --deep: #1b5a45; }
+
+  /* ----- 버피를 가진 캐릭터 카드: 1개 = 초록빛 테두리 / 2개 = 무지개 테두리가 빙글빙글 / 3개(풀세트) = 반짝이는 별가루까지 ----- */
+  @property --buffy-angle { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+  .char-card.has-buffy { position: relative; }
+  .char-card.has-buffy::after {
+    content: ''; position: absolute; inset: -4px; border-radius: 26px; padding: 4px; pointer-events: none;
+    background: conic-gradient(from var(--buffy-angle), #58e08a, #3db8ff, #ffc933, #ff6bd6, #58e08a);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+    filter: drop-shadow(0 0 6px rgba(88, 224, 138, 0.8));
+  }
+  .char-card.has-buffy.buffy-1::after { background: linear-gradient(135deg, #58e08a, #2fbf8a); }
+  .char-card.has-buffy.buffy-2::after { animation: buffySpin 3.2s linear infinite; }
+  .char-card.has-buffy.buffy-3::after { animation: buffySpin 1.8s linear infinite; filter: drop-shadow(0 0 10px rgba(255, 201, 51, 0.9)) drop-shadow(0 0 18px rgba(88, 224, 138, 0.7)); }
+  .char-card.has-buffy.buffy-3 { background: radial-gradient(circle at 50% 0%, rgba(88, 224, 138, 0.22), transparent 62%), radial-gradient(circle at 50% 100%, rgba(255, 201, 51, 0.16), transparent 60%), var(--dusk); }
+  .char-card.has-buffy:not(.maxlv) .char-avatar { box-shadow: inset 0 -6px 0 rgba(0,0,0,0.22), 0 0 14px 3px rgba(88, 224, 138, 0.8); }
+  @keyframes buffySpin { to { --buffy-angle: 360deg; } }
+  .buffy-strip { display: flex; justify-content: center; gap: 5px; margin: 0 0 8px; flex-wrap: wrap; }
+  .buffy-chip { font-size: 11.5px; padding: 2px 8px; border-radius: 999px; background: rgba(255,255,255,0.08); color: #8b8fbf; border: 1px solid rgba(255,255,255,0.12); }
+  .buffy-chip.on { color: #0e2a1c; font-weight: 700; background: linear-gradient(135deg, #8cf0b0, #ffe27a); border-color: #fff8; box-shadow: 0 0 8px rgba(120, 240, 160, 0.85); animation: buffyChip 1.8s ease-in-out infinite; }
+  .buffy-chip.on:nth-child(2) { animation-delay: 0.3s; }
+  .buffy-chip.on:nth-child(3) { animation-delay: 0.6s; }
+  @keyframes buffyChip { 0%, 100% { filter: brightness(1); } 50% { filter: brightness(1.25); } }
+  .char-card .buffy-line { margin: 0 0 6px; font-size: 12px; line-height: 1.45; color: #9af5bd; text-align: left; }
+  .buffy-sparkles { position: absolute; inset: 0; pointer-events: none; overflow: hidden; border-radius: 22px; }
+  .buffy-sparkles i { position: absolute; width: 8px; height: 8px; background: #fff7c2; border-radius: 50%; box-shadow: 0 0 8px 3px rgba(255, 226, 122, 0.9); opacity: 0; animation: buffyTwinkle 2.6s ease-in-out infinite; }
+  .buffy-sparkles i:nth-child(1) { left: 8%; top: 12%; animation-delay: 0s; }
+  .buffy-sparkles i:nth-child(2) { left: 86%; top: 20%; animation-delay: 0.5s; }
+  .buffy-sparkles i:nth-child(3) { left: 14%; top: 48%; animation-delay: 1.1s; }
+  .buffy-sparkles i:nth-child(4) { left: 90%; top: 58%; animation-delay: 1.6s; }
+  .buffy-sparkles i:nth-child(5) { left: 30%; top: 86%; animation-delay: 0.8s; }
+  .buffy-sparkles i:nth-child(6) { left: 72%; top: 90%; animation-delay: 2s; }
+  @keyframes buffyTwinkle { 0%, 100% { opacity: 0; transform: scale(0.3); } 45% { opacity: 1; transform: scale(1.2); } 70% { opacity: 0.4; transform: scale(0.7); } }
+  @media (prefers-reduced-motion: reduce) { .char-card.has-buffy::after, .buffy-chip.on, .buffy-sparkles i { animation: none; } }
 
   /* ----- 경쟁전 캐릭터 선택 화면 ----- */
   #rankedDraftOverlay { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; box-sizing: border-box; text-align: center; color: var(--paper); padding: 16px; overflow-y: auto; background: rgba(10, 11, 30, 0.94); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); z-index: 35; }
@@ -593,6 +640,8 @@
     100% { opacity: 0; transform: translate(-50%, -50%) scale(1); }
   }
   /* 경기 중 상단 모드/문 체력 표시 */
+  #trainingBar { display: none; position: fixed; top: 8px; right: 8px; z-index: 16; gap: 6px; }
+  #trainingBar .btn { padding: 6px 10px; font-size: 13px; }
   #gateHud { display: none; position: fixed; top: 8px; left: 50%; transform: translateX(-50%); z-index: 15; pointer-events: none; flex-direction: column; align-items: center; gap: 4px; color: #fff; text-shadow: 0 1px 3px #000; font-size: 13px; }
   #gateHud .gate-mode { padding: 2px 10px; border-radius: 999px; background: rgba(10, 11, 30, 0.7); font-weight: 700; }
   #gateHud .gate-bars { display: flex; gap: 10px; }
@@ -1151,6 +1200,11 @@
     <span class="gear-cta-text"><b>기어 상점</b><small>코인으로 기어를 사서 캐릭터를 더 강하게!</small></span>
     <span class="gear-cta-go">›</span>
   </button>
+  <button id="openBuffyBtn" class="btn gear-cta buffy-cta" aria-label="버피 상점 열기">
+    <span class="gear-cta-icon">🧪</span>
+    <span class="gear-cta-text"><b>버피 상점</b><small>블링으로 캐릭터 전용 버피를 뽑아 더 강하게!</small></span>
+    <span class="gear-cta-go">›</span>
+  </button>
   <div id="aiBonusBanner" class="ai-bonus-banner" style="display:none"></div>
   <div id="modeList">
     <div class="mode-card" data-mode="1v1">
@@ -1172,6 +1226,10 @@
     <div class="mode-card" data-mode="ai" data-difficulty="hard">
       <div class="mode-title">🤖 AI전</div>
       <div class="mode-desc">접속자가 없어도 AI와 대결 (강한 AI)<br>이기면 🪙 50코인 + 🏆 트로피 30<br>(전적·연승에는 영향이 없어요)</div>
+    </div>
+    <div class="mode-card" data-mode="training">
+      <div class="mode-title">🎯 훈련장</div>
+      <div class="mode-desc">혼자서 허수아비를 치며 자유롭게 연습<br>궁극기·하이퍼·가젯을 마음껏 · 보상/트로피/전적은 없어요</div>
     </div>
     <div class="mode-card" data-mode="boss">
       <div class="mode-title">👹 보스전</div>
@@ -1369,6 +1427,19 @@
   </div>
 </div>
 
+<div id="buffyOverlay">
+  <div class="panel">
+    <h2 class="panel-title">🧪 버피 상점</h2>
+    <div id="buffyBling"></div>
+    <p class="gear-sub">버피는 캐릭터마다 전용으로 있어요. <b>가지고만 있으면 그 캐릭터에 자동으로 적용</b>돼요. 아직 없는 버피 중에서 무작위로 나와요!</p>
+    <button id="buffyDrawBtn" class="btn">✨ 버피 뽑기</button>
+    <div id="buffyResult"></div>
+    <div id="buffyList"></div>
+    <div id="buffyMsg" class="panel-msg"></div>
+    <button id="buffyCloseBtn" class="btn btn-ghost">닫기</button>
+  </div>
+</div>
+
 <div id="gearShopOverlay">
   <div class="panel">
     <div class="gear-hero">
@@ -1490,6 +1561,10 @@
 </div>
 
 <div id="gateHud"></div>
+<div id="trainingBar">
+  <button id="trainingRefillBtn" class="btn">🔄 충전</button>
+  <button id="trainingLeaveBtn" class="btn btn-ghost">🚪 나가기</button>
+</div>
 <div id="startBanner"></div>
 
 <button id="sfxToggleBtn" title="효과음 켜기/끄기">🔊</button>
@@ -2530,6 +2605,48 @@ function renderGearShop() {
     });
   });
 }
+// ===== 버피 상점 =====
+function renderBuffyShop() {
+  const p = currentProfile || {};
+  const price = p.buffyPrice || 2000;
+  const owned = new Set(p.buffies || []);
+  const cat = p.buffyCatalog || [];
+  document.getElementById('buffyBling').textContent = `✨ 내 블링: ${(p.bling || 0).toLocaleString()}`;
+  const btn = document.getElementById('buffyDrawBtn');
+  const allOwned = cat.length > 0 && cat.every((b) => owned.has(b.id));
+  btn.textContent = allOwned ? '🎉 모든 버피를 모았어요!' : `✨ 버피 뽑기 (✨ ${price.toLocaleString()})`;
+  btn.disabled = allOwned;
+  const byChar = {};
+  cat.forEach((b) => { (byChar[b.charId] = byChar[b.charId] || { name: b.charName, items: [] }).items.push(b); });
+  document.getElementById('buffyList').innerHTML = Object.keys(byChar).map((cid) => {
+    const g = byChar[cid];
+    return `<div class="buffy-char"><h4>${escapeHtml(g.name)}</h4>` + g.items.map((b) => `<div class="buffy-row ${owned.has(b.id) ? 'owned' : ''}"><b>${owned.has(b.id) ? '✅' : '🔒'} ${escapeHtml(b.name)}</b><span>${escapeHtml(b.desc)}</span></div>`).join('') + '</div>';
+  }).join('');
+}
+function openBuffyShop() {
+  document.getElementById('buffyMsg').textContent = '';
+  document.getElementById('buffyResult').textContent = '';
+  document.getElementById('buffyOverlay').classList.add('open');
+  renderBuffyShop();
+}
+function closeBuffyShop() { document.getElementById('buffyOverlay').classList.remove('open'); }
+document.getElementById('openBuffyBtn').addEventListener('click', openBuffyShop);
+document.getElementById('buffyCloseBtn').addEventListener('click', closeBuffyShop);
+document.getElementById('buffyDrawBtn').addEventListener('click', () => {
+  const price = (currentProfile && currentProfile.buffyPrice) || 2000;
+  if (!confirm(`✨ 블링 ${price.toLocaleString()}개를 내고 버피를 뽑을까요?`)) return;
+  const btn = document.getElementById('buffyDrawBtn');
+  btn.disabled = true;
+  socket.timeout(8000).emit('drawBuffy', {}, (err, res) => {
+    btn.disabled = false;
+    if (err || !res) { document.getElementById('buffyMsg').textContent = '서버 응답이 없습니다. 잠시 후 다시 시도해주세요.'; renderBuffyShop(); return; }
+    if (res.profile) { currentProfile = res.profile; updateProfileUI(); }
+    document.getElementById('buffyMsg').textContent = res.ok ? '' : (res.message || '버피를 뽑지 못했습니다.');
+    document.getElementById('buffyResult').textContent = res.ok ? `🎉 ${res.message}` : '';
+    renderBuffyShop();
+  });
+});
+
 function openGearShop() {
   gearTab = 'shop';
   setGearMsg('');
@@ -3774,8 +3891,10 @@ function forceReLogin(message) {
   closeRankingDialog();
   closeNoticeDialog();
   closeAdminDialog();
+  closeBuffyShop();
   ['modeOverlay', 'characterOverlay'].forEach((id) => { document.getElementById(id).style.display = 'none'; });
   ['matchingOverlay', 'matchResultOverlay', 'scoreboard'].forEach((id) => { document.getElementById(id).classList.remove('open'); });
+  { const tb = document.getElementById('trainingBar'); if (tb) tb.style.display = 'none'; }
   document.getElementById('joinOverlay').style.display = 'flex';
   showAuthMsg(message);
 }
@@ -4029,17 +4148,29 @@ function renderCharacterList() {
             ? `<button class="hyper-btn" data-hyper-buy="${c.id}" ${currentProfile.coins >= hyperPrice ? '' : 'disabled'}>⚡ 하이퍼 차지 획득 · 🪙 ${hyperPrice.toLocaleString()}${currentProfile.coins >= hyperPrice ? '' : ' (코인 부족)'}</button>`
             : `<div class="hyper-state">🔒 Lv.${hyperReqLv} 달성 후 🪙 ${hyperPrice.toLocaleString()}로 획득 (현재 Lv.${lv})</div>`}
       </div>` : '';
+    // 버피: 가진 버피 수에 따라 카드가 점점 화려해짐 (1개: 초록 테두리 / 2개: 무지개 테두리 회전 / 3개: 별가루까지). 서버가 알려준 목록을 그대로 보여줌
+    const buffyCat = ((currentProfile && currentProfile.buffyCatalog) || []).filter((b) => b.charId === c.id);
+    const buffyOwnedIds = (currentProfile && currentProfile.buffies) || [];
+    const buffyHave = owned ? buffyCat.filter((b) => buffyOwnedIds.includes(b.id)) : [];
+    const buffyN = buffyHave.length;
+    const BUFFY_ICONS = { basic: '⚔️ 기본공격', gadget: '🔧 가젯', hyper: '⚡ 하이퍼' };
+    const buffyStrip = owned && buffyCat.length ? `<div class="buffy-strip">${buffyCat.map((b) => `<span class="buffy-chip${buffyOwnedIds.includes(b.id) ? ' on' : ''}" title="${escapeHtml(b.desc)}">${buffyOwnedIds.includes(b.id) ? '' : '🔒 '}${BUFFY_ICONS[b.kind] || escapeHtml(b.name)}</span>`).join('')}</div>` : '';
+    const buffyLines = buffyHave.map((b) => `<div class="buffy-line">🧪 ${escapeHtml(b.name)}: ${escapeHtml(b.desc)}</div>`).join('');
+    const buffySparkles = buffyN >= 3 ? '<div class="buffy-sparkles"><i></i><i></i><i></i><i></i><i></i><i></i></div>' : '';
     const lvBadge = owned && table.length ? `<span class="lv-badge${next ? '' : ' max'}">Lv.${lv}</span>` : '';
     const action = owned
       ? `<div class="char-actions"><button data-char-id="${c.id}">선택</button>${upgradeBtn}</div>`
       : `<button class="locked-btn" data-unlock-id="${c.id}" ${canAfford ? '' : 'disabled'}>🔒 🪙 ${price.toLocaleString()} ${canAfford ? '잠금해제' : '(코인 부족)'}</button>`;
     return `
-    <div class="char-card${owned ? '' : ' locked'}${owned && table.length && !next ? ' maxlv' : ''}">
+    <div class="char-card${owned ? '' : ' locked'}${owned && table.length && !next ? ' maxlv' : ''}${buffyN ? ` has-buffy buffy-${buffyN}` : ''}">
+      ${buffySparkles}
       ${fireWrap(`<div class="char-avatar" style="background:${equippedSkin && SKIN_LOOKS[equippedSkin] ? SKIN_LOOKS[equippedSkin].body : c.color};${equippedSkin && SKIN_LOOKS[equippedSkin] ? `box-shadow: inset 0 0 0 4px ${SKIN_LOOKS[equippedSkin].avatarRing || '#fff'};` : ''}">${escapeHtml(c.name.slice(0, 1))}</div>`, hyperOwned)}
       <h3>${escapeHtml(c.name)}${lvBadge}</h3>
+      ${buffyStrip}
       ${trophyLine}
       ${bonusLine}
       ${gearLine}
+      ${buffyLines}
       <div class="stat-line">❤️ 체력: ${c.maxHp.toLocaleString()}</div>
       <div class="stat-line">👟 이동속도: ${escapeHtml(c.moveSpeedLabel || '보통')}</div>
       <div class="stat-line">🎯 ${escapeHtml(c.basic.name)}${c.basic.damage ? `: ${c.basic.damage.toLocaleString()}` : ''}${c.basic.desc ? ` (${escapeHtml(c.basic.desc)})` : ''}</div>
@@ -4158,6 +4289,7 @@ let gemNextAt = 0;      // 다음 보석이 나올 시각 (클라이언트 시�
 const gemSeen = {};     // 보석 id -> 처음 본 시각 (튀어나오는 연출용)
 let prevMyGems = 0;     // 내 보석 수가 늘었을 때 효과음을 내기 위한 기록
 let matchIsAi = false;  // AI 대결 여부. matchFound에서 갱신됨
+let matchIsTraining = false; // 훈련장 여부. matchFound에서 갱신됨 (훈련장은 직접 '나가기'를 눌러야 끝남)
 let bossUseGems = false; // 보스전: 무료 도전을 이미 써서 보석 10개로 추가 도전하려는 경우 true
 let matchBossInfo = null; // 보스전 정보 { name, emoji, hp, jumpRadius, ... } (보스전이 아니면 null)
 let matchLives = 0;        // 보스전 시작 목숨 수
@@ -4173,10 +4305,11 @@ function doJoin() {
 function requestMatch() {
   document.getElementById('matchResultOverlay').classList.remove('open');
   document.getElementById('matchingStatus').textContent =
-    selectedMode === 'ranked' ? '🏆 경쟁전 상대를 찾는 중입니다...' : selectedMode === 'ai' ? 'AI 상대를 준비하는 중입니다...' : selectedMode === 'boss' ? '👹 보스를 불러오는 중입니다...' : selectedMode === '3v3' ? '3:3 상대를 찾는 중입니다...' : selectedMode === '2v2' ? '2:2 상대를 찾는 중입니다...' : '1:1 상대를 찾는 중입니다...';
+    selectedMode === 'ranked' ? '🏆 경쟁전 상대를 찾는 중입니다...' : selectedMode === 'ai' ? 'AI 상대를 준비하는 중입니다...' : selectedMode === 'training' ? '🎯 훈련장을 준비하는 중입니다...' : selectedMode === 'boss' ? '👹 보스를 불러오는 중입니다...' : selectedMode === '3v3' ? '3:3 상대를 찾는 중입니다...' : selectedMode === '2v2' ? '2:2 상대를 찾는 중입니다...' : '1:1 상대를 찾는 중입니다...';
   document.getElementById('matchingOverlay').classList.add('open');
   if (selectedMode === 'ranked') socket.emit('findRankedMatch'); // 점수는 서버 저장소 기준, 캐릭터는 매칭 후 선택
   else if (selectedMode === 'boss') socket.emit('findBossMatch', { characterId: selectedCharacterId, useGems: bossUseGems }); // 보스전: 하루 첫 도전은 무료, 이후엔 보석 10개 (useGems 는 동의했을 때만 true, 차감은 서버가 함)
+  else if (selectedMode === 'training') socket.emit('findTrainingMatch', { characterId: selectedCharacterId }); // 훈련장: 대기열 없이 바로 시작, 보상/기록 없음
   else if (selectedMode === 'ai') socket.emit('findAiMatch', { characterId: selectedCharacterId, difficulty: selectedAiDifficulty }); // AI 대결: 대기열 없이 바로 시작. 이기면 난이도별 코인 + 고정 트로피
   else socket.emit('findMatch', { name: myName, characterId: selectedCharacterId, mode: selectedMode });
 }
@@ -4195,6 +4328,9 @@ document.getElementById('backToMenuBtn').addEventListener('click', () => {
   document.getElementById('matchResultOverlay').classList.remove('open');
   document.getElementById('modeOverlay').style.display = 'flex';
 });
+
+document.getElementById('trainingRefillBtn').addEventListener('click', () => { socket.emit('trainingRefill'); canvas.focus(); });
+document.getElementById('trainingLeaveBtn').addEventListener('click', () => { socket.emit('leaveTraining'); });
 
 socket.on('queueUpdate', (data) => {
   const waiting = data && data.waiting ? data.waiting : 1;
@@ -4405,7 +4541,8 @@ function updateGateHud(state) {
   if (!joined || !myTeam) { el.style.display = 'none'; return; }
   const mode = state.gameMode || matchGameMode;
   matchGameMode = mode;
-  const modeLabel = mode === 'gatekeeper' ? '🚪 문지기 — 상대 문을 먼저 부수면 승리!'
+  const modeLabel = matchIsTraining ? '🎯 훈련장 — 허수아비는 쓰러지지 않아요. 마음껏 연습하세요!'
+    : mode === 'gatekeeper' ? '🚪 문지기 — 상대 문을 먼저 부수면 승리!'
     : mode === 'gemgrab' ? `💎 쨍그랩 — 팀 보석 ${matchGemWin}개를 먼저 모으면 승리!`
     : mode === 'boss' ? `👹 보스전 — 보스를 쓰러뜨리세요! (목숨 ${matchLives}개)`
     : (mode === 'knockout' && state.round) ? `⚔ 녹아우 — ${state.round.n}라운드 / 먼저 ${state.round.toWin}승 (우리 ${state.round[myTeam] || 0} : ${state.round[myTeam === 'A' ? 'B' : 'A'] || 0} 상대)`
@@ -4450,6 +4587,8 @@ socket.on('matchFound', (data) => {
   matchMode = data.mode || '1v1';
   matchWinScore = data.winScore || 5;
   matchIsAi = !!data.ai;
+  matchIsTraining = !!data.training;
+  { const tb = document.getElementById('trainingBar'); if (tb) tb.style.display = matchIsTraining ? 'flex' : 'none'; }
   matchAiInfo = data.aiDifficulty || null;
   matchBossInfo = data.boss || null;
   matchLives = data.lives || 0;
@@ -4484,7 +4623,7 @@ socket.on('matchFound', (data) => {
   document.getElementById('matchingOverlay').classList.remove('open');
   document.getElementById('matchResultOverlay').classList.remove('open');
   document.getElementById('scoreboard').classList.add('open'); // 바로 전적을 보여줌
-  if (matchBossInfo) document.getElementById('scoreboard').classList.remove('open'); // 보스전은 혼자 하므로 1:1 전적판 없음
+  if (matchBossInfo || matchIsTraining) document.getElementById('scoreboard').classList.remove('open'); // 보스전/훈련장은 혼자 하므로 1:1 전적판 없음
 
   // 매치 시작 안내를 시스템 메시지로 채팅창에 표시
   if (matchMode === '2v2' || matchMode === '3v3') {
@@ -4496,6 +4635,7 @@ socket.on('matchFound', (data) => {
     addChatMessage({ id: 'system', name: '시스템', color: '#f1c40f', text: matchIsAi ? `상대: ${opponent} (AI전 - 이기면 🪙 ${matchAiInfo ? matchAiInfo.coinReward : 0}코인 + 🏆 트로피 ${matchAiInfo ? matchAiInfo.trophyReward : 0}, 전적·연승에는 영향 없음)` : `상대: ${opponent}` });
   }
 
+  if (matchIsTraining) addChatMessage({ id: 'system', name: '시스템', color: '#f1c40f', text: '🎯 훈련장! 허수아비는 움직이지도 공격하지도 않고 쓰러지지도 않아요. 🔄 충전으로 궁극기/하이퍼/가젯을 바로 채우고, 끝나면 🚪 나가기를 누르세요. (보상·트로피·전적 없음)' });
   if (matchBossInfo) addChatMessage({ id: 'system', name: '시스템', color: '#f1c40f', text: `👹 보스전! ${matchBossInfo.name}을(를) 쓰러뜨리세요. 목숨 ${matchLives}개, 다 쓰면 패배예요.` });
   joined = true;
   showVersusScreen(data); // 상대 캐릭터/트로피를 보여주고 카운트다운 후 시작
@@ -4540,6 +4680,13 @@ socket.on('matchOver', (data) => {
 
   chargeLocal = false;
   document.getElementById('chargeBar').style.display = 'none';
+  { const tb = document.getElementById('trainingBar'); if (tb) tb.style.display = 'none'; }
+  if (data.reason === 'trainingEnd') { // 훈련장 종료: 결과 화면 없이 바로 모드 선택 화면으로
+    matchIsTraining = false;
+    document.getElementById('scoreboard').classList.remove('open');
+    document.getElementById('modeOverlay').style.display = 'flex';
+    return;
+  }
   const titleEl = document.getElementById('matchResultTitle');
   const descEl = document.getElementById('matchResultDesc');
   const iWon = data.winnerTeam === myTeam;
@@ -8111,7 +8258,7 @@ function drawSamjangForm(p) {
 
 function drawPlayer(p, isMe) {
   // 공격 선딜 경고 (업할의 망치 지진): 곧 지진이 나갈 부채꼴 범위를 표시하고, 시간이 지날수록 안쪽이 차오른다
-  if (p.alive && p.windupUntil && sNow() < p.windupUntil && p.basic && p.basic.range) {
+  if (p.alive && (isMe || p.team === myTeam) && p.windupUntil && sNow() < p.windupUntil && p.basic && p.basic.range) { // 적에게는 경고 범위를 보여주지 않음 (본인/아군에게만 표시)
     const total = p.windupTotal || 1000;
     const prog = Math.max(0, Math.min(1, 1 - (p.windupUntil - sNow()) / total));
     const half = (((p.basic.angleDegrees || 40) * Math.PI) / 180) / 2;
