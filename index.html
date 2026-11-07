@@ -853,6 +853,26 @@
     cursor: pointer;
     background: conic-gradient(#f1c40f 0%, rgba(255,255,255,0.15) 0%);
   }
+  /* 차차: 궁극기가 다 충전되면 버튼 밑에 이번에 뽑힌 궁극기 이름이 나옴 */
+  #ultimateLabel {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    margin-top: 6px;
+    padding: 3px 9px;
+    border-radius: 10px;
+    background: rgba(20, 20, 30, 0.88);
+    border: 1.5px solid #f1c40f;
+    color: #fff;
+    font-size: 13px;
+    font-weight: bold;
+    white-space: nowrap;
+    pointer-events: none;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+  }
+  #ultimateLabel b { color: #f1c40f; font-size: 16px; margin-right: 4px; }
   #ultimateButton.ready { animation: ultPulse 1s infinite; }
   #ultimateButton.armed { box-shadow: 0 0 0 4px rgba(231, 76, 60, 0.9); animation: none; }
   #ultimateButton .ult-inner {
@@ -1501,7 +1521,7 @@
 <div id="chargeBar"><div class="charge-fill"></div><span class="charge-text"></span></div>
 
 <!-- 궁극기 버튼: 게이지가 차면 클릭/탭으로 발동 (PC/모바일 공용) -->
-<div id="ultimateButton"><div class="ult-inner">🤡</div></div>
+<div id="ultimateButton"><div class="ult-inner">🤡</div><div id="ultimateLabel"></div></div>
 
 <!-- 하이퍼 차지 버튼: 하이퍼 차지를 획득한 캐릭터일 때만 표시. 게이지가 차면 탭(모바일) 또는 스페이스바/Q키(PC)로 발동 -->
 <div id="hyperButton"><div class="hyper-inner">⚡</div></div>
@@ -1759,6 +1779,14 @@ const CHARACTERS = [
     ultimate: { name: '바위 돌진', damage: 1500, desc: '앞으로 돌진해 닿은 적에게 1,500 피해, 적은 돌진이 끝날 때까지 밀려가며 0.5초마다 500 피해' },
     gadget: { name: '충격파', desc: '주변에 충격파를 일으켜 반경 200 안의 적을 200px 밀쳐냄, 피해는 주지 않음 (15초마다 사용 가능)' },
   },
+  {
+    id: 'chacha',
+    name: '차차',
+    color: '#ff7a45',
+    maxHp: 6000,
+    basic: { name: '로켓 발사', desc: '로켓 3발 동시 발사 (발당 1,250 피해, 탄퍼짐 60도)' },
+    ultimate: { name: '랜덤 궁극기', desc: '궁극기가 다 충전되면 [이] [서] [황] [문] 중 하나가 무작위로 정해지고, 어떤 궁극기인지 궁극기 버튼 밑에 표시됨' },
+  },
 ];
 let selectedCharacterId = CHARACTERS[0].id;
 
@@ -1943,14 +1971,14 @@ function isLobBasic(me) {
   return !!(me && me.basic && me.basic.type === 'lob');
 }
 function isLeapUltimateArmed(me) {
-  return !!(ultimateArmed && me && me.alive && me.ultimate && (me.ultimate.type === 'leap' || me.ultimate.type === 'blackhole')); // 거리를 조준하는 궁극기: 모카의 점프, 근수니의 중력 덩어리
+  return !!(ultimateArmed && me && me.alive && me.ultimate && (me.ultimate.type === 'leap' || me.ultimate.type === 'blackhole' || me.ultimate.type === 'fireLob')); // 거리를 조준하는 궁극기: 모카의 점프, 근수니의 중력 덩어리, 차차의 불덩이
 }
 
 function fireAttack() {
   if (!joined || inCountdown()) return;
   const me = latestState.players[myId];
   if (ultimateArmed && me && me.ultimateCharge >= 100) {
-    if (me.ultimate && (me.ultimate.type === 'leap' || me.ultimate.type === 'blackhole')) socket.emit('ultimate', { distance: Math.round(getLeapAimDistance(me)) });
+    if (me.ultimate && (me.ultimate.type === 'leap' || me.ultimate.type === 'blackhole' || me.ultimate.type === 'fireLob')) socket.emit('ultimate', { distance: Math.round(getLeapAimDistance(me)) });
     else socket.emit('ultimate');
     ultimateArmed = false;
     updateUltimateButton();
@@ -5155,6 +5183,23 @@ function updateUltimateButton() {
   btn.style.background = `conic-gradient(#f1c40f ${charge}%, rgba(255,255,255,0.15) ${charge}%)`;
   btn.classList.toggle('ready', charge >= 100);
   btn.classList.toggle('armed', ultimateArmed);
+  // 랜덤 궁극기(차차): 충전되기 전에는 주사위, 다 충전되면 뽑힌 궁극기의 아이콘 + 버튼 밑에 이름 표시
+  const label = document.getElementById('ultimateLabel');
+  const inner = btn.querySelector('.ult-inner');
+  if (me && me.ultimateRandom && me.ultimate) {
+    const full = charge >= 100;
+    const icons = { i: '🚀', seo: '💥', hwang: '🎆', mun: '☄️' };
+    const icon = full ? (icons[me.ultimate.key] || '🎲') : '🎲';
+    if (inner.textContent !== icon) inner.textContent = icon;
+    label.style.display = full ? 'block' : 'none';
+    if (full) {
+      const html = `<b>${escapeHtml(me.ultimate.name)}</b>${escapeHtml(me.ultimate.label || '')}`;
+      if (label.dataset.html !== html) { label.innerHTML = html; label.dataset.html = html; } // 매 프레임 DOM을 다시 쓰지 않도록 바뀔 때만 갱신
+    }
+  } else {
+    if (label.style.display !== 'none') label.style.display = 'none';
+    if (inner.textContent !== '🤡') inner.textContent = '🤡';
+  }
 }
 
 function updateAmmoDisplay() {
@@ -8836,6 +8881,7 @@ function drawSlipperBullet(b) {
   }
   if (b.visual === 'tray') { drawTrayBody(r, now, t); ctx.restore(); return; } // 나이 주방장: 실내화 대신 은쟁반
   if (b.visual === 'gravitySphere') { drawGravitySphere(r, now); ctx.restore(); return; } // 근수니: 중력 덩어리
+  if (b.visual === 'fireball') { drawFireball(r, now); ctx.restore(); return; } // 차차 '문': 불덩이
   // 밑창
   ctx.fillStyle = '#f6f2e9';
   ctx.strokeStyle = '#3b2f3a';
@@ -9727,9 +9773,155 @@ function drawBullet(b) {
   drawBulletShape(b);
   ctx.restore();
 }
+// 차차의 로켓: 날아가는 방향으로 회전한 로켓 (몸통 + 빨간 앞코 + 꼬리 날개 + 깜빡이는 불꽃). rocket = 기본, miniRocket = 작은 로켓, bigRocket = 거대 로켓
+function drawRocketBullet(b) {
+  const big = b.visual === 'bigRocket';
+  const r = b.radius;
+  const half = r * (big ? 2.6 : 3.0);   // 몸통 반 길이
+  const wid = r * (big ? 1.05 : 0.85);   // 몸통 반 폭
+  const flick = 0.75 + 0.45 * Math.sin(Date.now() / 45 + (b.id || 0) * 1.7);
+  ctx.save();
+  ctx.translate(b.x, b.y);
+  ctx.rotate(Math.atan2(b.vy || 0, b.vx || 1));
+  // 연기 꼬리
+  const tg = ctx.createLinearGradient(-half * 3.2, 0, -half, 0);
+  tg.addColorStop(0, 'rgba(200, 200, 205, 0)');
+  tg.addColorStop(1, 'rgba(200, 200, 205, 0.4)');
+  ctx.fillStyle = tg;
+  ctx.beginPath();
+  ctx.moveTo(-half, -wid * 0.7); ctx.lineTo(-half * 3.2, 0); ctx.lineTo(-half, wid * 0.7);
+  ctx.closePath();
+  ctx.fill();
+  // 불꽃
+  const fl = half * (big ? 1.5 : 1.3) * flick;
+  const fg = ctx.createLinearGradient(-half, 0, -half - fl, 0);
+  fg.addColorStop(0, 'rgba(255, 240, 150, 0.95)');
+  fg.addColorStop(0.5, 'rgba(255, 140, 30, 0.85)');
+  fg.addColorStop(1, 'rgba(255, 60, 20, 0)');
+  ctx.fillStyle = fg;
+  ctx.beginPath();
+  ctx.moveTo(-half, -wid * 0.7); ctx.lineTo(-half - fl, 0); ctx.lineTo(-half, wid * 0.7);
+  ctx.closePath();
+  ctx.fill();
+  // 꼬리 날개
+  ctx.fillStyle = '#c0392b';
+  ctx.strokeStyle = '#6b1f16';
+  ctx.lineWidth = Math.max(1, r * 0.16);
+  for (const sy of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(-half * 0.35, sy * wid * 0.9);
+    ctx.lineTo(-half * 1.1, sy * wid * 2.1);
+    ctx.lineTo(-half * 1.05, sy * wid * 0.9);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+  }
+  // 몸통
+  const bg = ctx.createLinearGradient(0, -wid, 0, wid);
+  bg.addColorStop(0, '#f4f4f8');
+  bg.addColorStop(0.55, '#c9ccd6');
+  bg.addColorStop(1, '#8e93a3');
+  ctx.fillStyle = bg;
+  ctx.strokeStyle = '#3b3f4c';
+  ctx.beginPath();
+  ctx.rect(-half, -wid, half * 1.65, wid * 2);
+  ctx.fill(); ctx.stroke();
+  // 앞코
+  ctx.fillStyle = '#e74c3c';
+  ctx.beginPath();
+  ctx.moveTo(half * 0.65, -wid);
+  ctx.quadraticCurveTo(half * 1.25, -wid * 0.6, half * 1.45, 0);
+  ctx.quadraticCurveTo(half * 1.25, wid * 0.6, half * 0.65, wid);
+  ctx.closePath();
+  ctx.fill(); ctx.stroke();
+  // 몸통 띠 (거대 로켓은 경고 노란색)
+  ctx.fillStyle = big ? '#f1c40f' : '#e74c3c';
+  ctx.fillRect(-half * 0.2, -wid, half * 0.28, wid * 2);
+  // 창문
+  ctx.fillStyle = '#5dade2';
+  ctx.beginPath();
+  ctx.arc(half * 0.25, 0, wid * 0.38, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+// 차차 '문' 궁극기의 불덩이 (포물선으로 날아가는 중): 일렁이는 불꽃 덩어리
+function drawFireball(r, now) {
+  const R = r * 1.5;
+  const g = ctx.createRadialGradient(0, 0, R * 0.1, 0, 0, R * 1.5);
+  g.addColorStop(0, 'rgba(255, 250, 210, 1)');
+  g.addColorStop(0.35, 'rgba(255, 190, 60, 0.95)');
+  g.addColorStop(0.75, 'rgba(240, 90, 20, 0.8)');
+  g.addColorStop(1, 'rgba(200, 40, 10, 0)');
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(0, 0, R * 1.5, 0, Math.PI * 2);
+  ctx.fill();
+  for (let i = 0; i < 7; i++) { // 일렁이는 불꽃 혀
+    const a = (i / 7) * Math.PI * 2 + now * 3;
+    const len = R * (1.1 + 0.45 * Math.sin(now * 14 + i * 2.1));
+    ctx.fillStyle = i % 2 ? 'rgba(255, 150, 40, 0.8)' : 'rgba(255, 90, 30, 0.75)';
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a - 0.3) * R * 0.6, Math.sin(a - 0.3) * R * 0.6);
+    ctx.lineTo(Math.cos(a) * len, Math.sin(a) * len);
+    ctx.lineTo(Math.cos(a + 0.3) * R * 0.6, Math.sin(a + 0.3) * R * 0.6);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.fillStyle = 'rgba(255, 255, 230, 0.95)';
+  ctx.beginPath();
+  ctx.arc(0, 0, R * 0.38, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// 차차 '이' 궁극기(거대 로켓)의 폭발: 불꽃 구체 + 퍼지는 충격파 + 불똥
+function drawRocketExplosion(e) {
+  const maxLife = e.maxLife || 0.75;
+  const t = Math.max(0, Math.min(1, 1 - e.life / maxLife));
+  const ease = 1 - Math.pow(1 - t, 3);
+  const R = e.radius;
+  const seed = e.id || 1;
+  ctx.save();
+  // 바닥 그을음
+  ctx.fillStyle = `rgba(40, 30, 28, ${0.3 * Math.min(1, t * 6) * (1 - t * t)})`;
+  ctx.beginPath();
+  ctx.arc(e.x, e.y, R * 0.7 * ease, 0, Math.PI * 2);
+  ctx.fill();
+  // 피해 범위(충격파)
+  ctx.fillStyle = `rgba(255, 140, 40, ${0.22 * (1 - t)})`;
+  ctx.beginPath();
+  ctx.arc(e.x, e.y, R * ease, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = `rgba(255, 210, 100, ${0.85 * (1 - t)})`;
+  ctx.lineWidth = 5 * (1 - t) + 1;
+  ctx.beginPath();
+  ctx.arc(e.x, e.y, R * ease, 0, Math.PI * 2);
+  ctx.stroke();
+  // 불꽃 코어
+  const cr = Math.max(2, R * (0.2 + 0.6 * ease));
+  const cg = ctx.createRadialGradient(e.x, e.y, 1, e.x, e.y, cr);
+  cg.addColorStop(0, `rgba(255, 250, 215, ${1 - t * 0.6})`);
+  cg.addColorStop(0.5, `rgba(255, 160, 40, ${0.9 * (1 - t)})`);
+  cg.addColorStop(1, 'rgba(200, 50, 10, 0)');
+  ctx.fillStyle = cg;
+  ctx.beginPath();
+  ctx.arc(e.x, e.y, cr, 0, Math.PI * 2);
+  ctx.fill();
+  // 사방으로 튀는 불똥
+  ctx.fillStyle = `rgba(255, 200, 80, ${1 - t})`;
+  for (let i = 0; i < 12; i++) {
+    const a = prand(seed, i + 10) * Math.PI * 2;
+    const d = R * (0.35 + 0.65 * prand(seed, i + 40)) * ease;
+    ctx.beginPath();
+    ctx.arc(e.x + Math.cos(a) * d, e.y + Math.sin(a) * d, 2 + 4 * (1 - t) * prand(seed, i + 70), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
 function drawBulletShape(b) {
   if (b.boomerang) drawBoomerangGlow(b); // 부메랑 궁극기의 후광/꼬리를 먼저 깔고, 그 위에 원래 모양(피에로/표창)을 그림
   if (b.lob) { drawSlipperBullet(b); return; } // 나이의 실내화 (포물선 투척)
+  if (b.visual === 'rocket' || b.visual === 'miniRocket' || b.visual === 'bigRocket') { drawRocketBullet(b); return; } // 차차: 기본공격/궁극기 로켓
   if (b.visual === 'stone' || b.visual === 'stoneShard') { drawStoneBullet(b); return; } // 미지의 돌: 돌 / 갈라진 조각
   if (b.visual === 'bone') { // 보신의 뼈다귀: 날아가는 방향으로 길쭉한 뼈 (양 끝이 두 갈래로 볼록)
     const ang = Math.atan2(b.vy || 0, b.vx || 1);
@@ -12173,6 +12365,8 @@ function drawEffect(e) {
     drawGoldenBlast(e);
   } else if (e.type === 'leapLand' && e.visual === 'chefLand') {
     drawChefLand(e);
+  } else if (e.type === 'explosion' && e.visual === 'rocketExplosion') {
+    drawRocketExplosion(e);
   } else if (e.type === 'explosion' && e.visual === 'slipper') {
     drawSlipperExplosion(e);
   } else if (e.type === 'leapLand' && e.visual === 'shoot') {
