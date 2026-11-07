@@ -140,6 +140,7 @@ function halloweenBonusView() {
   return halloweenBonusActive() ? { min: HALLOWEEN_AI_BONUS.min, max: HALLOWEEN_AI_BONUS.max } : null;
 }
 function aiDifficultyOf(id) { return AI_DIFFICULTIES[id] || AI_DIFFICULTIES[AI_DEFAULT_DIFFICULTY]; }
+const TRAINING_DUMMY_HP = 100000; // 훈련장 허수아비 체력 (절반 아래로 떨어지면 자동으로 가득 채움. 쓰러지지 않음)
 const MATCH_CLEANUP_DELAY_MS = 600; // 승리 판정 후 마지막 상태를 한 번 더 보낸 뒤 방을 정리하기까지의 지연
 
 // ===== 개발자(관리자) 모드 =====
@@ -1181,13 +1182,13 @@ const CHARACTERS = {
     name: '차차',
     moveSpeedTier: 'normal', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
     maxHp: 6000, // 1레벨 기준 체력
-    ultimateChargePerHit: 8.5, // 로켓이 3개씩 나가서(근수니의 가시와 같은 구조) 기본값(17)의 50%로 설정
+    ultimateChargePerHit: 10.625, // 기본값(17)의 62.5% (기존 8.5에서 충전 속도 +25%)
     basic: {
       name: '로켓 발사',
       damage: 1250,        // 로켓 1개당 피해 (1레벨 기준)
-      speed: 640,          // px/초
+      speed: 480,          // px/초 (기존 640에서 감소)
       radius: 8,
-      lifetime: 0.85,      // 초 -> 사거리 ≈ 544px
+      lifetime: 1.133,     // 초 -> 사거리 ≈ 544px (탄속을 낮춘 만큼 늘려 사거리 유지)
       visual: 'rocket',
       pelletCount: 3,      // 한 번에 나가는 로켓 개수
       spreadDegrees: 60,   // 로켓이 퍼지는 전체 탄퍼짐 각도
@@ -1701,10 +1702,29 @@ function newGearShopSlots() { return Array.from({ length: GEAR_SHOP_SIZE }, () =
 function ownedGearsOf(u) {
   return ((u && u.gears) || []).filter((g) => g && typeof g.uid === 'string' && gearById(g.gearId)).map((g) => ({ uid: g.uid, gearId: g.gearId, charId: g.charId && CHARACTERS[g.charId] ? g.charId : null }));
 }
+// ===== 버피 =====
+// 캐릭터 전용 강화 아이템. 버피 상점에서 블링(✨)으로 무작위로 뽑고, 가지고만 있으면 그 캐릭터에 자동으로 적용된다.
+// 종류: basic(기본공격 버피) / gadget(가젯 버피) / hyper(하이퍼차지 버피). 캐릭터마다 종류별로 하나씩 있고, 같은 버피는 중복해서 뽑히지 않는다.
+const BUFFY_PRICE = 2000; // 버피 1개 뽑기 가격 (블링)
+const BUFFY_KIND_NAMES = { basic: '기본공격 버피', gadget: '가젯 버피', hyper: '하이퍼차지 버피' };
+const BUFFY_CATALOG = [
+  // 미남
+  { id: 'minam_basic', charId: 'minam', kind: 'basic', desc: '기본공격 투사체 크기 10% 증가', effect: { basicRadiusMult: 1.1 } },
+  { id: 'minam_gadget', charId: 'minam', kind: 'gadget', desc: '가젯 공격에 맞은 적의 이동속도가 1초 동안 30% 감소', effect: { gadgetSlowMult: 0.7, gadgetSlowSec: 1 } },
+  { id: 'minam_hyper', charId: 'minam', kind: 'hyper', desc: '하이퍼 차지 지속시간 2초 증가 + 하이퍼 차지 발동 중 궁극기 범위 10% 증가', effect: { hyperDurationBonusSec: 2, hyperUltRadiusMult: 1.1 } },
+].map((b) => ({ ...b, name: BUFFY_KIND_NAMES[b.kind] }));
+function buffyById(id) { return BUFFY_CATALOG.find((b) => b.id === id) || null; }
+function ownedBuffiesOf(u) { // 보유한 버피 id 목록 (카탈로그에 없는 값/중복은 무시)
+  return [...new Set(((u && Array.isArray(u.buffies)) ? u.buffies : []).filter((id) => typeof id === 'string' && buffyById(id)))];
+}
+function buffyCatalogPublic() {
+  return BUFFY_CATALOG.map((b) => ({ id: b.id, charId: b.charId, charName: CHARACTERS[b.charId] ? CHARACTERS[b.charId].name : b.charId, kind: b.kind, name: b.name, desc: b.desc }));
+}
+
 // 캐릭터에 장착된 기어들의 효과 합계 (최대 장착 수까지만 인정)
 function gearBonusOf(u, charId) {
   // reloadSpeed: 재장전 속도 증가율(덧셈) / fullHpTakenMult: 체력이 가득 찰 때 받는 피해 배율(곱셈, 1 = 효과 없음) / lowHpDamageBonus: 체력 50% 이하일 때 공격력 증가율(덧셈) / fullAmmoRangeBonus: 탄창이 가득(3개)일 때 사거리 증가율(덧셈)
-  const total = { reloadSpeed: 0, fullHpTakenMult: 1, lowHpDamageBonus: 0, fullAmmoRangeBonus: 0, healBonus: 0, startShield: 0, ultChargeBonus: 0, projectileSpeedBonus: 0, lowHpSpeedBonus: 0, chainDamageBonus: 0, damageTakenUltCharge: 0, gadgetCooldownSec: 0, bandageHeal: 0, ultStealthSec: 0, lifesteal: 0, hyperDurationBonusSec: 0, maxAmmoBonus: 0, moveSpeedMult: 1 };
+  const total = { reloadSpeed: 0, fullHpTakenMult: 1, lowHpDamageBonus: 0, fullAmmoRangeBonus: 0, healBonus: 0, startShield: 0, ultChargeBonus: 0, projectileSpeedBonus: 0, lowHpSpeedBonus: 0, chainDamageBonus: 0, damageTakenUltCharge: 0, gadgetCooldownSec: 0, bandageHeal: 0, ultStealthSec: 0, lifesteal: 0, hyperDurationBonusSec: 0, maxAmmoBonus: 0, moveSpeedMult: 1, buffyBasicRadiusMult: 1, buffyGadgetSlowMult: 1, buffyGadgetSlowSec: 0, buffyHyperUltRadiusMult: 1 };
   const seenGearIds = new Set(); // 같은 기어는 한 캐릭터에 한 번만 효과 적용 (이전 데이터의 중복 장착 대비)
   for (const g of ownedGearsOf(u).filter((x) => x.charId === charId).filter((x) => !seenGearIds.has(x.gearId) && seenGearIds.add(x.gearId)).slice(0, GEAR_MAX_PER_CHARACTER)) {
     if (!gearAllowedOn(g.gearId, charId)) continue; // 장착할 수 없는 캐릭터에 (잘못) 붙어 있어도 효과는 적용하지 않음
@@ -1727,6 +1747,16 @@ function gearBonusOf(u, charId) {
     total.hyperDurationBonusSec += eff.hyperDurationBonusSec || 0;
     if (eff.gadgetCooldownSec > 0) total.gadgetCooldownSec = total.gadgetCooldownSec > 0 ? Math.min(total.gadgetCooldownSec, eff.gadgetCooldownSec) : eff.gadgetCooldownSec;
     total.chainDamageBonus = Math.max(total.chainDamageBonus, eff.chainDamageBonus || 0); // 겹쳐서 커지지 않음
+  }
+  // 버피: 이 캐릭터의 전용 버피를 가지고 있으면 효과 적용
+  for (const id of ownedBuffiesOf(u)) {
+    const bf = buffyById(id);
+    if (!bf || bf.charId !== charId) continue;
+    const e = bf.effect || {};
+    if (e.basicRadiusMult) total.buffyBasicRadiusMult *= e.basicRadiusMult;
+    if (e.gadgetSlowMult) { total.buffyGadgetSlowMult = e.gadgetSlowMult; total.buffyGadgetSlowSec = e.gadgetSlowSec || 1; }
+    if (e.hyperDurationBonusSec) total.hyperDurationBonusSec += e.hyperDurationBonusSec;
+    if (e.hyperUltRadiusMult) total.buffyHyperUltRadiusMult *= e.hyperUltRadiusMult;
   }
   return total;
 }
@@ -2264,6 +2294,16 @@ function repeatMissionsView(u) {
 // id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
+  {
+    id: '2026-11-07-chacha-balance',
+    date: '2026-11-07',
+    tag: 'balance',
+    title: '[차차] 밸런스 조정',
+    items: [
+      '기본공격 [로켓 발사] 탄속 감소: 640 → 480 (사거리는 그대로)',
+      '궁극기 충전 속도 25% 증가',
+    ],
+  },
   {
     id: '2026-11-07-chacha',
     date: '2026-11-07',
@@ -2969,7 +3009,7 @@ function publicProfile(u) {
   const equippedSkins = {};
   for (const id in CHARACTERS) { const sk = equippedSkinOf(u, id); if (sk) equippedSkins[id] = sk; }
   return { username: u.name, coins: u.coins, gems: u.gems || 0, bling: u.bling || 0, gemResetCost: GEM_SHOP_RESET_COST, wins: u.wins || 0, losses: u.losses || 0, unlocked: effectiveUnlocked(u), prices: allPrices(),
-    skinCatalog: skinCatalogPublic(), skins: ownedSkinsOf(u), equippedSkins, hypers: ownedHypersOf(u), gears: ownedGearsOf(u), gearShop: gearShopView(u), gearCatalog: GEAR_CATALOG.map((g) => ({ id: g.id, name: g.name, rarity: g.rarity, desc: g.desc, excludeChars: Object.keys(CHARACTERS).filter((cid) => !gearAllowedOn(g.id, cid)) })), gearRarities: Object.values(GEAR_RARITIES), gearMax: GEAR_MAX_PER_CHARACTER, gearSellRatio: GEAR_SELL_RATIO, hyperPrice: HYPER_PRICE, hyperRequiredLevel: HYPER_REQUIRED_LEVEL, trophyRoad: trophyRoadView(u), trophyRoadPlus: trophyRoadPlusView(u), rankedRoad: rankedRoadView(u), trophies, streaks, missions: missionsView(u), repeatMissions: repeatMissionsView(u), ranks: TROPHY_RANKS, characters: buildCharacterInfo(levels), levels, levelTable: LEVEL_TABLE_PUBLIC, maxLevel: MAX_CHARACTER_LEVEL, isAdmin: u.key === ADMIN_KEY, announcements: allAnnouncements(), dailyDraw: dailyDrawView(u), boss: bossView(u),
+    skinCatalog: skinCatalogPublic(), skins: ownedSkinsOf(u), equippedSkins, hypers: ownedHypersOf(u), gears: ownedGearsOf(u), gearShop: gearShopView(u), gearCatalog: GEAR_CATALOG.map((g) => ({ id: g.id, name: g.name, rarity: g.rarity, desc: g.desc, excludeChars: Object.keys(CHARACTERS).filter((cid) => !gearAllowedOn(g.id, cid)) })), gearRarities: Object.values(GEAR_RARITIES), gearMax: GEAR_MAX_PER_CHARACTER, gearSellRatio: GEAR_SELL_RATIO, hyperPrice: HYPER_PRICE, hyperRequiredLevel: HYPER_REQUIRED_LEVEL, buffies: ownedBuffiesOf(u), buffyCatalog: buffyCatalogPublic(), buffyPrice: BUFFY_PRICE, trophyRoad: trophyRoadView(u), trophyRoadPlus: trophyRoadPlusView(u), rankedRoad: rankedRoadView(u), trophies, streaks, missions: missionsView(u), repeatMissions: repeatMissionsView(u), ranks: TROPHY_RANKS, characters: buildCharacterInfo(levels), levels, levelTable: LEVEL_TABLE_PUBLIC, maxLevel: MAX_CHARACTER_LEVEL, isAdmin: u.key === ADMIN_KEY, announcements: allAnnouncements(), dailyDraw: dailyDrawView(u), boss: bossView(u),
     aiBonusEvent: halloweenBonusView(),
     gemExchange: GEM_EXCHANGE,
     rankedEligibility: rankedEligibility(u),
@@ -2985,7 +3025,7 @@ const USERS_FILE = process.env.USERS_FILE || path.join(os.tmpdir(), 'brawl-users
 const ANNOUNCE_FILE = process.env.ANNOUNCE_FILE || path.join(os.tmpdir(), 'brawl-announcements.json'); // 개발자 모드로 올린 공지 (MongoDB를 쓰면 DB에 저장됨)
 
 function cloneUser(u) {
-  return u ? { ...u, unlocked: [...(u.unlocked || [])], skins: [...(u.skins || [])], hypers: [...(u.hypers || [])], gears: (u.gears || []).map((g) => ({ ...g })), gearShop: [...(u.gearShop || [])], equippedSkins: { ...(u.equippedSkins || {}) }, trophies: { ...(u.trophies || {}) }, streaks: { ...(u.streaks || {}) }, levels: { ...(u.levels || {}) }, redeemed: [...(u.redeemed || [])], missions: u.missions ? { day: u.missions.day, progress: { ...(u.missions.progress || {}) }, claimed: [...(u.missions.claimed || [])] } : undefined, repeatMissions: u.repeatMissions ? JSON.parse(JSON.stringify(u.repeatMissions)) : undefined, dailyDraw: u.dailyDraw ? { ...u.dailyDraw } : undefined } : null;
+  return u ? { ...u, unlocked: [...(u.unlocked || [])], skins: [...(u.skins || [])], hypers: [...(u.hypers || [])], buffies: [...(u.buffies || [])], gears: (u.gears || []).map((g) => ({ ...g })), gearShop: [...(u.gearShop || [])], equippedSkins: { ...(u.equippedSkins || {}) }, trophies: { ...(u.trophies || {}) }, streaks: { ...(u.streaks || {}) }, levels: { ...(u.levels || {}) }, redeemed: [...(u.redeemed || [])], missions: u.missions ? { day: u.missions.day, progress: { ...(u.missions.progress || {}) }, claimed: [...(u.missions.claimed || [])] } : undefined, repeatMissions: u.repeatMissions ? JSON.parse(JSON.stringify(u.repeatMissions)) : undefined, dailyDraw: u.dailyDraw ? { ...u.dailyDraw } : undefined } : null;
 }
 
 function createFileDb() {
@@ -3215,6 +3255,18 @@ function createFileDb() {
       u.gems = (u.gems || 0) + gems;
       scheduleSave();
       return cloneUser(u);
+    },
+    // 버피 뽑기: 블링을 내고 버피 1개를 얻음 (이미 가진 버피면 실패)
+    async buyBuffy(key, buffyId, price) {
+      const u = users[key];
+      if (!u) return { ok: false, reason: 'noUser' };
+      u.buffies = u.buffies || [];
+      if (u.buffies.includes(buffyId)) return { ok: false, reason: 'already', user: cloneUser(u) };
+      if ((u.bling || 0) < price) return { ok: false, reason: 'bling', user: cloneUser(u) };
+      u.bling -= price;
+      u.buffies.push(buffyId);
+      scheduleSave();
+      return { ok: true, user: cloneUser(u) };
     },
     // 블링(✨) 지급 (보스전 보상). 블링은 코인/보석과 별개의 재화
     async addBling(key, bling) {
@@ -3633,6 +3685,19 @@ function createMongoDb(uri) {
     },
     async addGems(key, gems) {
       return col.findOneAndUpdate({ key }, { $inc: { gems } }, { returnDocument: 'after', projection });
+    },
+    async buyBuffy(key, buffyId, price) {
+      // 블링이 충분하고 아직 없는 버피일 때만 한 번의 원자적 연산으로 차감 + 지급
+      const updated = await col.findOneAndUpdate(
+        { key, bling: { $gte: price }, buffies: { $ne: buffyId } },
+        { $inc: { bling: -price }, $push: { buffies: buffyId } },
+        { returnDocument: 'after', projection }
+      );
+      if (updated) return { ok: true, user: updated };
+      const user = await col.findOne({ key }, { projection });
+      if (!user) return { ok: false, reason: 'noUser' };
+      if ((user.buffies || []).includes(buffyId)) return { ok: false, reason: 'already', user };
+      return { ok: false, reason: 'bling', user };
     },
     async addBling(key, bling) {
       return col.findOneAndUpdate({ key }, { $inc: { bling } }, { returnDocument: 'after', projection });
@@ -4473,6 +4538,30 @@ function registerAuthHandlers(socket) {
       ack({ ok: false, message, profile: r.user ? publicProfile(r.user) : undefined });
     } catch (e) {
       console.error('buyHyper 오류', e);
+      ack({ ok: false, message: '서버 오류가 발생했습니다.' });
+    }
+  });
+
+  // 버피 뽑기: 블링 BUFFY_PRICE 를 내고, 아직 없는 버피 중 하나를 무작위로 얻는다
+  socket.on('drawBuffy', async (data, ack) => {
+    if (typeof ack !== 'function') return;
+    try {
+      const key = socket.data.userKey;
+      if (!key) return ack({ ok: false, message: '로그인이 필요합니다.' });
+      if (socketToMatch[socket.id] || isQueued(socket.id)) return ack({ ok: false, message: '매치 중이거나 대기 중에는 뽑을 수 없습니다.' });
+      const u = await db.findUser(key);
+      if (!u) return ack({ ok: false, message: '계정 정보를 찾을 수 없습니다.' });
+      const owned = new Set(ownedBuffiesOf(u));
+      const pool = BUFFY_CATALOG.filter((b) => !owned.has(b.id));
+      if (!pool.length) return ack({ ok: false, message: '모든 버피를 이미 모았어요!', profile: publicProfile(u) });
+      if ((u.bling || 0) < BUFFY_PRICE) return ack({ ok: false, message: `블링이 부족합니다. (필요: ✨ ${BUFFY_PRICE.toLocaleString()})`, profile: publicProfile(u) });
+      const pick = pool[Math.floor(Math.random() * pool.length)];
+      const r = await db.buyBuffy(key, pick.id, BUFFY_PRICE);
+      if (r.ok) return ack({ ok: true, buffyId: pick.id, message: `${CHARACTERS[pick.charId].name}의 ${pick.name}를 뽑았어요!`, profile: publicProfile(r.user) });
+      const message = r.reason === 'bling' ? `블링이 부족합니다. (필요: ✨ ${BUFFY_PRICE.toLocaleString()})` : r.reason === 'already' ? '이미 가진 버피가 나왔어요. 다시 뽑아 주세요.' : '버피를 뽑지 못했습니다.';
+      ack({ ok: false, message, profile: r.user ? publicProfile(r.user) : undefined });
+    } catch (e) {
+      console.error('drawBuffy 오류', e);
       ack({ ok: false, message: '서버 오류가 발생했습니다.' });
     }
   });
@@ -5432,6 +5521,10 @@ function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hy
     gearGadgetCooldown: (gear && gear.gadgetCooldownSec) || 0,    // 장착한 기어(빠른 가젯): 가젯 재사용 대기시간(초). 0이면 기본값
     gadgetCooldownTotal: GADGET_COOLDOWN_SEC, // 이번 가젯 쿨다운의 전체 길이(초) - 클라이언트 버튼 표시용
     gearLifesteal: (gear && gear.lifesteal) || 0, // 장착한 기어(흡수): 적에게 준 직접 피해 중 체력으로 회복하는 비율 (0.25 = 25%)
+    buffyBasicRadiusMult: (gear && gear.buffyBasicRadiusMult) || 1,       // 버피(기본공격): 기본공격 투사체 크기 배율
+    buffyGadgetSlowMult: (gear && gear.buffyGadgetSlowMult) || 1,         // 버피(가젯): 가젯에 맞은 적의 이동속도 배율 (1 = 효과 없음)
+    buffyGadgetSlowSec: (gear && gear.buffyGadgetSlowSec) || 0,           // 버피(가젯): 감속 지속시간(초)
+    buffyHyperUltRadiusMult: (gear && gear.buffyHyperUltRadiusMult) || 1, // 버피(하이퍼차지): 하이퍼 차지 발동 중 궁극기 범위 배율
     gearHyperDurationBonus: (gear && gear.hyperDurationBonusSec) || 0, // 장착한 기어(하이퍼 연장): 하이퍼 차지 지속시간 증가(초)
     hyperDurationTotal: 0, // 이번(또는 마지막) 하이퍼 차지의 전체 지속시간(초, 기어 증가 포함) - 클라이언트 남은 시간 표시용
     gearBandageHeal: (gear && gear.bandageHeal) || 0, // 장착한 기어(붕대): 체력이 20% 이하가 될 때 즉시 회복하는 양
@@ -5686,6 +5779,10 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter, chain, n
     chargeGauges(shooter, chargeScale == null ? 1 : chargeScale);
   }
 
+  if (target.hp <= 0 && match.training && target.isDummy) { // 훈련장 허수아비: 쓰러지지 않고 체력이 다시 가득 참
+    target.hp = target.maxHp;
+    return;
+  }
   if (target.hp <= 0) {
     target.hp = 0;
     target.alive = false;
@@ -5763,6 +5860,7 @@ function respawnPlayer(m, respawned, invincibleMs) {
   respawned.shieldHp = 0;        // 리스폰 시 보호막도 초기화
   respawned.shieldMax = 0;
   respawned.reloadBoostUntil = 0;
+  respawned.slowUntil = 0; // 버피 감속도 초기화
   respawned.speedBoostUntil = 0; // 리스폰 시 가젯 효과(이동속도 증가/충전/공격력 증가)도 초기화
   respawned.chargingUntil = 0;
   respawned.damageBoostFrom = 0;
@@ -6163,7 +6261,9 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
   const bulletLife = (spec.lifetime * hyperRange) / gearProjSpeed;
   // 하이퍼 차지 발동 중 시스템의 궁극기: 공격 범위(소용돌이 크기) 증가 + 띄운 적이 떨어질 때 기절
   const hyperUltOn = isUltimate && p.hasHyper && p.hyper && p.hyperUntil && Date.now() < p.hyperUntil;
-  const hyperUltRadius = hyperUltOn && p.hyper.ultimateRadiusMultiplier ? p.hyper.ultimateRadiusMultiplier : 1;
+  const hyperUltRadius = (hyperUltOn && p.hyper.ultimateRadiusMultiplier ? p.hyper.ultimateRadiusMultiplier : 1) * (hyperUltOn && p.buffyHyperUltRadiusMult ? p.buffyHyperUltRadiusMult : 1); // 버피(하이퍼차지): 발동 중 궁극기 범위 증가
+  const isGadgetShot = !isUltimate && p.gadget === spec;
+  const buffyBasicRadius = !isUltimate && !isGadgetShot && p.buffyBasicRadiusMult ? p.buffyBasicRadiusMult : 1; // 버피(기본공격): 기본공격 투사체 크기 증가
   const hyperUltLandStun = hyperUltOn && p.hyper.ultimateLandStun ? p.hyper.ultimateLandStun : 0;
   // 하이퍼 차지 발동 중 꽈리의 궁극기: 고추가 벽/맵 끝에 튕기며 bounceTime초 동안 날아다니다 사라짐 (수명 = bounceTime)
   const bounceTime = hyperUltOn && p.hyper.ultimateBounceTime ? p.hyper.ultimateBounceTime : 0;
@@ -6205,7 +6305,8 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
       closeRange: spec.closeRange || null, // 가까운 거리에서 맞으면 피해 감소 (근수니의 가시)
       executeBelowHp: spec.executeBelowHp || 0, // 0보다 크면 맞은 대상의 현재 체력이 이 값 이하일 때 즉사 (진우Park의 하트)
       currentHpRatio: spec.currentHpRatio || 0, // 0보다 크면 고정 피해 대신 대상 현재 체력(+보호막)의 비율만큼 피해 (진우Park의 하트)
-      radius: spec.radius * hyperUltRadius, // 하이퍼 차지 발동 중 궁극기(시스템)는 크기가 커짐
+      radius: spec.radius * hyperUltRadius * buffyBasicRadius, // 하이퍼 차지 발동 중 궁극기(시스템)는 크기가 커짐 / 버피(기본공격)는 기본공격 투사체가 커짐
+      slowOnHit: isGadgetShot && p.buffyGadgetSlowMult < 1 ? { mult: p.buffyGadgetSlowMult, sec: p.buffyGadgetSlowSec || 1 } : null, // 버피(가젯): 맞은 적을 잠깐 느리게 함
       isUltimate,
       chain: !isUltimate && p.gadget !== spec && !!p.gearChainOn, // 파죽지세: 이 발사체가 '1초 안에 이어진 기본공격'에서 나왔는지 (궁극기/가젯 제외)
       visual: skinVisual(p, spec.visual), // 스킨이 있으면 발사체 모양만 바뀜 (피해/속도/사거리는 spec 그대로)
@@ -6666,6 +6767,13 @@ function startMatch(mode, entries, opts = {}) {
     match.aiBots = {};     // botSocketId -> AI 상태
   }
   if (opts.boss) setupBossMatch(match, opts.boss); // 보스전: 혼자 보스와 싸움 (투표/문/보석 없음)
+  if (opts.training) { // 훈련장: 혼자 허수아비와 연습. 투표/승패/정산 없음 (직접 나가기 전에는 끝나지 않음)
+    match.training = true;
+    match.settled = true;       // 트로피/코인/전적/미션 기록 안 함
+    match.voteOpen = false;
+    match.winScore = 1e9;       // 킬 수로 매치가 끝나지 않게 함
+    match.startsAt = Date.now() + MATCH_COUNTDOWN_MS;
+  }
   if (opts.ranked) match.ranked = true; // 경쟁전: 일반 1:1 정산에 더해 경쟁전 점수도 정산 (settleRankedMatch)
   matches[matchId] = match;
 
@@ -6680,10 +6788,25 @@ function startMatch(mode, entries, opts = {}) {
     match.accounts[e.socket.id] = e.userKey;
     if (e.isBot) {
       match.players[e.socket.id].isBot = true; // 클라이언트가 AI 상대의 탄창을 머리 위에 표시하는 데 사용
-      registerGameplayHandlers(e.socket); // 봇의 가짜 소켓에도 사람과 같은 입력 핸들러를 등록
-      match.aiBots[e.socket.id] = createAiState(e.socket, match.aiDifficulty);
+      if (opts.training) {
+        match.players[e.socket.id].isDummy = true; // 훈련장 허수아비: 움직이지도 공격하지도 않음 (AI 상태/입력 핸들러를 만들지 않음)
+      } else {
+        registerGameplayHandlers(e.socket); // 봇의 가짜 소켓에도 사람과 같은 입력 핸들러를 등록
+        match.aiBots[e.socket.id] = createAiState(e.socket, match.aiDifficulty);
+      }
     }
   });
+
+  if (opts.training) { // 허수아비: 체력을 크게 키우고 맵 가운데 근처에 세움
+    const dummy = Object.values(match.players).find((p) => p.isDummy);
+    if (dummy) {
+      dummy.maxHp = TRAINING_DUMMY_HP;
+      dummy.hp = TRAINING_DUMMY_HP;
+      const sp = findFreeSpot(match.walls, ARENA_WIDTH / 2, ARENA_HEIGHT / 2, PLAYER_RADIUS + 10);
+      dummy.x = sp.x;
+      dummy.y = sp.y;
+    }
+  }
 
   if (opts.boss) { for (const pid in match.players) match.players[pid].lives = BOSS_LIVES; match.bossLives = BOSS_LIVES; } // 목숨 3개
 
@@ -6721,6 +6844,7 @@ function startMatch(mode, entries, opts = {}) {
       boss: opts.boss ? bossPublicInfo(opts.boss) : null, // 보스전 정보 (이름/체력/점프 범위 등)
       lives: opts.boss ? BOSS_LIVES : 0,
       ai: !!opts.ai, // AI 연습 대결 여부
+      training: !!opts.training, // 훈련장 여부
       ranked: !!opts.ranked, // 경쟁전 여부
       aiDifficulty: opts.ai ? aiDifficultyOf(opts.aiDifficulty) : null, // { id, name, coinReward, trophyReward }
       gameMode: match.gameMode,
@@ -7156,6 +7280,64 @@ io.on('connection', (socket) => {
     socket.emit('profileUpdate', publicProfile(claim.user)); // 메인 화면에 '오늘 도전 완료'/보석 차감 반영
     console.log(`[보스전] ${socket.data.displayName} 도전 시작 (${bossOfDay(day).name})${paid ? ` - 보석 ${BOSS_EXTRA_GEM_COST}개 사용` : ''}`);
     startBossMatch(socket, requestedId, userKey, level, trophies, skin, hyper, gear);
+  });
+
+  // 훈련장: 혼자 허수아비와 연습 (대기열 없이 바로 시작, 보상/기록 없음)
+  socket.on('findTrainingMatch', async (data) => {
+    if (socketToMatch[socket.id]) return;
+    if (isQueued(socket.id)) return;
+    if (!socket.data.userKey) { socket.emit('findMatchError', { message: '로그인이 필요합니다.' }); return; }
+    if (serverPause.on) { socket.emit('findMatchError', { message: serverPause.message }); return; }
+    const requestedId = data && data.characterId;
+    if (!CHARACTERS[requestedId] || !socket.data.unlocked.has(requestedId)) {
+      socket.emit('findMatchError', { message: '잠금해제되지 않은 캐릭터입니다.' });
+      return;
+    }
+    const userKey = socket.data.userKey;
+    let level = 1; let trophies = 0; let skin = null; let hyper = false; let gear = null;
+    try {
+      const u = await db.findUser(userKey);
+      trophies = (u && u.trophies && u.trophies[requestedId]) || 0;
+      level = levelOf(u, requestedId);
+      skin = equippedSkinOf(u, requestedId);
+      hyper = hasHyper(u, requestedId);
+      gear = gearBonusOf(u, requestedId);
+    } catch (e) {
+      console.error('훈련장 캐릭터 조회 실패', userKey, e);
+    }
+    if (!socket.connected || socket.data.userKey !== userKey) return;
+    if (socketToMatch[socket.id] || isQueued(socket.id)) return;
+    if (serverPause.on) { socket.emit('findMatchError', { message: serverPause.message }); return; }
+    startTrainingMatch(socket, requestedId, userKey, level, trophies, skin, hyper, gear);
+  });
+
+  // 훈련장: 체력/탄창/궁극기/하이퍼 차지/가젯 쿨다운을 한 번에 채움
+  let lastRefillAt = 0;
+  socket.on('trainingRefill', () => {
+    const match = matches[socketToMatch[socket.id]];
+    if (!match || !match.training || match.over) return;
+    const p = match.players[socket.id];
+    if (!p || p.isDummy) return;
+    const now = Date.now();
+    if (now - lastRefillAt < 300) return;
+    lastRefillAt = now;
+    p.alive = true;
+    p.hp = p.maxHp;
+    p.ammo = p.maxAmmo;
+    p.ammoRegenElapsed = 0;
+    p.ultimateCharge = 100;
+    if (p.hasHyper) p.hyperCharge = 100;
+    p.gadgetCooldownLeft = 0;
+  });
+
+  // 훈련장: 직접 나가기 (일반 매치와 달리 끝나는 조건이 없으므로 필요)
+  socket.on('leaveTraining', () => {
+    const matchId = socketToMatch[socket.id];
+    const match = matchId && matches[matchId];
+    if (!match || !match.training || match.over) return;
+    match.over = true;
+    io.to(matchId).emit('matchOver', { reason: 'trainingEnd', winnerTeam: null, teamScore: match.teamScore, coinReward: 0, training: true });
+    setTimeout(() => endMatch(matchId), MATCH_CLEANUP_DELAY_MS);
   });
 
   registerGameplayHandlers(socket); // 이동/공격/충전/가젯/궁극기 입력 처리 (AI 봇도 같은 함수를 써서 사람과 똑같은 규칙으로 행동함)
@@ -8606,6 +8788,10 @@ function updateMatch(match, dt, now) {
         } else {
           // 기본 공격만 궁극기 게이지를 충전시킴
           applyDamage(match, target, bulletDamageFor(b, target), b.ownerId, { chargeShooter: !b.isUltimate, chain: b.chain, chargeScale: b.chargeScale }); // 미지의 돌의 조각은 chargeScale 만큼만 게이지 충전
+          if (b.slowOnHit && target.alive && !(target.invincibleUntil && Date.now() < target.invincibleUntil)) { // 버피(가젯): 맞은 적의 이동속도를 잠깐 낮춤 (매 틱 계산에서 적용)
+            target.slowMult = b.slowOnHit.mult;
+            target.slowUntil = Date.now() + b.slowOnHit.sec * 1000;
+          }
           // 넉백(여똥이의 프링글스): 총알이 날아온 방향으로 밀쳐냄 (무적이거나 이미 죽었으면 밀리지 않음). 실제 이동은 넉백 처리 루프가 수행
           if (b.knockback > 0 && target.alive && !(target.invincibleUntil && Date.now() < target.invincibleUntil)) {
             const bs = Math.hypot(b.vx, b.vy) || 1;
@@ -8834,6 +9020,7 @@ function updateMatch(match, dt, now) {
   for (const pid in match.players) {
     const p = match.players[pid];
     if (p.speedBoostUntil && now < p.speedBoostUntil) p.speedMultiplier *= p.speedBoostMultiplier || 1;
+    if (p.slowUntil && now < p.slowUntil) p.speedMultiplier *= p.slowMult || 1; // 버피(가젯) 감속
     if (p.gearMoveSpeedMult && p.gearMoveSpeedMult !== 1) p.speedMultiplier *= p.gearMoveSpeedMult; // 기어 '큰 탄창': 이동속도 감소
     if (p.moveSpeedTierMult && p.moveSpeedTierMult !== 1) p.speedMultiplier *= p.moveSpeedTierMult; // 캐릭터 이동속도 단계 (느림/보통/빠름)
     // 기어: 체력이 30% 이하이면 이동속도 증가
@@ -8958,7 +9145,7 @@ function buildVisiblePlayers(match, viewerId) {
   const result = {};
   for (const pid in match.players) {
     const p = match.players[pid];
-    if (!viewer || pid === viewerId || p.team === viewer.team) {
+    if (!viewer || pid === viewerId || p.team === viewer.team || p.isDummy) { // 훈련장 허수아비는 덤불 안에 있어도 항상 보임
       result[pid] = p;
       continue;
     }
@@ -9750,6 +9937,18 @@ function startAiMatch(socket, characterId, userKey, level, trophies, skin, hyper
   startMatch('1v1', entries, { ai: true, aiDifficulty: diff.id });
 }
 
+// ===== 훈련장 =====
+// 혼자 허수아비(안 움직이고 안 때리는 상대)를 치면서 연습하는 모드. 트로피/코인/전적/미션은 기록하지 않고, 나가기 전에는 끝나지 않는다.
+function startTrainingMatch(socket, characterId, userKey, level, trophies, skin, hyper, gear) {
+  aiBotCounter += 1;
+  const botSocket = createBotSocket(`train_${aiBotCounter}`);
+  const entries = [
+    { socket, name: socket.data.displayName, characterId, userKey, trophies: trophies || 0, level, skin: skin || null, hyper: !!hyper, gear: gear || null },
+    { socket: botSocket, name: '🎯 허수아비', characterId, userKey: null, trophies: 0, level: 1, isBot: true, hyper: false, gear: null },
+  ];
+  startMatch('1v1', entries, { training: true });
+}
+
 // ===== 보스전 =====
 // 보스는 '닭'과 같은 구조물(match.chickens 에 boss:true 로 들어감)이라서, 기존의 모든 공격(총알/근접/폭발/웅덩이 등)이 그대로 보스에게 통한다.
 function findFreeSpot(walls, x, y, r) { // 벽에 겹치지 않는 가장 가까운 자리 (큰 보스가 벽에 끼지 않게)
@@ -9969,6 +10168,15 @@ function startBossMatch(socket, characterId, userKey, level, trophies, skin, hyp
 // 진행 중인 모든 매치를 독립적으로 갱신하고, 각 매치의 상태는 그 매치에 속한 플레이어들에게만 전송한다
 // (덤불/은신 은닉을 위해 방 전체 브로드캐스트 대신 플레이어별로 필터링해서 개별 전송한다.
 // Socket.io는 각 소켓을 자신의 id와 같은 이름의 방에 기본으로 넣어주므로 io.to(pid)로 특정 플레이어에게만 보낼 수 있다.)
+function updateTraining(match) {
+  for (const pid in match.players) {
+    const p = match.players[pid];
+    if (!p.isDummy) continue;
+    if (!p.alive) p.alive = true;
+    if (p.hp < p.maxHp * 0.5) p.hp = p.maxHp; // 체력이 절반 아래로 떨어지면 가득 채움 (큰 피해를 연습해도 계속 맞을 수 있게)
+  }
+}
+
 function gameLoop() {
   const dt = TICK_MS / 1000;
   const now = Date.now();
@@ -9980,6 +10188,7 @@ function gameLoop() {
     if (match.aiBots) updateAiBots(match, dt, now); // AI 연습 대결의 봇 행동
     updateMatch(match, dt, now);
     if (match.boss) updateBoss(match, dt, now); // 보스전: 보스 행동 패턴
+    if (match.training) updateTraining(match); // 훈련장: 허수아비 체력 보충
     checkGates(match); // 문지기 모드: 문이 부서졌는지 확인
     updateGemGrab(match, now); // 쨍그랩 모드: 보석 생성/획득/승리 판정
     if (!match.over) flushGems(match);
