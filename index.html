@@ -2315,7 +2315,7 @@ function renderBossCard() {
   const desc = card.querySelector('.mode-desc');
   const b = currentProfile && currentProfile.boss;
   if (!b) { desc.textContent = '혼자서 오늘의 보스에 도전! 목숨 3개 · 하루 1번 무료 (이후 💎 10개로 추가 도전)'; card.classList.remove('boss-used'); return; }
-  desc.innerHTML = `오늘의 보스: ${escapeHtml(b.emoji || '👹')} <b>${escapeHtml(b.name)}</b> (체력 ${Number(b.hp).toLocaleString()})<br>혼자서 도전 · 목숨 ${b.lives}개 · 하루 1번 무료<br>쓰러뜨리면 ✨ ${Number(b.rewardBling || 0).toLocaleString()} 블링${b.used ? `<br><b>✅ 오늘 무료 도전 완료 · 💎 ${b.extraGemCost || 10}개로 다시 도전!</b>` : ''}`;
+  desc.innerHTML = `오늘의 보스: ${escapeHtml(b.emoji || '👹')} <b>${escapeHtml(b.name)}</b> (체력 ${Number(b.hp).toLocaleString()})<br>혼자서 도전 · 목숨 ${b.lives}개 · 하루 1번<br>쓰러뜨리면 ✨ ${Number(b.rewardBling || 0).toLocaleString()} 블링${b.used ? `<br><b>✅ 오늘 도전 완료 · 내일 다시 도전할 수 있어요!</b>` : ''}`;
   card.classList.toggle('boss-used', !!b.used);
 }
 
@@ -2363,7 +2363,7 @@ function renderEventCards() {
         <span class="event-tag">${e.claimed ? '수령 완료' : 'EVENT'}</span>
       </div>
       <p class="event-desc">${escapeHtml(e.desc || '')}${e.endsAt ? `<br>~ ${new Date(e.endsAt).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric' })}까지` : ''}</p>
-      <button class="btn" data-event-id="${escapeHtml(e.id)}" ${e.claimed ? 'disabled' : ''}>${e.claimed ? '✅ 받았어요' : `${[e.coins ? `🪙 ${Number(e.coins).toLocaleString()} 코인` : '', e.gems ? `💎 ${Number(e.gems).toLocaleString()} 보석` : ''].filter(Boolean).join(' + ')} 받기`}</button>
+      <button class="btn" data-event-id="${escapeHtml(e.id)}" ${e.claimed ? 'disabled' : ''}>${e.claimed ? '✅ 받았어요' : `${[e.coins ? `🪙 ${Number(e.coins).toLocaleString()} 코인` : '', e.gems ? `💎 ${Number(e.gems).toLocaleString()} 보석` : '', e.bling ? `✨ ${Number(e.bling).toLocaleString()} 블링` : ''].filter(Boolean).join(' + ')} 받기`}</button>
     </div>`).join('');
   box.querySelectorAll('button[data-event-id]').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -4039,16 +4039,9 @@ document.querySelectorAll('.mode-card').forEach((card) => {
     if (serverPauseInfo.on) { alert(serverPauseInfo.message || '서버 점검 중입니다. 잠시 후 다시 시도해주세요.'); return; }
     selectedMode = card.getAttribute('data-mode');
     if (selectedMode === 'ai') selectedAiDifficulty = 'hard';
-    bossUseGems = false;
-    if (selectedMode === 'boss') { // 오늘 무료 도전을 이미 썼으면 보석으로 추가 도전할지 물어봄 (최종 확인/차감은 서버가 함)
+    if (selectedMode === 'boss') { // 보스전은 하루 1번만 도전 가능 (최종 확인은 서버가 함)
       const bi = currentProfile && currentProfile.boss;
-      if (bi && bi.used) {
-        const cost = bi.extraGemCost || 10;
-        const have = (currentProfile && currentProfile.gems) || 0;
-        if (have < cost) { alert(`오늘의 무료 보스전은 이미 도전했어요!\n추가 도전에는 💎 보석 ${cost}개가 필요해요. (보유: 💎 ${have}개)`); return; }
-        if (!confirm(`💎 보석 ${cost}개를 내고 보스전에 한 번 더 도전할까요?\n(보유: 💎 ${have}개)`)) return;
-        bossUseGems = true;
-      }
+      if (bi && bi.used) { alert('오늘의 보스전은 이미 도전했어요!\n내일 다시 도전할 수 있어요.'); return; }
     }
     if (selectedMode === 'ranked') { // 경쟁전: 캐릭터는 매칭된 뒤 선택 단계에서 고르므로 바로 대기열로
       const el = currentProfile && currentProfile.rankedEligibility; // 참가 조건 (최종 확인은 서버가 함)
@@ -4290,7 +4283,6 @@ const gemSeen = {};     // 보석 id -> 처음 본 시각 (튀어나오는 연�
 let prevMyGems = 0;     // 내 보석 수가 늘었을 때 효과음을 내기 위한 기록
 let matchIsAi = false;  // AI 대결 여부. matchFound에서 갱신됨
 let matchIsTraining = false; // 훈련장 여부. matchFound에서 갱신됨 (훈련장은 직접 '나가기'를 눌러야 끝남)
-let bossUseGems = false; // 보스전: 무료 도전을 이미 써서 보석 10개로 추가 도전하려는 경우 true
 let matchBossInfo = null; // 보스전 정보 { name, emoji, hp, jumpRadius, ... } (보스전이 아니면 null)
 let matchLives = 0;        // 보스전 시작 목숨 수
 let matchAiInfo = null; // AI 대결 난이도 정보 { id, name, coinReward, trophyReward }. matchFound에서 갱신됨
@@ -4308,7 +4300,7 @@ function requestMatch() {
     selectedMode === 'ranked' ? '🏆 경쟁전 상대를 찾는 중입니다...' : selectedMode === 'ai' ? 'AI 상대를 준비하는 중입니다...' : selectedMode === 'training' ? '🎯 훈련장을 준비하는 중입니다...' : selectedMode === 'boss' ? '👹 보스를 불러오는 중입니다...' : selectedMode === '3v3' ? '3:3 상대를 찾는 중입니다...' : selectedMode === '2v2' ? '2:2 상대를 찾는 중입니다...' : '1:1 상대를 찾는 중입니다...';
   document.getElementById('matchingOverlay').classList.add('open');
   if (selectedMode === 'ranked') socket.emit('findRankedMatch'); // 점수는 서버 저장소 기준, 캐릭터는 매칭 후 선택
-  else if (selectedMode === 'boss') socket.emit('findBossMatch', { characterId: selectedCharacterId, useGems: bossUseGems }); // 보스전: 하루 첫 도전은 무료, 이후엔 보석 10개 (useGems 는 동의했을 때만 true, 차감은 서버가 함)
+  else if (selectedMode === 'boss') socket.emit('findBossMatch', { characterId: selectedCharacterId }); // 보스전: 하루 1번만 도전 가능 (서버가 확인)
   else if (selectedMode === 'training') socket.emit('findTrainingMatch', { characterId: selectedCharacterId }); // 훈련장: 대기열 없이 바로 시작, 보상/기록 없음
   else if (selectedMode === 'ai') socket.emit('findAiMatch', { characterId: selectedCharacterId, difficulty: selectedAiDifficulty }); // AI 대결: 대기열 없이 바로 시작. 이기면 난이도별 코인 + 고정 트로피
   else socket.emit('findMatch', { name: myName, characterId: selectedCharacterId, mode: selectedMode });
@@ -4704,7 +4696,7 @@ socket.on('matchOver', (data) => {
   if (data.boss) {
     titleEl.textContent = iWon ? '🎉 보스 격파!' : '💀 패배...';
     titleEl.classList.add(iWon ? 'win' : 'lose');
-    descEl.textContent = iWon ? `👹 ${data.bossName || '보스'}를 쓰러뜨렸어요!` : `목숨을 모두 잃었어요... 👹 ${data.bossName || '보스'}에게 💎 보석으로 다시 도전해 보세요.`;
+    descEl.textContent = iWon ? `👹 ${data.bossName || '보스'}를 쓰러뜨렸어요!` : `목숨을 모두 잃었어요... 👹 ${data.bossName || '보스'}에게 내일 다시 도전해 보세요.`;
   } else if (data.reason === 'opponentLeft') {
     titleEl.textContent = iWon ? '상대가 나갔습니다' : '매치 종료';
     titleEl.classList.add(iWon ? 'win' : 'lose');
@@ -8445,6 +8437,40 @@ function drawPlayer(p, isMe) {
     ctx.fill();
     ctx.lineWidth = 3;
     ctx.strokeStyle = `rgba(120, 210, 255, ${0.35 + 0.6 * ratio})`;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // 슈의 가젯 버피: 보호막이 있는 동안 주변 적의 이동속도를 늦추는 범위를 본인/아군에게 보여줌
+  if (p.alive && p.shieldHp > 0 && p.buffyAuraRadius > 0 && (isMe || p.team === myTeam)) {
+    const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 200);
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(p.x, p.y - lift - PLAYER_RADIUS * 0.45, p.buffyAuraRadius, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(90, 190, 255, ${0.05 + 0.04 * pulse})`;
+    ctx.fill();
+    ctx.setLineDash([8, 8]);
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = `rgba(150, 215, 255, ${0.45 + 0.25 * pulse})`;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // 임시 보호막 표시 (버피 - 가젯): 초록/금빛으로 맥동하는 막. 사라지기 직전 0.4초는 깜빡임
+  if (p.alive && p.buffyShieldUntil && sNow() < p.buffyShieldUntil) {
+    const left = p.buffyShieldUntil - sNow();
+    const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 120);
+    const fade = left < 400 ? (0.4 + 0.6 * Math.abs(Math.sin(Date.now() / 50))) : 1;
+    ctx.save();
+    ctx.globalAlpha = fade;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y - lift - PLAYER_RADIUS * 0.45, PLAYER_RADIUS + 11 + pulse * 2, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(120, 240, 160, ${0.10 + 0.08 * pulse})`;
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = `rgba(255, 226, 122, ${0.55 + 0.35 * pulse})`;
+    ctx.shadowColor = 'rgba(120, 240, 160, 0.9)';
+    ctx.shadowBlur = 10;
     ctx.stroke();
     ctx.restore();
   }
@@ -14060,6 +14086,7 @@ function render() {
 
   if (autoAimArmed || Date.now() < autoAimFlashUntil) drawAutoAimMark();
   const meForAim = latestState.players[myId];
+  drawLightningUltRange(meForAim); // 지기: 궁극기(벼락지기)가 준비되면 번개가 떨어지는 범위를 표시
   if (isLeapUltimateArmed(meForAim)) drawLeapIndicator(meForAim, meForAim.ultimate);
   else if (isLeapGadgetArmed(meForAim)) drawLeapIndicator(meForAim, meForAim.gadget);
   else if (isLobAiming(meForAim)) drawLobIndicator(meForAim);
@@ -14084,7 +14111,8 @@ function drawLobIndicator(me) {
   const dist = getAimDistanceFor(me, spec);
   const lx = Math.max(0, Math.min(ARENA_WIDTH, me.x + Math.cos(angle) * dist));
   const ly = Math.max(0, Math.min(ARENA_HEIGHT, me.y + Math.sin(angle) * dist));
-  const R = spec.explodeRadius || spec.poolRadius || 100; // 폭발 범위 / 엑헤 계란은 흰자가 퍼지는 범위
+  let R = spec.explodeRadius || spec.poolRadius || 100; // 폭발 범위 / 엑헤 계란은 흰자가 퍼지는 범위
+  if (me.hyperLeft > 0 && me.hyper && me.hyper.poolRadiusMultiplier && spec.poolRadius) R = (spec.explodeRadius || spec.poolRadius) * me.hyper.poolRadiusMultiplier; // 하이퍼 차지 발동 중 흰자 범위 증가 (엑헤)
 
   ctx.save();
   // 던질 수 있는 최대 거리 (연한 점선 원)
@@ -14222,6 +14250,40 @@ function drawLeapIndicator(me, spec) {
   ctx.arc(lx, ly, 4, 0, Math.PI * 2);
   ctx.fillStyle = 'rgba(235, 238, 255, 0.95)';
   ctx.fill();
+  ctx.restore();
+}
+
+// 지기의 궁극기(벼락지기): 조준 없이 내 주변 고리 위에 번개가 떨어지므로, 궁극기가 준비되면 그 범위(고리 띠)를 바닥에 보여준다.
+// 번개는 고리 위에서 무작위로 회전해 떨어지므로 정확한 위치 대신 '맞을 수 있는 구역'을 띠로 표시. 하이퍼 차지 버피로 범위가 커지면 띠도 같이 넓어진다.
+function drawLightningUltRange(me) {
+  if (!me || !me.alive || !me.ultimate || me.ultimate.type !== 'lightning' || !(me.ultimateCharge >= 100)) return;
+  const u = me.ultimate;
+  const hyperOn = me.hyperLeft > 0;
+  const sr = u.strikeRadius * (hyperOn && me.buffyHyperUltRadiusMult ? me.buffyHyperUltRadiusMult : 1);
+  const R = u.areaRadius;
+  const t = Date.now() / 1000;
+  const pulse = 0.5 + 0.5 * Math.sin(t * 4);
+  const inner = Math.max(0, R - sr);
+  const outer = R + sr;
+  ctx.save();
+  // 맞을 수 있는 구역(띠): 바깥 원 - 안쪽 원
+  ctx.beginPath();
+  ctx.arc(me.x, me.y, outer, 0, Math.PI * 2);
+  ctx.arc(me.x, me.y, inner, 0, Math.PI * 2);
+  ctx.fillStyle = `rgba(120, 190, 255, ${0.10 + 0.07 * pulse})`;
+  ctx.fill('evenodd');
+  // 띠의 안/바깥 경계 (천천히 도는 점선)
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = `rgba(190, 228, 255, ${0.55 + 0.3 * pulse})`;
+  ctx.setLineDash([10, 8]);
+  ctx.lineDashOffset = -t * 24;
+  ctx.beginPath(); ctx.arc(me.x, me.y, outer, 0, Math.PI * 2); ctx.stroke();
+  if (inner > 0) { ctx.beginPath(); ctx.arc(me.x, me.y, inner, 0, Math.PI * 2); ctx.stroke(); }
+  // 번개가 떨어지는 고리(중심선)
+  ctx.setLineDash([3, 9]);
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = `rgba(255, 226, 122, ${0.6 + 0.3 * pulse})`;
+  ctx.beginPath(); ctx.arc(me.x, me.y, R, 0, Math.PI * 2); ctx.stroke();
   ctx.restore();
 }
 
