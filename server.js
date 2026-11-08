@@ -1272,7 +1272,60 @@ const CHARACTERS = {
         },
       ],
     },
-    // 가젯 없음
+    gadget: {
+      name: '폭발 로켓',
+      type: 'rocketBlast',     // 조준한 방향으로 로켓 1발 발사: 적/터렛/닭이나 벽에 닿으면(또는 사거리 끝에서) 폭발해서 범위 안의 적에게 피해
+      explodeDamage: 1800,     // 폭발 피해 (1레벨 기준)
+      explodeRadius: 120,      // 폭발 범위(px)
+      explodeVisual: 'rocketExplosion', // 거대 로켓 궁극기와 같은 폭발 이펙트
+      speed: 520,
+      radius: 12,
+      lifetime: 1.15,          // 사거리 ≈ 598px
+      visual: 'rocket',
+    },
+  },
+  guji: {
+    id: 'guji',
+    name: '구지',
+    moveSpeedTier: 'slow', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
+    maxHp: 5500, // 1레벨 기준 체력
+    basic: {
+      name: '포격',
+      damage: 500,          // 발사 지점에서 아주 가까이 맞았을 때의 피해 (1레벨 기준) = minDamage
+      distanceScaling: true, // true면 날아간 거리에 비례해서 피해가 minDamage -> maxDamage 로 커짐
+      minDamage: 500,       // 매우 가까이서 맞혔을 때 (1레벨 기준)
+      maxDamage: 3000,      // 사거리 끝에서 맞혔을 때 (1레벨 기준)
+      speed: 500,           // px/초
+      radius: 12,           // 총알 크기 (보통)
+      lifetime: 1,          // 초 -> 사거리 = 500px
+      visual: 'cannonball',
+    },
+    ultimate: {
+      name: '폭탄 점프',
+      type: 'leap',          // 바라보는 방향으로 (느리게) 점프. 점프하기 전에 서 있던 자리에 폭탄을 남김 (착지 피해는 없음)
+      damage: 0,             // 착지 피해 없음
+      distance: 600,         // 최대 점프 거리(px)
+      minDistance: 150,      // 최소 점프 거리(px). 조준에 따라 minDistance ~ distance 사이로 조절됨
+      duration: 2.5,         // 최대 거리로 뛸 때 공중에 떠 있는 시간(초) - 느린 점프. 이 동안은 조작 불가 + 피격/총알 무시
+      landRadius: 0,
+      dropBomb: {
+        fuseTime: 1,         // 남긴 폭탄이 터질 때까지 걸리는 시간(초)
+        tickInterval: 999,   // 지속 피해 없음 (사용 안 함)
+        tickDamage: 0,
+        radius: 130,         // 폭발 범위(px)
+        explodeDamage: 2000, // 폭발 피해 (1레벨 기준)
+        slowMultiplier: 1,
+        visual: 'gujiBomb',
+      },
+    },
+    gadget: {
+      name: '밀쳐내기',
+      type: 'shockwave',     // 조준 불필요, 즉시 발동. 주변의 적에게 피해를 주고 바깥으로 밀쳐냄
+      instant: true,
+      pushRadius: 150,       // 이 거리 안에 있는 적에게 적용
+      pushDistance: 200,     // 밀려나는 거리(px)
+      damage: 100,           // 피해 (1레벨 기준)
+    },
   },
 };
 
@@ -1359,6 +1412,10 @@ function describeBasic(b) {
     parts.push(`${b.visual === 'rocket' ? '로켓' : '펠릿'} ${b.pelletCount}발 동시 발사 (발당 ${fmtNum(b.damage)} 피해, 탄퍼짐 ${b.spreadDegrees}도)`);
     const r = rangeOf(b);
     if (r) parts.push(`사거리 약 ${r}`);
+  } else if (b.distanceScaling) {
+    const r = rangeOf(b);
+    parts.push(`멀리 날아갈수록 피해가 강해짐: 아주 가까이서 맞으면 ${fmtNum(b.minDamage)}, 사거리 끝에서 맞으면 ${fmtNum(b.maxDamage)} 피해`);
+    if (r) parts.push(`사거리 약 ${r}`);
   } else {
     damage = b.damage;
     const r = rangeOf(b);
@@ -1421,6 +1478,10 @@ function describeUltimate(u) {
       break;
     }
     case 'leap':
+      if (u.dropBomb) {
+        desc = `조준한 방향으로 벽을 무시하고 천천히 점프, 거리는 조준으로 ${fmtNum(u.minDistance || 0)}~${fmtNum(u.distance)}px 조절 (공중에서는 피격 불가). 점프하기 전에 있던 자리에 폭탄을 남기고, ${u.dropBomb.fuseTime}초 뒤 반경 ${u.dropBomb.radius} 안의 적에게 ${fmtNum(u.dropBomb.explodeDamage)} 피해`;
+        break;
+      }
       damage = u.damage;
       desc = `조준한 방향으로 벽을 무시하고 점프, 거리는 조준으로 ${fmtNum(u.minDistance || 0)}~${fmtNum(u.distance)}px 조절 (공중에서는 피격 불가), 착지 지점 반경 ${u.landRadius} 안의 적에게 ${fmtNum(u.damage)} 피해${u.knockback ? ` + ${fmtNum(u.knockback)}만큼 밀쳐냄` : ''}${u.stunDuration ? ` + ${u.stunDuration}초 기절` : ''}${u.reloadAmmo ? ` (사용하면 즉시 탄창 ${MAX_AMMO}개 재장전)` : ''}`;
       break;
@@ -1513,8 +1574,13 @@ function describeGadget(g) {
       desc = `${fmtNum(g.shieldHp)} 피해를 막아주는 보호막을 두르고, 반경 ${g.pushRadius} 안의 적을 ${g.pushDistance}px 밀쳐냄 (피해는 주지 않음)`;
       break;
     case 'shockwave':
-      desc = `주변에 충격파를 일으켜 반경 ${g.pushRadius} 안의 적을 ${g.pushDistance}px 밀쳐냄 (피해는 주지 않음)`;
+      desc = `주변에 충격파를 일으켜 반경 ${g.pushRadius} 안의 적을 ${g.pushDistance}px 밀쳐냄${g.damage > 0 ? ` + ${fmtNum(g.damage)} 피해` : ' (피해는 주지 않음)'}`;
       break;
+    case 'rocketBlast': {
+      const r = rangeOf(g);
+      desc = `조준한 방향으로 로켓을 발사${r ? ` (사거리 약 ${r})` : ''}. 적이나 벽에 닿으면 폭발해서 반경 ${g.explodeRadius} 안의 적에게 ${fmtNum(g.explodeDamage)} 피해`;
+      break;
+    }
     case 'poopBomb': {
       const r = rangeOf(g);
       desc = `조준한 방향으로 폭발하는 똥을 발사${r ? ` (사거리 약 ${r})` : ''}. 적이나 벽에 닿으면 폭발해서 반경 ${g.explodeRadius} 안의 적에게 ${fmtNum(g.explodeDamage)} 피해`;
@@ -1915,6 +1981,7 @@ const CHARACTER_PRICES = {
   geunsuni: 300,
   dol: 300,
   chacha: 300,
+  guji: 300,
 };
 CHARACTER_PRICES[DEFAULT_CHARACTER_ID] = 0; // 기본 캐릭터는 항상 무료 (사용 가능한 캐릭터가 하나도 없는 상황 방지)
 function priceOf(id) {
@@ -1945,6 +2012,17 @@ const SKINS = {
     premium: true,
     desc: '황금빛 문양이 새겨진 전설의 갑옷을 입은 미남! 투구의 붉은 깃털과 어깨 갑옷, 몸을 감싸는 황금 오라가 빛나요. 기본공격은 황금빛 에너지탄, 궁극기는 황금색 덩어리가 날아가요. (외형만 바뀌고 성능은 그대로예요)',
     visuals: { rifleBullet: 'legendBolt', clown: 'legendOrb' }, // 기본공격 = 황금 에너지탄, 궁극기 = 황금색 덩어리
+  },
+  system_jiujitsu: {
+    id: 'system_jiujitsu',
+    characterId: 'system',
+    name: '주짓수 챔피언',
+    price: null,
+    gemPrice: 50,
+    premium: true,
+    desc: '검은 띠를 두른 전설의 주짓수 챔피언으로 변신! 기본공격 3연타는 1타 날아가는 발차기, 2타 주먹, 3타 활활 타오르는 불주먹이 되고, 궁극기는 불회오리가 휘몰아쳐요. 가젯 점프로 착지하면 주변에서 불꽃 폭발이 일어나요. (외형만 바뀌고 성능은 그대로예요)',
+    // sysOrb(1타)를 발 모양으로, sysThrow(2타)를 주먹으로, vortex(3타)를 불주먹으로, bigVortex(궁극기)를 불회오리로, leapLand(가젯 점프 착지)를 불꽃 폭발로 바꿈. 피해/속도/사거리/띄우기/범위는 그대로
+    visuals: { sysOrb: 'footKick', sysThrow: 'fist', vortex: 'fireFist', bigVortex: 'fireTornado', leapLand: 'jiujitsuBlast' },
   },
   jigi_storm: {
     id: 'jigi_storm',
@@ -2326,6 +2404,41 @@ function repeatMissionsView(u) {
 // id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
+  {
+    id: '2026-11-08-system-jiujitsu',
+    date: '2026-11-08',
+    tag: 'new',
+    title: '시스템 전설 스킨 [주짓수 챔피언] 추가!',
+    items: [
+      '💎 스킨 상점에서 💎 50보석으로 구매할 수 있어요.',
+      '검은 띠를 두른 주짓수 선수로 변신! 몸 주위에 불꽃 오라가 일렁여요.',
+      '기본공격 3연타: 1타 날아가는 발, 2타 주먹, 3타 불주먹',
+      '궁극기: 불회오리 / 가젯 [점프 강타]: 착지하면 불꽃 폭발',
+      '외형만 바뀌고 성능은 그대로예요.',
+    ],
+  },
+  {
+    id: '2026-11-08-guji',
+    date: '2026-11-08',
+    tag: 'new',
+    title: '신규 캐릭터 [구지] 추가',
+    items: [
+      '체력 5,500 (1레벨 기준), 이동속도 느림',
+      '기본공격 [포격]: 멀리 날아갈수록 피해가 강해져요. 아주 가까이서 맞으면 500, 사거리 끝(500)에서 맞으면 3,000 피해',
+      '궁극기 [폭탄 점프]: 서 있던 자리에 폭탄을 남기고 천천히 점프해요. 폭탄은 1초 뒤 터지며 반경 130 안의 적에게 2,000 피해',
+      '가젯 [밀쳐내기]: 반경 150 안의 적에게 100 피해를 주고 200만큼 밀쳐내요.',
+    ],
+  },
+  {
+    id: '2026-11-08-chacha-gadget',
+    date: '2026-11-08',
+    tag: 'new',
+    title: '차차 가젯 추가!',
+    items: [
+      '차차에게 가젯 [폭발 로켓]이 생겼어요.',
+      '조준한 방향으로 로켓을 발사해요. 적이나 벽에 닿으면 폭발해서 반경 120 안의 적에게 1,800 피해를 줘요.',
+    ],
+  },
   {
     id: '2026-11-08-bling-event',
     date: '2026-11-08',
@@ -5787,6 +5900,10 @@ function bulletDamageFor(b, target) {
   if (b.executeBelowHp > 0 && (target.hp || 0) <= b.executeBelowHp) return (target.hp || 0) + (target.shieldHp || 0) + 1;
   if (b.currentHpRatio > 0) return Math.max(1, Math.round(((target.hp || 0) + (target.shieldHp || 0)) * b.currentHpRatio));
   if (b.closeRange && Math.hypot(b.x - b.originX, b.y - b.originY) < b.closeRange.distance) return b.damage * b.closeRange.damageMultiplier; // 가까운 거리 피해 감소
+  if (b.distScale) { // 거리 비례 피해 (구지): 날아간 거리 / 사거리 비율만큼 최소 -> 최대 피해로 커짐
+    const ratio = Math.max(0, Math.min(1, Math.hypot(b.x - b.originX, b.y - b.originY) / b.distScale.range));
+    return roundTo(b.distScale.min + (b.distScale.max - b.distScale.min) * ratio, 5);
+  }
   return b.damage;
 }
 
@@ -6421,6 +6538,7 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
       maxLife: bounceTime > 0 ? bounceTime : bulletLife, // 처음 수명 (폭탄 똥이 터지기 직전에 더 빠르게 깜빡이는 연출용)
       damage: pelletDamage,
       closeRange: spec.closeRange || null, // 가까운 거리에서 맞으면 피해 감소 (근수니의 가시)
+      distScale: spec.distanceScaling ? { min: spec.minDamage, max: spec.maxDamage, range: Math.max(1, spec.speed * bulletLife * gearProjSpeed) } : null, // 거리 비례 피해 (구지): range = 이 총알의 실제 사거리
       executeBelowHp: spec.executeBelowHp || 0, // 0보다 크면 맞은 대상의 현재 체력이 이 값 이하일 때 즉사 (진우Park의 하트)
       currentHpRatio: spec.currentHpRatio || 0, // 0보다 크면 고정 피해 대신 대상 현재 체력(+보호막)의 비율만큼 피해 (진우Park의 하트)
       radius: spec.radius * hyperUltRadius * buffyBasicRadius, // 하이퍼 차지 발동 중 궁극기(시스템)는 크기가 커짐 / 버피(기본공격)는 기본공격 투사체가 커짐
@@ -7790,6 +7908,9 @@ function registerGameplayHandlers(socket) {
       spawnProjectiles(match, p, gadget, false);
       effectIdCounter += 1;
       match.effects.push({ id: effectIdCounter, type: 'poopLaunch', x: p.x + Math.cos(p.angle) * (PLAYER_RADIUS + 5), y: p.y + Math.sin(p.angle) * (PLAYER_RADIUS + 5), angle: p.angle, life: 0.3, maxLife: 0.3 }); // 발사 연기 연출
+    } else if (gadget.type === 'rocketBlast') {
+      // 차차의 가젯: 조준한 방향으로 폭발하는 로켓을 발사 (폭발은 updateMatch 의 총알 처리에서 일어남 - 폭탄 똥과 같은 방식)
+      spawnProjectiles(match, p, gadget, false);
     } else if (gadget.type === 'samjang') {
       // 꽈리의 가젯: 조준한 방향으로 쌈장(스킨 장착 시 먹구름)이 되어 duration초 동안 직진. 모카의 점프(leaping)와 같은 '공중' 상태를 써서
       // 모든 피해/총알/범위 효과를 받지 않고 조작은 막힌다. 실제 이동은 updateMatch 의 samjang 처리가 수행 (벽은 통과, 맵 끝은 막힘)
@@ -7869,6 +7990,10 @@ function registerGameplayHandlers(socket) {
         target.knockbackDistance = gadget.pushDistance;
         target.knockbackTimeLeft = KNOCKBACK_DURATION;
         target.knockbackTotalTime = KNOCKBACK_DURATION;
+        if (gadget.type === 'shockwave' && gadget.damage > 0) { // 구지의 가젯: 밀쳐내면서 피해도 줌 (궁극기 게이지는 충전하지 않음)
+          applyDamage(match, target, gadget.damage, p.id, { chargeShooter: false });
+          if (match.over) return;
+        }
       }
       effectIdCounter += 1;
       match.effects.push({ id: effectIdCounter, type: gadget.type === 'shockwave' ? 'shockwave' : 'shieldPush', ownerId: p.id, x: p.x, y: p.y, radius: gadget.pushRadius, life: 0.5, maxLife: 0.5 }); // 퍼져나가는 파동 연출
@@ -8104,6 +8229,10 @@ function registerGameplayHandlers(socket) {
       // 공중 시간은 거리에 비례시켜 짧게 뛰어도 점프 속도가 같게 하되, 너무 순식간이 되지 않도록 최소 0.3초
       const leapDuration = Math.max(0.3, (ult.duration || 0.4) * (leapDist / maxDist));
       const leapMs = leapDuration * 1000;
+      if (ult.dropBomb) { // 구지: 점프하기 전의 자리에 폭탄을 남김 (착지 피해는 없음)
+        spawnBomb(match, p, ult.dropBomb);
+        p.leapNoLand = true;
+      }
       p.leaping = true;
       p.leapTotal = leapDuration;
       p.leapTimeLeft = p.leapTotal;
@@ -8341,7 +8470,7 @@ function updateMatch(match, dt, now) {
     if (match.over) break;
     const p = match.players[pid];
     if (!p.leaping || p.samjang) continue; // 쌈장 변신(samjang)은 위에서 따로 처리
-    if (!p.alive) { p.leaping = false; continue; }
+    if (!p.alive) { p.leaping = false; p.leapNoLand = false; continue; }
 
     p.leapTimeLeft -= dt;
     const t = Math.min(1, 1 - Math.max(0, p.leapTimeLeft) / (p.leapTotal || 0.4));
@@ -8354,6 +8483,7 @@ function updateMatch(match, dt, now) {
     p.y = p.leapTargetY;
     p.leaping = false;
     if (p.stunnedUntil === p.leapEndsAt) p.stunnedUntil = 0; // 점프 때문에 걸어둔 입력 차단만 해제 (다른 기절은 유지)
+    if (p.leapNoLand) { p.leapNoLand = false; continue; } // 구지: 착지 피해/연출 없음 (폭탄은 이미 출발 지점에 남겨둠)
 
     effectIdCounter += 1;
     const landSkinVisual = skinVisual(p, 'leapLand'); // 스킨이 있으면 착지 연출이 바뀜 (모카 섀도우). 스킨이 없으면 'leapLand' 그대로라서 기본 연출
@@ -10048,7 +10178,7 @@ function runAiBot(match, botId, ai, dt, now) {
       const gr = g.speed * g.lifetime;
       const enemyP = target && match.players[target.id];
       use = !!enemyP && enemyP.shieldHp > 0 && dist < gr * 0.9 && losClear && offensiveOK; // 적의 보호막이 있을 때만 파괴 바람 사용
-    } else if (g.type === 'burst' || g.type === 'poopBomb') {
+    } else if (g.type === 'burst' || g.type === 'poopBomb' || g.type === 'rocketBlast') {
       const gr = g.speed && g.lifetime ? g.speed * g.lifetime : 350;
       use = offensiveOK && !!target && dist < gr * 0.9;
     } else if (g.type === 'powerCharge') use = (mode === 'fight' || mode === 'chase') && !!target && dist < 400;
