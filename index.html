@@ -271,6 +271,9 @@
 
   /* ----- 버피 상점 ----- */
   #buffyOverlay > .panel { width: min(560px, 100%); position: relative; overflow: hidden; background: radial-gradient(120% 70% at 50% -10%, #2f6b4f 0%, var(--night) 55%); }
+  /* 스크롤 수정: 패널이 화면 높이만큼 줄어들어(flex-shrink) overflow:hidden 으로 잘리던 문제 → 패널은 내용 높이를 유지하고, 바깥 오버레이가 스크롤되게 함 */
+  #buffyOverlay { overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; touch-action: pan-y; }
+  #buffyOverlay > .panel { flex: 0 0 auto; }
   #buffyOverlay > .panel::before { content: ''; position: absolute; inset: 0 0 auto 0; height: 4px; background: linear-gradient(90deg, #58e08a, #3db8ff, #ffc933); }
   #buffyBling { font-size: 16px; margin: 4px 0 8px; }
   #buffyDrawBtn { width: 100%; margin: 6px 0 10px; font-size: 18px; }
@@ -1862,6 +1865,15 @@ const CHARACTERS = [
     basic: { name: '로켓 발사', desc: '로켓 3발 동시 발사 (발당 1,250 피해, 탄퍼짐 60도)' },
     ultimate: { name: '랜덤 궁극기', desc: '궁극기가 다 충전되면 [이] [서] [황] [문] 중 하나가 무작위로 정해지고, 어떤 궁극기인지 궁극기 버튼 밑에 표시됨' },
   },
+  {
+    id: 'guji',
+    name: '구지',
+    color: '#8d6e63',
+    maxHp: 5500,
+    basic: { name: '포격', desc: '멀리 날아갈수록 피해가 강해짐 (가까이 500 ~ 사거리 끝 3,000 피해)' },
+    ultimate: { name: '폭탄 점프', desc: '서 있던 자리에 폭탄을 남기고 천천히 점프, 1초 뒤 폭탄이 터져 2,000 피해' },
+    gadget: { name: '밀쳐내기', desc: '반경 150 안의 적에게 100 피해를 주고 200px 밀쳐냄 (15초마다 사용 가능)' },
+  },
 ];
 let selectedCharacterId = CHARACTERS[0].id;
 
@@ -2801,6 +2813,7 @@ function animateGemSkinPreviews() {
     const pid = cv.getAttribute('data-gemskin-preview');
     if (pid === 'minam_legend') drawLegendPreview(cv);
     else if (pid === 'jigi_storm') drawStormPreview(cv);
+    else if (pid === 'system_jiujitsu') drawJiujitsuPreview(cv);
   });
 }
 function setGemSkinMsg(text, ok) {
@@ -6110,6 +6123,14 @@ const SKIN_LOOKS = {
       if (dark) { ctx.fillStyle = '#14161d'; ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.fill(); } // 갑옷 사이로 보이는 몸통도 검게
       drawLegendArmor(ctx, R, Date.now() / 1000, dark);
     },
+  },
+  system_jiujitsu: {
+    // 주짓수 챔피언: 하얀 도복 + 검은 띠 + 짧은 검은 머리의 날카로운 눈매. 몸 주위에서는 불꽃 오라가 일렁임
+    body: '#f4f1ea',
+    avatarRing: '#ff7a1a',
+    upright: true,
+    drawFx(p) { drawJiujitsuAura(p); },
+    draw(R, p) { drawJiujitsuFighter(ctx, R, Date.now() / 1000); },
   },
   jigi_storm: {
     body: '#2b3bb0',
@@ -9723,11 +9744,301 @@ function drawBoomerangGlow(b) {
   ctx.restore();
 }
 
+
+// ===== 시스템 '주짓수 챔피언' (전설 스킨) =====
+// 몸: 하얀 도복 + 검은 띠 + 짧은 검은 머리에 날카로운 눈매. g = 그릴 캔버스 컨텍스트(게임/미리보기 공용), 원점 = 몸 중심
+function drawJiujitsuFighter(g, R, t) {
+  const lw = Math.max(1, R * 0.05);
+  g.save();
+  g.lineCap = 'round';
+  g.lineJoin = 'round';
+  // --- 도복 (몸통 원 안쪽만) ---
+  g.save();
+  g.beginPath(); g.arc(0, 0, R, 0, Math.PI * 2); g.clip();
+  const gi = g.createLinearGradient(0, -R, 0, R);
+  gi.addColorStop(0, '#ffffff');
+  gi.addColorStop(1, '#d6d2c6');
+  g.fillStyle = gi;
+  g.fillRect(-R, -R, R * 2, R * 2);
+  // 소매 주름
+  g.strokeStyle = 'rgba(110, 110, 125, 0.55)';
+  g.lineWidth = lw;
+  for (const sx of [-1, 1]) {
+    g.beginPath(); g.moveTo(sx * R * 0.8, -R * 0.1); g.quadraticCurveTo(sx * R * 0.62, R * 0.35, sx * R * 0.72, R * 0.85); g.stroke();
+  }
+  // V 깃 (오른쪽 깃이 위로 겹침)
+  g.strokeStyle = '#a9a597';
+  g.lineWidth = R * 0.15;
+  g.beginPath(); g.moveTo(-R * 0.36, -R * 0.02); g.lineTo(R * 0.12, R * 0.44); g.stroke();
+  g.beginPath(); g.moveTo(R * 0.36, -R * 0.02); g.lineTo(-R * 0.12, R * 0.44); g.stroke();
+  g.strokeStyle = '#ffffff';
+  g.lineWidth = R * 0.08;
+  g.beginPath(); g.moveTo(-R * 0.36, -R * 0.02); g.lineTo(R * 0.12, R * 0.44); g.stroke();
+  g.beginPath(); g.moveTo(R * 0.36, -R * 0.02); g.lineTo(-R * 0.12, R * 0.44); g.stroke();
+  // 검은 띠 + 빨간 줄무늬(블랙벨트 끝단) + 매듭
+  g.fillStyle = '#14141a';
+  g.fillRect(-R, R * 0.44, R * 2, R * 0.2);
+  g.fillStyle = '#d62828';
+  g.fillRect(R * 0.34, R * 0.44, R * 0.15, R * 0.2);
+  g.fillStyle = '#0b0b10';
+  g.beginPath(); g.arc(0, R * 0.54, R * 0.12, 0, Math.PI * 2); g.fill();
+  g.restore();
+  // --- 얼굴 ---
+  const fy = -R * 0.34;
+  g.fillStyle = '#d99a6c'; // 만두귀
+  for (const sx of [-1, 1]) { g.beginPath(); g.ellipse(sx * R * 0.4, fy + R * 0.02, R * 0.09, R * 0.12, 0, 0, Math.PI * 2); g.fill(); }
+  g.fillStyle = '#efbd93';
+  g.strokeStyle = '#7a4a2c';
+  g.lineWidth = lw * 0.8;
+  g.beginPath(); g.ellipse(0, fy, R * 0.38, R * 0.42, 0, 0, Math.PI * 2); g.fill(); g.stroke();
+  // 짧은 검은 머리
+  g.fillStyle = '#15151b';
+  g.beginPath();
+  g.arc(0, fy, R * 0.42, Math.PI * 1.04, Math.PI * 1.96);
+  g.lineTo(R * 0.3, fy - R * 0.14); g.lineTo(R * 0.15, fy - R * 0.06); g.lineTo(0, fy - R * 0.17); g.lineTo(-R * 0.15, fy - R * 0.06); g.lineTo(-R * 0.3, fy - R * 0.14);
+  g.closePath(); g.fill();
+  // 날카로운 눈썹 + 눈
+  g.strokeStyle = '#15151b';
+  g.lineWidth = R * 0.07;
+  g.beginPath(); g.moveTo(-R * 0.27, fy - R * 0.1); g.lineTo(-R * 0.07, fy - R * 0.03); g.stroke();
+  g.beginPath(); g.moveTo(R * 0.27, fy - R * 0.1); g.lineTo(R * 0.07, fy - R * 0.03); g.stroke();
+  for (const sx of [-1, 1]) {
+    g.fillStyle = '#ffffff';
+    g.beginPath(); g.ellipse(sx * R * 0.16, fy + R * 0.04, R * 0.085, R * 0.05, 0, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#1b1b22';
+    g.beginPath(); g.arc(sx * R * 0.16, fy + R * 0.04, R * 0.04, 0, Math.PI * 2); g.fill();
+  }
+  // 코 + 자신감 넘치는 한쪽 미소 + 뺨의 흉터
+  g.strokeStyle = '#a8683f';
+  g.lineWidth = lw * 0.8;
+  g.beginPath(); g.moveTo(0, fy + R * 0.08); g.lineTo(-R * 0.03, fy + R * 0.18); g.lineTo(R * 0.03, fy + R * 0.18); g.stroke();
+  g.strokeStyle = '#6b2e2e';
+  g.lineWidth = lw;
+  g.beginPath(); g.moveTo(-R * 0.12, fy + R * 0.27); g.quadraticCurveTo(R * 0.03, fy + R * 0.36, R * 0.17, fy + R * 0.24); g.stroke();
+  g.strokeStyle = 'rgba(160, 60, 60, 0.85)';
+  g.lineWidth = lw * 0.8;
+  g.beginPath(); g.moveTo(R * 0.2, fy + R * 0.02); g.lineTo(R * 0.3, fy + R * 0.14); g.stroke();
+  g.restore();
+}
+
+// 몸 주위에서 일렁이는 불꽃 오라 (g 원점 = 몸 중심)
+function drawJiujitsuAuraG(g, R, t) {
+  g.save();
+  const glow = g.createRadialGradient(0, 0, R * 0.6, 0, 0, R * 1.75);
+  glow.addColorStop(0, 'rgba(255, 150, 40, 0.38)');
+  glow.addColorStop(1, 'rgba(255, 70, 0, 0)');
+  g.fillStyle = glow;
+  g.beginPath(); g.arc(0, 0, R * 1.75, 0, Math.PI * 2); g.fill();
+  const n = 8;
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + t * 0.7;
+    const fl = 0.7 + 0.4 * Math.sin(t * 9 + i * 2.3);
+    const bx = Math.cos(a) * R * 0.92, by = Math.sin(a) * R * 0.92;
+    const tx = Math.cos(a) * R * (1.2 + 0.4 * fl), ty = Math.sin(a) * R * (1.2 + 0.4 * fl);
+    const nx = -Math.sin(a) * R * 0.17, ny = Math.cos(a) * R * 0.17;
+    g.fillStyle = `rgba(255, ${110 + Math.floor(90 * fl)}, 30, 0.7)`;
+    g.beginPath(); g.moveTo(bx + nx, by + ny); g.quadraticCurveTo(bx * 1.15 + nx * 0.3, by * 1.15 + ny * 0.3, tx, ty); g.quadraticCurveTo(bx * 1.15 - nx * 0.3, by * 1.15 - ny * 0.3, bx - nx, by - ny); g.closePath(); g.fill();
+  }
+  g.restore();
+}
+function drawJiujitsuAura(p) {
+  if (!p.alive) return;
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  drawJiujitsuAuraG(ctx, PLAYER_RADIUS, Date.now() / 1000);
+  ctx.restore();
+}
+// 보석 상점 미리보기
+function drawJiujitsuPreview(canvasEl) {
+  const g = canvasEl.getContext('2d');
+  const W = canvasEl.width, H = canvasEl.height;
+  const t = Date.now() / 1000;
+  const R = W * 0.2;
+  g.clearRect(0, 0, W, H);
+  g.save();
+  g.translate(W / 2, H * 0.6);
+  drawJiujitsuAuraG(g, R, t);
+  g.fillStyle = '#f4f1ea'; g.beginPath(); g.arc(0, 0, R, 0, Math.PI * 2); g.fill();
+  drawJiujitsuFighter(g, R, t);
+  g.restore();
+  g.font = 'bold 22px sans-serif'; g.textAlign = 'center'; g.fillStyle = '#ffb36b';
+  g.fillText('🥋 주짓수 챔피언 🔥', W / 2, H - 12);
+}
+
+// 1타: 날아가는 발 (발등 + 5개의 발가락 + 도복 바지단 + 뒤로 남는 발차기 궤적)
+function drawFootKickBullet(b) {
+  const r = b.radius;
+  ctx.save();
+  ctx.translate(b.x, b.y);
+  ctx.rotate(Math.atan2(b.vy || 0, b.vx || 1));
+  const sw = ctx.createLinearGradient(-r * 5, 0, -r * 1.5, 0);
+  sw.addColorStop(0, 'rgba(255, 190, 110, 0)');
+  sw.addColorStop(1, 'rgba(255, 220, 160, 0.55)');
+  ctx.fillStyle = sw;
+  ctx.beginPath(); ctx.moveTo(-r * 5, 0); ctx.lineTo(-r * 1.5, -r * 0.8); ctx.lineTo(-r * 1.5, r * 0.8); ctx.closePath(); ctx.fill();
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = Math.max(1, r * 0.14);
+  ctx.fillStyle = '#ffffff'; ctx.strokeStyle = '#8f8b7e'; // 도복 바지단
+  ctx.beginPath(); ctx.rect(-r * 2.4, -r * 0.8, r * 1.1, r * 1.6); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#efbd93'; ctx.strokeStyle = '#7a4a2c'; // 발
+  ctx.beginPath();
+  ctx.moveTo(-r * 1.3, -r * 0.65);
+  ctx.quadraticCurveTo(r * 0.4, -r * 0.95, r * 1.45, -r * 0.5);
+  ctx.lineTo(r * 1.45, r * 0.55);
+  ctx.quadraticCurveTo(r * 0.3, r * 0.9, -r * 1.3, r * 0.65);
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+  const toes = [[-0.42, 0.3], [-0.14, 0.24], [0.1, 0.22], [0.31, 0.2], [0.5, 0.17]];
+  for (let i = 0; i < toes.length; i++) {
+    ctx.beginPath(); ctx.arc(r * (1.5 + (i === 0 ? 0.04 : 0)), r * toes[i][0] * 1.1, r * toes[i][1], 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// 2타: 주먹 / 3타: 불주먹 (fire = true: 주먹 뒤로 불꽃이 활활 타오름)
+function drawFistBullet(b, fire) {
+  const now = Date.now();
+  const ang = Math.atan2(b.vy || 0, b.vx || 1);
+  const fr = fire ? b.radius * 0.62 : b.radius; // 불주먹은 판정 원(소용돌이 크기)보다 주먹을 작게 그리고 불꽃이 나머지를 채움
+  ctx.save();
+  ctx.translate(b.x, b.y);
+  ctx.rotate(ang);
+  if (fire) {
+    const R = b.radius;
+    const gl = ctx.createRadialGradient(0, 0, R * 0.1, 0, 0, R);
+    gl.addColorStop(0, 'rgba(255, 230, 120, 0.55)');
+    gl.addColorStop(0.6, 'rgba(255, 110, 20, 0.3)');
+    gl.addColorStop(1, 'rgba(255, 60, 0, 0)');
+    ctx.fillStyle = gl;
+    ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.fill();
+    for (let i = 0; i < 9; i++) { // 뒤쪽으로 흩날리는 불꽃 혀
+      const k = i / 8;
+      const fl = 0.7 + 0.4 * Math.sin(now / 60 + i * 2.1 + (b.id || 0));
+      const y0 = (k - 0.5) * R * 1.3;
+      const len = R * (0.9 + 0.7 * (1 - Math.abs(k - 0.5) * 1.4)) * fl;
+      ctx.fillStyle = i % 2 ? 'rgba(255, 190, 50, 0.85)' : 'rgba(255, 90, 20, 0.85)';
+      ctx.beginPath();
+      ctx.moveTo(-R * 0.2, y0 - R * 0.14);
+      ctx.quadraticCurveTo(-R * 0.7, y0 - R * 0.08, -R * 0.2 - len, y0 + (prand(Math.floor(now / 70), i + (b.id || 0)) - 0.5) * R * 0.3);
+      ctx.quadraticCurveTo(-R * 0.7, y0 + R * 0.08, -R * 0.2, y0 + R * 0.14);
+      ctx.closePath(); ctx.fill();
+    }
+  } else {
+    const sw = ctx.createLinearGradient(-fr * 4, 0, -fr * 1.6, 0);
+    sw.addColorStop(0, 'rgba(255, 255, 255, 0)');
+    sw.addColorStop(1, 'rgba(255, 255, 255, 0.5)');
+    ctx.fillStyle = sw;
+    ctx.beginPath(); ctx.moveTo(-fr * 4, 0); ctx.lineTo(-fr * 1.6, -fr * 0.8); ctx.lineTo(-fr * 1.6, fr * 0.8); ctx.closePath(); ctx.fill();
+  }
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = Math.max(1.2, fr * 0.14);
+  ctx.fillStyle = '#ffffff'; ctx.strokeStyle = '#8f8b7e'; // 도복 소매 + 검은 띠 한 줄
+  ctx.beginPath(); ctx.rect(-fr * 1.9, -fr * 0.85, fr * 0.9, fr * 1.7); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#14141a'; ctx.fillRect(-fr * 1.55, -fr * 0.85, fr * 0.2, fr * 1.7);
+  ctx.fillStyle = '#efbd93'; ctx.strokeStyle = '#7a4a2c'; // 손등
+  ctx.beginPath(); ctx.rect(-fr * 1.0, -fr * 0.8, fr * 1.6, fr * 1.6); ctx.fill(); ctx.stroke();
+  for (let i = 0; i < 4; i++) { // 말아 쥔 네 손가락 마디
+    ctx.beginPath(); ctx.arc(fr * 0.62, (-0.6 + i * 0.4) * fr, fr * 0.27, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  }
+  ctx.beginPath(); ctx.ellipse(fr * 0.15, fr * 0.78, fr * 0.5, fr * 0.2, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); // 엄지
+  ctx.restore();
+}
+
+// 궁극기: 불회오리 (회전하는 불꽃 소용돌이 + 위로 치솟는 불꽃 혀 + 불똥) - 크기는 b.radius 를 따라감
+function drawFireTornado(b) {
+  const now = Date.now();
+  const R = b.radius;
+  ctx.save();
+  ctx.translate(b.x, b.y);
+  const gl = ctx.createRadialGradient(0, 0, R * 0.15, 0, 0, R * 1.15);
+  gl.addColorStop(0, 'rgba(255, 220, 90, 0.5)');
+  gl.addColorStop(0.65, 'rgba(255, 100, 20, 0.3)');
+  gl.addColorStop(1, 'rgba(255, 50, 0, 0)');
+  ctx.fillStyle = gl;
+  ctx.beginPath(); ctx.arc(0, 0, R * 1.15, 0, Math.PI * 2); ctx.fill();
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'rgba(255, 150, 50, 0.8)';
+  ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.stroke();
+  ctx.restore();
+  drawVortexShape(b.x, b.y, R, now / 130, 'rgba(255, 120, 30, 0.95)', 4);
+  drawVortexShape(b.x, b.y, R * 0.62, -now / 85, 'rgba(255, 215, 80, 0.95)', 3);
+  ctx.save();
+  ctx.translate(b.x, b.y);
+  const st = Math.floor(now / 65);
+  for (let k = 0; k < 9; k++) { // 바깥으로 뻗는 불꽃 혀
+    const a = prand(st * 0.37, k + (b.id || 0)) * Math.PI * 2;
+    const len = R * (0.7 + 0.4 * prand(st, k + 11));
+    ctx.fillStyle = k % 2 ? 'rgba(255, 210, 70, 0.9)' : 'rgba(255, 80, 20, 0.85)';
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a - 0.2) * R * 0.25, Math.sin(a - 0.2) * R * 0.25);
+    ctx.lineTo(Math.cos(a) * len, Math.sin(a) * len);
+    ctx.lineTo(Math.cos(a + 0.2) * R * 0.25, Math.sin(a + 0.2) * R * 0.25);
+    ctx.closePath(); ctx.fill();
+  }
+  ctx.fillStyle = 'rgba(255, 245, 190, 0.95)';
+  for (let i = 0; i < 9; i++) { // 도는 불똥
+    const a = now / 190 + (i / 9) * Math.PI * 2;
+    const rr = R * (0.5 + 0.45 * ((i * 0.41) % 1));
+    ctx.beginPath(); ctx.arc(Math.cos(a) * rr, Math.sin(a) * rr, 2.4, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+// 가젯 점프 착지: 불꽃 폭발 (바닥 불길 번짐 + 사방으로 뻗는 불꽃 혀 + 충격 고리 + 중앙 섬광 + 튀는 불똥). 범위 = e.radius
+function drawJiujitsuBlast(e) {
+  const maxLife = e.maxLife || 0.7;
+  const t = Math.max(0, Math.min(1, 1 - e.life / maxLife));
+  const ease = 1 - Math.pow(1 - Math.min(1, t / 0.45), 3);
+  const fade = t < 0.5 ? 1 : Math.max(0, (1 - t) / 0.5);
+  const R = e.radius;
+  const seed = e.id || 1;
+  ctx.save();
+  ctx.translate(e.x, e.y);
+  const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, R);
+  glow.addColorStop(0, `rgba(255, 245, 190, ${0.95 * fade})`);
+  glow.addColorStop(0.4, `rgba(255, 150, 40, ${0.65 * fade})`);
+  glow.addColorStop(1, 'rgba(255, 60, 0, 0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath(); ctx.arc(0, 0, R * (0.35 + 0.65 * ease), 0, Math.PI * 2); ctx.fill();
+  const tongues = 12;
+  for (let i = 0; i < tongues; i++) {
+    const a = (i / tongues) * Math.PI * 2 + seed * 0.41;
+    const len = R * (0.45 + 0.55 * ease) * (i % 2 ? 0.72 : 1);
+    const w = 0.17;
+    ctx.fillStyle = i % 2 ? `rgba(255, 210, 70, ${0.9 * fade})` : `rgba(255, 90, 20, ${0.9 * fade})`;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(a - w) * R * 0.12, Math.sin(a - w) * R * 0.12);
+    ctx.lineTo(Math.cos(a) * len, Math.sin(a) * len);
+    ctx.lineTo(Math.cos(a + w) * R * 0.12, Math.sin(a + w) * R * 0.12);
+    ctx.closePath(); ctx.fill();
+  }
+  ctx.save();
+  ctx.globalAlpha = fade;
+  ctx.shadowColor = 'rgba(255, 140, 30, 1)';
+  ctx.shadowBlur = 14;
+  for (const [scale, wid, col] of [[1, 9, '#ff9f1c'], [0.68, 5, '#ffe29a']]) {
+    ctx.lineWidth = wid * (1 - t) + 2;
+    ctx.strokeStyle = col;
+    ctx.beginPath(); ctx.arc(0, 0, R * scale * (0.25 + 0.75 * ease), 0, Math.PI * 2); ctx.stroke();
+  }
+  ctx.restore();
+  if (t < 0.35) { // 중앙 섬광
+    ctx.fillStyle = `rgba(255, 255, 240, ${0.9 * (1 - t / 0.35)})`;
+    ctx.beginPath(); ctx.arc(0, 0, R * 0.3 * (0.4 + ease), 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.fillStyle = `rgba(255, 220, 120, ${fade})`;
+  for (let i = 0; i < 16; i++) { // 사방으로 튀는 불똥
+    const a = prand(seed, i) * Math.PI * 2;
+    const d = R * (0.3 + 0.75 * prand(seed, i + 40)) * ease;
+    ctx.beginPath(); ctx.arc(Math.cos(a) * d, Math.sin(a) * d - t * 14, 2.8 * (1 - t) + 0.8, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
 // 스킨 기본공격 구분용 팀 색 표시: 내 팀(초록) / 적(빨강). 기본 모습(똥/물/계란)의 장판과 같은 색 규칙을 스킨에도 똑같이 적용한다.
 function isAllyOwner(o) {
   return o.ownerId === myId || (myTeam && o.team === myTeam);
 }
-const SKIN_TEAM_BULLETS = { stormOrb: 1, stormOrbHyper: 1, fireball: 1, iceShard: 1, poisonVial: 1, tire: 1, chip: 1, battery: 1, machine: 1 };
+const SKIN_TEAM_BULLETS = { footKick: 1, fist: 1, fireFist: 1, stormOrb: 1, stormOrbHyper: 1, fireball: 1, iceShard: 1, poisonVial: 1, tire: 1, chip: 1, battery: 1, machine: 1 };
 function drawTeamHalo(b) {
   const ally = isAllyOwner(b);
   ctx.save();
@@ -9787,6 +10098,9 @@ const SKIN_HIT_FIT = {
   iceShard: [1.7, 0.95],     // 여똥이 얼음 조각
   iceVortex: [1.95, 1.95],   // 여똥이 얼음 소용돌이
   microphone: [2.2, 1.05],   // 진우Park 마이크
+  footKick: [1.9, 1.0],      // 시스템 주짓수 챔피언 발차기 (1타)
+  fist: [1.25, 1.0],         // 시스템 주짓수 챔피언 주먹 (2타)
+  fireFist: [1.0, 1.0],      // 시스템 주짓수 챔피언 불주먹 (3타)
 };
 // 미지의 돌의 돌/조각: 빙글빙글 도는 울퉁불퉁한 회색 바위. 돌은 갈라지기 직전에 금이 환하게 빛남
 function drawStoneBullet(b) {
@@ -10095,6 +10409,24 @@ function drawBulletShape(b) {
   if (b.boomerang) drawBoomerangGlow(b); // 부메랑 궁극기의 후광/꼬리를 먼저 깔고, 그 위에 원래 모양(피에로/표창)을 그림
   if (b.lob) { drawSlipperBullet(b); return; } // 나이의 실내화 (포물선 투척)
   if (b.visual === 'rocket' || b.visual === 'miniRocket' || b.visual === 'bigRocket') { drawRocketBullet(b); return; } // 차차: 기본공격/궁극기 로켓
+  if (b.visual === 'footKick') { drawFootKickBullet(b); return; }
+  if (b.visual === 'fist') { drawFistBullet(b, false); return; }
+  if (b.visual === 'fireFist') { drawFistBullet(b, true); return; }
+  if (b.visual === 'fireTornado') { drawFireTornado(b); return; }
+  if (b.visual === 'cannonball') { // 구지: 쇠 대포알
+    const cg = ctx.createRadialGradient(b.x - b.radius * 0.35, b.y - b.radius * 0.35, b.radius * 0.1, b.x, b.y, b.radius);
+    cg.addColorStop(0, '#9aa0b0');
+    cg.addColorStop(0.6, '#3d4150');
+    cg.addColorStop(1, '#17181f');
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.radius, 0, Math.PI * 2);
+    ctx.fillStyle = cg;
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#0b0c10';
+    ctx.stroke();
+    return;
+  }
   if (b.visual === 'stone' || b.visual === 'stoneShard') { drawStoneBullet(b); return; } // 미지의 돌: 돌 / 갈라진 조각
   if (b.visual === 'bone') { // 보신의 뼈다귀: 날아가는 방향으로 길쭉한 뼈 (양 끝이 두 갈래로 볼록)
     const ang = Math.atan2(b.vy || 0, b.vx || 1);
@@ -12536,6 +12868,8 @@ function drawEffect(e) {
     drawTrayExplosion(e);
   } else if (e.type === 'leapLand' && e.visual === 'goldenBlast') {
     drawGoldenBlast(e);
+  } else if (e.type === 'leapLand' && e.visual === 'jiujitsuBlast') {
+    drawJiujitsuBlast(e);
   } else if (e.type === 'leapLand' && e.visual === 'chefLand') {
     drawChefLand(e);
   } else if (e.type === 'explosion' && e.visual === 'rocketExplosion') {
