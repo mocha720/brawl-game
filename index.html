@@ -514,6 +514,33 @@
     border: 3px solid #ff8a1f; border-radius: 16px; box-shadow: 0 4px 0 var(--ink);
   }
   .ai-bonus-banner b { color: #ffb347; }
+
+  /* ----- 🍫 빼빼로 데이 이벤트 ----- */
+  #peperoOverlay { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: flex-start; box-sizing: border-box; text-align: center; color: var(--paper); padding: 16px; overflow-y: auto; background: rgba(10, 11, 30, 0.86); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); z-index: 40; }
+  #peperoOverlay.open { display: flex; }
+  #peperoOverlay > .panel { margin: auto; width: min(480px, 100%); position: relative; background: radial-gradient(120% 70% at 50% -10%, #7a3b2a 0%, var(--night) 60%); }
+  .pepero-card { box-sizing: border-box; padding: 14px 16px; text-align: left; color: #fff; background: linear-gradient(135deg, #8b3a2b, #d2691e); border: 3px solid var(--ink); border-radius: 18px; box-shadow: 0 5px 0 var(--ink); }
+  .pepero-card .pepero-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .pepero-card .pepero-title { font-weight: 700; font-size: 17px; }
+  .pepero-card .pepero-tag { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: var(--sun); color: var(--ink); }
+  .pepero-card .pepero-desc { margin: 6px 0 10px; font-size: 13px; line-height: 1.5; }
+  .pepero-card.done { color: var(--mute); background: var(--night); border-color: var(--lift); }
+  .pepero-card.done .pepero-tag { background: #3b3f78; color: var(--mute); }
+  .pepero-info { margin: 6px 0 2px; font-size: 14px; }
+  .pepero-sticks { display: flex; justify-content: center; gap: 8px; margin: 18px 0 8px; }
+  .pepero-slot { width: 40px; height: 96px; border-radius: 20px 20px 10px 10px; border: 3px solid var(--lift); background: rgba(255,255,255,0.06); display: flex; align-items: center; justify-content: center; font-size: 24px; transition: transform .25s, background .25s, border-color .25s, box-shadow .25s; }
+  .pepero-slot.spin { animation: peperoWiggle .22s infinite alternate; border-color: var(--sun); }
+  .pepero-slot.ok { background: linear-gradient(#e8a15b, #8b3a2b); border-color: #ffd28a; box-shadow: 0 0 14px rgba(255, 201, 40, 0.65); transform: translateY(-6px); }
+  .pepero-slot.fail { background: rgba(255, 84, 112, 0.18); border-color: #ff5470; filter: grayscale(0.4); }
+  @keyframes peperoWiggle { from { transform: rotate(-6deg); } to { transform: rotate(6deg); } }
+  .pepero-count { min-height: 28px; font-size: 18px; font-weight: 700; }
+  .pepero-result { min-height: 44px; margin: 6px 0 4px; font-size: 26px; font-weight: 700; color: var(--sun); }
+  .pepero-result.big { animation: peperoPop .5s ease-out; }
+  @keyframes peperoPop { 0% { transform: scale(0.5); opacity: 0; } 70% { transform: scale(1.25); } 100% { transform: scale(1); opacity: 1; } }
+  .pepero-table { width: 100%; margin: 10px 0; border-collapse: collapse; font-size: 13px; }
+  .pepero-table td { padding: 3px 8px; border-bottom: 1px solid rgba(255,255,255,0.12); }
+  .pepero-table td:last-child { text-align: right; font-weight: 700; }
+  .pepero-msg { min-height: 18px; margin: 6px 0; font-size: 13px; color: var(--mute); }
   .menu-row { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 30px; max-width: 640px; }
   .menu-row .btn.has-claim::after {
     content: ''; position: absolute; top: -7px; right: -7px; width: 14px; height: 14px;
@@ -1239,6 +1266,7 @@
       <div class="mode-desc">혼자서 오늘의 보스에 도전! 목숨 3개 · 하루 1번</div>
     </div>
   </div>
+  <div id="peperoCard"></div>
   <div id="eventList"></div>
   <div id="presenceCard" class="presence-card">
     <div class="presence-head">
@@ -1465,6 +1493,21 @@
     </div>
     <div id="gearMsg" class="panel-msg"></div>
     <button id="gearShopCloseBtn" class="btn btn-ghost">닫기</button>
+  </div>
+</div>
+
+<div id="peperoOverlay">
+  <div class="panel">
+    <h2 class="panel-title">🍫 빼빼로 강화 뽑기</h2>
+    <div class="pepero-info">남은 뽑기 <b id="peperoLeft">0</b> / <span id="peperoTotal">11</span>번</div>
+    <div class="pepero-sticks" id="peperoSticks"></div>
+    <div class="pepero-count" id="peperoCount">&nbsp;</div>
+    <div class="pepero-result" id="peperoResult">&nbsp;</div>
+    <button id="peperoDrawBtn" class="btn">🍫 뽑기!</button>
+    <div class="pepero-msg" id="peperoMsg"></div>
+    <table class="pepero-table" id="peperoTable"></table>
+    <div class="pepero-info" id="peperoEarned"></div>
+    <button id="peperoCloseBtn" class="btn btn-ghost">닫기</button>
   </div>
 </div>
 
@@ -2341,6 +2384,8 @@ function updateProfileUI() {
   if (!currentProfile || !currentProfile.isAdmin) closeAdminDialog();
   if (!currentProfile) closeDrawDialog();
   updateDrawBadge();
+  renderPeperoCard();
+  if (pEl('peperoOverlay') && pEl('peperoOverlay').classList.contains('open')) renderPeperoDialog();
   renderEventCards();
   renderAiBonusBanner();
   renderBossCard();
@@ -2361,6 +2406,122 @@ function renderAiBonusBanner() {
   el.style.display = '';
   el.innerHTML = `🎃 <b>할로윈 이벤트!</b> AI 대결에서 이길 때마다<br>🪙 <b>${Number(ev.min).toLocaleString()}~${Number(ev.max).toLocaleString()}코인</b>을 추가로 받아요!`;
 }
+
+// ===== 🍫 빼빼로 데이 이벤트: 빼빼로 강화 뽑기 =====
+// 뽑기 횟수/결과/코인은 전부 서버가 정하고(profile.pepero, 'peperoDraw'), 클라이언트는 받은 결과를 연출로만 보여준다.
+let peperoBusy = false;
+let peperoPendingProfile = null;
+let peperoTimers = [];
+function pEl(id) { return document.getElementById(id); }
+function peperoClearTimers() { peperoTimers.forEach(clearTimeout); peperoTimers = []; }
+function peperoInfo() { return currentProfile && currentProfile.pepero; }
+function renderPeperoCard() {
+  const box = pEl('peperoCard');
+  if (!box) return;
+  const p = peperoInfo();
+  if (!p) { box.innerHTML = ''; return; }
+  const done = p.remaining <= 0;
+  box.innerHTML = `
+    <div class="pepero-card${done ? ' done' : ''}">
+      <div class="pepero-head">
+        <span class="pepero-title">🍫 빼빼로 데이 이벤트</span>
+        <span class="pepero-tag">${done ? '모두 사용' : `남은 뽑기 ${p.remaining}번`}</span>
+      </div>
+      <p class="pepero-desc">빼빼로를 ${p.steps}번 강화해요! 강화 성공마다 빼빼로가 하나씩 늘어나요 (성공 확률 ${p.chance}%).<br>최대 🪙 ${Number(p.table[p.table.length - 1].coins).toLocaleString()}코인!${p.earned ? `<br>지금까지 받은 코인: 🪙 ${Number(p.earned).toLocaleString()}` : ''}</p>
+      <button class="btn" id="peperoOpenBtn">${done ? '결과 보기' : '🍫 뽑으러 가기'}</button>
+    </div>`;
+  pEl('peperoOpenBtn').addEventListener('click', openPeperoDialog);
+}
+function renderPeperoDialog() {
+  const p = peperoInfo();
+  if (!p) { closePeperoDialog(); return; }
+  pEl('peperoLeft').textContent = p.remaining;
+  pEl('peperoTotal').textContent = p.total;
+  pEl('peperoDrawBtn').disabled = peperoBusy || p.remaining <= 0;
+  pEl('peperoDrawBtn').textContent = p.remaining <= 0 ? '뽑기 기회를 모두 썼어요' : (peperoBusy ? '강화 중...' : `🍫 뽑기! (${p.remaining}번 남음)`);
+  pEl('peperoTable').innerHTML = p.table.map((t) => `<tr><td>${t.successes}번 성공</td><td>🪙 ${Number(t.coins).toLocaleString()}</td></tr>`).join('');
+  pEl('peperoEarned').textContent = p.earned ? `이벤트로 받은 코인 합계: 🪙 ${Number(p.earned).toLocaleString()}` : '';
+}
+function resetPeperoSticks(state) {
+  const p = peperoInfo();
+  const n = (p && p.steps) || 6;
+  pEl('peperoSticks').innerHTML = Array.from({ length: n }, () => `<div class="pepero-slot${state ? ' ' + state : ''}">${state === 'spin' ? '🍫' : ''}</div>`).join('');
+}
+function openPeperoDialog() {
+  if (!peperoInfo()) return;
+  peperoClearTimers();
+  peperoBusy = false;
+  peperoPendingProfile = null;
+  resetPeperoSticks();
+  pEl('peperoCount').innerHTML = '&nbsp;';
+  pEl('peperoResult').innerHTML = '&nbsp;';
+  pEl('peperoMsg').textContent = '';
+  renderPeperoDialog();
+  pEl('peperoOverlay').classList.add('open');
+}
+function closePeperoDialog() {
+  peperoClearTimers();
+  pEl('peperoOverlay').classList.remove('open');
+  if (peperoPendingProfile) { if (currentProfile) { currentProfile = peperoPendingProfile; updateProfileUI(); } peperoPendingProfile = null; }
+  peperoBusy = false;
+}
+function peperoDraw() {
+  const p = peperoInfo();
+  if (peperoBusy || !p || p.remaining <= 0) return;
+  peperoBusy = true;
+  pEl('peperoMsg').textContent = '';
+  pEl('peperoCount').textContent = '빼빼로 강화 중...';
+  pEl('peperoResult').innerHTML = '&nbsp;';
+  pEl('peperoResult').classList.remove('big');
+  resetPeperoSticks('spin');
+  renderPeperoDialog();
+  const startedAt = Date.now();
+  socket.timeout(8000).emit('peperoDraw', {}, (err, res) => {
+    if (err || !res || !res.ok) {
+      peperoBusy = false;
+      if (res && res.profile) { currentProfile = res.profile; updateProfileUI(); }
+      if (pEl('peperoOverlay').classList.contains('open')) {
+        resetPeperoSticks();
+        pEl('peperoCount').innerHTML = '&nbsp;';
+        pEl('peperoMsg').textContent = err || !res ? '서버 응답이 없습니다. 잠시 후 다시 시도해주세요.' : (res.message || '뽑기에 실패했습니다.');
+        renderPeperoDialog();
+      }
+      return;
+    }
+    peperoPendingProfile = res.profile;
+    if (!pEl('peperoOverlay').classList.contains('open')) { currentProfile = res.profile; peperoPendingProfile = null; peperoBusy = false; updateProfileUI(); return; }
+    // 서버가 정한 6번의 강화 결과를 한 칸씩 차례로 공개
+    const STEP_MS = 650;
+    let okCount = 0;
+    const slots = pEl('peperoSticks').children;
+    res.steps.forEach((ok, i) => {
+      peperoTimers.push(setTimeout(() => {
+        const el = slots[i];
+        if (!el) return;
+        el.classList.remove('spin');
+        el.classList.add(ok ? 'ok' : 'fail');
+        el.textContent = ok ? '🍫' : '✖';
+        if (ok) okCount++;
+        pEl('peperoCount').textContent = `🍫 빼빼로 ${okCount}개 (강화 ${i + 1}/${res.steps.length})`;
+      }, Math.max(0, 900 - (Date.now() - startedAt)) + i * STEP_MS));
+    });
+    peperoTimers.push(setTimeout(() => {
+      const r = pEl('peperoResult');
+      r.textContent = res.coins > 0 ? `🪙 ${Number(res.coins).toLocaleString()} 코인 획득!` : '아쉽지만 0코인... 다음엔 꼭!';
+      r.classList.remove('big'); void r.offsetWidth; r.classList.add('big');
+      pEl('peperoCount').textContent = `🍫 빼빼로 ${res.successes}개 성공!`;
+      currentProfile = peperoPendingProfile; peperoPendingProfile = null;
+      peperoBusy = false;
+      updateProfileUI();
+      renderPeperoDialog();
+    }, Math.max(0, 900 - (Date.now() - startedAt)) + res.steps.length * STEP_MS + 300));
+  });
+}
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && pEl('peperoOverlay').classList.contains('open')) closePeperoDialog();
+});
+pEl('peperoDrawBtn').addEventListener('click', peperoDraw);
+pEl('peperoCloseBtn').addEventListener('click', closePeperoDialog);
 
 // ===== 이벤트 (메인화면 카드) =====
 // 진행 중인 이벤트 목록과 '이미 받았는지'는 서버가 profile.events 로 알려주고, 실제 지급도 서버가 판단한다.
@@ -3880,6 +4041,7 @@ document.getElementById('logoutBtn').addEventListener('click', () => {
     closeAccountDialog();
     closeRankingDialog();
     closeNoticeDialog();
+    closePeperoDialog();
     closeAdminDialog();
     document.getElementById('modeOverlay').style.display = 'none';
     document.getElementById('joinOverlay').style.display = 'flex';
@@ -3903,6 +4065,7 @@ function forceReLogin(message) {
   closeAccountDialog();
   closeRankingDialog();
   closeNoticeDialog();
+  closePeperoDialog();
   closeAdminDialog();
   closeBuffyShop();
   ['modeOverlay', 'characterOverlay'].forEach((id) => { document.getElementById(id).style.display = 'none'; });
