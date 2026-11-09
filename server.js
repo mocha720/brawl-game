@@ -912,7 +912,7 @@ const CHARACTERS = {
     id: 'uphal',
     name: '업할',
     moveSpeedTier: 'normal', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
-    maxHp: 10000,          // 1레벨 기준 (기존 9000에서 버프)
+    maxHp: 12000,          // 1레벨 기준 (기존 10000에서 버프)
     basic: {
       name: '망치 지진',
       type: 'quake',         // 망치를 내려쳐서 조준 방향으로 즉시 판정되는 지진 (부채꼴 범위 + 기절)
@@ -1959,6 +1959,44 @@ function dailyDrawView(u) {
   };
 }
 
+// ===== 🍫 빼빼로 데이 이벤트: 빼빼로 강화 뽑기 =====
+// 모든 계정에 뽑기 기회 PEPERO_DRAWS(11)번. 1번 뽑을 때 강화를 PEPERO_STEPS(6)번 도전하고, 강화마다 50% 확률로 성공한다.
+// 성공 횟수 n 에 따른 코인: 0번=0, 1번=1, 2번=11, 3번=111, ... 6번=111111 (1이 n개 이어진 숫자)
+// 이벤트를 끝내려면: enabled 를 false 로 바꾸거나 endsAt 에 종료 시각(예: new Date('2026-11-12T23:59:59+09:00').getTime())을 넣고 재배포.
+// 다시 처음부터 열고 싶으면 id 를 바꾸지 말고 코드 키(PEPERO_DB_FIELD)를 바꾸면 모두 다시 11번을 얻는다.
+const PEPERO_EVENT = { id: 'pepero_day_2026', enabled: true, endsAt: null };
+const PEPERO_DRAWS = 11;      // 계정당 뽑기 기회
+const PEPERO_STEPS = 6;       // 1번 뽑을 때 강화 도전 횟수
+const PEPERO_CHANCE_PCT = 50; // 강화 1번 성공 확률(%)
+function peperoCoinsFor(successes) { return successes <= 0 ? 0 : Number('1'.repeat(successes)); }
+const PEPERO_TABLE = Array.from({ length: PEPERO_STEPS + 1 }, (_, n) => ({ successes: n, coins: peperoCoinsFor(n) }));
+function peperoActive() { return !!PEPERO_EVENT.enabled && (!PEPERO_EVENT.endsAt || Date.now() < PEPERO_EVENT.endsAt); }
+// 결과는 항상 서버가 정한다. 강화 한 번 한 번의 성공/실패를 모두 알려줘서 클라이언트는 연출만 한다.
+function rollPepero() {
+  const steps = [];
+  let successes = 0;
+  for (let i = 0; i < PEPERO_STEPS; i++) {
+    const ok = crypto.randomInt(100) < PEPERO_CHANCE_PCT;
+    steps.push(ok);
+    if (ok) successes++;
+  }
+  return { steps, successes, coins: peperoCoinsFor(successes) };
+}
+function peperoView(u) {
+  if (!peperoActive()) return null;
+  const used = Math.min(PEPERO_DRAWS, (u && u.peperoUsed) || 0);
+  return {
+    total: PEPERO_DRAWS,
+    used,
+    remaining: PEPERO_DRAWS - used,
+    steps: PEPERO_STEPS,
+    chance: PEPERO_CHANCE_PCT,
+    earned: (u && u.peperoCoins) || 0, // 이번 이벤트로 지금까지 받은 코인 합계
+    table: PEPERO_TABLE,
+    endsAt: PEPERO_EVENT.endsAt || null,
+  };
+}
+
 // ===== 계정 / 코인 / 캐릭터 잠금해제 시스템 =====
 // 가격이 0인 캐릭터는 모든 계정이 처음부터 사용할 수 있고, 나머지는 코인으로 잠금해제해야 함 (가격은 여기서 자유롭게 수정)
 const CHARACTER_PRICES = {
@@ -2404,6 +2442,26 @@ function repeatMissionsView(u) {
 // id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
+  {
+    id: '2026-11-10-uphal-hp',
+    date: '2026-11-10',
+    tag: 'balance',
+    title: '업할 체력 상향',
+    items: [
+      '업할 체력: 10,000 → 12,000 (1레벨 기준)',
+    ],
+  },
+  {
+    id: '2026-11-10-pepero-day',
+    date: '2026-11-10',
+    tag: 'new',
+    title: '🍫 빼빼로 데이 이벤트!',
+    items: [
+      '메인 화면의 🍫 빼빼로 뽑기에서 모든 유저가 11번의 뽑기 기회를 받아요!',
+      '한 번 뽑을 때마다 빼빼로를 6번 강화해요. 강화 1번 성공 확률은 50%예요.',
+      '강화에 성공한 횟수만큼 코인을 받아요: 0번 0코인 / 1번 1코인 / 2번 11코인 / 3번 111코인 / 4번 1,111코인 / 5번 11,111코인 / 6번 111,111코인!',
+    ],
+  },
   {
     id: '2026-11-08-system-jiujitsu',
     date: '2026-11-08',
@@ -3195,7 +3253,7 @@ function publicProfile(u) {
   const equippedSkins = {};
   for (const id in CHARACTERS) { const sk = equippedSkinOf(u, id); if (sk) equippedSkins[id] = sk; }
   return { username: u.name, coins: u.coins, gems: u.gems || 0, bling: u.bling || 0, gemResetCost: GEM_SHOP_RESET_COST, wins: u.wins || 0, losses: u.losses || 0, unlocked: effectiveUnlocked(u), prices: allPrices(),
-    skinCatalog: skinCatalogPublic(), skins: ownedSkinsOf(u), equippedSkins, hypers: ownedHypersOf(u), gears: ownedGearsOf(u), gearShop: gearShopView(u), gearCatalog: GEAR_CATALOG.map((g) => ({ id: g.id, name: g.name, rarity: g.rarity, desc: g.desc, excludeChars: Object.keys(CHARACTERS).filter((cid) => !gearAllowedOn(g.id, cid)) })), gearRarities: Object.values(GEAR_RARITIES), gearMax: GEAR_MAX_PER_CHARACTER, gearSellRatio: GEAR_SELL_RATIO, hyperPrice: HYPER_PRICE, hyperRequiredLevel: HYPER_REQUIRED_LEVEL, buffies: ownedBuffiesOf(u), buffyCatalog: buffyCatalogPublic(), buffyPrice: BUFFY_PRICE, trophyRoad: trophyRoadView(u), trophyRoadPlus: trophyRoadPlusView(u), rankedRoad: rankedRoadView(u), trophies, streaks, missions: missionsView(u), repeatMissions: repeatMissionsView(u), ranks: TROPHY_RANKS, characters: buildCharacterInfo(levels), levels, levelTable: LEVEL_TABLE_PUBLIC, maxLevel: MAX_CHARACTER_LEVEL, isAdmin: u.key === ADMIN_KEY, announcements: allAnnouncements(), dailyDraw: dailyDrawView(u), boss: bossView(u),
+    skinCatalog: skinCatalogPublic(), skins: ownedSkinsOf(u), equippedSkins, hypers: ownedHypersOf(u), gears: ownedGearsOf(u), gearShop: gearShopView(u), gearCatalog: GEAR_CATALOG.map((g) => ({ id: g.id, name: g.name, rarity: g.rarity, desc: g.desc, excludeChars: Object.keys(CHARACTERS).filter((cid) => !gearAllowedOn(g.id, cid)) })), gearRarities: Object.values(GEAR_RARITIES), gearMax: GEAR_MAX_PER_CHARACTER, gearSellRatio: GEAR_SELL_RATIO, hyperPrice: HYPER_PRICE, hyperRequiredLevel: HYPER_REQUIRED_LEVEL, buffies: ownedBuffiesOf(u), buffyCatalog: buffyCatalogPublic(), buffyPrice: BUFFY_PRICE, trophyRoad: trophyRoadView(u), trophyRoadPlus: trophyRoadPlusView(u), rankedRoad: rankedRoadView(u), trophies, streaks, missions: missionsView(u), repeatMissions: repeatMissionsView(u), ranks: TROPHY_RANKS, characters: buildCharacterInfo(levels), levels, levelTable: LEVEL_TABLE_PUBLIC, maxLevel: MAX_CHARACTER_LEVEL, isAdmin: u.key === ADMIN_KEY, announcements: allAnnouncements(), dailyDraw: dailyDrawView(u), pepero: peperoView(u), boss: bossView(u),
     aiBonusEvent: halloweenBonusView(),
     gemExchange: GEM_EXCHANGE,
     rankedEligibility: rankedEligibility(u),
@@ -3401,6 +3459,17 @@ function createFileDb() {
       u.coins += coins;
       if (gems) u.gems = (u.gems || 0) + gems;
       if (bling) u.bling = (u.bling || 0) + bling;
+      scheduleSave();
+      return { ok: true, user: cloneUser(u) };
+    },
+    // 🍫 빼빼로 뽑기: 남은 기회가 있을 때만 기회 1회 차감(사용 횟수 +1) + 코인 지급
+    async claimPepero(key, maxDraws, coins) {
+      const u = users[key];
+      if (!u) return { ok: false, reason: 'noUser' };
+      if ((u.peperoUsed || 0) >= maxDraws) return { ok: false, reason: 'used', user: cloneUser(u) };
+      u.peperoUsed = (u.peperoUsed || 0) + 1;
+      u.peperoCoins = (u.peperoCoins || 0) + coins;
+      u.coins += coins;
       scheduleSave();
       return { ok: true, user: cloneUser(u) };
     },
@@ -3834,6 +3903,19 @@ function createMongoDb(uri) {
       const updated = await col.findOneAndUpdate(
         { key, redeemed: { $ne: code } },
         { $inc: inc, $push: { redeemed: code } },
+        { returnDocument: 'after', projection }
+      );
+      if (updated) return { ok: true, user: updated };
+      const user = await col.findOne({ key }, { projection });
+      if (!user) return { ok: false, reason: 'noUser' };
+      return { ok: false, reason: 'used', user };
+    },
+    async claimPepero(key, maxDraws, coins) {
+      // 🍫 남은 기회 확인 + 기회 차감 + 코인 지급을 한 번의 원자적 연산으로 처리 (동시에 여러 번 눌러도 11번을 넘길 수 없음)
+      // peperoUsed 필드가 아직 없는 계정도 조건에 맞는다 ($not + $gte)
+      const updated = await col.findOneAndUpdate(
+        { key, peperoUsed: { $not: { $gte: maxDraws } } },
+        { $inc: { coins, peperoUsed: 1, peperoCoins: coins } },
         { returnDocument: 'after', projection }
       );
       if (updated) return { ok: true, user: updated };
@@ -4438,6 +4520,26 @@ function registerAuthHandlers(socket) {
       ack({ ok: false, message, profile: r.user ? publicProfile(r.user) : undefined });
     } catch (e) {
       console.error('redeemCode 오류', e);
+      ack({ ok: false, message: '서버 오류가 발생했습니다.' });
+    }
+  });
+
+  // 🍫 빼빼로 뽑기: 계정당 PEPERO_DRAWS 번. 강화 결과(6번의 성공/실패)와 코인은 서버가 정하고, 기회 차감/코인 지급은 저장소가 원자적으로 처리한다.
+  socket.on('peperoDraw', async (data, ack) => {
+    if (typeof ack !== 'function') return;
+    try {
+      const key = socket.data.userKey;
+      if (!key) return ack({ ok: false, message: '로그인이 필요합니다.' });
+      if (!peperoActive()) return ack({ ok: false, message: '진행 중인 빼빼로 이벤트가 아닙니다.' });
+      const roll = rollPepero();
+      const r = await db.claimPepero(key, PEPERO_DRAWS, roll.coins);
+      if (r.ok) {
+        console.log(`[빼빼로] ${socket.data.displayName}: 강화 ${roll.successes}회 성공 → ${roll.coins}코인 (${r.user.peperoUsed}/${PEPERO_DRAWS})`);
+        return ack({ ok: true, steps: roll.steps, successes: roll.successes, coins: roll.coins, profile: publicProfile(r.user) });
+      }
+      ack({ ok: false, message: r.reason === 'used' ? '빼빼로 뽑기 기회를 모두 사용했어요!' : '뽑기에 실패했습니다.', profile: r.user ? publicProfile(r.user) : undefined });
+    } catch (e) {
+      console.error('peperoDraw 오류', e);
       ack({ ok: false, message: '서버 오류가 발생했습니다.' });
     }
   });
