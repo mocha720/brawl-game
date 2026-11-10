@@ -587,7 +587,7 @@ const CHARACTERS = {
     gadget: {
       name: '질주',
       type: 'sprint',       // 조준한 방향으로 짧은 거리를 순식간에 돌진 (적에게 피해/기절을 주지 않는 도주용, 적과 부딪혀도 그대로 통과)
-      instant: true,        // true면 누르는 즉시 발동
+      // instant 없음: 가젯 버튼을 누르면 '장전'되고, 조준한 뒤 공격 입력(마우스 클릭 / 오른쪽 스틱 놓기)으로 발사한다 (다시 누르면 장전 취소)
       speed: 970,           // 돌진 속도(px/초)
       duration: 0.165,      // 돌진 지속 시간(초). 이동 거리 ≈ speed × duration = 160px (서버 틱이 1/30초라 5틱 = 약 162px 이동). 벽에 막히면 그 앞에서 멈춤
     },
@@ -758,7 +758,7 @@ const CHARACTERS = {
       eggSplat: true,     // 착지하면 폭발 대신 계란이 깨짐: 깨진 자리의 적에게 직접 피해(directDamage) + 흰자 웅덩이
       damage: 0,          // 직접 대미지는 directDamage로 처리
       distance: 546,      // 최대 투척 거리(px) - 기존 직선 사거리와 같음
-      minDistance: 100,   // 최소 투척 거리(px). 조준(PC 마우스 위치 / 모바일 스틱 당김)에 따라 minDistance ~ distance 사이로 조절됨
+      minDistance: 0,   // 최소 투척 거리(px) - 0이면 제자리에도 던질 수 있음. 조준(PC 마우스 위치 / 모바일 스틱 당김)에 따라 minDistance ~ distance 사이로 조절됨
       flightTime: 1,      // 던진 뒤 땅에 떨어져 깨질 때까지 걸리는 시간(초) - 공격 후 1초 뒤 착지. 던지는 거리와 상관없이 항상 같음
       arcHeight: 90,      // 포물선 최고 높이(px) - 화면 연출용 (판정에는 영향 없음)
       radius: 13,
@@ -884,7 +884,7 @@ const CHARACTERS = {
       type: 'leap',          // 벽을 무시하고 바라보는 방향으로 멀리 점프, 착지 지점 근처의 적에게 피해
       damage: 1000,
       distance: 304,         // 최대 점프 거리(px) - 기존 380에서 20% 감소. 착지 지점이 벽 안이면 가장 가까운 빈 곳까지 되돌아옴
-      minDistance: 100,      // 최소 점프 거리(px). 조준(PC 마우스 위치 / 모바일 스틱 당김)에 따라 minDistance ~ distance 사이로 조절됨
+      minDistance: 0,      // 최소 점프 거리(px). 조준(PC 마우스 위치 / 모바일 스틱 당김)에 따라 minDistance ~ distance 사이로 조절됨
       duration: 0.55,        // 공중에 떠 있는 시간(초). 이 동안은 조작 불가 + 피격/총알 무시 (길수록 점프가 느리게 보임)
       landRadius: 90,        // 착지 지점 주변 피해 반경
       reloadAmmo: true,      // 궁극기를 사용하면 즉시 탄창이 가득(3개) 재장전됨
@@ -963,7 +963,7 @@ const CHARACTERS = {
       type: 'leap',          // 벽을 무시하고 바라보는 방향으로 중거리 점프, 착지 지점 주변 적에게 피해 + 밀쳐냄
       damage: 2000,          // 1레벨 기준 (기존 3000에서 너프)
       distance: 180,         // 최대 점프 거리(px) - 기존 300에서 40% 감소
-      minDistance: 100,      // 최소 점프 거리(px). 조준에 따라 minDistance ~ distance 사이로 조절됨
+      minDistance: 0,      // 최소 점프 거리(px). 조준에 따라 minDistance ~ distance 사이로 조절됨
       duration: 0.55,        // 공중에 떠 있는 시간(초). 이 동안은 조작 불가 + 피격/총알 무시
       landRadius: 110,       // 착지 지점 주변 피해 반경
       knockback: 220,        // 맞은 적을 착지 지점 바깥쪽으로 밀어내는 거리(px)
@@ -1025,7 +1025,7 @@ const CHARACTERS = {
       landRadius: 110,       // 착지 지점 주변 피해 반경
       knockback: 150,        // 범위 안의 적을 착지 지점 바깥쪽으로 밀어내는 거리(px)
       distance: 300,         // 최대 점프 거리(px)
-      minDistance: 100,      // 최소 점프 거리(px)
+      minDistance: 0,      // 최소 점프 거리(px)
       duration: 0.5,         // 공중에 떠 있는 시간(초). 이 동안은 조작 불가 + 피격/총알 무시
     },
   },
@@ -1079,7 +1079,7 @@ const CHARACTERS = {
       explodeDamage: 2500,    // 폭발 피해 (1레벨 기준) - 기존 2000에서 버프
       explodeRadius: 64,      // 폭발 범위(px) - 기존 91에서 30% 감소
       distance: 364,          // 최대 투척 거리(px) - 기존 520에서 30% 감소
-      minDistance: 100,       // 최소 투척 거리(px). 조준(PC 마우스 위치 / 모바일 스틱 당김)에 따라 minDistance ~ distance 사이로 조절됨
+      minDistance: 0,       // 최소 투척 거리(px). 조준(PC 마우스 위치 / 모바일 스틱 당김)에 따라 minDistance ~ distance 사이로 조절됨
       selfKnockback: 220,     // 폭발 범위 안에 자신(나이)이 있으면 폭발 중심 바깥쪽으로 이만큼(px) 날아감. 자신에게는 피해 없음
       ammoRegenSeconds: AMMO_REGEN_SECONDS * 1.4, // 기본공격 재장전 시간이 다른 캐릭터보다 40% 느림 (1.8초 -> 2.52초)
       flightTime: 1.25,       // 던진 뒤 땅에 떨어져 폭발할 때까지 걸리는 시간(초) - 공격 후 1.25초 뒤 착지 (기존 2초). 던지는 거리와 상관없이 항상 같음 (가까울수록 느리게, 멀수록 빠르게 날아감)
@@ -1092,7 +1092,7 @@ const CHARACTERS = {
       type: 'leap',           // 벽을 무시하고 바라보는 방향으로 점프, 착지 지점 주변 적에게 피해 + 기절
       damage: 1500,           // 1레벨 기준
       distance: 320,          // 최대 점프 거리(px). 착지 지점이 벽 안이면 가장 가까운 빈 곳까지 되돌아옴
-      minDistance: 100,       // 최소 점프 거리(px). 조준에 따라 minDistance ~ distance 사이로 조절됨
+      minDistance: 0,       // 최소 점프 거리(px). 조준에 따라 minDistance ~ distance 사이로 조절됨
       duration: 0.6,          // 공중에 떠 있는 시간(초). 이 동안은 조작 불가 + 피격/총알 무시
       landRadius: 100,        // 착지 지점 주변 피해 반경
       stunDuration: 1,        // 맞은 적을 기절시키는 시간(초)
@@ -1127,7 +1127,7 @@ const CHARACTERS = {
     ultimate: {
       name: '중력 덩어리',
       type: 'blackhole',     // 거대한 구체를 포물선으로 던져(벽 무시) 착지 지점에 블랙홀을 만듦
-      minDistance: 120,      // 던지는 거리 (조준으로 최소~최대 조절)
+      minDistance: 0,      // 던지는 거리 (조준으로 최소~최대 조절)
       distance: 420,
       flightTime: 1.0,       // 착지까지 걸리는 시간 (거리와 무관하게 고정)
       arcHeight: 130,
@@ -1258,7 +1258,7 @@ const CHARACTERS = {
           label: '불덩이 투척',
           type: 'fireLob',     // 불덩이를 포물선으로 던져(벽을 넘음) 착지 지점에 불길을 만듦. 불길 안의 적은 느려지고 지속 피해를 받음
           distance: 440,       // 최대 투척 거리(px) - 조준으로 minDistance ~ distance 사이 조절
-          minDistance: 100,
+          minDistance: 0,
           flightTime: 1,       // 던진 뒤 착지까지 걸리는 시간(초)
           arcHeight: 120,      // 포물선 최고 높이(px) - 화면 연출용
           radius: 14,
@@ -1305,7 +1305,7 @@ const CHARACTERS = {
       type: 'leap',          // 바라보는 방향으로 (느리게) 점프. 점프하기 전에 서 있던 자리에 폭탄을 남김 (착지 피해는 없음)
       damage: 0,             // 착지 피해 없음
       distance: 600,         // 최대 점프 거리(px)
-      minDistance: 150,      // 최소 점프 거리(px). 조준에 따라 minDistance ~ distance 사이로 조절됨
+      minDistance: 0,      // 최소 점프 거리(px). 조준에 따라 minDistance ~ distance 사이로 조절됨
       duration: 2.5,         // 최대 거리로 뛸 때 공중에 떠 있는 시간(초) - 느린 점프. 이 동안은 조작 불가 + 피격/총알 무시
       landRadius: 0,
       dropBomb: {
@@ -1801,6 +1801,14 @@ const BUFFY_CATALOG = [
   { id: 'syu_basic', charId: 'syu', kind: 'basic', desc: '기본공격(샷건) 총알 7개를 모두 맞히면 2초 동안 이동속도 30% 증가', effect: { allHitSpeedMult: 1.3, allHitSpeedSec: 2 } },
   { id: 'syu_gadget', charId: 'syu', kind: 'gadget', desc: '가젯(보호막)이 유지되는 동안 100px 안에 있는 적의 이동속도 10% 감소', effect: { gadgetAuraSlowMult: 0.9, gadgetAuraRadius: 100 } },
   { id: 'syu_hyper', charId: 'syu', kind: 'hyper', desc: '하이퍼 차지 발동 중 기본공격 탄퍼짐 각도가 40도가 됨', effect: { hyperSpreadDegrees: 40 } },
+  // 변기통
+  { id: 'byeongitong_basic', charId: 'byeongitong', kind: 'basic', desc: '기본공격(뚫어뻥)으로 적을 맞히면 0.2초 동안 이동속도 30% 증가', effect: { basicHitSpeedMult: 1.3, basicHitSpeedSec: 0.2 } },
+  { id: 'byeongitong_gadget', charId: 'byeongitong', kind: 'gadget', desc: '가젯을 사용하면 0.5초 동안 받는 피해가 20% 감소하는 임시 보호막 생성', effect: { gadgetShieldTakenMult: 0.8, gadgetShieldSec: 0.5 } },
+  { id: 'byeongitong_hyper', charId: 'byeongitong', kind: 'hyper', desc: '하이퍼 차지 발동 중 받는 피해가 20% 추가로 감소', effect: { hyperTakenMult: 0.8 } },
+  // 성스럽다
+  { id: 'seongseureopda_basic', charId: 'seongseureopda', kind: 'basic', desc: '벽에 튕긴 뒤에 맞은 칼은 10% 추가 피해를 줌', effect: { bounceDamageMult: 1.1 } },
+  { id: 'seongseureopda_gadget', charId: 'seongseureopda', kind: 'gadget', desc: '가젯(저격 사격)의 총알이 적을 맞혀도 사라지지 않고 관통함', effect: { gadgetPierce: true } },
+  { id: 'seongseureopda_hyper', charId: 'seongseureopda', kind: 'hyper', desc: '하이퍼 차지 발동 중 투사체 크기가 5% 증가', effect: { hyperProjRadiusMult: 1.05 } },
 ].map((b) => ({ ...b, name: BUFFY_KIND_NAMES[b.kind] }));
 function buffyById(id) { return BUFFY_CATALOG.find((b) => b.id === id) || null; }
 function ownedBuffiesOf(u) { // 보유한 버피 id 목록 (카탈로그에 없는 값/중복은 무시)
@@ -1813,7 +1821,7 @@ function buffyCatalogPublic() {
 // 캐릭터에 장착된 기어들의 효과 합계 (최대 장착 수까지만 인정)
 function gearBonusOf(u, charId) {
   // reloadSpeed: 재장전 속도 증가율(덧셈) / fullHpTakenMult: 체력이 가득 찰 때 받는 피해 배율(곱셈, 1 = 효과 없음) / lowHpDamageBonus: 체력 50% 이하일 때 공격력 증가율(덧셈) / fullAmmoRangeBonus: 탄창이 가득(3개)일 때 사거리 증가율(덧셈)
-  const total = { reloadSpeed: 0, fullHpTakenMult: 1, lowHpDamageBonus: 0, fullAmmoRangeBonus: 0, healBonus: 0, startShield: 0, ultChargeBonus: 0, projectileSpeedBonus: 0, lowHpSpeedBonus: 0, chainDamageBonus: 0, damageTakenUltCharge: 0, gadgetCooldownSec: 0, bandageHeal: 0, ultStealthSec: 0, lifesteal: 0, hyperDurationBonusSec: 0, maxAmmoBonus: 0, moveSpeedMult: 1, buffyBasicRadiusMult: 1, buffyGadgetSlowMult: 1, buffyGadgetSlowSec: 0, buffyHyperUltRadiusMult: 1, buffyBasicSpeedMult: 1, buffyBasicSpeedSec: 0, buffyGadgetShieldMult: 1, buffyGadgetShieldSec: 0, buffyBasicPoolLifeBonus: 0, buffyGadgetReloadMult: 1, buffyGadgetReloadSec: 0, buffyHyperUltSpeedMult: 1, buffyAllHitSpeedMult: 1, buffyAllHitSpeedSec: 0, buffyAuraSlowMult: 1, buffyAuraRadius: 0, buffyHyperSpreadDegrees: 0 };
+  const total = { reloadSpeed: 0, fullHpTakenMult: 1, lowHpDamageBonus: 0, fullAmmoRangeBonus: 0, healBonus: 0, startShield: 0, ultChargeBonus: 0, projectileSpeedBonus: 0, lowHpSpeedBonus: 0, chainDamageBonus: 0, damageTakenUltCharge: 0, gadgetCooldownSec: 0, bandageHeal: 0, ultStealthSec: 0, lifesteal: 0, hyperDurationBonusSec: 0, maxAmmoBonus: 0, moveSpeedMult: 1, buffyBasicRadiusMult: 1, buffyGadgetSlowMult: 1, buffyGadgetSlowSec: 0, buffyHyperUltRadiusMult: 1, buffyBasicSpeedMult: 1, buffyBasicSpeedSec: 0, buffyGadgetShieldMult: 1, buffyGadgetShieldSec: 0, buffyBasicPoolLifeBonus: 0, buffyGadgetReloadMult: 1, buffyGadgetReloadSec: 0, buffyHyperUltSpeedMult: 1, buffyAllHitSpeedMult: 1, buffyAllHitSpeedSec: 0, buffyAuraSlowMult: 1, buffyAuraRadius: 0, buffyHyperSpreadDegrees: 0, buffyHitSpeedMult: 1, buffyHitSpeedSec: 0, buffyHyperTakenMult: 1, buffyBounceDamageMult: 1, buffyGadgetPierce: false, buffyHyperProjRadiusMult: 1 };
   const seenGearIds = new Set(); // 같은 기어는 한 캐릭터에 한 번만 효과 적용 (이전 데이터의 중복 장착 대비)
   for (const g of ownedGearsOf(u).filter((x) => x.charId === charId).filter((x) => !seenGearIds.has(x.gearId) && seenGearIds.add(x.gearId)).slice(0, GEAR_MAX_PER_CHARACTER)) {
     if (!gearAllowedOn(g.gearId, charId)) continue; // 장착할 수 없는 캐릭터에 (잘못) 붙어 있어도 효과는 적용하지 않음
@@ -1853,6 +1861,11 @@ function gearBonusOf(u, charId) {
     if (e.hyperSpreadDegrees) total.buffyHyperSpreadDegrees = e.hyperSpreadDegrees;
     if (e.gadgetReloadBoostMult) { total.buffyGadgetReloadMult = e.gadgetReloadBoostMult; total.buffyGadgetReloadSec = e.gadgetReloadBoostSec || 2; }
     if (e.hyperUltSpeedMult) total.buffyHyperUltSpeedMult *= e.hyperUltSpeedMult;
+    if (e.basicHitSpeedMult) { total.buffyHitSpeedMult = e.basicHitSpeedMult; total.buffyHitSpeedSec = e.basicHitSpeedSec || 0.2; }
+    if (e.hyperTakenMult) total.buffyHyperTakenMult *= e.hyperTakenMult;
+    if (e.bounceDamageMult) total.buffyBounceDamageMult *= e.bounceDamageMult;
+    if (e.gadgetPierce) total.buffyGadgetPierce = true;
+    if (e.hyperProjRadiusMult) total.buffyHyperProjRadiusMult *= e.hyperProjRadiusMult;
     if (e.gadgetShieldTakenMult) { total.buffyGadgetShieldMult = e.gadgetShieldTakenMult; total.buffyGadgetShieldSec = e.gadgetShieldSec || 2; }
   }
   return total;
@@ -2442,6 +2455,48 @@ function repeatMissionsView(u) {
 // id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
+  {
+    id: '2026-11-10-seongseureopda-buffy',
+    date: '2026-11-10',
+    tag: 'new',
+    title: '성스럽다 버피 추가!',
+    items: [
+      '기본공격 버피: 벽에 튕긴 뒤에 맞은 칼은 10% 추가 피해를 줘요.',
+      '가젯 버피: 저격 사격 총알이 적을 맞혀도 사라지지 않고 관통해요.',
+      '하이퍼차지 버피: 하이퍼 차지 발동 중 투사체 크기가 5% 증가해요.',
+    ],
+  },
+  {
+    id: '2026-11-10-byeongitong-gadget-aim',
+    date: '2026-11-10',
+    tag: 'balance',
+    title: '변기통 가젯 조준 사용',
+    items: [
+      '변기통의 가젯 [질주]를 이제 장전 후 조준해서 사용해요. 가젯 버튼으로 장전하고, 원하는 방향을 조준한 뒤 공격 입력으로 발사해요. 다시 누르면 장전이 취소돼요.',
+    ],
+  },
+  {
+    id: '2026-11-10-byeongitong-buffy',
+    date: '2026-11-10',
+    tag: 'new',
+    title: '변기통 버피 추가!',
+    items: [
+      '기본공격 버피: 뚫어뻥으로 적을 맞히면 0.2초 동안 이동속도 30% 증가',
+      '가젯 버피: 가젯을 사용하면 0.5초 동안 받는 피해 20% 감소 (임시 보호막)',
+      '하이퍼차지 버피: 하이퍼 차지 발동 중 받는 피해 20% 추가 감소',
+    ],
+  },
+  {
+    id: '2026-11-10-inplace-jump-throw',
+    date: '2026-11-10',
+    tag: 'balance',
+    title: '제자리 점프 · 제자리 투척',
+    items: [
+      '점프하는 캐릭터(점프 궁극기/가젯)가 이제 제자리에서도 점프할 수 있어요. (최소 거리 제한 삭제)',
+      '던지는 캐릭터(투척 기본공격/궁극기)도 이제 자기 발밑 제자리에 던질 수 있어요.',
+      'PC는 마우스를 캐릭터 위에 두면, 모바일은 조준 스틱을 살짝만 당기면 제자리로 나가요.',
+    ],
+  },
   {
     id: '2026-11-10-uphal-hp',
     date: '2026-11-10',
@@ -5837,6 +5892,13 @@ function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hy
     buffyAuraSlowCur: 1,                                                   // (맞는 쪽) 현재 적용 중인 배율
     buffyHyperSpreadDegrees: (gear && gear.buffyHyperSpreadDegrees) || 0, // 버피(하이퍼차지): 하이퍼 차지 발동 중 기본공격 탄퍼짐 각도
     buffyUltSpeedUntil: 0,                                                 // 이 시각(ms) 전까지 위 이동속도 증가가 적용됨
+    buffyHitSpeedMult: (gear && gear.buffyHitSpeedMult) || 1,             // 버피(기본공격): 기본공격으로 적을 맞히면 이동속도 배율 (변기통)
+    buffyHitSpeedSec: (gear && gear.buffyHitSpeedSec) || 0,               // 버피(기본공격): 그 이동속도 증가 지속시간(초)
+    buffyBounceDamageMult: (gear && gear.buffyBounceDamageMult) || 1,     // 버피(기본공격): 벽에 튕긴 투사체의 피해 배율 (성스럽다)
+    buffyGadgetPierce: !!(gear && gear.buffyGadgetPierce),                // 버피(가젯): 가젯 투사체가 적을 관통함 (성스럽다)
+    buffyHyperProjRadiusMult: (gear && gear.buffyHyperProjRadiusMult) || 1, // 버피(하이퍼차지): 하이퍼 차지 발동 중 투사체 크기 배율 (성스럽다)
+    buffyHitSpeedUntil: 0,                                                 // 이 시각(ms) 전까지 위 이동속도 증가가 적용됨
+    buffyHyperTakenMult: (gear && gear.buffyHyperTakenMult) || 1,         // 버피(하이퍼차지): 하이퍼 차지 발동 중 받는 피해 추가 배율 (변기통)
     buffyShieldUntil: 0,                                                   // 이 시각(ms) 전까지 임시 보호막 유지 (클라이언트도 이 값으로 보호막을 그림)
     gearHyperDurationBonus: (gear && gear.hyperDurationBonusSec) || 0, // 장착한 기어(하이퍼 연장): 하이퍼 차지 지속시간 증가(초)
     hyperDurationTotal: 0, // 이번(또는 마지막) 하이퍼 차지의 전체 지속시간(초, 기어 증가 포함) - 클라이언트 남은 시간 표시용
@@ -5952,7 +6014,7 @@ function getDamageMultiplier(p) {
 // 받는 피해 배율 (하이퍼 차지 발동 중에는 받는 피해 감소)
 function getDamageTakenMultiplier(p) {
   let mult = 1;
-  if (p && p.hyperUntil && Date.now() < p.hyperUntil && p.hyper) mult *= p.hyper.damageTakenMultiplier || 1;
+  if (p && p.hyperUntil && Date.now() < p.hyperUntil && p.hyper) { mult *= p.hyper.damageTakenMultiplier || 1; mult *= p.buffyHyperTakenMult || 1; } // 버피(하이퍼차지): 발동 중 받는 피해 추가 감소
   // 기어: 체력이 가득 차 있을 때(이 공격을 받기 직전 기준) 받는 피해 감소. 하이퍼 차지 감소와 곱해져서 적용됨
   if (p && p.gearFullHpTakenMult < 1 && p.hp >= p.maxHp) mult *= p.gearFullHpTakenMult;
   if (p && p.buffyShieldUntil && Date.now() < p.buffyShieldUntil) mult *= p.buffyGadgetShieldMult || 1; // 버피(가젯): 임시 보호막
@@ -6006,6 +6068,7 @@ function bulletDamageFor(b, target) {
     const ratio = Math.max(0, Math.min(1, Math.hypot(b.x - b.originX, b.y - b.originY) / b.distScale.range));
     return roundTo(b.distScale.min + (b.distScale.max - b.distScale.min) * ratio, 5);
   }
+  if (b.bounced && b.bounceDamageMult > 1) return roundTo(b.damage * b.bounceDamageMult, 5); // 버피(기본공격): 벽에 튕긴 뒤 맞으면 추가 피해
   return b.damage;
 }
 
@@ -6182,6 +6245,7 @@ function respawnPlayer(m, respawned, invincibleMs) {
   respawned.slowUntil = 0; // 버피 감속도 초기화
   respawned.buffySpeedUntil = 0; // 버피 이동속도 증가/임시 보호막도 초기화
   respawned.buffyShieldUntil = 0;
+  respawned.buffyHitSpeedUntil = 0;
   respawned.buffyUltSpeedUntil = 0;
   respawned.buffyAllHitUntil = 0;
   respawned.buffyAuraSlowUntil = 0;
@@ -6502,6 +6566,7 @@ function moveBouncingBullet(match, b, dt) {
       if (!flipY && collidesWithWalls(match.walls, b.x, ny, r)) flipY = true;
       if (!flipX && !flipY && collidesWithWalls(match.walls, nx, ny, r)) { flipX = true; flipY = true; } // 벽 모서리
     }
+    if (flipX || flipY) b.bounced = true; // 한 번이라도 튕긴 투사체 (버피: 튕긴 뒤 적중 시 추가 피해)
     if ((flipX || flipY) && b.bounceBonus > 0) { b.life += b.bounceBonus; b.bounceBonus = 0; } // 처음 튕기는 순간 사거리 추가 증가 (한 번만)
     if (flipX) { b.vx = -b.vx; nx = b.x; }
     if (flipY) { b.vy = -b.vy; ny = b.y; }
@@ -6602,6 +6667,8 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
   const isGadgetShot = !isUltimate && p.gadget === spec;
   const buffyBasicRadius = !isUltimate && !isGadgetShot && p.buffyBasicRadiusMult ? p.buffyBasicRadiusMult : 1; // 버피(기본공격): 기본공격 투사체 크기 증가
   const hyperUltLandStun = hyperUltOn && p.hyper.ultimateLandStun ? p.hyper.ultimateLandStun : 0;
+  const hyperProjRadius = p.hasHyper && p.hyper && p.hyperUntil && Date.now() < p.hyperUntil && p.buffyHyperProjRadiusMult ? p.buffyHyperProjRadiusMult : 1; // 버피(하이퍼차지): 발동 중 투사체 크기 증가
+  const gadgetPierce = isGadgetShot && !!p.buffyGadgetPierce; // 버피(가젯): 가젯 투사체가 적을 관통
   // 하이퍼 차지 발동 중 꽈리의 궁극기: 고추가 벽/맵 끝에 튕기며 bounceTime초 동안 날아다니다 사라짐 (수명 = bounceTime)
   const bounceTime = hyperUltOn && p.hyper.ultimateBounceTime ? p.hyper.ultimateBounceTime : 0;
   // 하이퍼 차지 발동 중 원효대사의 기본공격: 물웅덩이 반경/지속시간 증가
@@ -6643,7 +6710,7 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
       distScale: spec.distanceScaling ? { min: spec.minDamage, max: spec.maxDamage, range: Math.max(1, spec.speed * bulletLife * gearProjSpeed) } : null, // 거리 비례 피해 (구지): range = 이 총알의 실제 사거리
       executeBelowHp: spec.executeBelowHp || 0, // 0보다 크면 맞은 대상의 현재 체력이 이 값 이하일 때 즉사 (진우Park의 하트)
       currentHpRatio: spec.currentHpRatio || 0, // 0보다 크면 고정 피해 대신 대상 현재 체력(+보호막)의 비율만큼 피해 (진우Park의 하트)
-      radius: spec.radius * hyperUltRadius * buffyBasicRadius, // 하이퍼 차지 발동 중 궁극기(시스템)는 크기가 커짐 / 버피(기본공격)는 기본공격 투사체가 커짐
+      radius: spec.radius * hyperUltRadius * buffyBasicRadius * hyperProjRadius, // 하이퍼 차지 발동 중 궁극기(시스템)는 크기가 커짐 / 버피(기본공격)는 기본공격 투사체가 커짐
       buffyShot: buffyShotId ? { id: buffyShotId, total: pelletCount } : null, // 버피(기본공격): 이 발사의 총알 번호/전체 개수
       slowOnHit: isGadgetShot && p.buffyGadgetSlowMult < 1 ? { mult: p.buffyGadgetSlowMult, sec: p.buffyGadgetSlowSec || 1 } : null, // 버피(가젯): 맞은 적을 잠깐 느리게 함
       isUltimate,
@@ -6652,8 +6719,8 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
       launchDuration: spec.launchDuration || 0, // 0보다 크면 맞은 적을 이 시간(초) 동안 하늘로 띄움 (시스템의 궁극기)
       landDamage: spec.landDamage || 0,         // 띄워진 적이 땅에 떨어질 때 받는 피해
       landStun: hyperUltLandStun,               // 띄워진 적이 땅에 떨어진 뒤 추가로 기절하는 시간(초) (하이퍼 차지 발동 중 시스템의 궁극기)
-      pierceTargets: !!spec.pierceTargets,      // true면 적을 맞혀도 사라지지 않고 계속 날아가 여러 명을 맞힘
-      hitIds: spec.pierceTargets || spec.boomerang || bounceTime > 0 ? [] : null,   // 관통 발사체가 이미 맞힌 대상 (같은 대상을 두 번 띄우지 않기 위함. 배열이어야 클라이언트로 전송 가능)
+      pierceTargets: !!spec.pierceTargets || gadgetPierce,      // true면 적을 맞혀도 사라지지 않고 계속 날아가 여러 명을 맞힘
+      hitIds: spec.pierceTargets || spec.boomerang || bounceTime > 0 || gadgetPierce ? [] : null,   // 관통 발사체가 이미 맞힌 대상 (같은 대상을 두 번 띄우지 않기 위함. 배열이어야 클라이언트로 전송 가능)
       // 부메랑(하이퍼 차지 발동 중 미남의 궁극기): outLeft초 동안 앞으로 날아간 뒤 방향을 바꿔 시전자에게 돌아옴 (updateMatch 의 총알 이동에서 처리)
       boomerang: !!spec.boomerang,
       phase: spec.boomerang ? 'out' : null, // 'out'(나가는 중) / 'back'(돌아오는 중)
@@ -6662,6 +6729,8 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
       bounce: bounceTime > 0, // true면 벽/맵 끝에 닿아도 사라지지 않고 튕김 (moveBouncingBullet)
       pierceWalls: !!spec.pierceWalls || !!spec.bounceWalls, // 벽(장애물)을 무시하고 통과하는 발사체. 벽에 튕기는 발사체(bounceWalls)는 직접 튕김 처리를 하므로 '벽에 닿아 멈춤' 판정만 건너뜀
       wallBounce: !!spec.bounceWalls, // true면 벽/맵 끝에 튕김 (성스럽다의 칼). 적 관통은 하지 않음
+      bounceDamageMult: spec.bounceWalls && !isUltimate && !isGadgetShot ? (p.buffyBounceDamageMult || 1) : 1, // 버피(기본공격): 한 번이라도 튕긴 뒤에 맞으면 피해 배율
+      bounced: false,
       bounceBonus: spec.bounceWalls && spec.bounceRangeBonus ? bulletLife * spec.bounceRangeBonus : 0, // 처음 튕길 때 늘어나는 수명(초)
       breakShield: !!spec.breakShield, // true면 피해 없이 맞은 적의 보호막만 즉시 파괴 (시스템의 가젯 '파괴 바람')
       // 원효대사의 해골물 뿌리기처럼 벽/적에 닿으면 물웅덩이를 생성하는 발사체를 위한 부가 정보
@@ -6849,6 +6918,7 @@ function performMeleeAttack(match, p, spec, isUltimate, angle = p.angle, stabInd
     if (Math.abs(diff) > halfAngle + angleSlack(dist, PLAYER_RADIUS)) continue;
 
     applyDamage(match, target, spec.damage, p.id, { chargeShooter: !isUltimate, chain: !isUltimate && p.gearChainOn });
+    if (!isUltimate && p.buffyHitSpeedMult > 1) p.buffyHitSpeedUntil = Date.now() + (p.buffyHitSpeedSec || 0.2) * 1000; // 버피(기본공격): 적을 맞히면 잠깐 이동속도 증가
     if (match.over) break;
 
     // 기절(업할의 지진): 점프 중이거나 무적인 대상은 피해와 마찬가지로 기절도 받지 않는다. 죽은 대상은 리스폰 시 기절이 초기화됨
@@ -8870,7 +8940,7 @@ function updateMatch(match, dt, now) {
       team: turret.team,
       life: turret.bulletLifetime * turretRangeMult, // 사거리 배율만큼 더 오래 날아감
       damage: turret.damage,
-      radius: turret.bulletRadius,
+      radius: turret.bulletRadius * (turretHyper && turretOwner.buffyHyperProjRadiusMult ? turretOwner.buffyHyperProjRadiusMult : 1), // 버피(하이퍼차지): 발동 중 투사체 크기 증가
       isUltimate: true,
       visual: 'sniperBullet',
       pierceWalls: turretBounce, // 튕기는 총알은 '벽에 닿아 멈춤' 판정을 건너뛰고 대신 직접 튕김 처리 (성스럽다의 칼과 같은 방식)
@@ -9403,6 +9473,7 @@ function updateMatch(match, dt, now) {
     if (p.speedBoostUntil && now < p.speedBoostUntil) p.speedMultiplier *= p.speedBoostMultiplier || 1;
     if (p.slowUntil && now < p.slowUntil) p.speedMultiplier *= p.slowMult || 1; // 버피(가젯) 감속
     if (p.buffySpeedUntil && now < p.buffySpeedUntil) p.speedMultiplier *= p.buffyBasicSpeedMult || 1; // 버피(기본공격): 공격 후 잠깐 빨라짐
+    if (p.buffyHitSpeedUntil && now < p.buffyHitSpeedUntil) p.speedMultiplier *= p.buffyHitSpeedMult || 1; // 버피(기본공격): 적을 맞힌 뒤 잠깐 빨라짐 (변기통)
     if (p.buffyUltSpeedUntil && now < p.buffyUltSpeedUntil) p.speedMultiplier *= p.buffyHyperUltSpeedMult || 1; // 버피(하이퍼차지): 은신하는 동안 더 빨라짐
     if (p.buffyAllHitUntil && now < p.buffyAllHitUntil) p.speedMultiplier *= p.buffyAllHitSpeedMult || 1; // 버피(기본공격): 총알을 모두 맞힌 뒤 잠깐 빨라짐
     if (p.buffyAuraSlowUntil && now < p.buffyAuraSlowUntil) p.speedMultiplier *= p.buffyAuraSlowCur || 1; // 버피(가젯): 슈의 보호막 근처에서 느려짐
