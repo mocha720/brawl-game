@@ -686,6 +686,10 @@
   .mode-card.boss-used { opacity: 0.55; }
   #gateHud .gate-bar.mine .gate-bar-fill { background: #2ecc71; }
   #gateHud .gate-bar.enemy .gate-bar-fill { background: #e74c3c; }
+  #gateHud .gem-hold { margin-top: 6px; padding: 4px 8px; border-radius: 8px; font-size: 12px; font-weight: 700; text-align: center; }
+  #gateHud .gem-hold.mine { background: rgba(142, 68, 255, 0.35); color: #f0e0ff; }
+  #gateHud .gem-hold.enemy { background: rgba(255, 70, 70, 0.35); color: #ffe0e0; animation: gemHoldBlink 0.8s infinite alternate; }
+  @keyframes gemHoldBlink { from { opacity: 1; } to { opacity: 0.55; } }
   #gateHud .gate-bar.gemb .gate-bar-fill { background: linear-gradient(90deg, #c58bff, #8e44ff); } /* 쨍그랩: 팀 보석 진행바는 보라색 */
   #vsCountdown { margin-top: 24px; font-family: var(--font-display); font-size: 64px; line-height: 1; text-shadow: 0 5px 0 var(--ink); }
   @media (max-width: 560px) {
@@ -1798,9 +1802,9 @@ const CHARACTERS = [
     name: '여똥이',
     color: '#8e5a2d',
     maxHp: 5000,
-    basic: { name: '똥가루 뿌리기', desc: '똥 3개 동시 발사, 벽/적 적중 시 똥가루 구름 생성 (닿은 적에게 0.2초마다 175 피해, 1초 후 소멸, 적 터렛도 파괴 가능)' },
+    basic: { name: '똥가루 뿌리기', desc: '똥 3개 동시 발사, 벽/적 적중 시 똥가루 구름 생성 (닿은 적에게 0.2초마다 140 피해, 1초 후 소멸, 적 터렛도 파괴 가능)' },
     ultimate: { name: '간식 처먹기', desc: '조준 불필요, 즉시 체력을 가득 채움' },
-    gadget: { name: '프링글스', desc: '조준한 방향으로 큼직한 감자칩 1개를 던져 2,000 피해를 주고, 맞은 적을 140px 뒤로 밀쳐냄 (사거리 약 595) (15초마다 사용 가능)' },
+    gadget: { name: '프링글스', desc: '조준한 방향으로 큼직한 감자칩 1개를 던져 1,600 피해를 주고, 맞은 적을 140px 뒤로 밀쳐냄 (사거리 약 595) (15초마다 사용 가능)' },
   },
   {
     id: 'bobae',
@@ -1859,8 +1863,8 @@ const CHARACTERS = [
     id: 'system',
     name: '시스템',
     color: '#5b7cff',
-    maxHp: 6000,
-    basic: { name: '시스템 콤보', desc: '1번째 탄창: 원거리 구슬 (1,000 피해, 사거리 약 800) / 2번째 탄창: 던지는 구슬 (1,500 피해, 사거리 약 480) / 3번째 탄창: 큰 소용돌이 1개를 발사해 지나가는 범위 안의 모든 적에게 광역 피해 (한 명당 3,000 피해, 사거리 약 150). 공격할 때마다 이동 중인 방향으로 약 96px 돌진한 뒤 그 자리에서 현재 조준 방향으로 공격 (가만히 서 있으면 돌진 없이 바로 공격). 탄창 3개를 모두 사용하면 3초 뒤에 한꺼번에 재장전' },
+    maxHp: 5700,
+    basic: { name: '시스템 콤보', desc: '1번째 탄창: 원거리 구슬 (1,000 피해, 사거리 약 560) / 2번째 탄창: 던지는 구슬 (1,500 피해, 사거리 약 336) / 3번째 탄창: 큰 소용돌이 1개를 발사해 지나가는 범위 안의 모든 적에게 광역 피해 (한 명당 3,000 피해, 사거리 약 150). 공격할 때마다 이동 중인 방향으로 약 96px 돌진한 뒤 그 자리에서 현재 조준 방향으로 공격 (가만히 서 있으면 돌진 없이 바로 공격). 탄창 3개를 모두 사용하면 3초 뒤에 한꺼번에 재장전' },
     ultimate: { name: '거대 소용돌이', desc: '조준한 방향으로 거대한 소용돌이를 발사 (사거리 약 532), 벽을 통과함. 맞은 적들(관통)은 1.2초 동안 하늘로 떠올라 조작 불가가 되고, 땅에 떨어질 때 1,500 피해' },
     gadget: { name: '파괴 바람', desc: '조준한 방향으로 작은 바람을 발사, 맞은 적의 보호막을 피해 없이 즉시 파괴 (15초마다 사용 가능)' },
   },
@@ -4451,7 +4455,8 @@ let voteState = null;           // 매칭 직후 게임 모드 투표 진행 상
 const GAME_MODE_NAMES = { knockout: '녹아우', gatekeeper: '문지기', gemgrab: '쨍그랩' };
 let matchRounds = null;     // 녹아우 2:2·3:3 라운드제면 { max, toWin }. modeVoteResult 로 알려줌 (아니면 null)
 // 쨍그랩 모드: 중앙 구멍에서 5초마다 나오는 보라색 보석. 서버가 바뀔 때만 'gems' 이벤트로 목록을 보내준다
-let matchGemWin = 20;   // 팀 보석이 이 수가 되면 승리 (modeVoteResult 로 서버가 알려줌)
+let matchGemHoldMs = 10000; // 보석을 matchGemWin개 이상 가진 채 이 시간 동안 유지해야 승리
+let matchGemWin = 15;   // 팀 보석이 이 수가 되면 승리 (modeVoteResult 로 서버가 알려줌)
 let matchHole = null;   // 중앙 구멍 { x, y, r }
 let gemList = [];       // 바닥에 있는 보석들 { id, x, y, fx, fy } (x,y=착지 위치, fx,fy=튀어나온 위치)
 let gemNextAt = 0;      // 다음 보석이 나올 시각 (클라이언트 시계 기준)
@@ -4556,7 +4561,7 @@ function showVersusScreen(data) {
       if (voteState && !voteState.resolved) { cdEl.textContent = '집계 중...'; return; } // 투표 결과가 도착할 때까지 기다림
       cdEl.textContent = 'START!';
       if (matchGameMode === 'gatekeeper' && joined) showStartBanner('문을 지키고, 상대를 쥑이뿌세요!!'); // 문지기 모드 시작 안내
-      if (matchGameMode === 'gemgrab' && joined) showStartBanner(`보라색 보석 ${matchGemWin}개를 먼저 모으세요!`); // 쨍그랩 모드 시작 안내
+      if (matchGameMode === 'gemgrab' && joined) showStartBanner(`보라색 보석 ${matchGemWin}개 이상을 ${Math.round(matchGemHoldMs / 1000)}초 동안 유지하세요!`); // 쨍그랩 모드 시작 안내
       if (matchGameMode === 'boss' && joined) showStartBanner(`👹 ${matchBossInfo ? matchBossInfo.name : '보스'}를 쓰러뜨리세요! 목숨은 ${matchLives}개!`); // 보스전 시작 안내
       if (matchGameMode === 'knockout' && matchRounds && joined) showStartBanner(`⚔ 라운드 1 시작! 죽으면 이번 라운드가 끝날 때까지 부활 못 해요 (${matchRounds.max}라운드 중 ${matchRounds.toWin}승)`); // 녹아우 라운드제 안내
       clearInterval(vsTimer); vsTimer = null;
@@ -4598,7 +4603,7 @@ function setupVoteUi(vote) {
 function mapThumbSvg(m) {
   const th = MAP_THEMES[m.id] || MAP_THEMES.default;
   const rects = (list, fill) => (list || []).map((r) => `<rect x="${r.x}" y="${r.y}" width="${r.width}" height="${r.height}" fill="${fill}"/>`).join('');
-  return `<svg viewBox="0 0 ${ARENA_WIDTH} ${ARENA_HEIGHT}" xmlns="http://www.w3.org/2000/svg"><rect width="${ARENA_WIDTH}" height="${ARENA_HEIGHT}" fill="${th.thumbFloor}"/>${rects(m.bushes, th.thumbBush)}${rects(m.walls, th.thumbWall)}</svg>`;
+  return `<svg viewBox="0 0 ${ARENA_WIDTH} ${ARENA_HEIGHT}" xmlns="http://www.w3.org/2000/svg"><rect width="${ARENA_WIDTH}" height="${ARENA_HEIGHT}" fill="${th.thumbFloor}"/>${rects((m.walls || []).filter((r) => r.isWater), th.thumbWater || '#3b97e3')}${rects(m.bushes, th.thumbBush)}${rects((m.walls || []).filter((r) => !r.isWater), th.thumbWall)}</svg>`;
 }
 
 function renderVoteUi(result) {
@@ -4685,7 +4690,8 @@ socket.on('roundStart', (data) => {
 socket.on('modeVoteResult', (data) => {
   matchGameMode = data.gameMode || 'knockout';
   if (data.winScore) matchWinScore = data.winScore;
-  matchGemWin = data.gemWin || 20;
+  matchGemWin = data.gemWin || 15;
+  matchGemHoldMs = data.gemHoldMs || 10000;
   matchHole = data.hole || null;
   matchRounds = data.rounds || null;
   // 투표로 정해진 맵으로 교체: 벽/덤불을 바꾸고, 서버가 옮겨준 새 스폰 위치로 내 위치도 다시 맞춘다
@@ -4711,7 +4717,7 @@ function updateGateHud(state) {
   matchGameMode = mode;
   const modeLabel = matchIsTraining ? '🎯 훈련장 — 허수아비는 쓰러지지 않아요. 마음껏 연습하세요!'
     : mode === 'gatekeeper' ? '🚪 문지기 — 상대 문을 먼저 부수면 승리!'
-    : mode === 'gemgrab' ? `💎 쨍그랩 — 팀 보석 ${matchGemWin}개를 먼저 모으면 승리!`
+    : mode === 'gemgrab' ? `💎 쨍그랩 — 팀 보석 ${matchGemWin}개 이상을 ${Math.round(matchGemHoldMs / 1000)}초 유지하면 승리!`
     : mode === 'boss' ? `👹 보스전 — 보스를 쓰러뜨리세요! (목숨 ${matchLives}개)`
     : (mode === 'knockout' && state.round) ? `⚔ 녹아우 — ${state.round.n}라운드 / 먼저 ${state.round.toWin}승 (우리 ${state.round[myTeam] || 0} : ${state.round[myTeam === 'A' ? 'B' : 'A'] || 0} 상대)`
     : `⚔ 녹아우 — ${matchWinScore}킬 선취`;
@@ -4723,6 +4729,11 @@ function updateGateHud(state) {
     const enemyTeam = myTeam === 'A' ? 'B' : 'A';
     const gbar = (n, label, cls) => `<div class="gate-bar ${cls} gemb"><div class="gate-bar-label"><span>${label}</span><span>💎 ${n} / ${matchGemWin}</span></div><div class="gate-bar-track"><div class="gate-bar-fill" style="width:${Math.max(0, Math.min(100, (n / matchGemWin) * 100))}%"></div></div></div>`;
     html += `<div class="gate-bars">${gbar(totals[myTeam] || 0, '우리 팀', 'mine')}${gbar(totals[enemyTeam] || 0, '상대 팀', 'enemy')}</div>`;
+    // 보석 15개 이상을 채우면 유지 타이머 표시 (서버가 팀별 남은 시간(ms)을 보내줌)
+    const hold = state.gemHold || {};
+    const myLeft = hold[myTeam], enLeft = hold[enemyTeam];
+    if (myLeft != null) html += `<div class="gem-hold mine">⏱ 우리 팀이 보석을 지키는 중! ${(myLeft / 1000).toFixed(1)}초 뒤 승리</div>`;
+    if (enLeft != null) html += `<div class="gem-hold enemy">⚠ 상대 팀이 보석을 지키는 중! ${(enLeft / 1000).toFixed(1)}초 뒤 패배 — 보석 든 적을 쓰러뜨리세요!</div>`;
   }
   if (mode === 'boss') { // 보스 체력바 + 남은 목숨
     const bossC = (state.chickens || []).find((c) => c.boss);
@@ -4880,7 +4891,7 @@ socket.on('matchOver', (data) => {
   } else if (data.reason === 'gemsCollected') {
     titleEl.textContent = iWon ? '승리!' : '패배';
     titleEl.classList.add(iWon ? 'win' : 'lose');
-    descEl.textContent = iWon ? `💎 보석 ${matchGemWin}개를 모았어요!` : `💎 상대 팀이 보석 ${matchGemWin}개를 먼저 모았어요...`;
+    descEl.textContent = iWon ? `💎 보석 ${matchGemWin}개 이상을 ${Math.round(matchGemHoldMs / 1000)}초 동안 지켜냈어요!` : `💎 상대 팀이 보석 ${matchGemWin}개 이상을 ${Math.round(matchGemHoldMs / 1000)}초 동안 지켜냈어요...`;
   } else if (data.reason === 'roundsWon') {
     const rw = data.roundWins || { A: 0, B: 0 };
     titleEl.textContent = iWon ? '승리!' : '패배';
@@ -14289,6 +14300,38 @@ const MAP_THEMES = {
     bushTop: 'rgb(146,82,184)', bushFront: 'rgb(88,44,116)', bushEdge: 'rgba(40,12,60,0.9)', bushDecor: true, leaves: ['#a865d6', '#7a3fa3', '#c58bf0'],
     thumbFloor: '#2b1d22', thumbWall: '#ff8a3a', thumbBush: '#7a3fa3',
   },
+  // ===== 물 지형 맵 =====
+  // water: 물 색 / waterDeep: 물 안쪽 어두운 색 / waterWave: 물결 무늬 / shore: 물가 테두리 / thumbWater: 투표 미리보기 물 색
+  // 고요한 호수: 푸른 잔디 + 회색 돌벽 + 맑은 물
+  lake: {
+    floor: '#5aa84a', floorStyle: 'grass', outside: '#0f2410',
+    wallTop: '#a9b0b8', wallFront: '#737b85', wallEdge: '#1d2228', wallDecor: 'stone',
+    frameTop: '#8b929b', frameFront: '#555c66', frameEdge: '#14181c', frameDecor: 'stone',
+    bushFill: 'rgba(30,125,80,0.6)', bushStroke: 'rgba(8,70,44,0.9)',
+    bushTop: 'rgb(40,150,100)', bushFront: 'rgb(20,100,68)', bushEdge: 'rgba(8,70,44,0.9)', bushDecor: true, leaves: ['#3fbf86', '#2a9468', '#6ddba6'],
+    water: '#3b97e3', waterDeep: '#2468b8', waterWave: 'rgba(255,255,255,0.35)', shore: '#e8dca8',
+    thumbFloor: '#5aa84a', thumbWall: '#c3c9d0', thumbBush: '#2a9468', thumbWater: '#3b97e3',
+  },
+  // 강가: 모래 강둑 + 붉은 벽돌 + 흙탕 섞인 강물
+  river: {
+    floor: '#cdb77f', floorStyle: 'sand', outside: '#241b0c',
+    wallTop: '#b87a5a', wallFront: '#855037', wallEdge: '#2e170e', wallDecor: 'brick',
+    frameTop: '#966249', frameFront: '#643a28', frameEdge: '#23110a', frameDecor: 'brick',
+    bushFill: 'rgba(80,150,70,0.58)', bushStroke: 'rgba(30,80,30,0.9)',
+    bushTop: 'rgb(86,165,78)', bushFront: 'rgb(48,110,52)', bushEdge: 'rgba(22,66,28,0.9)', bushDecor: true, leaves: ['#7fc062', '#5aa04a', '#a3d67a'],
+    water: '#3a8fc9', waterDeep: '#1f6a9e', waterWave: 'rgba(255,255,255,0.32)', shore: '#f0e6bd',
+    thumbFloor: '#cdb77f', thumbWall: '#d99a78', thumbBush: '#5aa04a', thumbWater: '#3a8fc9',
+  },
+  // 물의 섬: 열대 모래 + 덩쿨 감긴 기둥 + 에메랄드빛 물
+  islands: {
+    floor: '#ecd9a1', floorStyle: 'sand', outside: '#10261f',
+    wallTop: '#5f9a48', wallFront: '#3a6a2d', wallEdge: '#14300f', wallDecor: 'vine',
+    frameTop: '#4a7f38', frameFront: '#2c521f', frameEdge: '#0e240a', frameDecor: 'vine',
+    bushFill: 'rgba(20,130,90,0.6)', bushStroke: 'rgba(6,70,50,0.9)',
+    bushTop: 'rgb(30,160,110)', bushFront: 'rgb(16,105,74)', bushEdge: 'rgba(6,70,50,0.9)', bushDecor: true, leaves: ['#2fc08a', '#1f9a6c', '#5ee0ac'],
+    water: '#2fbfc9', waterDeep: '#157f9e', waterWave: 'rgba(255,255,255,0.4)', shore: '#fff6d2',
+    thumbFloor: '#ecd9a1', thumbWall: '#5f9a48', thumbBush: '#1f9a6c', thumbWater: '#2fbfc9',
+  },
 };
 
 let mtLastMapId = '\u0000';
@@ -14573,6 +14616,51 @@ function drawBushBox(b) {
 }
 
 // 은신 가능한 덤불 - 벽과 달리 이동/총알은 막지 않고, 그 안에 들어가면 적에게 보이지 않게 됨
+// 물 지형: 바닥 위에 깔리는 평평한 물웅덩이. 서버가 walls 배열에 { isWater: true } 로 표시해서 보내준다.
+// 캐릭터는 못 지나가지만 총알은 위로 지나간다. 판정은 WALLS 에 같이 들어 있어서 이동 예측도 서버와 똑같이 막힘.
+function drawWaterBodies() {
+  const list = WALLS.filter((w) => w.isWater);
+  if (!list.length) return;
+  const th = mapTheme();
+  const t = Date.now() / 1000;
+  const water = th.water || '#3b97e3';
+  const deep = th.waterDeep || '#2468b8';
+  const waveColor = th.waterWave || 'rgba(255,255,255,0.35)';
+  const shore = th.shore || '#e8dca8';
+  ctx.save();
+  // 1) 물가(모래/풀 테두리)를 먼저 전부 깔아서 겹친 물 조각 사이에 선이 생기지 않게 함
+  ctx.fillStyle = shore;
+  for (const w of list) ctx.fillRect(w.x - 5, w.y - 5, w.width + 10, w.height + 10);
+  // 2) 물 본체 + 가장자리 쪽을 살짝 어둡게(깊이감)
+  for (const w of list) {
+    ctx.fillStyle = deep;
+    ctx.fillRect(w.x, w.y, w.width, w.height);
+  }
+  for (const w of list) {
+    ctx.fillStyle = water;
+    ctx.fillRect(w.x + 4, w.y + 4, w.width - 8, w.height - 8);
+  }
+  // 3) 일렁이는 물결 (조각마다 영역을 잘라서 그림)
+  ctx.lineWidth = 1.6;
+  ctx.strokeStyle = waveColor;
+  for (const w of list) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(w.x + 4, w.y + 4, w.width - 8, w.height - 8);
+    ctx.clip();
+    for (let row = 0, y = w.y + 10; y < w.y + w.height; row++, y += 16) {
+      ctx.beginPath();
+      for (let x = w.x; x <= w.x + w.width; x += 6) {
+        const yy = y + Math.sin(x * 0.07 + t * 1.6 + row * 1.7) * 2.2;
+        if (x === w.x) ctx.moveTo(x, yy); else ctx.lineTo(x, yy);
+      }
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
 function drawBushes() {
   ctx.save();
   const th = mapTheme();
@@ -14640,6 +14728,7 @@ function render() {
   ctx.scale(1, TILT); // 여기부터 '바닥' 좌표계: 월드 좌표로 그리면 세로로 눌려 비스듬히 내려다본 모습이 됨
   ctx.drawImage(getFloorCanvas(theme), 0, 0, ARENA_WIDTH, ARENA_HEIGHT); // 맵별 바닥 (맵마다 한 번만 그려 캐시)
 
+  drawWaterBodies(); // 물 지형 (바닥 바로 위, 덤불/벽보다 아래)
   drawBushes(); // 덤불 바닥(납작한 부분). 솟아오른 잎은 아래에서 깊이 순서대로 그림
   if (matchGameMode === 'gemgrab') { drawGemHole(); drawGems(); } // 쨍그랩: 중앙 구멍과 바닥의 보석 (플레이어보다 아래에 그림)
 
@@ -14659,7 +14748,7 @@ function render() {
   upright.push({ y: -1e6 + 1, fn: () => drawFrameBox(fr.left) });
   upright.push({ y: -1e6 + 1, fn: () => drawFrameBox(fr.right) });
   upright.push({ y: 1e6, fn: () => drawFrameBox(fr.bottom) });
-  for (const w of WALLS) upright.push({ y: w.y + w.height, fn: () => drawWallBox(w) });
+  for (const w of WALLS) { if (w.isWater) continue; upright.push({ y: w.y + w.height, fn: () => drawWallBox(w) }); } // 물은 바닥에 따로 그림
   for (const bu of BUSHES) upright.push({ y: bu.y + bu.height + 1, fn: () => drawBushBox(bu) });
   const turretsArr = Array.isArray(latestState.turrets) ? latestState.turrets : [];
   for (const t of turretsArr) upright.push({ y: t.y, fn: () => { ctx.save(); uprightAt(t.y); drawTurret(t); ctx.restore(); } });
