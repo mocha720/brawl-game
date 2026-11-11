@@ -54,7 +54,7 @@ const MODES = {
 const GAME_MODES = {
   knockout: { name: '녹아우', desc: '1:1은 목표 킬 수를 먼저 채우면 승리. 2:2·3:3은 라운드제: 죽으면 그 라운드가 끝날 때까지 부활 못 하고, 상대 팀을 전멸시키면 라운드 승리! 3라운드 중 2번 이기면 승리' },
   gatekeeper: { name: '문지기', desc: '상대 리스폰 근처에 있는 문을 먼저 공격해 파괴하면 승리' },
-  gemgrab: { name: '쨍그랩', desc: '중앙 구멍에서 나오는 보석을 모아 팀 보석 20개를 먼저 채우면 승리' },
+  gemgrab: { name: '쨍그랩', desc: '중앙 구멍에서 나오는 보석을 모아 팀 보석 15개 이상을 10초 동안 유지하면 승리' },
 };
 const MODE_VOTE_MS = 8000;        // 게임 종류 투표 시간 (모두 투표하면 바로 끝남)
 // ===== 녹아우 라운드제 (2:2, 3:3) =====
@@ -102,12 +102,15 @@ const JINWOOPARK_GATE_DAMAGE = 4000; // 문지기 모드: 진우Park 하트(현�
 const GATE_RADIUS = 36;           // 문의 크기(피격 반경)
 
 // ===== 쨍그랩 모드 설정 =====
-const GEM_WIN_COUNT = 20;      // 팀이 가진 보석이 이 수에 도달하면 승리
+const GEM_WIN_COUNT = 15;      // 팀이 가진 보석이 이 수 이상이 되면 '유지 시간'이 시작됨
+const GEM_HOLD_MS = 10000;     // 보석을 GEM_WIN_COUNT개 이상 가진 채로 이 시간 동안 유지해야 승리 (중간에 개수가 모자라지면 처음부터 다시)
 const GEM_SPAWN_MS = 5000;     // 중앙 구멍에서 보석이 나오는 간격
 const GEM_RADIUS = 11;         // 보석 크기(획득 판정 계산용)
 const GEM_PICKUP_EXTRA = 6;    // 플레이어가 보석에 이만큼 더 가까이 닿으면 획득 (여유 판정)
 const GEM_LAND_MS = 450;       // 보석이 구멍에서 튀어나와 땅에 떨어지는 시간 (이 동안은 획득 불가)
 const GEM_HOLE_RADIUS = 46;    // 중앙 구멍 반지름
+const GEM_AI_NEAR_WIN = Math.round(GEM_WIN_COUNT * 0.6); // AI: 상대 팀 보석이 이 수 이상이면 '곧 승리'로 보고 적극 추격 (기존 20개 기준 12)
+const GEM_AI_RICH = Math.round(GEM_WIN_COUNT * 0.4);     // AI: 내가 이만큼 들고 있으면 더 조심스럽게 행동 (기존 20개 기준 8)
 const GEM_MAX_ON_GROUND = 80;  // 바닥에 있는 보석이 이 수 이상이면 새 보석은 잠시 안 나옴 (죽어서 떨어뜨린 보석은 제한 없음)
 let gemIdCounter = 0;
 
@@ -198,7 +201,22 @@ function mirrorAcrossCenter(rects) {
   return out;
 }
 
-// x, y는 좌상단 좌표. 이동/총알 모두 벽에 막힘
+// 좌우로만 대칭 복제 (위아래로는 이미 대칭인 지형용: 강처럼 맵 중앙 가로줄에 걸친 도형)
+function mirrorLR(rects) {
+  const out = [];
+  for (const r of rects) {
+    out.push({ x: r.x, y: r.y, width: r.width, height: r.height });
+    out.push({ x: ARENA_WIDTH - r.x - r.width, y: r.y, width: r.width, height: r.height });
+  }
+  return out;
+}
+
+// 물 지형으로 표시: 캐릭터는 못 지나가지만 총알은 위로 지나간다 (walls 배열 안에 isWater 플래그로 같이 들어감)
+function asWater(rects) {
+  return rects.map((r) => ({ ...r, isWater: true }));
+}
+
+// x, y는 좌상단 좌표. 이동은 벽/물에 막히고, 총알은 벽에만 막힘 (물은 통과)
 // 맵 크기를 70% 배율(1100x1000 → 770x700)로 줄인 데 맞춰, 벽 좌표/크기도 동일 비율로 축소해
 // 기존 레이아웃 비율을 그대로 유지함
 //
@@ -317,6 +335,71 @@ const MAP_LAYOUTS = [
       { x: ARENA_WIDTH / 2 - 35, y: ARENA_HEIGHT / 2 - 50, width: 70, height: 100 }, // 고리 안쪽 덤불
     ],
   },
+  // ===== 물 지형 맵 (asWater: 걸어서는 못 건너지만 총알은 통과) =====
+  // 물은 스폰 구역(위/아래 150px)과 쨍그랩 중앙 구멍(반지름 60 이내)을 피해서 배치했고, 모든 통로 폭은 70px 이상이다.
+  {
+    id: 'lake',
+    name: '고요한 호수',
+    walls: [
+      ...mirrorAcrossCenter([
+        { x: 230, y: 170, width: 70, height: 16 }, // 호수 위쪽 엄폐 벽
+      ]),
+      // 맵 중앙을 가로막는 커다란 호수 2개 (가운데 140px 폭의 육지 다리로만 오갈 수 있음)
+      ...asWater(mirrorLR([
+        { x: 120, y: 250, width: 195, height: 200 },
+      ])),
+    ],
+    bushes: [
+      ...mirrorAcrossCenter([
+        { x: 30, y: 255, width: 60, height: 80 },  // 호수 바깥쪽 갈대밭
+        { x: 300, y: 110, width: 60, height: 45 }, // 위/아래 중앙 덤불
+      ]),
+    ],
+  },
+  {
+    id: 'river',
+    name: '강가',
+    walls: [
+      ...mirrorAcrossCenter([
+        { x: 180, y: 230, width: 90, height: 16 }, // 강둑 엄폐 벽
+        { x: 330, y: 215, width: 20, height: 20 }, // 중앙 다리 앞 기둥
+      ]),
+      // 맵 가운데를 가로지르는 강: 건널 수 있는 곳은 중앙 다리(180px)와 양옆 얕은 길(80px) 3군데
+      ...asWater(mirrorLR([
+        { x: 0, y: 305, width: 70, height: 90 },
+        { x: 150, y: 305, width: 145, height: 90 },
+      ])),
+    ],
+    bushes: [
+      ...mirrorAcrossCenter([
+        { x: 20, y: 200, width: 70, height: 70 },   // 모서리 덤불
+        { x: 160, y: 265, width: 110, height: 30 }, // 강둑 덤불 (물가 매복용)
+      ]),
+    ],
+  },
+  {
+    id: 'islands',
+    name: '물의 섬',
+    walls: [
+      ...mirrorAcrossCenter([
+        { x: 300, y: 255, width: 20, height: 20 }, // 중앙 쪽 작은 기둥
+      ]),
+      { x: ARENA_WIDTH / 2 - 50, y: ARENA_HEIGHT / 2 - 8, width: 100, height: 16 }, // 중앙 가로 벽
+      // 네 사분면에 ㄱ자 모양의 물웅덩이 (안쪽 오목한 곳이 '섬'처럼 덤불로 가려진 자리)
+      ...asWater(mirrorAcrossCenter([
+        { x: 110, y: 170, width: 160, height: 70 },
+        { x: 110, y: 170, width: 70, height: 150 },
+      ])),
+    ],
+    bushes: [
+      ...mirrorAcrossCenter([
+        { x: 195, y: 258, width: 70, height: 55 }, // 물웅덩이 안쪽(섬) 덤불
+      ]),
+      ...mirrorLR([
+        { x: 25, y: 310, width: 60, height: 80 },  // 양쪽 가장자리 덤불
+      ]),
+    ],
+  },
 ];
 
 // 매치 시작 시 이 중 하나를 무작위로 고르기 위한 함수
@@ -334,6 +417,12 @@ function circleIntersectsRect(cx, cy, radius, rect) {
 
 function collidesWithWalls(walls, x, y, radius) {
   return walls.some((w) => circleIntersectsRect(x, y, radius, w));
+}
+
+// 물 지형({ isWater: true })을 뺀 '진짜 벽'만 검사한다. 물은 캐릭터/소환수의 이동과 점프 착지는 막지만
+// 총알·시야는 막지 않으므로, 투사체 충돌과 AI 시야(조준) 판정에는 이 함수를 쓴다.
+function collidesWithSolidWalls(walls, x, y, radius) {
+  return walls.some((w) => !w.isWater && circleIntersectsRect(x, y, radius, w));
 }
 
 function pointInRect(x, y, rect) {
@@ -674,7 +763,7 @@ const CHARACTERS = {
       poolRadius: 80,       // 똥가루 구름 반경
       poolLifetime: 1,       // 똥가루 구름이 유지되는 시간(초) - 1초로 변경
       poolTickInterval: 0.2, // 0.2초마다 대미지 적용
-      poolDamage: 175,      // 똥가루 구름에 닿은 적이 주기(0.2초)마다 입는 대미지 (기존 250에서 30% 감소)
+      poolDamage: 140,      // 똥가루 구름에 닿은 적이 주기(0.2초)마다 입는 대미지 (250 → 175 → 140: 공격력 20% 추가 감소)
       poolHeal: 0,          // 아군/자신에게는 아무 효과 없음 (독가스라 회복 없음)
     },
     ultimate: {
@@ -686,7 +775,7 @@ const CHARACTERS = {
       type: 'burst',       // 조준한 방향으로 투사체를 발사하는 가젯 (여기서는 감자칩 1개)
       bulletCount: 1,
       interval: 0,
-      damage: 2000,        // 1레벨 기준 피해
+      damage: 1600,        // 1레벨 기준 피해 (2000에서 공격력 20% 감소)
       knockback: 140,      // 맞은 적이 날아가는 거리(px). 감자칩이 날아온 방향 그대로 뒤로 밀려남
       speed: 700,
       radius: 18,          // 크기가 큰 감자칩 (기본공격 똥 14보다 큼)
@@ -775,6 +864,8 @@ const CHARACTERS = {
       directRadius: 40,     // 직접 적중으로 치는 범위(px): 깨진 자리에서 이 거리 안(적 몸 가장자리 기준)
       poolChargesUlt: true, // 흰자 지속 피해로도 궁극기 게이지가 충전됨
       poolChargeScale: 0.2, // 틱 1번당 충전량(기본 적중 1회 대비 비율). 0.2초 틱 × 5번 = 흰자에 1초 내내 서 있으면 직접 적중 1회만큼 충전
+      maxAmmo: 1,           // 탄창 1개 (기본 3개 → 1개). 탄창 수가 고정이라 기어 '큰 탄창'은 장착 불가
+      ammoRegenSeconds: 2,  // 재장전 시간 2초 (기본 1.8초)
     },
     ultimate: {
       name: '닭 소환',
@@ -979,7 +1070,7 @@ const CHARACTERS = {
     id: 'system',
     name: '시스템',
     moveSpeedTier: 'normal', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
-    maxHp: 6000, // 1레벨 기준 (기존 6500에서 너프)
+    maxHp: 5700, // 1레벨 기준 (6500 → 6000 → 5700 너프)
     basic: {
       name: '시스템 콤보',
       type: 'combo',         // 탄창 3개가 각각 다른 공격: 1번 원거리 구슬 -> 2번 던지는 구슬 -> 3번 소용돌이 3개
@@ -987,8 +1078,8 @@ const CHARACTERS = {
       ammoRegenSeconds: 3,   // 3개를 모두 사용한 뒤 탄창이 리셋되기까지의 시간(초)
       dash: { speed: 448, duration: 0.12 }, // 공격 버튼을 누르면 먼저 투사체를 발사한 뒤, 이동 중이던 방향으로 이만큼 돌진(약 54px, 기존 약 77px에서 30% 감소). 가만히 서 있으면 돌진하지 않고 공격만 함
       combo: [
-        { name: '원거리 구슬', damage: 1000, speed: 800, radius: 9, lifetime: 1.0, visual: 'sysOrb' },   // 사거리 약 800 (원거리)
-        { name: '던지는 구슬', damage: 1500, speed: 480, radius: 14, lifetime: 1.0, visual: 'sysThrow' }, // 사거리 약 480 (중거리)
+        { name: '원거리 구슬', damage: 1000, speed: 800, radius: 9, lifetime: 0.7, visual: 'sysOrb' },   // 사거리 약 560 (원거리, 기존 800에서 30% 감소)
+        { name: '던지는 구슬', damage: 1500, speed: 480, radius: 14, lifetime: 0.7, visual: 'sysThrow' }, // 사거리 약 336 (중거리, 기존 480에서 30% 감소)
         { name: '소용돌이', damage: 2500, speed: 300, radius: 55, lifetime: 0.5, pierceTargets: true, pierceWalls: true, visual: 'vortex' }, // 큰 소용돌이 (벽을 통과함) 1개 (판정 반경 55px의 광역, 맞은 적을 관통해서 범위 안의 여러 명에게 각각 2500 피해, 기존 3000에서 변경), 사거리 약 150
       ],
     },
@@ -1019,7 +1110,7 @@ const CHARACTERS = {
     gadget: {
       name: '점프 강타',
       type: 'leap',          // 벽을 무시하고 조준한 거리만큼 점프. 착지 지점에 정확히 있던 적은 directDamage, 근처 범위의 적은 damage 피해 + knockback만큼 밀침
-      directDamage: 2000,    // 정확히 착지한 적(착지 지점에서 directRadius 안)이 받는 피해 (1레벨 기준)
+      directDamage: 1500,    // 정확히 착지한 적(착지 지점에서 directRadius 안)이 받는 피해 (1레벨 기준) - 2000에서 감소
       directRadius: 35,      // '정확히 착지'로 인정하는 반경(px)
       damage: 1000,          // 착지 지점 근처 범위(landRadius)의 적이 받는 피해 (1레벨 기준)
       landRadius: 110,       // 착지 지점 주변 피해 반경
@@ -1423,6 +1514,7 @@ function describeBasic(b) {
   }
   if (b.pierceWalls) parts.push('벽(장애물)을 그대로 통과');
   if (b.bounceWalls) parts.push(`벽(장애물)이나 맵 끝에 닿으면 튕겨 나옴${b.bounceRangeBonus ? `, 튕기면 사거리 ${Math.round(b.bounceRangeBonus * 100)}% 추가 증가` : ''}`);
+  if (b.maxAmmo != null && b.maxAmmo !== MAX_AMMO && b.type !== 'combo') parts.push(`탄창 ${b.maxAmmo}개`);
   if (b.ammoRegenSeconds && b.ammoRegenSeconds > AMMO_REGEN_SECONDS) {
     parts.push(`재장전 시간 ${Math.round((b.ammoRegenSeconds / AMMO_REGEN_SECONDS - 1) * 100)}% 증가`);
   } else if (b.ammoRegenSeconds && b.ammoRegenSeconds < AMMO_REGEN_SECONDS) {
@@ -1754,7 +1846,7 @@ function gearById(id) { return GEAR_CATALOG.find((g) => g.id === id) || null; }
 // 탄창이 무조건 3개여야 하는 캐릭터 (시스템: 탄창 3개가 각각 다른 콤보 공격이라 탄창 수를 바꿀 수 없음)
 function fixedAmmoCharacter(charId) {
   const ch = CHARACTERS[charId];
-  return !!(ch && (ch.id === 'system' || (ch.basic && ch.basic.combo)));
+  return !!(ch && (ch.id === 'system' || (ch.basic && (ch.basic.combo || ch.basic.maxAmmo != null))));
 }
 // 이 기어를 이 캐릭터에 장착할 수 있는지 ('큰 탄창'은 탄창 수가 고정인 캐릭터에 장착 불가)
 function gearAllowedOn(gearId, charId) {
@@ -2455,6 +2547,59 @@ function repeatMissionsView(u) {
 // id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
+  {
+    id: '2026-11-11-system-nerf2',
+    date: '2026-11-11',
+    tag: 'balance',
+    title: '[시스템] 체력·사거리 감소',
+    items: [
+      '체력: 6,000 → 5,700 (1레벨 기준)',
+      '기본공격 1번째 [원거리 구슬] 사거리 30% 감소: 약 800 → 약 560',
+      '기본공격 2번째 [던지는 구슬] 사거리 30% 감소: 약 480 → 약 336',
+    ],
+  },
+  {
+    id: '2026-11-11-system-gadget-nerf',
+    date: '2026-11-11',
+    tag: 'balance',
+    title: '[시스템] 가젯 조정',
+    items: [
+      '가젯 [점프 강타]: 착지 지점에 정확히 있던 적이 받는 피해 2,000 → 1,500 (1레벨 기준, 너프)',
+    ],
+  },
+  {
+    id: '2026-11-11-yeoddongi-nerf',
+    date: '2026-11-11',
+    tag: 'balance',
+    title: '[여똥이] 공격력 감소',
+    items: [
+      '여똥이 공격력 20% 감소 (너프)',
+      '기본공격 [똥가루 뿌리기] 똥가루 지속 피해: 0.2초마다 175 → 140 (1레벨 기준)',
+      '가젯 [프링글스] 피해: 2,000 → 1,600 (1레벨 기준)',
+    ],
+  },
+  {
+    id: '2026-11-11-gemgrab-hold',
+    date: '2026-11-11',
+    tag: 'balance',
+    title: '[쨍그랩] 승리 조건 변경',
+    items: [
+      '이제 팀 보석을 15개 이상 모은 뒤 10초 동안 유지해야 승리해요. (기존: 20개를 모으면 바로 승리)',
+      '유지하는 동안 보석이 15개 아래로 내려가면(보석을 든 팀원이 쓰러져 떨구는 등) 10초가 처음부터 다시 시작돼요.',
+      '남은 유지 시간이 화면 위쪽 보석 바 아래에 표시돼요. 상대가 유지 중이면 보석을 든 적을 쓰러뜨려 막으세요!',
+    ],
+  },
+  {
+    id: '2026-11-11-ekhe-ammo',
+    date: '2026-11-11',
+    tag: 'balance',
+    title: '[엑헤] 탄창 변경',
+    items: [
+      '기본공격 [계란 던지기] 탄창: 3개 → 1개',
+      '재장전 시간: 1.8초 → 2초',
+      '탄창 수가 고정이라 기어 [큰 탄창]은 장착할 수 없어요.',
+    ],
+  },
   {
     id: '2026-11-10-seongseureopda-buffy',
     date: '2026-11-10',
@@ -5564,7 +5709,7 @@ function checkGates(match) {
 
 // ===== 쨍그랩 모드 =====
 // 맵 한가운데 구멍에서 5초마다 보라색 보석이 튀어나온다. 살아있는 플레이어가 닿으면 획득(머리 위에 보유 수 표시),
-// 죽으면 가진 보석을 모두 그 자리 근처에 떨군다. 팀원이 가진 보석을 합쳐서 GEM_WIN_COUNT개가 되면 그 팀이 승리한다.
+// 죽으면 가진 보석을 모두 그 자리 근처에 떨군다. 팀원이 가진 보석을 합쳐서 GEM_WIN_COUNT개 이상이 된 뒤 GEM_HOLD_MS 동안 유지하면 그 팀이 승리한다.
 function gemHole() {
   return { x: ARENA_WIDTH / 2, y: ARENA_HEIGHT / 2, r: GEM_HOLE_RADIUS };
 }
@@ -5661,10 +5806,36 @@ function updateGemGrab(match, now) {
       match.gems.splice(i, 1);
       p.gems = (p.gems || 0) + 1;
       match.gemsDirty = true;
-      const totals = gemTeamTotals(match);
-      if (totals[p.team] >= GEM_WIN_COUNT) { endGemMatch(match, p.team); return; }
     }
   }
+
+  // 승리 판정: 팀 보석이 GEM_WIN_COUNT개 이상인 동안 타이머가 흐르고, 개수가 모자라지면(죽어서 떨굼 등) 타이머가 초기화된다.
+  // 두 팀이 동시에 조건을 채웠다면 먼저 시작한 팀이 유리하고, GEM_HOLD_MS 를 먼저 채우는 팀이 승리한다.
+  const totals = gemTeamTotals(match);
+  if (!match.gemHoldStart) match.gemHoldStart = { A: null, B: null };
+  for (const team of ['A', 'B']) {
+    if (totals[team] >= GEM_WIN_COUNT) {
+      if (match.gemHoldStart[team] == null) match.gemHoldStart[team] = now;
+    } else {
+      match.gemHoldStart[team] = null;
+    }
+  }
+  const ready = ['A', 'B'].filter((t) => match.gemHoldStart[t] != null && now - match.gemHoldStart[t] >= GEM_HOLD_MS);
+  if (ready.length) {
+    ready.sort((a, b) => (match.gemHoldStart[a] - match.gemHoldStart[b]) || (totals[b] - totals[a]));
+    endGemMatch(match, ready[0]);
+  }
+}
+
+// 클라이언트에 보여줄 유지 타이머: 팀별 남은 시간(ms). 아직 조건을 못 채웠으면 null
+function gemHoldView(match, now) {
+  if (match.gameMode !== 'gemgrab' || !match.gemHoldStart) return undefined;
+  const out = { A: null, B: null };
+  for (const team of ['A', 'B']) {
+    const st = match.gemHoldStart[team];
+    out[team] = st == null ? null : Math.max(0, GEM_HOLD_MS - (now - st));
+  }
+  return out;
 }
 
 // 보석 목록이 바뀐 틱에만 방 전체에 보낸다 (매 틱 state 에 싣지 않아서 트래픽을 아낌)
@@ -5819,6 +5990,7 @@ function resolveModeVote(matchId) {
     rounds: match.roundsActive ? { max: KNOCKOUT_ROUNDS_MAX, toWin: KNOCKOUT_ROUNDS_TO_WIN } : null, // 라운드제면 최대 라운드 수/승리에 필요한 라운드 수
     gateHp: GATE_HP,
     gemWin: GEM_WIN_COUNT,
+    gemHoldMs: GEM_HOLD_MS,
     hole: chosen === 'gemgrab' ? gemHole() : null,
   });
 }
@@ -5974,8 +6146,8 @@ function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hy
     airborneLandDamage: 0,
     airborneBy: null,
     airborneStunUntil: 0,
-    ammo: MAX_AMMO + ((gear && gear.maxAmmoBonus) || 0), // 기어 '큰 탄창': 탄창 수 증가
-    maxAmmo: MAX_AMMO + ((gear && gear.maxAmmoBonus) || 0),
+    ammo: (character.basic.maxAmmo != null ? character.basic.maxAmmo : MAX_AMMO) + (fixedAmmoCharacter(characterId) ? 0 : ((gear && gear.maxAmmoBonus) || 0)), // 캐릭터별 탄창 수(spec.maxAmmo) + 기어 '큰 탄창' 증가
+    maxAmmo: (character.basic.maxAmmo != null ? character.basic.maxAmmo : MAX_AMMO) + (fixedAmmoCharacter(characterId) ? 0 : ((gear && gear.maxAmmoBonus) || 0)),
     chargeStartAt: 0,      // 똥파리: 공격 버튼을 누르기 시작한 시각(ms). 0이면 충전 중이 아님 (충전 시간은 서버가 직접 잼)
     chargeRatio: 0,        // 똥파리: 현재 충전 진행도(0~1) - 클라이언트가 충전 게이지를 그릴 때 사용
     ammoRegenSeconds: character.basic.ammoRegenSeconds || AMMO_REGEN_SECONDS, // 캐릭터별 기본공격 재장전 시간
@@ -6519,7 +6691,7 @@ function sweptWallHit(walls, b) {
   for (let i = 1; i <= n; i++) {
     const t = i / n;
     const x = b.prevX + dx * t, y = b.prevY + dy * t;
-    if (collidesWithWalls(walls, x, y, b.radius)) { b.x = lastX; b.y = lastY; return true; } // 벽에 닿기 직전 위치로 되돌림
+    if (collidesWithSolidWalls(walls, x, y, b.radius)) { b.x = lastX; b.y = lastY; return true; } // 벽에 닿기 직전 위치로 되돌림
     lastX = x; lastY = y;
   }
   return false;
@@ -6538,7 +6710,7 @@ function updateBoomerang(match, b, dt) {
     b.outLeft -= dt;
     const outOfMap = b.x < 0 || b.x > ARENA_WIDTH || b.y < 0 || b.y > ARENA_HEIGHT;
     if (outOfMap) { b.x = Math.max(0, Math.min(ARENA_WIDTH, b.x)); b.y = Math.max(0, Math.min(ARENA_HEIGHT, b.y)); }
-    if (!(b.outLeft <= 0 || outOfMap || collidesWithWalls(match.walls, b.x, b.y, b.radius) || (b.sweep && sweptWallHit(match.walls, b)))) return;
+    if (!(b.outLeft <= 0 || outOfMap || collidesWithSolidWalls(match.walls, b.x, b.y, b.radius) || (b.sweep && sweptWallHit(match.walls, b)))) return;
     turnBoomerang(b); // 방향을 바꾼 이 틱부터 바로 시전자 쪽으로 날아가야 함 (속도를 바꾸지 않으면 다음 틱에 맵 밖으로 나가 사라짐) -> 아래 돌아오는 처리로 이어짐
   }
   const owner = match.players[b.ownerId];
@@ -6561,10 +6733,10 @@ function moveBouncingBullet(match, b, dt) {
     let ny = b.y + (b.vy * dt) / subSteps;
     let flipX = (nx < r && b.vx < 0) || (nx > ARENA_WIDTH - r && b.vx > 0);
     let flipY = (ny < r && b.vy < 0) || (ny > ARENA_HEIGHT - r && b.vy > 0);
-    if (!collidesWithWalls(match.walls, b.x, b.y, r)) {
-      if (!flipX && collidesWithWalls(match.walls, nx, b.y, r)) flipX = true;
-      if (!flipY && collidesWithWalls(match.walls, b.x, ny, r)) flipY = true;
-      if (!flipX && !flipY && collidesWithWalls(match.walls, nx, ny, r)) { flipX = true; flipY = true; } // 벽 모서리
+    if (!collidesWithSolidWalls(match.walls, b.x, b.y, r)) {
+      if (!flipX && collidesWithSolidWalls(match.walls, nx, b.y, r)) flipX = true;
+      if (!flipY && collidesWithSolidWalls(match.walls, b.x, ny, r)) flipY = true;
+      if (!flipX && !flipY && collidesWithSolidWalls(match.walls, nx, ny, r)) { flipX = true; flipY = true; } // 벽 모서리
     }
     if (flipX || flipY) b.bounced = true; // 한 번이라도 튕긴 투사체 (버피: 튕긴 뒤 적중 시 추가 피해)
     if ((flipX || flipY) && b.bounceBonus > 0) { b.life += b.bounceBonus; b.bounceBonus = 0; } // 처음 튕기는 순간 사거리 추가 증가 (한 번만)
@@ -6589,7 +6761,7 @@ function spawnStoneShards(match, b, out) {
   if (!sp) return;
   let sx = b.x;
   let sy = b.y;
-  if (collidesWithWalls(match.walls, sx, sy, 2) && b.prevX != null) { sx = b.prevX; sy = b.prevY; } // 벽 안에서 끝났으면 직전 위치에서 갈라짐
+  if (collidesWithSolidWalls(match.walls, sx, sy, 2) && b.prevX != null) { sx = b.prevX; sy = b.prevY; } // 벽 안에서 끝났으면 직전 위치에서 갈라짐
   sx = Math.max(0, Math.min(ARENA_WIDTH, sx));
   sy = Math.max(0, Math.min(ARENA_HEIGHT, sy));
   const baseAngle = Math.atan2(b.vy || 0, b.vx || 1);
@@ -7161,6 +7333,7 @@ function startMatch(mode, entries, opts = {}) {
     gems: null,               // 쨍그랩 모드: 바닥에 있는 보석들
     gemNextAt: 0,             // 쨍그랩 모드: 다음 보석이 나올 시각
     gemsDirty: false,         // 쨍그랩 모드: 보석 목록이 바뀌어서 클라이언트에 다시 보내야 하면 true
+    gemHoldStart: null,       // 쨍그랩 모드: 팀별로 보석 15개 이상을 채운 시각 { A, B } (null 이면 조건 미충족)
     votes: {},                // socketId -> 투표한 게임 종류
     mapVotes: {},             // socketId -> 투표한 맵 id (게임 종류 투표와 같은 시간에 진행. 투표 전의 맵은 임시로 무작위 맵을 보여줌)
     voteOpen: true,           // 게임 종류/맵 투표 진행 중 여부 (AI 연습 대결도 사람 1명이 투표해서 정함. 봇은 투표하지 않음)
@@ -9134,7 +9307,7 @@ function updateMatch(match, dt, now) {
       }
       return false;
     }
-    if (!b.pierceWalls && (b.sweep ? sweptWallHit(match.walls, b) : collidesWithWalls(match.walls, b.x, b.y, b.radius))) {
+    if (!b.pierceWalls && (b.sweep ? sweptWallHit(match.walls, b) : collidesWithSolidWalls(match.walls, b.x, b.y, b.radius))) {
       b.wallStop = true; // 벽 앞까지는 적을 맞힐 수 있으므로 바로 지우지 않고, 아래 충돌 판정 후 폭발/웅덩이 처리하며 제거
       return true;
     }
@@ -9789,7 +9962,7 @@ function aiLineClear(match, x1, y1, x2, y2) {
   const n = Math.ceil(d / 20);
   for (let i = 1; i < n; i++) {
     const t = i / n;
-    if (collidesWithWalls(match.walls, x1 + (x2 - x1) * t, y1 + (y2 - y1) * t, 6)) return false;
+    if (collidesWithSolidWalls(match.walls, x1 + (x2 - x1) * t, y1 + (y2 - y1) * t, 6)) return false; // 물은 시야/사격을 막지 않음
   }
   return true;
 }
@@ -9985,7 +10158,7 @@ function runAiBot(match, botId, ai, dt, now) {
     // 쨍그랩: 보석을 많이 들고 있을수록 죽으면 손해가 크니 더 일찍 도망. 반대로 상대 팀이 이기기 직전이면 끝까지 물고 늘어짐
     const heldGems = p.gems || 0;
     fleeAt += Math.min(0.28, heldGems * 0.03);
-    if (gemTeamTotals(match)[p.team === 'A' ? 'B' : 'A'] >= 12 && heldGems < 8) fleeAt = Math.min(fleeAt, 0.15);
+    if (gemTeamTotals(match)[p.team === 'A' ? 'B' : 'A'] >= GEM_AI_NEAR_WIN && heldGems < GEM_AI_RICH) fleeAt = Math.min(fleeAt, 0.15);
   }
   const losing = enR === null || enR >= myR * 0.85;   // 적이 나보다 크게 약하지 않음 (적이 훨씬 약하면 끝장을 보려고 계속 싸움)
   const fromX = target ? target.x : (ai.lastSeen ? ai.lastSeen.x : ARENA_WIDTH / 2);
@@ -10017,7 +10190,7 @@ function runAiBot(match, botId, ai, dt, now) {
     default:
       ai.mode = 'fight';
   }
-  if (match.gameMode === 'gemgrab' && target && ai.mode === 'fight' && gemTeamTotals(match)[p.team === 'A' ? 'B' : 'A'] >= 12 && (p.gems || 0) < 8) ai.mode = 'chase'; // 상대 팀 보석이 많으면(= 곧 승리) 적극적으로 쫓아가서 쓰러뜨려 보석을 떨구게 함
+  if (match.gameMode === 'gemgrab' && target && ai.mode === 'fight' && gemTeamTotals(match)[p.team === 'A' ? 'B' : 'A'] >= GEM_AI_NEAR_WIN && (p.gems || 0) < GEM_AI_RICH) ai.mode = 'chase'; // 상대 팀 보석이 많으면(= 곧 승리) 적극적으로 쫓아가서 쓰러뜨려 보석을 떨구게 함
   const mode = ai.mode;
   p.aiMode = mode; // 클라이언트가 AI의 상태(도망/추격 등)를 머리 위 이모지로 보여주는 데 사용
 
@@ -10044,7 +10217,7 @@ function runAiBot(match, botId, ai, dt, now) {
     }
     tx = Math.max(PLAYER_RADIUS, Math.min(ARENA_WIDTH - PLAYER_RADIUS, tx));
     ty = Math.max(PLAYER_RADIUS, Math.min(ARENA_HEIGHT - PLAYER_RADIUS, ty));
-    if ((tx !== target.x || ty !== target.y) && collidesWithWalls(match.walls, tx, ty, PLAYER_RADIUS * 0.6)) { // 예측 지점이 벽 안이면 적을 덜 앞서서 겨눔
+    if ((tx !== target.x || ty !== target.y) && collidesWithSolidWalls(match.walls, tx, ty, PLAYER_RADIUS * 0.6)) { // 예측 지점이 벽 안이면 적을 덜 앞서서 겨눔
       tx = target.x + (tx - target.x) * 0.4; ty = target.y + (ty - target.y) * 0.4;
     }
     aimAngle = Math.atan2(ty - p.y, tx - p.x) + ai.aimErr;
@@ -10084,7 +10257,7 @@ function runAiBot(match, botId, ai, dt, now) {
     } else {
       // fight: 사거리의 중간 거리를 유지하며 좌우로 움직임. 체력이 앞서면 더 바짝, 뒤지면 더 멀리서 싸움
       const edge = Math.max(-1, Math.min(1, myR - (enR === null ? myR : enR)));
-      const bandScale = (1 - 0.25 * edge) * ((match.gameMode === 'gemgrab' && (p.gems || 0) >= 8) ? 1.35 : 1); // 보석을 많이 들고 있으면 적과 더 멀리서 싸움
+      const bandScale = (1 - 0.25 * edge) * ((match.gameMode === 'gemgrab' && (p.gems || 0) >= GEM_AI_RICH) ? 1.35 : 1); // 보석을 많이 들고 있으면 적과 더 멀리서 싸움
       const near = Math.max(60, range * 0.4 * bandScale);
       const far = Math.max(90, range * 0.75 * bandScale);
 
@@ -10197,7 +10370,7 @@ function runAiBot(match, botId, ai, dt, now) {
       }
     }
   } else if (match.gameMode === 'gemgrab' && match.gems && objectiveOK) {
-    const hunting = gemTeamTotals(match)[p.team === 'A' ? 'B' : 'A'] >= 12 && (p.gems || 0) < 8;
+    const hunting = gemTeamTotals(match)[p.team === 'A' ? 'B' : 'A'] >= GEM_AI_NEAR_WIN && (p.gems || 0) < GEM_AI_RICH;
     const huntFresh = hunting && (target || (ai.lastSeen && now - ai.seenAt < 4000)); // 상대가 이기기 직전이면 보석보다 적을 쫓음
     const gem = aiPickGem(match, p, target);
     if (gem) {
@@ -10663,6 +10836,7 @@ function gameLoop() {
         bombs: match.bombs,
         chickens: match.chickens,
         bossLives: match.boss ? match.bossLives : undefined,
+        gemHold: gemHoldView(match, now), // 쨍그랩: 팀별 승리까지 남은 유지 시간(ms)
       });
     }
   }
