@@ -1235,6 +1235,37 @@ const CHARACTERS = {
       distance: 260,
     },
   },
+  jjapsae: {
+    id: 'jjapsae',
+    name: '짭새',
+    moveSpeedTier: 'normal', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
+    maxHp: 6000, // 1레벨 기준 체력
+    basic: {
+      name: '가시 발사',
+      damage: 1500,          // 1레벨 기준
+      speed: 500,            // px/초
+      radius: 9,
+      lifetime: 0.5,         // 초 (사거리 = 500 x 0.5 = 250)
+      visual: 'thorn',
+      // 패시브: 몸 주위를 도는 원. 원에 닿은 적은 damage 피해 (같은 적은 hitCooldown초에 한 번만 맞음). 공격력 배율은 damage 에 자동 적용
+      orbit: { count: 3, radius: 52, orbRadius: 13, speed: 3.6, damage: 1000, hitCooldown: 1.0 }, // radius: 몸 중심에서 원까지 거리(px), orbRadius: 원 크기(px), speed: 회전 속도(라디안/초)
+    },
+    ultimate: {
+      name: '질주',
+      type: 'dash',          // 조준한 방향으로 돌진하며 닿은 적(관통)에게 피해
+      damage: 2000,          // 1레벨 기준
+      stunDuration: 0,       // 기절 없음
+      speed: 1500,
+      duration: 0.2,         // 돌진 거리 = 1500 x 0.2 = 300px
+      maxCharges: 3,         // 궁극기를 쓰기 전에도 충전이 멈추지 않고 최대 3개까지 모아둠
+    },
+    gadget: {
+      name: '은신',
+      type: 'stealth',       // 조준 불필요, 즉시 발동해서 duration초 동안 적에게 보이지 않음
+      instant: true,
+      duration: 2,
+    },
+  },
   dol: {
     id: 'dol',
     name: '미지의 돌',
@@ -1563,6 +1594,7 @@ function describeBasic(b) {
   } else if (b.ammoRegenSeconds && b.ammoRegenSeconds < AMMO_REGEN_SECONDS) {
     parts.push(`재장전 속도 ${Math.round((AMMO_REGEN_SECONDS / b.ammoRegenSeconds - 1) * 100)}% 빠름`);
   }
+  if (b.orbit) parts.push(`몸 주위에 원 ${b.orbit.count}개가 계속 돌고 있음. 원에 닿은 적은 ${fmtNum(b.orbit.damage)} 피해 (같은 적은 ${b.orbit.hitCooldown}초에 한 번만 맞음)`);
   return { name: b.name, damage, desc: parts.join(', ') };
 }
 
@@ -1592,7 +1624,7 @@ function describeUltimate(u) {
       desc = `${u.duration}초 동안 적에게 보이지 않음`;
       break;
     case 'dash':
-      desc = `바라보는 방향으로 매우 빠르게 돌진, 적을 관통하며 지나간 모든 적에게 ${fmtNum(u.damage)} 피해 + ${u.stunDuration}초 기절`;
+      desc = `바라보는 방향으로 약 ${fmtNum(Math.round(u.speed * u.duration))}px를 매우 빠르게 돌진, 적을 관통하며 지나간 모든 적에게 ${fmtNum(u.damage)} 피해${u.stunDuration ? ` + ${u.stunDuration}초 기절` : ''}`;
       break;
     case 'pushDash':
       damage = u.damage;
@@ -1642,6 +1674,7 @@ function describeUltimate(u) {
     default:
       if (u.damage) damage = u.damage;
   }
+  if (u.maxCharges > 1) desc += `. 궁극기를 쓰기 전에도 충전이 멈추지 않고 최대 ${u.maxCharges}개까지 모아둘 수 있음`;
   return { name: u.name, damage, desc };
 }
 
@@ -1692,6 +1725,9 @@ function describeGadget(g) {
       break;
     case 'sprint':
       desc = `조준한 방향으로 ${fmtNum(Math.round(g.speed * g.duration))}px를 순식간에 돌진, 피해나 기절을 주지 않는 도주용 (적을 통과함)`;
+      break;
+    case 'stealth':
+      desc = `조준 불필요, ${g.duration}초 동안 적에게 보이지 않는 은신 상태가 됨`;
       break;
     case 'teleport':
       desc = `조준한 방향으로 ${fmtNum(g.distance)}px를 즉시 순간이동 (벽을 넘어갈 수 있고, 도착 지점이 벽 안이면 가까운 빈 자리로 이동)`;
@@ -2171,6 +2207,7 @@ const CHARACTER_PRICES = {
   ddongpari: 300,
   nai: 300,
   geunsuni: 300,
+  jjapsae: 300,
   dol: 300,
   chacha: 300,
   guji: 300,
@@ -2609,6 +2646,19 @@ function repeatMissionsView(u) {
 // id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
+  {
+    id: '2026-11-13-jjapsae',
+    date: '2026-11-13',
+    tag: 'new',
+    title: '새 캐릭터 [짭새] 추가!',
+    items: [
+      '새 캐릭터 짭새가 등장했어요! 체력 6,000(1레벨 기준) / 🪙 300 코인으로 잠금해제할 수 있어요.',
+      '기본공격 [가시 발사]: 멋진 가시를 날려요. 사거리 250, 1,500 피해!',
+      '짭새 주변에는 원 3개가 계속 돌고 있어요. 원에 닿은 적은 1,000 피해를 받아요. (같은 적은 1초에 한 번만 맞아요)',
+      '궁극기 [질주]: 조준한 방향으로 300px를 빠르게 돌진해요. 돌진하다 적에게 닿으면 2,000 피해! 궁극기는 사용하기 전에도 충전이 멈추지 않고 최대 3개까지 모아둘 수 있어요.',
+      '가젯 [은신]: 2초 동안 적에게 보이지 않아요.',
+    ],
+  },
   {
     id: '2026-11-12-system-comedown-look',
     date: '2026-11-12',
@@ -6175,7 +6225,9 @@ function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hy
     ultimate: rollRandomUltimate(character.ultimate), // 차차처럼 궁극기가 랜덤인 캐릭터는 4개 중 지금 뽑힌 궁극기 (클라이언트도 이 값을 그대로 씀)
     ultimateRandom: !!(character.ultimate && character.ultimate.type === 'randomUlt'), // true 면 궁극기 버튼 밑에 지금 뽑힌 궁극기 이름을 보여줌
     ultimateChargePerHit: character.ultimateChargePerHit || ULTIMATE_CHARGE_PER_HIT, // 캐릭터별로 다르게 설정 가능 (예: 슈는 펠릿이 많아 더 낮게)
-    ultimateCharge: 0, // 0~100
+    ultimateCharge: 0, // 0~100 (궁극기를 여러 개 모을 수 있는 캐릭터는 0~ultMaxCharge. 100마다 궁극기 1개)
+    ultMaxCharge: 100 * ((character.ultimate && character.ultimate.maxCharges) || 1), // 모을 수 있는 궁극기 개수 x 100
+    orbit: character.basic && character.basic.orbit ? { count: character.basic.orbit.count, radius: character.basic.orbit.radius, orbRadius: character.basic.orbit.orbRadius, speed: character.basic.orbit.speed, t0: Date.now() } : null, // 몸 주위를 도는 원 (짭새). 각도 = speed x (서버시각 - t0)
     // 하이퍼 차지: 획득한 플레이어(+hyper 스펙이 있는 캐릭터)만 가짐. 게이지는 궁극기처럼 기본공격 적중으로 참
     hasHyper: !!(hyperOwned && character.hyper),
     hyper: hyperOwned && character.hyper ? character.hyper : null,
@@ -6273,7 +6325,7 @@ function chargeGauges(shooter, chargeScale = 1) {
   // 하이퍼 차지 발동 중 궁극기 충전량 증가 (모카): hyper.ultimateChargeMultiplier 배
   const hyperActive = shooter.hasHyper && shooter.hyperUntil && Date.now() < shooter.hyperUntil;
   const ultGain = chargeScale * shooter.ultimateChargePerHit * (shooter.gearUltChargeMult || 1) * (hyperActive && shooter.hyper && shooter.hyper.ultimateChargeMultiplier ? shooter.hyper.ultimateChargeMultiplier : 1);
-  shooter.ultimateCharge = Math.min(100, shooter.ultimateCharge + ultGain);
+  shooter.ultimateCharge = Math.min(shooter.ultMaxCharge || 100, shooter.ultimateCharge + ultGain);
   // 하이퍼 차지 게이지: 궁극기보다 적게 차고(chargeMultiplier × 전체 보너스), 발동 중에는 충전되지 않음
   if (shooter.hasHyper && !hyperActive) {
     const mult = (shooter.hyper && shooter.hyper.chargeMultiplier != null ? shooter.hyper.chargeMultiplier : 1) * HYPER_CHARGE_BONUS;
@@ -6387,7 +6439,7 @@ function applyDamage(match, target, damage, shooterId, { chargeShooter, chain, n
     // 기어 '희생 정신': 실제로 잃은 체력(보호막이 막은 만큼 제외)에 비례해 궁극기 게이지가 참
     if (target.gearSacrificeCharge > 0 && target.maxHp > 0 && !target.isGate) {
       const lost = Math.min(damage, Math.max(0, target.hp));
-      target.ultimateCharge = Math.min(100, (target.ultimateCharge || 0) + (lost / target.maxHp) * 100 * target.gearSacrificeCharge);
+      target.ultimateCharge = Math.min(target.ultMaxCharge || 100, (target.ultimateCharge || 0) + (lost / target.maxHp) * 100 * target.gearSacrificeCharge);
     }
     const hpBeforeHit = target.hp;
     target.hp -= damage;
@@ -8039,7 +8091,7 @@ io.on('connection', (socket) => {
     p.hp = p.maxHp;
     p.ammo = p.maxAmmo;
     p.ammoRegenElapsed = 0;
-    p.ultimateCharge = 100;
+    p.ultimateCharge = p.ultMaxCharge || 100;
     if (p.hasHyper) p.hyperCharge = 100;
     p.gadgetCooldownLeft = 0;
   });
@@ -8511,6 +8563,9 @@ function registerGameplayHandlers(socket) {
       p.dashTimeLeft = gadget.duration || 0.16;
       p.dashTotal = p.dashTimeLeft; // 돌진 속도 곡선(처음 빠르고 점점 느려짐)을 계산하기 위한 전체 시간
       p.dashHitIds = []; // 이번 돌진에서 이미 맞힌 대상 (관통 돌진이 같은 적을 두 번 때리지 않도록)
+    } else if (gadget.type === 'stealth') {
+      // 짭새의 가젯: duration초 동안 은신 (적에게 보이지 않음. 다시 쓰면 새로 duration초)
+      startStealth(match, p, gadget.duration || 2);
     } else if (gadget.type === 'teleport') {
       // 근수니의 가젯: 조준한 방향으로 즉시 순간이동. 벽은 넘어가지만 벽 안에는 도착하지 않음 (도착 지점이 벽이면 경로를 따라 되돌아와 가장 먼 빈 자리에 도착)
       const dirX = Math.cos(p.angle);
@@ -8772,7 +8827,7 @@ function registerGameplayHandlers(socket) {
 
     // 기어 '암살자': 궁극기를 쓰면 잠깐 은신 (은신이 궁극기인 캐릭터는 이미 은신하므로 제외)
     if (p.gearUltStealthSec > 0 && ult.type !== 'stealth' && p.alive && !match.over) startStealth(match, p, p.gearUltStealthSec);
-    if (!match.over) { p.ultimateCharge = 0; rerollRandomUltimate(p); } // 랜덤 궁극기(차차): 다음 궁극기를 다시 뽑음
+    if (!match.over) { p.ultimateCharge = p.ultMaxCharge > 100 ? Math.max(0, p.ultimateCharge - 100) : 0; rerollRandomUltimate(p); } // 여러 개 모으는 캐릭터(짭새)는 궁극기 1개(100)만 소모 // 랜덤 궁극기(차차): 다음 궁극기를 다시 뽑음
   });
 }
 
@@ -8948,6 +9003,60 @@ function endSamjang(match, p) {
 }
 
 // ===== 매치별 물리 처리 (한 틱 분량) =====
+// ===== 짭새의 패시브: 몸 주위를 도는 원 =====
+// 원 위치는 (서버시각 - t0) 로 계산하므로 클라이언트도 같은 식으로 그린다. 같은 적은 hitCooldown초에 한 번만 맞는다 (원 3개가 연달아 지나가도 한 번).
+function updateOrbits(match, now) {
+  for (const pid in match.players) {
+    if (match.over) return;
+    const p = match.players[pid];
+    const o = p.orbit;
+    if (!o || !p.alive || !p.basic || !p.basic.orbit) continue;
+    if (p.leaping || p.airborneTimeLeft > 0) continue;
+    const spec = p.basic.orbit; // 레벨에 따라 damage 가 커진 값
+    const cdMs = (spec.hitCooldown || 1) * 1000;
+    if (!match.orbitHits) match.orbitHits = {};
+    const hits = match.orbitHits;
+    const baseAngle = (o.speed * (now - o.t0)) / 1000;
+    for (let i = 0; i < o.count; i++) {
+      const ang = baseAngle + (Math.PI * 2 * i) / o.count;
+      const ox = p.x + Math.cos(ang) * o.radius;
+      const oy = p.y + Math.sin(ang) * o.radius;
+      for (const tid in match.players) {
+        if (match.over) return;
+        const t = match.players[tid];
+        if (tid === pid || !t.alive) continue;
+        if (!FRIENDLY_FIRE && t.team === p.team) continue;
+        if (t.leaping || t.airborneTimeLeft > 0) continue;
+        if (Math.hypot(t.x - ox, t.y - oy) >= PLAYER_RADIUS + o.orbRadius) continue;
+        const key = `${pid}:${tid}`;
+        if (now - (hits[key] || 0) < cdMs) continue;
+        hits[key] = now;
+        applyDamage(match, t, spec.damage, pid, { chargeShooter: false });
+      }
+      // 적 터렛(성스럽다 등)
+      for (const turret of match.turrets) {
+        if (!FRIENDLY_FIRE && turret.team === p.team) continue;
+        if (Math.hypot(turret.x - ox, turret.y - oy) >= turret.radius + o.orbRadius) continue;
+        const key = `${pid}:t${turret.id}`;
+        if (now - (hits[key] || 0) < cdMs) continue;
+        hits[key] = now;
+        turret.hp -= spec.damage * getDamageMultiplier(p);
+      }
+      match.turrets = match.turrets.filter((t) => t.hp > 0);
+      // 보스
+      for (const chicken of match.chickens) {
+        if (!chicken.boss || chicken.hp <= 0 || chicken.team === p.team) continue;
+        if (Math.hypot(chicken.x - ox, chicken.y - oy) >= chicken.radius + o.orbRadius) continue;
+        const key = `${pid}:c${chicken.id}`;
+        if (now - (hits[key] || 0) < cdMs) continue;
+        hits[key] = now;
+        hitChicken(match, chicken, spec.damage * getDamageMultiplier(p), p.id, { charge: false });
+      }
+      match.chickens = match.chickens.filter((c) => c.hp > 0);
+    }
+  }
+}
+
 function updateMatch(match, dt, now) {
   // 꽈리의 쌈장 변신: 정한 방향으로 직진 (벽은 통과하지만 맵 끝은 넘지 못함). 시간이 다 되면 변신이 풀림
   for (const pid in match.players) {
@@ -9030,6 +9139,8 @@ function updateMatch(match, dt, now) {
     }
     match.chickens = match.chickens.filter((c2) => c2.hp > 0);
   }
+
+  updateOrbits(match, now); // 짭새의 도는 원
 
   // 변기통의 돌진 궁극기 처리: 서버가 매 틱마다 위치를 직접 이동시키고, 벽/적과의 충돌을 판정한다
   for (const pid in match.players) {
@@ -9843,7 +9954,7 @@ function updateMatch(match, dt, now) {
     if (!p.alive || !(p.ultGadgetLeft > 0)) continue;
     const used = Math.min(dt, p.ultGadgetLeft);
     p.ultGadgetLeft -= used;
-    p.ultimateCharge = Math.min(100, p.ultimateCharge + p.ultGadgetRate * used * (p.gearUltChargeMult || 1));
+    p.ultimateCharge = Math.min(p.ultMaxCharge || 100, p.ultimateCharge + p.ultGadgetRate * used * (p.gearUltChargeMult || 1));
   }
 
   // 가젯 재사용 대기시간 감소
@@ -10663,6 +10774,7 @@ function runAiBot(match, botId, ai, dt, now) {
     else if (g.type === 'reloadAmmo') use = p.ammo === 0;
     else if (g.type === 'reloadBoost') use = !!target && p.ammo <= 1;
     else if (g.type === 'ultCharge') use = !!target && p.ultimateCharge < 60;
+    else if (g.type === 'stealth') use = escaping && !!target && dist < 420; // 짭새: 위험할 때 은신
     else if (g.type === 'samjang') {
       use = escaping && !!target && dist < 380; // 위험할 때 탈출용: 적의 반대쪽(맵 안쪽 쪽으로 보정)으로 이동
       if (use) {
