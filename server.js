@@ -1431,6 +1431,8 @@ const CHARACTERS = {
       angleDegrees: 360,    // 주변을 빙 둘러 원을 그리며 공격
       range: 130,           // 원의 반경(px)
       maxAmmo: 10,          // 탄창 10개 (기어 '큰 탄창'은 장착 불가)
+      shotInterval: 0.1,    // 공격 속도: 0.1초에 탄창 1개씩 소비 (shotInterval 이 없는 캐릭터는 FIRE_COOLDOWN_MS 를 씀)
+      ammoRegenSeconds: 0.2, // 재장전 속도: 탄창 1개당 0.2초
       visual: 'cabbageRing', // 배춧잎이 돌며 퍼지는 원형 연출
       effectLife: 0.5,      // 연출이 화면에 남는 시간(초)
     },
@@ -1513,6 +1515,7 @@ function describeBasic(b) {
     // 배추: 자신을 중심으로 원을 그리며 주변 전체에 광역 피해
     damage = b.damage;
     parts.push(`자신을 중심으로 반경 ${b.range}의 원을 그리며 범위 안의 모든 적에게 ${fmtNum(b.damage)} 피해 (광역 공격)`);
+    if (b.shotInterval > 0) parts.push(`${b.shotInterval}초에 탄창 1개씩 소비하며 연사 (공격 버튼을 누르고 있으면 계속 공격)`);
   } else if (b.type === 'melee') {
     damage = b.damage;
     parts.push(`전방 ${b.angleDegrees}도 부채꼴 범위(사거리 ${b.range})를 휘둘러 ${fmtNum(b.damage)} 피해를 주고 ${b.knockback}만큼 뒤로 밀쳐냄`);
@@ -1555,6 +1558,8 @@ function describeBasic(b) {
   if (b.maxAmmo != null && b.maxAmmo !== MAX_AMMO && b.type !== 'combo') parts.push(`탄창 ${b.maxAmmo}개`);
   if (b.ammoRegenSeconds && b.ammoRegenSeconds > AMMO_REGEN_SECONDS) {
     parts.push(`재장전 시간 ${Math.round((b.ammoRegenSeconds / AMMO_REGEN_SECONDS - 1) * 100)}% 증가`);
+  } else if (b.ammoRegenSeconds && b.ammoRegenSeconds < 1) {
+    parts.push(`재장전은 탄창 1개당 ${b.ammoRegenSeconds}초`);
   } else if (b.ammoRegenSeconds && b.ammoRegenSeconds < AMMO_REGEN_SECONDS) {
     parts.push(`재장전 속도 ${Math.round((AMMO_REGEN_SECONDS / b.ammoRegenSeconds - 1) * 100)}% 빠름`);
   }
@@ -2311,8 +2316,8 @@ const SKINS = {
     gemPrice: 100, // 💎 스킨 상점 전용 (보석 100개)
     premium: true,
     tier: 'ultra', // 울트라 전설 스킨 (스킨 상점에서 '울트라 전설' 배지로 표시됨)
-    desc: '[울트라 전설] 기본공격 3연타가 1타 "2의 거듭제곱" 원, 2타 "회복적 성찰문" 원, 3타 "명보" 직사각형으로 바뀌고, 궁극기 소용돌이에는 "내려와" 글씨가 크게 나와요. (외형만 바뀌고 성능은 그대로예요)',
-    // sysOrb(1타)를 "2의 거듭제곱" 원으로, sysThrow(2타)를 "회복적 성찰문" 원으로, vortex(3타)를 "명보" 직사각형으로, bigVortex(궁극기)를 "내려와" 글씨 소용돌이로 바꿈. 피해/속도/사거리/띄우기는 그대로
+    desc: '[울트라 전설] 안경 쓴 여자 선생님의 모습으로 변신! 기본공격 3연타가 1타 A4 용지("2의 거듭제곱"), 2타 반성문처럼 생긴 직사각형 "회복적 성찰문", 3타 "명보" 직사각형으로 바뀌고, 궁극기 소용돌이에는 "내려와" 글씨가 크게 나와요. (외형만 바뀌고 성능은 그대로예요)',
+    // 캐릭터 외형 = 여자 선생님(클라이언트 SKIN_LOOKS.system_comedown). sysOrb(1타)를 A4 용지 비율 직사각형 "2의 거듭제곱"으로, sysThrow(2타)를 반성문 모양 직사각형 "회복적 성찰문"으로, vortex(3타)를 "명보" 직사각형으로, bigVortex(궁극기)를 "내려와" 글씨 소용돌이로 바꿈. 피해/속도/사거리/띄우기/판정 크기는 그대로
     visuals: { sysOrb: 'powTwo', sysThrow: 'reflectLetter', vortex: 'myeongbo', bigVortex: 'comeDown' },
   },
   nai_chef: {
@@ -2604,6 +2609,18 @@ function repeatMissionsView(u) {
 // id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
+  {
+    id: '2026-11-12-system-comedown-look',
+    date: '2026-11-12',
+    tag: 'new',
+    title: '시스템 울트라 전설 스킨 [너 오늘 내려와] 외형 변경',
+    items: [
+      '캐릭터가 안경 쓴 여자 선생님의 모습으로 바뀌었어요. (흰 블라우스, 붉은 리본, 이름표)',
+      '기본공격 1번째 탄창: A4 용지 비율의 직사각형 종이에 "2의 거듭제곱" 글씨가 적혀 날아가요.',
+      '기본공격 2번째 탄창: 반성문처럼 줄 쳐진 직사각형 "회복적 성찰문"이 날아가요.',
+      '외형만 바뀌고 피해/속도/사거리 등 성능은 그대로예요.',
+    ],
+  },
   {
     id: '2026-11-11-system-nerf2',
     date: '2026-11-11',
@@ -8184,7 +8201,10 @@ function registerGameplayHandlers(socket) {
     const now = Date.now();
     if (p.basic.type === 'charge') return; // 똥파리는 shoot이 아니라 chargeStart/chargeRelease로 공격함
     if (p.windupUntil && now < p.windupUntil) return; // 공격 선딜 중에는 다시 공격할 수 없음
-    if (now - p.lastShotAt < FIRE_COOLDOWN_MS) return; // 연사 방지 (최소 발사 간격)
+    // 연사 방지 (최소 발사 간격): 캐릭터에 shotInterval(초)이 있으면 그 값(배추 0.1초), 없으면 공통 FIRE_COOLDOWN_MS.
+    // 아주 짧은 간격은 네트워크 지터로 요청이 몰려 들어와도 씹히지 않도록 10ms 여유를 둔다.
+    const minShotGapMs = p.basic.shotInterval > 0 ? Math.max(0, p.basic.shotInterval * 1000 - 10) : FIRE_COOLDOWN_MS;
+    if (now - p.lastShotAt < minShotGapMs) return;
     if (p.ammo <= 0) return; // 탄창이 비어있으면 발사 불가
 
     const ammoBeforeShot = p.ammo;
@@ -9870,9 +9890,11 @@ function updateMatch(match, dt, now) {
     } else if (p.ammo < p.maxAmmo) {
       // 탄창이 가득 차지 않았으면 시간이 지날 때마다 한 발씩 채워짐
       p.ammoRegenElapsed += dt * (1 + (p.gearReloadBonus || 0)) * (p.reloadBoostUntil && now < p.reloadBoostUntil ? p.reloadBoostMultiplier || 1 : 1);
-      if (p.ammoRegenElapsed >= (p.ammoRegenSeconds || AMMO_REGEN_SECONDS)) {
+      const regenSec = p.ammoRegenSeconds || AMMO_REGEN_SECONDS;
+      if (p.ammoRegenElapsed >= regenSec) {
         p.ammo = Math.min(p.maxAmmo, p.ammo + 1);
-        p.ammoRegenElapsed = 0;
+        // 1초 미만의 아주 빠른 재장전(배추 0.2초)은 서버 틱(0.05초) 단위로 남는 시간이 커서 이월한다. 그 외 캐릭터는 기존과 동일하게 0으로 초기화
+        p.ammoRegenElapsed = regenSec < 1 ? Math.max(0, p.ammoRegenElapsed - regenSec) : 0;
       }
     } else {
       p.ammoRegenElapsed = 0;
