@@ -596,6 +596,9 @@
   .char-card .bonus-line { margin: 0 0 7px; font-size: 12px; line-height: 1.5; color: var(--sun); text-align: left; }
   .char-actions { display: flex; flex-direction: column; gap: 8px; margin-top: auto; }
   .char-actions button { margin-top: 0; }
+  .char-card button.detail-btn { margin-top: 4px; margin-bottom: 12px; min-height: 34px; padding: 4px 10px; font-size: 13px; --bg: #3a3d78; --deep: #1c1e4a; --fg: #e8eaff; }
+  .char-card .char-details { margin: 0 0 12px; }
+  .char-card .char-details[hidden] { display: none; }
   .char-card button.upgrade-btn { --bg: var(--sky); --deep: #1f6fa8; --fg: var(--ink); font-size: 14px; }
   .hyper-box { margin: 0 0 12px; padding: 8px 10px; border: 2px solid rgba(168, 85, 247, 0.55); border-radius: 12px; background: rgba(120, 50, 200, 0.14); text-align: left; }
   .hyper-box .hyper-title { font-size: 13px; font-weight: 700; color: #d9b3ff; margin-bottom: 4px; }
@@ -972,6 +975,7 @@
     font-size: 26px;
   }
   #ultimateButton.armed .ult-inner { background: #7a1f1f; }
+  #ultimateButton .ult-stock { position: absolute; right: -4px; top: -4px; min-width: 22px; height: 22px; padding: 0 5px; box-sizing: border-box; border-radius: 11px; background: #e74c3c; color: #fff; font-size: 13px; font-weight: 800; line-height: 22px; text-align: center; pointer-events: none; box-shadow: 0 0 0 2px rgba(0,0,0,0.35); }
   @keyframes ultPulse {
     0%, 100% { box-shadow: 0 0 0px rgba(241, 196, 15, 0.8); }
     50% { box-shadow: 0 0 18px rgba(241, 196, 15, 0.9); }
@@ -1903,6 +1907,15 @@ const CHARACTERS = [
     basic: { name: '가시 발사', damage: 1500, desc: '가시 3개를 탄퍼짐 60도로 발사 (개당 1,500 피해), 가시는 직선이 아니라 구불구불한 궤도를 그리며 느리게 날아감' },
     ultimate: { name: '중력 덩어리', desc: '거대한 중력 구체를 벽을 무시하고 던져 착지 지점에 블랙홀을 만듦. 블랙홀 범위에 들어간 적은 즉시 가운데로 빨려 들어가고, 블랙홀이 사라질 때까지 계속 가운데로 끌려감. 범위 안의 모든 투사체는 중앙으로 모여 그곳의 적을 맞히면 바로 사라짐' },
     gadget: { name: '순간이동', desc: '조준한 방향으로 260px를 즉시 순간이동 (벽을 넘어갈 수 있고, 도착 지점이 벽 안이면 가까운 빈 자리로 이동)' },
+  },
+  {
+    id: 'jjapsae',
+    name: '짭새',
+    color: '#3b82f6',
+    maxHp: 6000,
+    basic: { name: '가시 발사', damage: 1500, desc: '멋진 가시를 날려 1,500 피해 (사거리 약 250). 몸 주위에 원 3개가 계속 돌고 있고, 원에 닿은 적은 1,000 피해 (같은 적은 1초에 한 번만 맞음)' },
+    ultimate: { name: '질주', damage: 2000, desc: '바라보는 방향으로 약 300px를 매우 빠르게 돌진, 적을 관통하며 지나간 모든 적에게 2,000 피해. 궁극기를 쓰기 전에도 충전이 멈추지 않고 최대 3개까지 모아둘 수 있음' },
+    gadget: { name: '은신', desc: '조준 불필요, 2초 동안 적에게 보이지 않는 은신 상태가 됨 (15초마다 사용 가능)' },
   },
   {
     id: 'dol',
@@ -4322,6 +4335,7 @@ function applyServerCharacterInfo() {
 
 function fmtPct(m) { return `+${Math.round((m - 1) * 1000) / 10}%`; } // 배율 1.035 -> '+3.5%'
 
+const expandedCharIds = new Set(); // '자세한 설명'을 펼쳐 둔 캐릭터 id (목록이 다시 그려져도 유지)
 function renderCharacterList() {
   applyServerCharacterInfo();
   const list = document.getElementById('characterList');
@@ -4402,16 +4416,21 @@ function renderCharacterList() {
       <h3>${escapeHtml(c.name)}${lvBadge}</h3>
       ${buffyStrip}
       ${trophyLine}
-      ${bonusLine}
-      ${gearLine}
-      ${buffyLines}
-      <div class="stat-line">❤️ 체력: ${c.maxHp.toLocaleString()}</div>
-      <div class="stat-line">👟 이동속도: ${escapeHtml(c.moveSpeedLabel || '보통')}</div>
-      <div class="stat-line">🎯 ${escapeHtml(c.basic.name)}${c.basic.damage ? `: ${c.basic.damage.toLocaleString()}` : ''}${c.basic.desc ? ` (${escapeHtml(c.basic.desc)})` : ''}</div>
-      <div class="stat-line">✨ ${escapeHtml(c.ultimate.name)}${c.ultimate.damage ? `: ${c.ultimate.damage.toLocaleString()}` : ''}${c.ultimate.desc ? ` (${escapeHtml(c.ultimate.desc)})` : ''}</div>
-      ${c.gadget ? `<div class="stat-line">🔧 ${escapeHtml(c.gadget.name)}${c.gadget.desc ? ` (${escapeHtml(c.gadget.desc)})` : ''}</div>` : ''}
-      ${skinBox}
-      ${hyperBox}
+      <div class="stat-line">❤️ 체력: ${c.maxHp.toLocaleString()} · 👟 ${escapeHtml(c.moveSpeedLabel || '보통')}</div>
+      <div class="stat-line">🎯 ${escapeHtml(c.basic.name)}${c.basic.damage ? `: ${c.basic.damage.toLocaleString()}` : ''}</div>
+      <div class="stat-line">✨ ${escapeHtml(c.ultimate.name)}${c.ultimate.damage ? `: ${c.ultimate.damage.toLocaleString()}` : ''}</div>
+      ${c.gadget ? `<div class="stat-line">🔧 ${escapeHtml(c.gadget.name)}</div>` : ''}
+      <button type="button" class="detail-btn" data-detail-id="${c.id}">${expandedCharIds.has(c.id) ? '▲ 간단히 보기' : '▼ 자세한 설명'}</button>
+      <div class="char-details"${expandedCharIds.has(c.id) ? '' : ' hidden'}>
+        ${bonusLine}
+        ${gearLine}
+        ${buffyLines}
+        <div class="stat-line">🎯 ${escapeHtml(c.basic.name)}${c.basic.damage ? `: ${c.basic.damage.toLocaleString()}` : ''}${c.basic.desc ? ` (${escapeHtml(c.basic.desc)})` : ''}</div>
+        <div class="stat-line">✨ ${escapeHtml(c.ultimate.name)}${c.ultimate.damage ? `: ${c.ultimate.damage.toLocaleString()}` : ''}${c.ultimate.desc ? ` (${escapeHtml(c.ultimate.desc)})` : ''}</div>
+        ${c.gadget ? `<div class="stat-line">🔧 ${escapeHtml(c.gadget.name)}${c.gadget.desc ? ` (${escapeHtml(c.gadget.desc)})` : ''}</div>` : ''}
+        ${skinBox}
+        ${hyperBox}
+      </div>
       ${action}
     </div>`;
   }).join('');
@@ -4420,6 +4439,17 @@ function renderCharacterList() {
     btn.addEventListener('click', () => {
       selectedCharacterId = btn.getAttribute('data-char-id');
       doJoin();
+    });
+  });
+
+  list.querySelectorAll('button[data-detail-id]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.getAttribute('data-detail-id');
+      const box = btn.parentElement.querySelector('.char-details');
+      if (!box) return;
+      const opening = box.hasAttribute('hidden');
+      if (opening) { box.removeAttribute('hidden'); expandedCharIds.add(id); } else { box.setAttribute('hidden', ''); expandedCharIds.delete(id); }
+      btn.textContent = opening ? '▲ 간단히 보기' : '▼ 자세한 설명';
     });
   });
 
@@ -5017,6 +5047,7 @@ function updateDeathOverlay(me) {
 let prevMyHp = null;
 let prevMyScore = null;
 let prevUltimateReady = false;
+let prevUltStock = 0;
 
 // ===== 체력 숫자 / 데미지·회복 플로팅 숫자 =====
 // 서버는 매 틱마다 각 개체(플레이어/터렛/닭)의 hp만 보내주므로, 직전 상태와 비교해서 변화량을 계산한다.
@@ -5180,9 +5211,11 @@ socket.on('state', (state) => {
     prevMyGems = myGemsNow;
 
     // 궁극기 게이지가 이번에 막 100%가 되었을 때
-    const ultimateReady = me.ultimateCharge >= 100;
-    if (ultimateReady && !prevUltimateReady) SFX.ultimateReady();
+    const ultStockNow = Math.floor(me.ultimateCharge / 100); // 궁극기를 모을 수 있는 캐릭터(짭새)는 궁극기 1개가 새로 찰 때마다 소리
+    const ultimateReady = ultStockNow >= 1;
+    if (ultimateReady && (!prevUltimateReady || ultStockNow > prevUltStock)) SFX.ultimateReady();
     prevUltimateReady = ultimateReady;
+    prevUltStock = ultStockNow;
 
     prevMyHp = me.hp;
     prevMyScore = me.score;
@@ -5571,7 +5604,17 @@ function updateUltimateButton() {
   const me = latestState.players[myId];
   const charge = me ? me.ultimateCharge : 0;
   if (charge < 100) ultimateArmed = false; // 게이지가 다 차지 않은 상태면 장전 불가(사망/리스폰 등)
-  btn.style.background = `conic-gradient(#f1c40f ${charge}%, rgba(255,255,255,0.15) ${charge}%)`;
+  // 궁극기를 여러 개 모을 수 있는 캐릭터(짭새): 링은 '다음 궁극기 1개'까지의 진행도, 모인 개수는 숫자 배지로 표시
+  const maxStock = me && me.ultMaxCharge ? Math.round(me.ultMaxCharge / 100) : 1;
+  const stocks = Math.min(maxStock, Math.floor(charge / 100));
+  const ringPct = maxStock > 1 ? (stocks >= maxStock ? 100 : charge - stocks * 100) : charge;
+  btn.style.background = `conic-gradient(#f1c40f ${ringPct}%, rgba(255,255,255,0.15) ${ringPct}%)`;
+  let stockBadge = btn.querySelector('.ult-stock');
+  if (maxStock > 1) {
+    if (!stockBadge) { stockBadge = document.createElement('span'); stockBadge.className = 'ult-stock'; btn.appendChild(stockBadge); }
+    const txt = String(stocks);
+    if (stockBadge.textContent !== txt) stockBadge.textContent = txt;
+  } else if (stockBadge) stockBadge.remove();
   btn.classList.toggle('ready', charge >= 100);
   btn.classList.toggle('armed', ultimateArmed);
   // 랜덤 궁극기(차차): 충전되기 전에는 주사위, 다 충전되면 뽑힌 궁극기의 아이콘 + 버튼 밑에 이름 표시
@@ -8515,6 +8558,44 @@ function drawSamjangForm(p) {
   ctx.restore();
 }
 
+// 짭새의 도는 원: 서버와 같은 식(각도 = speed x (서버시각 - t0))으로 그려서 판정 위치와 정확히 맞는다
+function drawOrbitOrbs(p) {
+  const o = p.orbit;
+  if (!o || typeof p.x !== 'number') return;
+  const base = (o.speed * (sNow() - o.t0)) / 1000;
+  ctx.save();
+  if (p.invisible) ctx.globalAlpha = 0.45;
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, o.radius, 0, Math.PI * 2);
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(120, 170, 255, 0.18)';
+  ctx.stroke();
+  for (let i = 0; i < o.count; i++) {
+    const a = base + (Math.PI * 2 * i) / o.count;
+    const x = p.x + Math.cos(a) * o.radius;
+    const y = p.y + Math.sin(a) * o.radius;
+    const g = ctx.createRadialGradient(x, y, 1, x, y, o.orbRadius * 1.8);
+    g.addColorStop(0, 'rgba(160, 200, 255, 0.55)');
+    g.addColorStop(1, 'rgba(160, 200, 255, 0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(x, y, o.orbRadius * 1.8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(x, y, o.orbRadius, 0, Math.PI * 2);
+    ctx.fillStyle = '#3b82f6';
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#dbeafe';
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(x - o.orbRadius * 0.3, y - o.orbRadius * 0.3, o.orbRadius * 0.28, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255,255,255,0.8)';
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
 function drawPlayer(p, isMe) {
   // 공격 선딜 경고 (업할의 망치 지진): 곧 지진이 나갈 부채꼴 범위를 표시하고, 시간이 지날수록 안쪽이 차오른다
   if (p.alive && (isMe || p.team === myTeam) && p.windupUntil && sNow() < p.windupUntil && p.basic && p.basic.range) { // 적에게는 경고 범위를 보여주지 않음 (본인/아군에게만 표시)
@@ -8573,6 +8654,7 @@ function drawPlayer(p, isMe) {
   if (p.alive && p.carriedBy) drawCarriedFx(p);   // 돌에 밀려가는 중
   // 하이퍼 차지 발동 중: 몸 주위에서 보랏빛 불꽃이 타오름 (몸통보다 먼저 그려서 뒤에 깔림)
   if (p.alive && p.hyperLeft > 0) drawHyperAura(p);
+  if (p.alive && p.orbit) drawOrbitOrbs(p); // 짭새: 몸 주위를 도는 원
   // 2.5D: 바닥에 둥근 그림자를 깔고, 이 아래부터는 캐릭터를 눌리지 않게 세워서 그림
   if (p.alive) {
     ctx.save();
