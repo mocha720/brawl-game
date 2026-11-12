@@ -381,9 +381,9 @@ const MAP_LAYOUTS = [
     id: 'islands',
     name: '물의 섬',
     walls: [
-      ...mirrorAcrossCenter([
-        { x: 300, y: 255, width: 20, height: 20 }, // 중앙 쪽 작은 기둥
-      ]),
+      // 중앙 쪽 작은 기둥: 4개 → 2개로 축소 (대각선 2개만 남겨 180도 회전 대칭 유지)
+      { x: 300, y: 255, width: 20, height: 20 }, // 좌상단 기둥
+      { x: ARENA_WIDTH - 300 - 20, y: ARENA_HEIGHT - 255 - 20, width: 20, height: 20 }, // 우하단 기둥 (좌상단의 180도 반전)
       { x: ARENA_WIDTH / 2 - 50, y: ARENA_HEIGHT / 2 - 8, width: 100, height: 16 }, // 중앙 가로 벽
       // 네 사분면에 ㄱ자 모양의 물웅덩이 (안쪽 오목한 곳이 '섬'처럼 덤불로 가려진 자리)
       ...asWater(mirrorAcrossCenter([
@@ -620,7 +620,7 @@ const CHARACTERS = {
       poolRadius: 90,       // 물웅덩이 반경
       poolLifetime: 1.5,    // 물웅덩이가 유지되는 시간(초) - 기존 2.5초에서 너프
       poolTickInterval: 0.5, // 대미지/회복이 적용되는 주기(초)
-      poolDamage: 700,      // 적이 물에 닿았을 때 주기당 대미지 (기존 1000에서 변경)
+      poolDamage: 560,      // 적이 물에 닿았을 때 주기당 대미지 (기존 1000 → 700 → 560: 지속 대미지 공격력 20% 감소)
       poolHeal: 300,        // 자신/아군이 물에 닿았을 때 주기당 회복량 (기존 500에서 너프)
       directDamage: 1200,   // 해골이 물이 퍼지기 전에 적(플레이어/터렛)에게 직접 적중했을 때 주는 대미지 (기존 700에서 변경)
       ammoRegenSeconds: AMMO_REGEN_SECONDS * 1.3, // 기본공격 재장전 시간이 다른 캐릭터보다 30% 느림
@@ -765,6 +765,7 @@ const CHARACTERS = {
       poolTickInterval: 0.2, // 0.2초마다 대미지 적용
       poolDamage: 140,      // 똥가루 구름에 닿은 적이 주기(0.2초)마다 입는 대미지 (250 → 175 → 140: 공격력 20% 추가 감소)
       poolHeal: 0,          // 아군/자신에게는 아무 효과 없음 (독가스라 회복 없음)
+      ammoRegenSeconds: AMMO_REGEN_SECONDS * 1.3, // 기본공격 재장전 시간이 다른 캐릭터보다 30% 느림 (재장전 속도 30% 너프)
     },
     ultimate: {
       name: '간식 처먹기',
@@ -1385,7 +1386,7 @@ const CHARACTERS = {
       damage: 500,          // 발사 지점에서 아주 가까이 맞았을 때의 피해 (1레벨 기준) = minDamage
       distanceScaling: true, // true면 날아간 거리에 비례해서 피해가 minDamage -> maxDamage 로 커짐
       minDamage: 500,       // 매우 가까이서 맞혔을 때 (1레벨 기준)
-      maxDamage: 3000,      // 사거리 끝에서 맞혔을 때 (1레벨 기준)
+      maxDamage: 3500,      // 사거리 끝에서 맞혔을 때 (1레벨 기준) - 3,000 → 3,500 버프
       speed: 500,           // px/초
       radius: 12,           // 총알 크기 (보통)
       lifetime: 1,          // 초 -> 사거리 = 500px
@@ -1416,6 +1417,39 @@ const CHARACTERS = {
       pushRadius: 150,       // 이 거리 안에 있는 적에게 적용
       pushDistance: 200,     // 밀려나는 거리(px)
       damage: 100,           // 피해 (1레벨 기준)
+    },
+  },
+  baechu: {
+    id: 'baechu',
+    name: '배추',
+    moveSpeedTier: 'normal', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
+    maxHp: 11000, // 1레벨 기준 체력
+    basic: {
+      name: '배추 회오리',
+      type: 'melee',        // 발사체가 아니라 즉시 판정되는 근접 공격. angleDegrees 가 360이면 자신을 중심으로 한 원 전체(광역)가 범위가 됨
+      damage: 250,          // 탄창 1개당 피해 (1레벨 기준)
+      angleDegrees: 360,    // 주변을 빙 둘러 원을 그리며 공격
+      range: 130,           // 원의 반경(px)
+      maxAmmo: 10,          // 탄창 10개 (기어 '큰 탄창'은 장착 불가)
+      visual: 'cabbageRing', // 배춧잎이 돌며 퍼지는 원형 연출
+      effectLife: 0.5,      // 연출이 화면에 남는 시간(초)
+    },
+    ultimate: {
+      name: '배추 순간이동',
+      type: 'teleportLob',   // 배추를 포물선으로 느리게 던져(벽을 넘음) 착지하는 순간 그 위치로 순간이동
+      minDistance: 0,        // 던지는 거리 (조준으로 최소~최대 조절)
+      distance: 450,
+      flightTime: 1.8,       // 착지까지 걸리는 시간(초) - 느린 투척. 거리와 무관하게 고정 (이 동안 상대가 피할 수 있음)
+      arcHeight: 120,
+      radius: 18,            // 던지는 배추 크기
+      visual: 'cabbage',
+    },
+    gadget: {
+      name: '배춧잎 치유',
+      type: 'healCharge',    // 조준 불필요, 즉시 발동. 이후 기본공격 charges번 동안, 공격할 때마다 원 안의 아군(자신 제외)의 체력을 healAmount씩 회복시킴
+      instant: true,
+      charges: 10,           // 효과가 적용되는 기본공격 횟수
+      healAmount: 200,       // 기본공격 1번당 범위 안 아군 한 명이 회복하는 양 (1레벨 기준)
     },
   },
 };
@@ -1475,6 +1509,10 @@ function describeBasic(b) {
   } else if (b.type === 'quake') {
     damage = b.damage;
     parts.push(`망치를 내려쳐 조준 방향 전방 ${b.angleDegrees}도 부채꼴(사거리 ${b.range})에 지진을 일으켜 ${fmtNum(b.damage)} 피해 + ${b.stunDuration}초 기절${b.windup ? ` (체력이 가득 차면 공격 후 ${b.windup}초 뒤에 발동, 체력이 적을수록 비례해서 더 빨리 발동(최소 ${b.windupMin || 0}초), 그동안 이동 불가 + 공격 방향 고정)` : ''}`);
+  } else if (b.type === 'melee' && b.angleDegrees >= 360) {
+    // 배추: 자신을 중심으로 원을 그리며 주변 전체에 광역 피해
+    damage = b.damage;
+    parts.push(`자신을 중심으로 반경 ${b.range}의 원을 그리며 범위 안의 모든 적에게 ${fmtNum(b.damage)} 피해 (광역 공격)`);
   } else if (b.type === 'melee') {
     damage = b.damage;
     parts.push(`전방 ${b.angleDegrees}도 부채꼴 범위(사거리 ${b.range})를 휘둘러 ${fmtNum(b.damage)} 피해를 주고 ${b.knockback}만큼 뒤로 밀쳐냄`);
@@ -1590,6 +1628,9 @@ function describeUltimate(u) {
     case 'fireLob':
       desc = `조준한 거리(${fmtNum(u.minDistance || 0)}~${fmtNum(u.distance)}px)로 불덩이를 포물선으로 던져(벽을 넘음, ${u.flightTime}초 뒤 착지) 착지 지점에 반경 ${u.poolRadius}의 불길을 ${u.poolLifetime}초 동안 만듦. 불길 안의 적은 이동속도 ${Math.round((1 - u.slowMultiplier) * 100)}% 감소 + 1초당 ${fmtNum(Math.round(u.poolDamage / u.poolTickInterval))} 피해`;
       break;
+    case 'teleportLob':
+      desc = `조준한 거리(${fmtNum(u.minDistance || 0)}~${fmtNum(u.distance)}px)로 배추를 포물선으로 던져(벽을 넘음) ${u.flightTime}초 뒤 착지하면, 배추가 떨어진 그 위치로 순간이동 (배추가 느리게 날아가므로 상대가 눈치챌 수 있음)`;
+      break;
     case 'randomUlt':
       desc = `궁극기가 다 충전되면 ${u.options.length}개 중 하나가 무작위로 정해지고, 어떤 궁극기인지 궁극기 버튼 밑에 표시됨. ` + u.options.map((o) => `[${o.name}] ${describeUltimate(o).desc}`).join(' / ');
       break;
@@ -1673,6 +1714,9 @@ function describeGadget(g) {
       desc = `조준한 방향으로 로켓을 발사${r ? ` (사거리 약 ${r})` : ''}. 적이나 벽에 닿으면 폭발해서 반경 ${g.explodeRadius} 안의 적에게 ${fmtNum(g.explodeDamage)} 피해`;
       break;
     }
+    case 'healCharge':
+      desc = `조준 불필요, 사용하면 이후 기본공격 ${g.charges}번 동안 공격할 때마다 원 안에 있는 아군(자신 제외)의 체력을 각각 ${fmtNum(g.healAmount)}씩 회복`;
+      break;
     case 'poopBomb': {
       const r = rangeOf(g);
       desc = `조준한 방향으로 폭발하는 똥을 발사${r ? ` (사거리 약 ${r})` : ''}. 적이나 벽에 닿으면 폭발해서 반경 ${g.explodeRadius} 안의 적에게 ${fmtNum(g.explodeDamage)} 피해`;
@@ -2125,6 +2169,7 @@ const CHARACTER_PRICES = {
   dol: 300,
   chacha: 300,
   guji: 300,
+  baechu: 300,
 };
 CHARACTER_PRICES[DEFAULT_CHARACTER_ID] = 0; // 기본 캐릭터는 항상 무료 (사용 가능한 캐릭터가 하나도 없는 상황 방지)
 function priceOf(id) {
@@ -2258,6 +2303,18 @@ const SKINS = {
     // sysOrb(1타)를 반도체로, sysThrow(2타)를 배터리로, vortex(3타)를 날아가는 기계로, bigVortex(궁극기)를 전기 회오리로 바꿈. 피해/속도/사거리/띄우기는 그대로
     visuals: { sysOrb: 'chip', sysThrow: 'battery', vortex: 'machine', bigVortex: 'elecTornado' },
   },
+  system_comedown: {
+    id: 'system_comedown',
+    characterId: 'system',
+    name: '너 오늘 내려와',
+    price: null,
+    gemPrice: 100, // 💎 스킨 상점 전용 (보석 100개)
+    premium: true,
+    tier: 'ultra', // 울트라 전설 스킨 (스킨 상점에서 '울트라 전설' 배지로 표시됨)
+    desc: '[울트라 전설] 기본공격 3연타가 1타 "2의 거듭제곱" 원, 2타 "회복적 성찰문" 원, 3타 "명보" 직사각형으로 바뀌고, 궁극기 소용돌이에는 "내려와" 글씨가 크게 나와요. (외형만 바뀌고 성능은 그대로예요)',
+    // sysOrb(1타)를 "2의 거듭제곱" 원으로, sysThrow(2타)를 "회복적 성찰문" 원으로, vortex(3타)를 "명보" 직사각형으로, bigVortex(궁극기)를 "내려와" 글씨 소용돌이로 바꿈. 피해/속도/사거리/띄우기는 그대로
+    visuals: { sysOrb: 'powTwo', sysThrow: 'reflectLetter', vortex: 'myeongbo', bigVortex: 'comeDown' },
+  },
   nai_chef: {
     id: 'nai_chef',
     characterId: 'nai',
@@ -2317,7 +2374,7 @@ function getSkin(id) {
   return typeof id === 'string' && Object.prototype.hasOwnProperty.call(SKINS, id) ? SKINS[id] : null;
 }
 function skinCatalogPublic() {
-  return Object.values(SKINS).map((k) => ({ id: k.id, characterId: k.characterId, name: k.name, price: k.price, gemPrice: k.gemPrice || 0, desc: k.desc }));
+  return Object.values(SKINS).map((k) => ({ id: k.id, characterId: k.characterId, name: k.name, price: k.price, gemPrice: k.gemPrice || 0, tier: k.tier || '', desc: k.desc }));
 }
 function ownedSkinsOf(u) {
   return (u && u.skins ? u.skins : []).filter((id) => SKINS[id]);
@@ -6113,7 +6170,9 @@ function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hy
     hyperLeft: 0,    // 남은 발동 시간(초) - 클라이언트 표시용 (서버/클라이언트 시계가 달라서 시각 대신 남은 시간을 보냄)
     gadget: character.gadget || null, // 캐릭터 전용 가젯 (없으면 null)
     gadgetCooldownLeft: 0, // 가젯 재사용까지 남은 시간(초). 0이면 사용 가능
-    leaping: false,        // 모카의 궁극기 점프 중이면 true (공중: 조작 불가, 피격/총알 무시). 꽈리의 쌈장 변신 중에도 같은 상태를 씀
+    healCharges: 0,        // 배추의 가젯: 남은 '아군 회복 기본공격' 횟수 (0이면 효과 없음)
+    healChargeAmount: 0,   // 그 기본공격 1번당 아군 한 명이 회복하는 양 (1레벨 기준 - 사용 시점에 정해짐)
+    leaping: false,       // 모카의 궁극기 점프 중이면 true (공중: 조작 불가, 피격/총알 무시). 꽈리의 쌈장 변신 중에도 같은 상태를 씀
     samjang: false,        // 꽈리의 가젯 '쌈장 변신' 중이면 true ('sauce' 쌈장 / 'cloud' 먹구름 모양은 samjangForm)
     samjangForm: null,
     leapTimeLeft: 0,
@@ -6432,6 +6491,7 @@ function respawnPlayer(m, respawned, invincibleMs) {
   respawned.wallPass = false;
   respawned.ejecting = false;
   respawned.knockbackTimeLeft = 0;
+  respawned.healCharges = 0; // 배추의 가젯 효과도 사망하면 사라짐
   respawned.chargeStartAt = 0; // 충전 중이던 공격도 초기화
   respawned.chargeRatio = 0;
   // 궁극기 게이지는 사망/리스폰 시에도 초기화하지 않고 그대로 유지함
@@ -6653,7 +6713,8 @@ function spawnLob(match, p, spec, sentDistance) {
     explodeDamage: spec.explodeDamage,
     explodeRadius: spec.explodeRadius != null ? spec.explodeRadius : (spec.poolRadius || 0) * hyperPoolRadius, // 엑헤의 계란은 흰자 범위 (반사 방어막/AI 회피 판정에 쓰임)
     explodeVisual: skinVisual(p, 'slipperExplosion') === 'trayExplosion' ? 'trayExplosion' : 'slipper',
-    explodeChargesUlt: !spec.blackHole, // 기본공격이므로 적중 시 궁극기 게이지 충전 (블랙홀 구체는 폭발 피해 없음)
+    explodeChargesUlt: !spec.blackHole && !spec.teleportLob, // 기본공격이므로 적중 시 궁극기 게이지 충전 (블랙홀 구체/배추는 폭발 피해 없음)
+    teleportOwner: !!spec.teleportLob, // 배추의 궁극기: 착지하면 폭발 대신 던진 사람이 그 자리로 순간이동
     blackHole: spec.blackHole ? { radius: spec.explodeRadius, duration: spec.duration, pullSpeed: spec.bulletPullSpeed } : null, // 근수니의 중력 덩어리: 착지하면 폭발 대신 블랙홀 생성
     selfKnockback: spec.selfKnockback || 0, // 폭발 범위 안의 던진 본인을 밀쳐내는 거리(px)
     // 엑헤의 계란: 착지하면 폭발 대신 깨져서 직접 피해 + 흰자 웅덩이 (eggSplat)
@@ -6671,6 +6732,41 @@ function spawnLob(match, p, spec, sentDistance) {
     poolChargeScale: spec.poolChargeScale != null ? spec.poolChargeScale : 1,
     slowMultiplier: spec.slowMultiplier != null ? spec.slowMultiplier : 1, // 웅덩이 안에 있는 적의 이동속도 배율 (차차의 불덩이)
   });
+}
+
+// 배추의 궁극기: 배추가 착지한 자리로 던진 사람을 순간이동시킨다.
+// 착지 지점이 벽/물 안이면 가장 가까운 빈 자리로 옮기고(주변 200px까지 탐색), 빈 자리가 없으면 순간이동하지 않는다.
+// 던진 사람이 이미 죽었거나 점프/돌진/하늘에 떠 있는 중이면 순간이동하지 않음.
+function teleportOwnerToLob(match, b) {
+  const p = match.players[b.ownerId];
+  if (!p || !p.alive || p.leaping || p.dashing || p.airborneTimeLeft > 0) return;
+  const clampX = (x) => Math.max(PLAYER_RADIUS, Math.min(ARENA_WIDTH - PLAYER_RADIUS, x));
+  const clampY = (y) => Math.max(PLAYER_RADIUS, Math.min(ARENA_HEIGHT - PLAYER_RADIUS, y));
+  let destX = clampX(b.targetX);
+  let destY = clampY(b.targetY);
+  if (collidesWithWalls(match.walls, destX, destY, PLAYER_RADIUS)) {
+    let found = false;
+    for (let r = 10; r <= 200 && !found; r += 10) {
+      for (let k = 0; k < 16; k++) {
+        const a = (k / 16) * Math.PI * 2;
+        const cx = clampX(b.targetX + Math.cos(a) * r);
+        const cy = clampY(b.targetY + Math.sin(a) * r);
+        if (!collidesWithWalls(match.walls, cx, cy, PLAYER_RADIUS)) { destX = cx; destY = cy; found = true; break; }
+      }
+    }
+    if (!found) return;
+  }
+  const fromX = p.x, fromY = p.y;
+  p.x = destX;
+  p.y = destY;
+  effectIdCounter += 1;
+  match.effects.push({ id: effectIdCounter, type: 'teleport', x: fromX, y: fromY, toX: destX, toY: destY, life: 0.4, maxLife: 0.4 });
+  // 이동은 클라이언트가 자기 위치를 직접 보내는 방식이라, 서버가 위치만 바꾸면 옛 위치로 되돌아간다 -> 근수니의 순간이동 가젯과 같은 방법으로 잠깐 서버가 위치를 제어하고 새 위치를 알려줌
+  const tpNow = Date.now();
+  p.pullLockUntil = Math.max(p.pullLockUntil || 0, tpNow + 150);
+  p.lastServerControlAt = tpNow;
+  const sock = io.sockets.sockets.get(p.id); // AI 봇은 가짜 소켓이라 undefined (봇 위치는 서버가 직접 다룸)
+  if (sock) sock.emit('forcePosition', { x: p.x, y: p.y });
 }
 
 // 발사체와 한 점(px, py) 사이의 거리. sweep 발사체는 이번 틱에 지나온 선분(이전 위치~현재 위치)까지의 최단 거리를 돌려줘서,
@@ -7060,6 +7156,7 @@ function performMeleeAttack(match, p, spec, isUltimate, angle = p.angle, stabInd
   match.effects.push({
     id: effectIdCounter,
     type: 'melee',
+    ownerId: p.id,
     x: p.x,
     y: p.y,
     angle,
@@ -7143,6 +7240,31 @@ function performMeleeAttack(match, p, spec, isUltimate, angle = p.angle, stabInd
     hitChicken(match, chicken, spec.damage * getDamageMultiplier(p), p.id, { charge: !isUltimate });
   }
   match.chickens = match.chickens.filter((c) => c.hp > 0);
+
+  // 배추의 가젯(배춧잎 치유): 효과가 남아 있으면, 기본공격 한 번마다 범위 안의 아군(자신 제외)을 회복시키고 횟수를 1 줄인다 (아군이 없어도 횟수는 줄어듦)
+  if (!isUltimate && p.healCharges > 0 && !match.over) {
+    p.healCharges -= 1;
+    const healAmt = Math.round((p.healChargeAmount || 0) * getDamageMultiplier(p));
+    const healed = [];
+    for (const pid in match.players) {
+      if (pid === p.id) continue;
+      const ally = match.players[pid];
+      if (!ally.alive || ally.team !== p.team) continue;
+      if (Math.hypot(ally.x - p.x, ally.y - p.y) > range + PLAYER_RADIUS) continue;
+      ally.hp = Math.min(ally.maxHp, ally.hp + healAmt * (ally.gearHealMult || 1)); // 회복 기어: 회복받는 쪽의 회복량 증가
+      healed.push(ally.id);
+    }
+    // 회복이 적용된 공격은 원 연출을 초록색으로 바꾸고, 회복 받은 아군 위에 초록 + 표시를 띄운다
+    for (let i = match.effects.length - 1; i >= 0 && i >= match.effects.length - 40; i--) {
+      const e = match.effects[i];
+      if (e.type === 'melee' && e.ownerId === p.id) { e.heal = true; break; } // 방금 이 공격으로 만든 원 연출
+    }
+    for (const aid of healed) {
+      const ally = match.players[aid];
+      effectIdCounter += 1;
+      match.effects.push({ id: effectIdCounter, type: 'healPlus', x: ally.x, y: ally.y, amount: healAmt, ownerId: p.id, life: 0.8, maxLife: 0.8 });
+    }
+  }
 }
 
 // 저격 터렛(성스럽다 궁극기): 자신의 위치에 설치되어, 사거리 안의 적 중 가장 가까운 대상을
@@ -8389,6 +8511,12 @@ function registerGameplayHandlers(socket) {
       p.pullLockUntil = Math.max(p.pullLockUntil || 0, tpNow + 150);
       p.lastServerControlAt = tpNow;
       socket.emit('forcePosition', { x: p.x, y: p.y }); // AI 봇의 가짜 소켓에서는 아무 일도 안 일어남 (봇 위치는 서버가 직접 다룸)
+    } else if (gadget.type === 'healCharge') {
+      // 배추의 가젯: 이후 기본공격 charges번 동안, 공격할 때마다 원 안의 아군(자신 제외)을 healAmount씩 회복 (재사용 시 횟수가 charges 로 다시 채워짐). 실제 회복은 performMeleeAttack 가 처리
+      p.healCharges = gadget.charges || 10;
+      p.healChargeAmount = gadget.healAmount || 200;
+      effectIdCounter += 1;
+      match.effects.push({ id: effectIdCounter, type: 'healAura', x: p.x, y: p.y, ownerId: p.id, life: 0.6, maxLife: 0.6 });
     } else if (gadget.type === 'ultCharge') {
       // 모카의 가젯: duration초에 걸쳐 궁극기 게이지를 amount%만큼 천천히 채움 (재사용 시 새로 갱신, 실제 충전은 updateMatch가 수행)
       p.ultGadgetLeft = gadget.duration || 4;
@@ -8554,6 +8682,9 @@ function registerGameplayHandlers(socket) {
     } else if (ult.type === 'blackhole') {
       // 근수니의 중력 덩어리: 조준한 거리(클라이언트가 보낸 distance, 서버가 범위 제한)로 거대한 구체를 벽을 무시하고 던짐. 착지하면 블랙홀 생성
       spawnLob(match, p, { ...ult, explodeRadius: ult.landRadius, blackHole: true }, data && data.distance);
+    } else if (ult.type === 'teleportLob') {
+      // 배추의 순간이동: 조준한 거리(서버가 범위 제한)로 배추를 느리게 던짐. 착지하면 던진 사람이 그 위치로 순간이동 (updateMatch 의 lob 착지 처리)
+      spawnLob(match, p, { ...ult, explodeRadius: PLAYER_RADIUS + 6, teleportLob: true }, data && data.distance); // explodeRadius 는 폭발이 아니라 화면의 착지 지점 표시 크기
     } else if (ult.type === 'leap') {
       // 모카의 도약 강습: 바라보는 방향으로 벽을 무시하고 점프. 착지 지점은 즉시 정하고(벽 안이면 가까운 빈 곳으로 되돌림),
       // 실제 이동/착지 피해는 updateMatch가 처리한다. 점프 시간 동안은 stunnedUntil로 입력을 막는다.
@@ -9262,6 +9393,7 @@ function updateMatch(match, dt, now) {
     if (b.lob) {
       // 포물선 투척은 벽/맵 경계/적에 막히지 않고 날다가, 착지(수명 종료)하는 순간 그 자리에서 폭발
       if (b.life <= 0) {
+        if (b.teleportOwner) { teleportOwnerToLob(match, b); return false; } // 배추의 궁극기: 던진 사람이 배추가 떨어진 자리로 순간이동 (반사 방어막으로 되던지지 않음)
         // 반사 방어막(나이의 가젯): 착지 폭발이 방어막을 켠 적에게 닿으면 폭발하지 않고 던진 곳으로 되던져짐 (한 번만)
         if (!b.lobReflected) {
           for (const pid in match.players) {
@@ -10492,7 +10624,7 @@ function runAiBot(match, botId, ai, dt, now) {
     if (ult.type === 'heal') use = myR < 0.55;
     else if (ult.type === 'stealth') use = !!target && dist < (mode === 'flee' ? 650 : 500) && mode !== 'hide'; // 도망칠 때 적극적으로 사용
     else if (!offensiveOK) use = false; // 도망/은신 중에는 공격 궁극기를 아낌
-    else if (ult.type === 'leap' || ult.type === 'blackhole' || ult.type === 'fireLob') {
+    else if (ult.type === 'leap' || ult.type === 'blackhole' || ult.type === 'fireLob' || ult.type === 'teleportLob') {
       use = !!target && dist <= ult.distance * 0.95 && dist >= Math.min(ult.distance, ult.minDistance || 0);
       arg = { distance: dist };
     } else if (ult.type === 'dash' || ult.type === 'burst' || ult.type === 'pushDash') use = !!target && dist < ur * (mode === 'chase' ? 1.0 : 0.9) && (losClear || !!ult.pierceWalls);
