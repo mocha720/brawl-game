@@ -1935,7 +1935,7 @@ const CHARACTERS = [
     name: '배추',
     color: '#5fbf4a',
     maxHp: 11000,
-    basic: { name: '배추 회오리', damage: 250, desc: '자신을 중심으로 반경 130의 원을 그리며 범위 안의 모든 적에게 250 피해 (광역 공격), 탄창 10개' },
+    basic: { name: '배추 회오리', damage: 250, desc: '자신을 중심으로 반경 130의 원을 그리며 범위 안의 모든 적에게 250 피해 (광역 공격), 탄창 10개, 0.1초에 탄창 1개씩 소비하며 연사, 재장전은 탄창 1개당 0.2초' },
     ultimate: { name: '배추 순간이동', desc: '배추를 포물선으로 느리게 던져(1.8초) 착지하는 순간 그 위치로 순간이동' },
     gadget: { name: '배춧잎 치유', desc: '이후 기본공격 10번 동안 공격할 때마다 원 안의 아군(자신 제외)의 체력을 각각 200씩 회복 (15초마다 사용 가능)' },
   },
@@ -2179,7 +2179,37 @@ function cancelCharge() {
   chargeLocal = false;
   socket.emit('chargeCancel');
 }
-window.addEventListener('mouseup', (e) => { if (e.button === 2) setAutoAimArmed(false); if (e.button === 0 && !autoAimBusy) endCharge(); });
+// ===== 연사: 기본공격에 shotInterval 이 있는 캐릭터(배추)는 공격 버튼을 누르고 있는 동안 그 간격으로 계속 공격 =====
+// 실제 공격 간격 제한과 탄창 소모는 서버가 처리한다 (여기서는 요청만 반복해서 보냄).
+let holdFireTimer = null;
+let holdFireDelay = null;
+let holdFireStarted = false;
+function holdFireGapMs() {
+  const me = latestState.players[myId];
+  return me && me.alive && me.basic && me.basic.shotInterval > 0 ? me.basic.shotInterval * 1000 : 0;
+}
+function stopHoldFire() { // 연사가 실제로 시작된 상태였으면 true
+  if (holdFireDelay) { clearTimeout(holdFireDelay); holdFireDelay = null; }
+  if (holdFireTimer) { clearInterval(holdFireTimer); holdFireTimer = null; }
+  const was = holdFireStarted;
+  holdFireStarted = false;
+  return was;
+}
+function startHoldFire(fireNow) {
+  stopHoldFire();
+  const gap = holdFireGapMs();
+  if (!gap || !joined || ultimateArmed || gadgetArmed) return;
+  holdFireStarted = true;
+  if (fireNow) fireAttack();
+  holdFireTimer = setInterval(() => {
+    if (!joined || holdFireGapMs() <= 0 || ultimateArmed || gadgetArmed) { stopHoldFire(); return; } // 죽었거나 궁극기/가젯을 장전하면 연사 중단
+    if (inCountdown()) return;
+    if (rightStickCancel) return; // 모바일: 취소 구역에서는 발사하지 않음
+    fireAttack();
+  }, gap);
+}
+window.addEventListener('mouseup', (e) => { if (e.button === 2) setAutoAimArmed(false); if (e.button === 0) stopHoldFire(); if (e.button === 0 && !autoAimBusy) endCharge(); });
+window.addEventListener('blur', stopHoldFire);
 window.addEventListener('blur', () => setAutoAimArmed(false)); // 오토에임 충전 중에는 autoAim이 알아서 발사
 window.addEventListener('blur', cancelCharge);
 
@@ -2342,6 +2372,14 @@ setupStick('rightStick', 'rightNub',
     applyStickAim(nx, ny, dx, dy);
   },
   () => {
+    if (stopHoldFire()) { // 배추: 누르고 있어서 연사 중이었으면 뗄 때 따로 발사하지 않고 끝냄
+      resetRightStickTap();
+      setRightStickCancel(false);
+      touchAimActive = false;
+      rightStickDragged = false;
+      touchAimMag = 1;
+      return;
+    }
     const wasTap = !rightStickDragged; // 끌지 않고 뗐으면 탭 (오래 눌렀어도 조준을 안 했다면 오토에임)
     const cancelled = !wasTap && rightStickCancel; // 조준하다가 중심(취소 구역)으로 되돌린 채 뗐으면 공격 취소
     resetRightStickTap();
@@ -2379,6 +2417,8 @@ setupStick('rightStick', 'rightNub',
       if (!rightStickDragged && l && (Math.abs(l.dx) >= 4 || Math.abs(l.dy) >= 4)) applyStickAim(l.nx, l.ny, l.dx, l.dy);
     }, STICK_TAP_MS);
     beginCharge(); // 스틱을 잡는 순간 충전 시작 (충전 공격 캐릭터만)
+    stopHoldFire();
+    if (holdFireGapMs() > 0) holdFireDelay = setTimeout(() => { holdFireDelay = null; startHoldFire(true); }, 250); // 짧은 탭은 기존처럼 1발, 길게 누르면 연사
   }
 );
 
@@ -5391,7 +5431,11 @@ canvas.addEventListener('mousedown', (e) => {
   if (isTouchDevice) return; // 모바일은 오른쪽 조이스틱으로만 발사 (캔버스 탭에 의한 오발사 방지)
   if (e.button === 0 && joined) {
     if (autoAimArmed) autoAim(); // 오토에임이 장전돼 있으면 가장 가까운 표적을 자동 조준해서 공격
-    else if (!beginCharge()) fireAttack(); // 충전 공격 캐릭터는 누르는 동안 충전, 그 외에는 즉시 발사
+    else if (!beginCharge()) { // 충전 공격 캐릭터는 누르는 동안 충전, 그 외에는 즉시 발사
+      const plainAttack = !ultimateArmed && !gadgetArmed; // 궁극기/가젯 발동 클릭이면 연사하지 않음
+      fireAttack();
+      if (plainAttack) startHoldFire(false); // 배추: 누르고 있는 동안 0.1초마다 계속 공격
+    }
   } else if (e.button === 2 && joined) {
     e.preventDefault();
     setAutoAimArmed(true); // 우클릭을 누르고 있는 동안만 오토에임 상태 (이때 좌클릭하면 발동)
@@ -7038,6 +7082,13 @@ const SKIN_LOOKS = {
         ctx.stroke();
       }
     },
+  },
+  system_comedown: {
+    // 너 오늘 내려와: 안경 쓴 여자 선생님 (긴 갈색 머리 + 흰 블라우스 + 붉은 리본 + 네이비 재킷 + 이름표). 조준 방향과 상관없이 똑바로 선 모습
+    body: '#2f3d63',
+    avatarRing: '#d6334f',
+    upright: true,
+    draw(R, p) { drawTeacherLook(ctx, R, Date.now() / 1000); },
   },
   system_mad: {
     // 미친 과학자: 사방으로 뻗친 헝클어진 백발(정전기로 지직거림) + 크기가 다른 초록 고글 + 하얀 실험 가운 + 가슴 주머니의 시험관 + 광기 어린 웃음.
@@ -10318,6 +10369,131 @@ function drawJiujitsuPreview(canvasEl) {
 }
 
 // 💎 스킨 상점 미리보기: 시스템 '너 오늘 내려와' 투사체 4종 (2의 거듭제곱 / 회복적 성찰문 / 명보 / 내려와)
+// 시스템 '너 오늘 내려와' 1·2타 종이 (g: 2d context, 원점 = 종이 중심, W = 종이 가로 길이). 세로는 항상 W×√2 = A4 용지 비율
+// kind 'pow' = 하얀 A4 용지에 큼직한 "2의 거듭제곱" / kind 'reflect' = 줄 쳐지고 도장이 찍힌 반성문 "회복적 성찰문"
+function drawComedownPaper(g, kind, W) {
+  const H = W * Math.SQRT2;
+  const x0 = -W / 2, y0 = -H / 2;
+  const second = kind === 'reflect';
+  g.save();
+  g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
+  g.shadowColor = second ? 'rgba(160, 100, 255, 0.85)' : 'rgba(80, 170, 255, 0.85)';
+  g.shadowBlur = 10;
+  g.fillStyle = second ? '#fffbe8' : '#ffffff';
+  g.beginPath(); // 오른쪽 위 모서리가 접힌 종이
+  g.moveTo(x0, y0); g.lineTo(x0 + W * 0.78, y0); g.lineTo(x0 + W, y0 + W * 0.22); g.lineTo(x0 + W, y0 + H); g.lineTo(x0, y0 + H);
+  g.closePath();
+  g.fill();
+  g.shadowBlur = 0;
+  g.lineWidth = 2;
+  g.strokeStyle = second ? '#6a35d1' : '#2a6fe0';
+  g.stroke();
+  g.fillStyle = second ? '#e2d3ff' : '#cfe6ff'; // 접힌 모서리
+  g.beginPath(); g.moveTo(x0 + W * 0.78, y0); g.lineTo(x0 + W * 0.78, y0 + W * 0.22); g.lineTo(x0 + W, y0 + W * 0.22); g.closePath();
+  g.fill(); g.stroke();
+  if (!second) {
+    // A4 용지: "2의 거듭제곱" 세 줄 (글씨는 절대 빼먹지 않음)
+    const fs = Math.max(8, Math.round(W * 0.36));
+    g.font = `bold ${fs}px sans-serif`;
+    g.lineWidth = 3; g.strokeStyle = 'rgba(255,255,255,0.9)'; g.fillStyle = '#12327a';
+    ['2의', '거듭', '제곱'].forEach((t, i) => {
+      const y = H * 0.04 + (i - 1) * fs * 1.1;
+      g.strokeText(t, 0, y);
+      g.fillText(t, 0, y);
+    });
+  } else {
+    // 반성문: 제목 "회복적 성찰문" + 빨간 여백선 + 줄 쳐진 칸(손글씨 자국) + 붉은 도장
+    const fs = Math.max(7, Math.round(W * 0.25));
+    g.font = `bold ${fs}px sans-serif`;
+    g.lineWidth = 2.5; g.strokeStyle = 'rgba(255,255,255,0.9)'; g.fillStyle = '#3b1a86';
+    ['회복적', '성찰문'].forEach((t, i) => {
+      const y = y0 + H * 0.16 + i * fs * 1.1;
+      g.strokeText(t, 0, y);
+      g.fillText(t, 0, y);
+    });
+    g.strokeStyle = 'rgba(235, 110, 110, 0.8)'; // 빨간 여백선
+    g.lineWidth = 1;
+    g.beginPath(); g.moveTo(x0 + W * 0.16, y0 + H * 0.34); g.lineTo(x0 + W * 0.16, y0 + H); g.stroke();
+    for (let i = 0; i < 6; i++) {
+      const ly = y0 + H * (0.4 + i * 0.085);
+      g.strokeStyle = 'rgba(120, 110, 180, 0.55)';
+      g.lineWidth = 1;
+      g.beginPath(); g.moveTo(x0 + W * 0.08, ly); g.lineTo(x0 + W * 0.92, ly); g.stroke();
+      g.strokeStyle = 'rgba(60, 50, 110, 0.7)'; // 손글씨 흔적
+      g.setLineDash([Math.max(1.5, W * 0.05), Math.max(1, W * 0.025)]);
+      g.beginPath(); g.moveTo(x0 + W * 0.22, ly - 2); g.lineTo(x0 + W * (i === 5 ? 0.5 : 0.86), ly - 2); g.stroke();
+      g.setLineDash([]);
+    }
+    const sx = x0 + W * 0.74, sy = y0 + H * 0.9, sr = W * 0.12; // 붉은 도장
+    g.strokeStyle = 'rgba(214, 51, 79, 0.9)'; g.lineWidth = 1.5;
+    g.beginPath(); g.arc(sx, sy, sr, 0, Math.PI * 2); g.stroke();
+    g.font = `bold ${Math.max(6, Math.round(sr * 1.3))}px sans-serif`;
+    g.fillStyle = 'rgba(214, 51, 79, 0.9)';
+    g.fillText('인', sx, sy + 0.5);
+  }
+  g.restore();
+}
+
+// 시스템 '너 오늘 내려와' 스킨 캐릭터: 여자 선생님 (단정한 긴 갈색 머리 + 안경 + 흰 블라우스 + 붉은 리본 + 네이비 재킷 + 가슴 이름표). 몸통 원 안쪽만 그린다
+function drawTeacherLook(g, R, t) {
+  g.save();
+  g.beginPath(); g.arc(0, 0, R - 0.5, 0, Math.PI * 2); g.clip();
+  g.fillStyle = '#2f3d63'; // 네이비 재킷
+  g.fillRect(-R, -R, R * 2, R * 2);
+  g.fillStyle = '#4b2e1c'; // 어깨까지 내려오는 긴 머리 (얼굴 뒤)
+  g.beginPath(); g.ellipse(0, -R * 0.3, R * 0.66, R * 0.7, 0, 0, Math.PI * 2); g.fill();
+  g.fillRect(-R * 0.66, -R * 0.3, R * 1.32, R * 0.55);
+  g.fillStyle = '#ffffff'; // 흰 블라우스 (V자 깃)
+  g.beginPath(); g.moveTo(-R * 0.34, R * 0.12); g.lineTo(R * 0.34, R * 0.12); g.lineTo(0, R); g.closePath(); g.fill();
+  g.strokeStyle = '#1b2440'; g.lineWidth = 1.3;
+  g.beginPath(); g.moveTo(-R * 0.34, R * 0.12); g.lineTo(0, R); g.moveTo(R * 0.34, R * 0.12); g.lineTo(0, R); g.stroke();
+  g.fillStyle = '#ffe3cf'; // 목
+  g.fillRect(-R * 0.13, -R * 0.02, R * 0.26, R * 0.2);
+  g.fillStyle = '#d6334f'; // 붉은 리본
+  g.beginPath(); g.moveTo(0, R * 0.2); g.lineTo(-R * 0.24, R * 0.1); g.lineTo(-R * 0.24, R * 0.32); g.closePath(); g.fill();
+  g.beginPath(); g.moveTo(0, R * 0.2); g.lineTo(R * 0.24, R * 0.1); g.lineTo(R * 0.24, R * 0.32); g.closePath(); g.fill();
+  g.fillStyle = '#a3203a';
+  g.beginPath(); g.arc(0, R * 0.2, R * 0.07, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#ffffff'; // 가슴 이름표
+  g.fillRect(R * 0.22, R * 0.5, R * 0.34, R * 0.18);
+  g.strokeStyle = '#8893ad'; g.lineWidth = 1;
+  g.strokeRect(R * 0.22, R * 0.5, R * 0.34, R * 0.18);
+  g.fillStyle = '#d6334f';
+  g.fillRect(R * 0.26, R * 0.56, R * 0.22, R * 0.035);
+  g.fillStyle = '#ffe3cf'; // 얼굴
+  g.beginPath(); g.ellipse(0, -R * 0.3, R * 0.4, R * 0.38, 0, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = '#b98a6a'; g.lineWidth = 1; g.stroke();
+  g.fillStyle = '#4b2e1c'; // 한쪽으로 넘긴 앞머리
+  g.beginPath();
+  g.moveTo(-R * 0.44, -R * 0.28);
+  g.quadraticCurveTo(-R * 0.5, -R * 0.8, 0, -R * 0.78);
+  g.quadraticCurveTo(R * 0.5, -R * 0.8, R * 0.44, -R * 0.28);
+  g.quadraticCurveTo(R * 0.3, -R * 0.5, R * 0.02, -R * 0.5);
+  g.quadraticCurveTo(-R * 0.2, -R * 0.56, -R * 0.44, -R * 0.28);
+  g.closePath(); g.fill();
+  g.fillStyle = 'rgba(255, 140, 150, 0.35)'; // 볼터치
+  for (const sx of [-1, 1]) { g.beginPath(); g.arc(sx * R * 0.27, -R * 0.17, R * 0.07, 0, Math.PI * 2); g.fill(); }
+  const blink = Math.floor(t * 10) % 40 === 0; // 가끔 눈을 깜빡임
+  for (const sx of [-1, 1]) { // 안경과 눈
+    const lx = sx * R * 0.17, ly = -R * 0.28, lr = R * 0.13;
+    g.fillStyle = 'rgba(200, 230, 255, 0.35)';
+    g.beginPath(); g.arc(lx, ly, lr, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = '#2a2a33'; g.lineWidth = 1.4; g.stroke();
+    g.fillStyle = '#2a1a12';
+    if (blink) { g.fillRect(lx - lr * 0.5, ly, lr, 1.2); } else { g.beginPath(); g.arc(lx, ly, lr * 0.3, 0, Math.PI * 2); g.fill(); }
+    g.strokeStyle = '#4b2e1c'; g.lineWidth = 1.2; // 눈썹
+    g.beginPath(); g.moveTo(lx - lr, ly - lr * 1.35); g.lineTo(lx + lr, ly - lr * 1.5); g.stroke();
+  }
+  g.strokeStyle = '#2a2a33'; g.lineWidth = 1.2; // 안경 다리와 코걸이
+  g.beginPath(); g.moveTo(-R * 0.04, -R * 0.28); g.lineTo(R * 0.04, -R * 0.28);
+  g.moveTo(-R * 0.3, -R * 0.28); g.lineTo(-R * 0.4, -R * 0.3); g.moveTo(R * 0.3, -R * 0.28); g.lineTo(R * 0.4, -R * 0.3); g.stroke();
+  g.strokeStyle = '#d6334f'; g.lineWidth = 1.8; g.lineCap = 'round'; // 붉은 입술 미소
+  g.beginPath(); g.moveTo(-R * 0.1, -R * 0.1); g.quadraticCurveTo(0, -R * 0.03, R * 0.1, -R * 0.1); g.stroke();
+  g.fillStyle = '#f5c542'; // 금색 귀걸이
+  for (const sx of [-1, 1]) { g.beginPath(); g.arc(sx * R * 0.41, -R * 0.1, R * 0.04, 0, Math.PI * 2); g.fill(); }
+  g.restore();
+}
+
 function drawComedownPreview(canvasEl) {
   const g = canvasEl.getContext('2d');
   const W = canvasEl.width, H = canvasEl.height;
@@ -10335,8 +10511,8 @@ function drawComedownPreview(canvasEl) {
     txt.forEach((s, i) => { const yy = (i - (txt.length - 1) / 2) * fs * 1.05; g.strokeText(s, 0, yy); g.fillText(s, 0, yy); });
     g.restore();
   };
-  circle(88, 88 + Math.sin(t * 3) * 4, 56, '#bfe3ff', 'rgba(80,170,255,0.9)', '#2a6fe0', ['2의', '거듭제곱'], 22, '#12327a');
-  circle(232, 88 + Math.sin(t * 3 + 1) * 4, 56, '#d9c4ff', 'rgba(160,100,255,0.9)', '#6a35d1', ['회복적', '성찰문'], 24, '#3b1a86');
+  g.save(); g.translate(88, 92 + Math.sin(t * 3) * 4); drawComedownPaper(g, 'pow', 66); g.restore(); // 1타: A4 용지 "2의 거듭제곱"
+  g.save(); g.translate(232, 92 + Math.sin(t * 3 + 1) * 4); drawComedownPaper(g, 'reflect', 66); g.restore(); // 2타: 반성문 "회복적 성찰문"
   // 명보 직사각형
   g.save(); g.translate(88, 214 + Math.sin(t * 3 + 2) * 4);
   g.shadowColor = 'rgba(255,190,60,0.9)'; g.shadowBlur = 14;
@@ -10997,41 +11173,28 @@ function drawBulletShape(b) {
     return;
   }
   if (b.visual === 'powTwo' || b.visual === 'reflectLetter') {
-    // 시스템 '너 오늘 내려와' 1·2타: 글씨가 적힌 원 (1타 "2의 거듭제곱" = 파란 원, 2타 "회복적 성찰문" = 보라 원)
-    // 글씨가 읽히도록 판정 원(b.radius, 팀 색 후광으로 표시됨)보다 크게 그린다. 글씨는 항상 똑바로 서 있음
+    // 시스템 '너 오늘 내려와' 1·2타: 직사각형 종이 (1타 = A4 용지 비율(가로:세로 = 1:√2)에 "2의 거듭제곱", 2타 = 줄 쳐진 반성문 "회복적 성찰문")
+    // 글씨가 읽히도록 판정 원(b.radius, 팀 색 후광으로 표시됨)보다 크게 그리고, 종이는 항상 위를 향한 채 날아가며 살짝 팔랑거림
     const second = b.visual === 'reflectLetter';
-    const R = b.radius * (second ? 1.9 : 3.0);
-    const lines = second ? ['회복적', '성찰문'] : ['2의', '거듭제곱'];
+    const now = Date.now();
+    const ang = Math.atan2(b.vy || 0, b.vx || 1);
+    const W = b.radius * (second ? 2.8 : 4.2);
     ctx.save();
     ctx.translate(b.x, b.y);
-    ctx.rotate(Date.now() / 900 + (b.id || 0));
-    ctx.shadowColor = second ? 'rgba(160, 100, 255, 0.85)' : 'rgba(80, 170, 255, 0.85)';
-    ctx.shadowBlur = 10;
-    const cg = ctx.createRadialGradient(-R * 0.3, -R * 0.3, 1, 0, 0, R);
-    cg.addColorStop(0, '#ffffff');
-    cg.addColorStop(1, second ? '#d9c4ff' : '#bfe3ff');
-    ctx.fillStyle = cg;
-    ctx.beginPath();
-    ctx.arc(0, 0, R, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.shadowBlur = 0;
+    ctx.save(); // 뒤로 흐르는 속도선
+    ctx.rotate(ang);
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
     ctx.lineWidth = 2.5;
-    ctx.strokeStyle = second ? '#6a35d1' : '#2a6fe0';
-    ctx.stroke();
-    ctx.rotate(-(Date.now() / 900 + (b.id || 0))); // 글씨는 회전하지 않게 되돌림
-    const fs = Math.max(8, Math.round(R * (second ? 0.5 : 0.4)));
-    ctx.font = `bold ${fs}px sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.lineJoin = 'round';
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-    ctx.fillStyle = second ? '#3b1a86' : '#12327a';
-    lines.forEach((t, i) => {
-      const y = (i - (lines.length - 1) / 2) * fs * 1.05;
-      ctx.strokeText(t, 0, y);
-      ctx.fillText(t, 0, y);
-    });
+    ctx.lineCap = 'round';
+    for (const k of [-0.5, 0, 0.5]) {
+      ctx.beginPath();
+      ctx.moveTo(-W * 0.6, k * W * 0.8);
+      ctx.lineTo(-W * 0.6 - W * (0.5 + 0.25 * Math.abs(k)), k * W * 0.8);
+      ctx.stroke();
+    }
+    ctx.restore();
+    ctx.rotate(Math.sin(now / 130 + (b.id || 0)) * 0.16);
+    drawComedownPaper(ctx, second ? 'reflect' : 'pow', W);
     ctx.restore();
     return;
   }
