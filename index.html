@@ -734,6 +734,9 @@
   #gemSkinList { display: flex; flex-direction: column; gap: 14px; max-height: 52vh; overflow-y: auto; padding: 2px; -webkit-overflow-scrolling: touch; }
   .gemskin-card { box-sizing: border-box; padding: 12px; text-align: center; background: linear-gradient(160deg, #3a3170, #1f1a45); border: 3px solid #f0b429; border-radius: 18px; box-shadow: 0 0 18px rgba(240, 180, 41, 0.35); }
   .gemskin-card canvas { width: 160px; height: 160px; display: block; margin: 0 auto 4px; }
+  .gemskin-card.ultra { border: 3px solid transparent; background: linear-gradient(160deg, #3a1f5c, #1a1038) padding-box, linear-gradient(120deg, #ff5f6d, #ffd23f, #5dffb0, #5db9ff, #c77dff, #ff5f6d) border-box; background-size: 100% 100%, 300% 300%; animation: ultraBorder 4s linear infinite; box-shadow: 0 0 24px rgba(255, 210, 63, 0.55), 0 0 44px rgba(199, 125, 255, 0.4); }
+  @keyframes ultraBorder { 0% { background-position: 0 0, 0% 50%; } 100% { background-position: 0 0, 300% 50%; } }
+  .gemskin-ultra-badge { display: inline-block; margin-bottom: 6px; padding: 3px 14px; border-radius: 999px; font-family: var(--font-display); font-size: 15px; letter-spacing: 1px; color: #2a1200; background: linear-gradient(90deg, #ffd23f, #ff9f43, #ff6b9a, #c77dff, #5db9ff); box-shadow: 0 0 12px rgba(255, 210, 63, 0.8); }
   .gemskin-name { font-family: var(--font-display); font-size: 22px; color: #ffd23f; }
   .gemskin-char { font-size: 12px; color: var(--mute); margin-bottom: 6px; }
   .gemskin-desc { font-size: 13px; line-height: 1.55; color: #d5d7f2; margin-bottom: 10px; }
@@ -1640,6 +1643,12 @@
   <div class="ammo-dot" id="ammoDot1"></div>
   <div class="ammo-dot" id="ammoDot2"></div>
   <div class="ammo-dot" id="ammoDot3" style="display:none"></div>
+  <div class="ammo-dot" id="ammoDot4" style="display:none"></div>
+  <div class="ammo-dot" id="ammoDot5" style="display:none"></div>
+  <div class="ammo-dot" id="ammoDot6" style="display:none"></div>
+  <div class="ammo-dot" id="ammoDot7" style="display:none"></div>
+  <div class="ammo-dot" id="ammoDot8" style="display:none"></div>
+  <div class="ammo-dot" id="ammoDot9" style="display:none"></div>
 </div>
 
 <!-- 충전 게이지: 똥파리처럼 탄창이 없는 충전 공격 캐릭터일 때만 표시 -->
@@ -1921,6 +1930,15 @@ const CHARACTERS = [
     ultimate: { name: '폭탄 점프', desc: '서 있던 자리에 폭탄을 남기고 천천히 점프, 1초 뒤 폭탄이 터져 2,000 피해' },
     gadget: { name: '밀쳐내기', desc: '반경 150 안의 적에게 100 피해를 주고 200px 밀쳐냄 (15초마다 사용 가능)' },
   },
+  {
+    id: 'baechu',
+    name: '배추',
+    color: '#5fbf4a',
+    maxHp: 11000,
+    basic: { name: '배추 회오리', damage: 250, desc: '자신을 중심으로 반경 130의 원을 그리며 범위 안의 모든 적에게 250 피해 (광역 공격), 탄창 10개' },
+    ultimate: { name: '배추 순간이동', desc: '배추를 포물선으로 느리게 던져(1.8초) 착지하는 순간 그 위치로 순간이동' },
+    gadget: { name: '배춧잎 치유', desc: '이후 기본공격 10번 동안 공격할 때마다 원 안의 아군(자신 제외)의 체력을 각각 200씩 회복 (15초마다 사용 가능)' },
+  },
 ];
 let selectedCharacterId = CHARACTERS[0].id;
 
@@ -2105,14 +2123,14 @@ function isLobBasic(me) {
   return !!(me && me.basic && me.basic.type === 'lob');
 }
 function isLeapUltimateArmed(me) {
-  return !!(ultimateArmed && me && me.alive && me.ultimate && (me.ultimate.type === 'leap' || me.ultimate.type === 'blackhole' || me.ultimate.type === 'fireLob')); // 거리를 조준하는 궁극기: 모카의 점프, 근수니의 중력 덩어리, 차차의 불덩이
+  return !!(ultimateArmed && me && me.alive && me.ultimate && (me.ultimate.type === 'leap' || me.ultimate.type === 'blackhole' || me.ultimate.type === 'fireLob' || me.ultimate.type === 'teleportLob')); // 거리를 조준하는 궁극기: 모카의 점프, 근수니의 중력 덩어리, 차차의 불덩이, 배추의 순간이동 배추
 }
 
 function fireAttack() {
   if (!joined || inCountdown()) return;
   const me = latestState.players[myId];
   if (ultimateArmed && me && me.ultimateCharge >= 100) {
-    if (me.ultimate && (me.ultimate.type === 'leap' || me.ultimate.type === 'blackhole' || me.ultimate.type === 'fireLob')) socket.emit('ultimate', { distance: Math.round(getLeapAimDistance(me)) });
+    if (me.ultimate && (me.ultimate.type === 'leap' || me.ultimate.type === 'blackhole' || me.ultimate.type === 'fireLob' || me.ultimate.type === 'teleportLob')) socket.emit('ultimate', { distance: Math.round(getLeapAimDistance(me)) });
     else socket.emit('ultimate');
     ultimateArmed = false;
     updateUltimateButton();
@@ -2949,7 +2967,9 @@ function renderGemSkinShop() {
     const btn = have ? '<button disabled>✅ 보유 중 — 캐릭터 선택 화면에서 장착하세요</button>'
       : !hasChar ? `<button disabled>🔒 먼저 ${escapeHtml(ch ? ch.name : '캐릭터')}를 잠금해제하세요</button>`
       : `<button data-gemskin-buy="${escapeHtml(k.id)}" ${gems >= k.gemPrice ? '' : 'disabled'}>💎 ${k.gemPrice.toLocaleString()} 구매${gems >= k.gemPrice ? '' : ' (보석 부족)'}</button>`;
-    return `<div class="gemskin-card">
+    const ultra = k.tier === 'ultra';
+    return `<div class="gemskin-card${ultra ? ' ultra' : ''}">
+      ${ultra ? '<div class="gemskin-ultra-badge">✨ 울트라 전설 ✨</div>' : ''}
       <canvas width="320" height="320" data-gemskin-preview="${escapeHtml(k.id)}"></canvas>
       <div class="gemskin-name">${escapeHtml(k.name)}</div>
       <div class="gemskin-char">${escapeHtml(ch ? ch.name : '')} 전용 스킨</div>
@@ -2979,6 +2999,7 @@ function animateGemSkinPreviews() {
     if (pid === 'minam_legend') drawLegendPreview(cv);
     else if (pid === 'jigi_storm') drawStormPreview(cv);
     else if (pid === 'system_jiujitsu') drawJiujitsuPreview(cv);
+    else if (pid === 'system_comedown') drawComedownPreview(cv);
   });
 }
 function setGemSkinMsg(text, ok) {
@@ -5544,7 +5565,7 @@ function updateAmmoDisplay() {
   }
   const ammo = me ? me.ammo : 3;
   const maxAmmo = me ? me.maxAmmo : 3;
-  for (let i = 0; i < 4; i++) { // 기어 '큰 탄창'을 달면 4번째 점도 표시
+  for (let i = 0; i < 10; i++) { // 기어 '큰 탄창'을 달면 4번째 점도 표시, 배추는 탄창이 10개
     const dot = document.getElementById('ammoDot' + i);
     if (!dot) continue;
     dot.style.display = i < maxAmmo ? '' : 'none';
@@ -8800,6 +8821,21 @@ function drawPlayer(p, isMe) {
     ctx.restore();
   }
 
+  // 배추의 가젯 효과가 남아 있으면 머리 위에 남은 회복 공격 횟수를 초록색으로 표시
+  if (p.healCharges > 0) {
+    ctx.save();
+    ctx.font = 'bold 13px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(10, 70, 20, 0.9)';
+    ctx.fillStyle = '#9dffae';
+    ctx.strokeText(`💚 ${p.healCharges}`, p.x, p.y + PLAYER_RADIUS + 14);
+    ctx.fillText(`💚 ${p.healCharges}`, p.x, p.y + PLAYER_RADIUS + 14);
+    ctx.restore();
+  }
+
   // AI 연습 대결의 상대는 남은 탄창(총알)을 체력바 아래에 점으로 보여줌 (일반 상대의 탄창은 숨김)
   if (p.isBot) {
     const maxA = p.maxAmmo || 3;
@@ -9191,19 +9227,20 @@ function drawSlipperBullet(b) {
   ctx.save();
 
   if (hasTarget) {
-    // 착지 지점 경고: 폭발 범위가 점점 차오름
+    // 착지 지점 경고: 폭발 범위가 점점 차오름 (배추의 순간이동은 초록색 착지 표시)
+    const cab = b.visual === 'cabbage';
     ctx.beginPath();
     ctx.arc(tx, ty, R, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(255, 90, 130, ${0.05 + 0.1 * t})`;
+    ctx.fillStyle = cab ? `rgba(90, 210, 90, ${0.05 + 0.1 * t})` : `rgba(255, 90, 130, ${0.05 + 0.1 * t})`;
     ctx.fill();
     ctx.setLineDash([7, 7]);
     ctx.lineWidth = 2;
-    ctx.strokeStyle = `rgba(255, 110, 145, ${0.35 + 0.45 * t})`;
+    ctx.strokeStyle = cab ? `rgba(120, 230, 110, ${0.35 + 0.45 * t})` : `rgba(255, 110, 145, ${0.35 + 0.45 * t})`;
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.beginPath();
     ctx.arc(tx, ty, R * t, 0, Math.PI * 2);
-    ctx.fillStyle = `rgba(255, 120, 150, ${0.1 + 0.12 * t})`;
+    ctx.fillStyle = cab ? `rgba(130, 235, 120, ${0.1 + 0.12 * t})` : `rgba(255, 120, 150, ${0.1 + 0.12 * t})`;
     ctx.fill();
     ctx.strokeStyle = `rgba(255, 245, 250, ${0.4 + 0.5 * t})`;
     ctx.lineWidth = 2;
@@ -9249,6 +9286,7 @@ function drawSlipperBullet(b) {
   }
   if (b.visual === 'tray') { drawTrayBody(r, now, t); ctx.restore(); return; } // 나이 주방장: 실내화 대신 은쟁반
   if (b.visual === 'gravitySphere') { drawGravitySphere(r, now); ctx.restore(); return; } // 근수니: 중력 덩어리
+  if (b.visual === 'cabbage') { drawCabbageBody(r, now); ctx.restore(); return; } // 배추: 순간이동 배추
   if (b.visual === 'fireball') { drawFireball(r, now); ctx.restore(); return; } // 차차 '문': 불덩이
   // 밑창
   ctx.fillStyle = '#f6f2e9';
@@ -9434,6 +9472,130 @@ function drawSlipperExplosion(e) {
 
 // 나이의 궁극기 '슛' 착지: 노란 충격파 + 별이 빙글빙글 도는 기절 표시 + '슛!' 글자
 // 근수니의 중력 덩어리: 검은 핵을 보랏빛 고리와 빨려드는 입자가 감싼 거대한 구체 (원점 기준으로 그림 - 호출하는 쪽이 이미 위치/회전을 맞춰 둠)
+// 배추의 순간이동 배추: 겹겹이 싸인 둥근 배추 (바깥 초록 잎 + 흰 줄기 + 속의 연노랑 속잎). 원점 기준으로 그림 - 호출하는 쪽이 이미 위치/회전을 맞춰 둠
+function drawCabbageBody(r, now) {
+  ctx.rotate(-now * 11); // 호출하는 쪽의 빙글빙글 회전을 상쇄하고 배추 자체 회전으로 천천히 돌림
+  ctx.rotate(now * 4);
+  const R = r * 1.5;
+  // 번쩍이는 초록 후광 (곧 순간이동한다는 표시)
+  const glow = ctx.createRadialGradient(0, 0, R * 0.5, 0, 0, R * 1.9);
+  glow.addColorStop(0, 'rgba(120, 255, 130, 0.45)');
+  glow.addColorStop(1, 'rgba(120, 255, 130, 0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath(); ctx.arc(0, 0, R * 1.9, 0, Math.PI * 2); ctx.fill();
+  // 바깥 잎 6장
+  ctx.lineJoin = 'round';
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    ctx.save();
+    ctx.rotate(a);
+    ctx.fillStyle = i % 2 ? '#4fae3e' : '#62c24b';
+    ctx.strokeStyle = '#255c1d';
+    ctx.lineWidth = Math.max(1, r * 0.1);
+    ctx.beginPath();
+    ctx.ellipse(R * 0.55, 0, R * 0.62, R * 0.42, 0, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = 'rgba(235, 255, 215, 0.8)'; // 잎맥
+    ctx.lineWidth = Math.max(1, r * 0.08);
+    ctx.beginPath(); ctx.moveTo(R * 0.1, 0); ctx.lineTo(R * 1.0, 0); ctx.stroke();
+    ctx.restore();
+  }
+  // 속잎 (연노랑 + 흰 줄기)
+  const cg = ctx.createRadialGradient(-R * 0.1, -R * 0.1, 1, 0, 0, R * 0.62);
+  cg.addColorStop(0, '#f6ffd2');
+  cg.addColorStop(1, '#bfe87a');
+  ctx.fillStyle = cg;
+  ctx.strokeStyle = '#4c8a2a';
+  ctx.lineWidth = Math.max(1, r * 0.1);
+  ctx.beginPath(); ctx.arc(0, 0, R * 0.6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle = 'rgba(120, 170, 60, 0.8)';
+  ctx.beginPath();
+  ctx.arc(0, 0, R * 0.32, 0.4, Math.PI * 1.5);
+  ctx.stroke();
+}
+
+// 배추의 기본공격 '배추 회오리': 자신을 중심으로 배춧잎이 빙글 돌며 원을 그리고 퍼지는 연출. heal 이면(가젯 효과가 적용된 공격) 더 밝은 초록 + 흰 빛
+function drawCabbageRingEffect(e) {
+  const maxLife = e.maxLife || 0.5;
+  const p = Math.max(0, Math.min(1, 1 - e.life / maxLife)); // 0 -> 1
+  const ease = 1 - (1 - p) * (1 - p);
+  const R = e.radius * (0.35 + 0.65 * ease);
+  const alpha = 1 - p * p;
+  const heal = !!e.heal;
+  ctx.save();
+  ctx.translate(e.x, e.y);
+  // 원 안쪽 채우기 + 테두리
+  ctx.globalAlpha = alpha;
+  const g = ctx.createRadialGradient(0, 0, R * 0.2, 0, 0, R);
+  g.addColorStop(0, heal ? 'rgba(200, 255, 200, 0.05)' : 'rgba(150, 230, 110, 0.04)');
+  g.addColorStop(1, heal ? 'rgba(120, 255, 150, 0.45)' : 'rgba(110, 200, 80, 0.38)');
+  ctx.fillStyle = g;
+  ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.fill();
+  ctx.lineWidth = 4 * (1 - p) + 1.5;
+  ctx.strokeStyle = heal ? 'rgba(235, 255, 235, 0.95)' : 'rgba(220, 255, 190, 0.9)';
+  ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.stroke();
+  // 빙글 도는 배춧잎 8장 (원 둘레를 따라 돎)
+  const spin = ease * Math.PI * 2.2;
+  for (let i = 0; i < 8; i++) {
+    const a = spin + (i / 8) * Math.PI * 2;
+    ctx.save();
+    ctx.translate(Math.cos(a) * R * 0.88, Math.sin(a) * R * 0.88);
+    ctx.rotate(a + Math.PI / 2);
+    ctx.fillStyle = heal ? (i % 2 ? '#8af09a' : '#b6ffc0') : (i % 2 ? '#5db84a' : '#7fd35f');
+    ctx.strokeStyle = '#255c1d';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, e.radius * 0.1, e.radius * 0.2, 0, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
+  // 회복 공격이면 + 표시 몇 개가 위로 떠오름
+  if (heal) {
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+    ctx.font = `bold ${Math.round(e.radius * 0.2)}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * Math.PI * 2 + 0.7;
+      ctx.fillText('+', Math.cos(a) * R * 0.5, Math.sin(a) * R * 0.5 - p * 18);
+    }
+  }
+  ctx.restore();
+}
+
+// 배추의 가젯 사용 연출: 몸에서 초록 빛 고리가 퍼짐
+function drawHealAuraEffect(e) {
+  const p = Math.max(0, Math.min(1, 1 - e.life / (e.maxLife || 0.6)));
+  ctx.save();
+  ctx.translate(e.x, e.y);
+  ctx.globalAlpha = 1 - p;
+  ctx.lineWidth = 4 * (1 - p) + 1;
+  ctx.strokeStyle = 'rgba(130, 255, 150, 0.95)';
+  ctx.beginPath(); ctx.arc(0, 0, PLAYER_RADIUS + 50 * p, 0, Math.PI * 2); ctx.stroke();
+  ctx.fillStyle = 'rgba(160, 255, 170, 0.18)';
+  ctx.fill();
+  ctx.restore();
+}
+
+// 아군 회복 표시: 위로 떠오르는 초록 "+숫자"
+function drawHealPlusEffect(e) {
+  const p = Math.max(0, Math.min(1, 1 - e.life / (e.maxLife || 0.8)));
+  ctx.save();
+  ctx.globalAlpha = 1 - p * p;
+  ctx.font = 'bold 18px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = 'rgba(10, 70, 20, 0.9)';
+  ctx.fillStyle = '#9dffae';
+  const y = e.y - PLAYER_RADIUS - 14 - 26 * p;
+  const txt = `+${(e.amount || 0).toLocaleString()}`;
+  ctx.strokeText(txt, e.x, y);
+  ctx.fillText(txt, e.x, y);
+  ctx.restore();
+}
+
 function drawGravitySphere(r, now) {
   ctx.rotate(-now * 11); // 호출하는 쪽의 빙글빙글 회전을 상쇄하고 구체 자체 회전으로 다시 돌림
   ctx.rotate(now * 3);
@@ -10155,6 +10317,50 @@ function drawJiujitsuPreview(canvasEl) {
   g.fillText('🥋 주짓수 챔피언 🔥', W / 2, H - 12);
 }
 
+// 💎 스킨 상점 미리보기: 시스템 '너 오늘 내려와' 투사체 4종 (2의 거듭제곱 / 회복적 성찰문 / 명보 / 내려와)
+function drawComedownPreview(canvasEl) {
+  const g = canvasEl.getContext('2d');
+  const W = canvasEl.width, H = canvasEl.height;
+  const t = Date.now() / 1000;
+  g.clearRect(0, 0, W, H);
+  g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
+  const circle = (x, y, R, c1, c2, line, txt, fs, col) => {
+    g.save(); g.translate(x, y);
+    g.shadowColor = c2; g.shadowBlur = 14;
+    const cg = g.createRadialGradient(-R * 0.3, -R * 0.3, 1, 0, 0, R);
+    cg.addColorStop(0, '#fff'); cg.addColorStop(1, c1);
+    g.fillStyle = cg; g.beginPath(); g.arc(0, 0, R, 0, Math.PI * 2); g.fill();
+    g.shadowBlur = 0; g.lineWidth = 3; g.strokeStyle = line; g.stroke();
+    g.font = `bold ${fs}px sans-serif`; g.lineWidth = 3; g.strokeStyle = 'rgba(255,255,255,0.9)'; g.fillStyle = col;
+    txt.forEach((s, i) => { const yy = (i - (txt.length - 1) / 2) * fs * 1.05; g.strokeText(s, 0, yy); g.fillText(s, 0, yy); });
+    g.restore();
+  };
+  circle(88, 88 + Math.sin(t * 3) * 4, 56, '#bfe3ff', 'rgba(80,170,255,0.9)', '#2a6fe0', ['2의', '거듭제곱'], 22, '#12327a');
+  circle(232, 88 + Math.sin(t * 3 + 1) * 4, 56, '#d9c4ff', 'rgba(160,100,255,0.9)', '#6a35d1', ['회복적', '성찰문'], 24, '#3b1a86');
+  // 명보 직사각형
+  g.save(); g.translate(88, 214 + Math.sin(t * 3 + 2) * 4);
+  g.shadowColor = 'rgba(255,190,60,0.9)'; g.shadowBlur = 14;
+  const rg = g.createLinearGradient(0, -36, 0, 36); rg.addColorStop(0, '#fff3c4'); rg.addColorStop(1, '#f0b429');
+  g.fillStyle = rg; g.fillRect(-62, -36, 124, 72); g.shadowBlur = 0;
+  g.lineWidth = 3; g.strokeStyle = '#8a4b08'; g.strokeRect(-62, -36, 124, 72);
+  g.font = 'bold 44px sans-serif'; g.strokeStyle = 'rgba(255,255,255,0.85)'; g.fillStyle = '#5a2a00';
+  g.strokeText('명보', 0, 2); g.fillText('명보', 0, 2);
+  g.restore();
+  // 궁극기: 내려와 소용돌이
+  g.save(); g.translate(232, 214);
+  g.fillStyle = 'rgba(255,90,70,0.22)'; g.beginPath(); g.arc(0, 0, 60, 0, Math.PI * 2); g.fill();
+  g.lineWidth = 3; g.strokeStyle = 'rgba(255,150,120,0.85)'; g.stroke();
+  g.lineCap = 'round';
+  for (let arm = 0; arm < 4; arm++) {
+    g.strokeStyle = 'rgba(255,190,170,0.9)'; g.lineWidth = 6; g.beginPath();
+    for (let i = 0; i <= 20; i++) { const a = t * 3 + arm * Math.PI / 2 + i * 0.16, r = 6 + i * 2.6; i ? g.lineTo(Math.cos(a) * r, Math.sin(a) * r) : g.moveTo(Math.cos(a) * r, Math.sin(a) * r); }
+    g.stroke();
+  }
+  g.font = '900 28px sans-serif'; g.lineWidth = 7; g.strokeStyle = '#4a0d08'; g.shadowColor = 'rgba(255,80,50,0.9)'; g.shadowBlur = 10;
+  g.strokeText('내려와', 0, 0); g.shadowBlur = 0; g.fillStyle = '#fff6d8'; g.fillText('내려와', 0, 0);
+  g.restore();
+}
+
 // 1타: 날아가는 발 (발등 + 5개의 발가락 + 도복 바지단 + 뒤로 남는 발차기 궤적)
 function drawFootKickBullet(b) {
   const r = b.radius;
@@ -10328,7 +10534,7 @@ function drawJiujitsuBlast(e) {
 function isAllyOwner(o) {
   return o.ownerId === myId || (myTeam && o.team === myTeam);
 }
-const SKIN_TEAM_BULLETS = { footKick: 1, fist: 1, fireFist: 1, stormOrb: 1, stormOrbHyper: 1, fireball: 1, iceShard: 1, poisonVial: 1, tire: 1, chip: 1, battery: 1, machine: 1 };
+const SKIN_TEAM_BULLETS = { footKick: 1, fist: 1, fireFist: 1, stormOrb: 1, stormOrbHyper: 1, fireball: 1, iceShard: 1, poisonVial: 1, tire: 1, chip: 1, battery: 1, machine: 1, powTwo: 1, reflectLetter: 1, myeongbo: 1 };
 function drawTeamHalo(b) {
   const ally = isAllyOwner(b);
   ctx.save();
@@ -10787,6 +10993,125 @@ function drawBulletShape(b) {
     ctx.moveTo(r * 0.85, 0);
     ctx.lineTo(-r * 0.6, 0);
     ctx.stroke();
+    ctx.restore();
+    return;
+  }
+  if (b.visual === 'powTwo' || b.visual === 'reflectLetter') {
+    // 시스템 '너 오늘 내려와' 1·2타: 글씨가 적힌 원 (1타 "2의 거듭제곱" = 파란 원, 2타 "회복적 성찰문" = 보라 원)
+    // 글씨가 읽히도록 판정 원(b.radius, 팀 색 후광으로 표시됨)보다 크게 그린다. 글씨는 항상 똑바로 서 있음
+    const second = b.visual === 'reflectLetter';
+    const R = b.radius * (second ? 1.9 : 3.0);
+    const lines = second ? ['회복적', '성찰문'] : ['2의', '거듭제곱'];
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.rotate(Date.now() / 900 + (b.id || 0));
+    ctx.shadowColor = second ? 'rgba(160, 100, 255, 0.85)' : 'rgba(80, 170, 255, 0.85)';
+    ctx.shadowBlur = 10;
+    const cg = ctx.createRadialGradient(-R * 0.3, -R * 0.3, 1, 0, 0, R);
+    cg.addColorStop(0, '#ffffff');
+    cg.addColorStop(1, second ? '#d9c4ff' : '#bfe3ff');
+    ctx.fillStyle = cg;
+    ctx.beginPath();
+    ctx.arc(0, 0, R, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.lineWidth = 2.5;
+    ctx.strokeStyle = second ? '#6a35d1' : '#2a6fe0';
+    ctx.stroke();
+    ctx.rotate(-(Date.now() / 900 + (b.id || 0))); // 글씨는 회전하지 않게 되돌림
+    const fs = Math.max(8, Math.round(R * (second ? 0.5 : 0.4)));
+    ctx.font = `bold ${fs}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+    ctx.fillStyle = second ? '#3b1a86' : '#12327a';
+    lines.forEach((t, i) => {
+      const y = (i - (lines.length - 1) / 2) * fs * 1.05;
+      ctx.strokeText(t, 0, y);
+      ctx.fillText(t, 0, y);
+    });
+    ctx.restore();
+    return;
+  }
+  if (b.visual === 'myeongbo') {
+    // 시스템 '너 오늘 내려와' 3타: "명보"가 적힌 직사각형 (날아가는 방향으로 회전, 글씨는 왼쪽으로 날아갈 때 뒤집히지 않게 같이 돌려 읽히게 함)
+    // 가로 1.7r x 세로 1.1r 이면 모서리가 판정 원(b.radius) 안에 거의 들어간다
+    const ang = Math.atan2(b.vy || 0, b.vx || 1);
+    const L = b.radius * 1.7;
+    const W = b.radius * 1.1;
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.rotate(ang);
+    // 뒤로 흐르는 속도선
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    for (const k of [-0.6, 0, 0.6]) {
+      ctx.beginPath();
+      ctx.moveTo(-L / 2 - 4, k * W * 0.5);
+      ctx.lineTo(-L / 2 - 4 - b.radius * (0.7 + 0.3 * Math.abs(k)), k * W * 0.5);
+      ctx.stroke();
+    }
+    ctx.shadowColor = 'rgba(255, 190, 60, 0.9)';
+    ctx.shadowBlur = 10;
+    const rg = ctx.createLinearGradient(0, -W / 2, 0, W / 2);
+    rg.addColorStop(0, '#fff3c4');
+    rg.addColorStop(1, '#f0b429');
+    ctx.fillStyle = rg;
+    ctx.beginPath();
+    ctx.rect(-L / 2, -W / 2, L, W);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#8a4b08';
+    ctx.strokeRect(-L / 2, -W / 2, L, W);
+    if (Math.cos(ang) < 0) ctx.rotate(Math.PI); // 왼쪽으로 날아갈 때는 글씨가 거꾸로 되지 않게 뒤집어서 그림
+    const fs = Math.round(W * 0.62);
+    ctx.font = `bold ${fs}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(255,255,255,0.85)';
+    ctx.fillStyle = '#5a2a00';
+    ctx.strokeText('명보', 0, 1);
+    ctx.fillText('명보', 0, 1);
+    ctx.restore();
+    return;
+  }
+  if (b.visual === 'comeDown') {
+    // 시스템 '너 오늘 내려와' 궁극기: 붉게 휘몰아치는 거대 소용돌이 + 한가운데 "내려와" 글씨 (크기는 b.radius 를 따라감 - 하이퍼 차지 중에는 더 커짐)
+    const now = Date.now();
+    const R = b.radius;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, R, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 90, 70, 0.2)';
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(255, 150, 120, 0.8)';
+    ctx.stroke();
+    ctx.restore();
+    drawVortexShape(b.x, b.y, R, now / 160, 'rgba(255, 190, 170, 0.95)', 4);
+    drawVortexShape(b.x, b.y, R * 0.6, -now / 100, 'rgba(255, 235, 150, 0.9)', 3);
+    const pulse = 1 + 0.06 * Math.sin(now / 90 + (b.id || 0));
+    const fs = Math.round(R * 0.5 * pulse);
+    ctx.save();
+    ctx.translate(b.x, b.y);
+    ctx.font = `900 ${fs}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.lineJoin = 'round';
+    ctx.lineWidth = Math.max(4, fs * 0.2);
+    ctx.strokeStyle = '#4a0d08';
+    ctx.shadowColor = 'rgba(255, 80, 50, 0.9)';
+    ctx.shadowBlur = 12;
+    ctx.strokeText('내려와', 0, 0);
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#fff6d8';
+    ctx.fillText('내려와', 0, 0);
     ctx.restore();
     return;
   }
@@ -13407,6 +13732,12 @@ function drawEffect(e) {
     ctx.textBaseline = 'middle';
     ctx.fillText('💥', e.x, e.y);
     ctx.restore();
+  } else if (e.type === 'melee' && e.visual === 'cabbageRing') {
+    drawCabbageRingEffect(e);
+  } else if (e.type === 'healAura') {
+    drawHealAuraEffect(e);
+  } else if (e.type === 'healPlus') {
+    drawHealPlusEffect(e);
   } else if (e.type === 'melee' && e.visual === 'shadowStab') {
     drawShadowStabEffect(e);
   } else if (e.type === 'melee' && e.visual === 'stab') {
