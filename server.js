@@ -1432,7 +1432,7 @@ const CHARACTERS = {
       range: 130,           // 원의 반경(px)
       maxAmmo: 10,          // 탄창 10개 (기어 '큰 탄창'은 장착 불가)
       shotInterval: 0.1,    // 공격 속도: 0.1초에 탄창 1개씩 소비 (shotInterval 이 없는 캐릭터는 FIRE_COOLDOWN_MS 를 씀)
-      ammoRegenSeconds: 0.2, // 재장전 속도: 탄창 1개당 0.2초
+      ammoRegenSeconds: 0.5, // 재장전 속도: 탄창 1개당 0.5초
       visual: 'cabbageRing', // 배춧잎이 돌며 퍼지는 원형 연출
       effectLife: 0.5,      // 연출이 화면에 남는 시간(초)
     },
@@ -9893,7 +9893,7 @@ function updateMatch(match, dt, now) {
       const regenSec = p.ammoRegenSeconds || AMMO_REGEN_SECONDS;
       if (p.ammoRegenElapsed >= regenSec) {
         p.ammo = Math.min(p.maxAmmo, p.ammo + 1);
-        // 1초 미만의 아주 빠른 재장전(배추 0.2초)은 서버 틱(0.05초) 단위로 남는 시간이 커서 이월한다. 그 외 캐릭터는 기존과 동일하게 0으로 초기화
+        // 1초 미만의 아주 빠른 재장전(배추 0.5초)은 서버 틱(0.05초) 단위로 남는 시간이 커서 이월한다. 그 외 캐릭터는 기존과 동일하게 0으로 초기화
         p.ammoRegenElapsed = regenSec < 1 ? Math.max(0, p.ammoRegenElapsed - regenSec) : 0;
       }
     } else {
