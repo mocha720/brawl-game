@@ -1076,7 +1076,7 @@ const CHARACTERS = {
       name: '시스템 콤보',
       type: 'combo',         // 탄창 3개가 각각 다른 공격: 1번 원거리 구슬 -> 2번 던지는 구슬 -> 3번 소용돌이 3개
       reloadAllAtOnce: true, // 탄창 3개를 모두 쓴 뒤에야 재장전이 시작되고, ammoRegenSeconds 뒤에 한꺼번에 가득 참
-      ammoRegenSeconds: 3,   // 3개를 모두 사용한 뒤 탄창이 리셋되기까지의 시간(초)
+      ammoRegenSeconds: 4,   // 3개를 모두 사용한 뒤 탄창이 리셋되기까지의 시간(초) (기존 3초에서 4초로)
       dash: { speed: 448, duration: 0.12 }, // 공격 버튼을 누르면 먼저 투사체를 발사한 뒤, 이동 중이던 방향으로 이만큼 돌진(약 54px, 기존 약 77px에서 30% 감소). 가만히 서 있으면 돌진하지 않고 공격만 함
       combo: [
         { name: '원거리 구슬', damage: 1000, speed: 800, radius: 9, lifetime: 0.7, visual: 'sysOrb' },   // 사거리 약 560 (원거리, 기존 800에서 30% 감소)
@@ -1240,6 +1240,7 @@ const CHARACTERS = {
     name: '짭새',
     moveSpeedTier: 'normal', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
     maxHp: 6000, // 1레벨 기준 체력
+    ultimateChargePerHit: 34, // 적중 1번당 궁극기 충전량(%). 기본값(17)의 2배 = 충전 속도 2배
     basic: {
       name: '가시 발사',
       damage: 1500,          // 1레벨 기준
@@ -1594,7 +1595,7 @@ function describeBasic(b) {
   } else if (b.ammoRegenSeconds && b.ammoRegenSeconds < AMMO_REGEN_SECONDS) {
     parts.push(`재장전 속도 ${Math.round((AMMO_REGEN_SECONDS / b.ammoRegenSeconds - 1) * 100)}% 빠름`);
   }
-  if (b.orbit) parts.push(`몸 주위에 원 ${b.orbit.count}개가 계속 돌고 있음. 원에 닿은 적은 ${fmtNum(b.orbit.damage)} 피해 (같은 적은 ${b.orbit.hitCooldown}초에 한 번만 맞음)`);
+  if (b.orbit) parts.push(`몸 주위에 원 ${b.orbit.count}개가 계속 돌고 있음. 원에 닿은 적은 ${fmtNum(b.orbit.damage)} 피해 (같은 적은 ${b.orbit.hitCooldown}초에 한 번만 맞음). 원에 맞춰도 궁극기가 충전됨`);
   return { name: b.name, damage, desc: parts.join(', ') };
 }
 
@@ -1892,8 +1893,8 @@ const GEAR_RARITIES = {
 //  startShield: 매치 시작 때 두르는 보호막 수치 (900 = 900 피해 흡수). 보호막이 사라진 뒤 체력이 가득 찬 채로 GEAR_SHIELD_REGEN_MS 동안 피해를 입지 않으면 다시 생김
 //  ultChargeBonus: 궁극기 충전 속도 증가율 (0.1 = 10% 더 빨리 참. 기본공격 적중 충전 + 가젯 충전 모두 적용)
 //  projectileSpeedBonus: 투사체(발사체)가 날아가는 속도 증가율 (0.1 = 10% 빨라짐. 사거리는 그대로)
-//  lowHpSpeedBonus: 체력이 최대 체력의 GEAR_LOW_HP_SPEED_RATIO(30%) 이하일 때 이동속도 증가율 (0.1 = 10% 빨라짐)
-//  chainDamageBonus: 기본공격(평타)을 한 뒤 GEAR_CHAIN_WINDOW_MS(1초) 안에 다시 기본공격을 하면 그 공격의 피해 증가율 (0.25 = 25%). 연속으로 공격해도 겹쳐서 커지지 않고 항상 25%만 적용됨
+//  lowHpSpeedBonus: 체력이 최대 체력의 GEAR_LOW_HP_SPEED_RATIO(30%) 이하일 때 이동속도 증가율 (0.4 = 40% 빨라짐)
+//  chainDamageBonus: 기본공격(평타)을 한 뒤 GEAR_CHAIN_WINDOW_MS(0.5초) 안에 다시 기본공격을 하면 그 공격의 피해 증가율 (0.2 = 20%). 연속으로 공격해도 겹쳐서 커지지 않고 항상 20%만 적용됨
 //  damageTakenUltCharge: 체력이 깎이는 피해를 입으면 (잃은 체력 ÷ 최대 체력) × 100 × 이 값 만큼 궁극기 게이지(%)가 참 (0.3 이면 최대 체력의 50%를 잃을 때 게이지 15%). 보호막이 막은 피해는 제외
 //  gadgetCooldownSec: 가젯 재사용 대기시간(초)을 이 값으로 줄임 (기본 GADGET_COOLDOWN_SEC). 여러 개면 가장 짧은 값
 //  bandageHeal: 피해를 입고 체력이 최대 체력의 GEAR_BANDAGE_RATIO(20%) 이하가 되면 체력을 즉시 이만큼 회복 (살아 있는 상태에서만. 한 번 쓰면 죽었다가 부활할 때까지 다시 쓸 수 없음. 회복 기어의 회복량 증가 적용)
@@ -1903,7 +1904,7 @@ const GEAR_BANDAGE_RATIO = 0.2;
 //  hyperDurationBonusSec: 하이퍼 차지 발동 시 지속시간이 이 시간(초)만큼 늘어남 (2 = 2초 증가. 하이퍼 차지를 가진 캐릭터에만 의미가 있음. 같은 기어를 여러 개 달면 2초씩 더해짐)
 //  lifesteal: 적 플레이어에게 준 피해(체력에 실제로 들어간 만큼)의 이 비율만큼 체력을 회복 (0.25 = 25%). 물웅덩이/똥가루/흰자 같은 지속 피해(noLifesteal)는 제외하고 직접 피해만 해당. 회복 기어의 회복량 증가 적용
 //  ultStealthSec: 궁극기를 쓰면 이 시간(초) 동안 은신 (적에게 보이지 않음. 원효대사처럼 은신 자체가 궁극기인 캐릭터에는 효과 없음). 여러 개면 가장 긴 값
-const GEAR_CHAIN_WINDOW_MS = 1000;
+const GEAR_CHAIN_WINDOW_MS = 500;
 const GEAR_LOW_HP_RATIO = 0.5;
 const GEAR_LOW_HP_SPEED_RATIO = 0.3;
 const GEAR_SHIELD_REGEN_MS = 5000; // 재생 보호막 기어: 체력이 가득 찬 상태로 피해 없이 버텨야 하는 시간
@@ -1916,8 +1917,8 @@ const GEAR_CATALOG = [
   { id: 'fast_projectile', name: '빠른 투사체', rarity: 'epic', desc: '투사체가 날아가는 속도 20% 증가', effect: { projectileSpeedBonus: 0.2 } },
   { id: 'quick_reload', name: '빠른 재장전', rarity: 'epic', desc: '재장전 속도 15% 증가', effect: { reloadSpeed: 0.15 } },
   { id: 'regen_shield', name: '재생 보호막', rarity: 'epic', desc: '시작할 때 900 피해를 흡수하는 보호막을 두름. 보호막이 사라져도 체력이 가득 찬 채로 5초 동안 피해를 입지 않으면 다시 생김', effect: { startShield: 900 } },
-  { id: 'desperate_dash', name: '필사의 질주', rarity: 'mythic', desc: '체력이 30% 이하일 때 이동속도 10% 증가', effect: { lowHpSpeedBonus: 0.1 } },
-  { id: 'overwhelming', name: '파죽지세', rarity: 'legendary', desc: '기본공격 후 1초 안에 다시 기본공격을 하면 25% 추가 피해 (연속으로 공격해도 25%만 적용)', effect: { chainDamageBonus: 0.25 } },
+  { id: 'desperate_dash', name: '필사의 질주', rarity: 'mythic', desc: '체력이 30% 이하일 때 이동속도 40% 증가', effect: { lowHpSpeedBonus: 0.4 } },
+  { id: 'overwhelming', name: '파죽지세', rarity: 'legendary', desc: '기본공격 후 0.5초 안에 다시 기본공격을 하면 20% 추가 피해 (연속으로 공격해도 20%만 적용)', effect: { chainDamageBonus: 0.2 } },
   { id: 'sacrifice', name: '희생 정신', rarity: 'epic', desc: '피해를 입으면 잃은 체력에 비례해 궁극기 게이지가 참 (최대 체력의 50%를 잃으면 게이지 15%)', effect: { damageTakenUltCharge: 0.3 } },
   { id: 'quick_gadget', name: '빠른 가젯', rarity: 'epic', desc: '가젯 재사용 대기시간이 12초로 줄어듦', effect: { gadgetCooldownSec: 12 } },
   { id: 'bandage', name: '붕대', rarity: 'legendary', desc: '체력이 20% 이하가 되면 체력을 즉시 3000 회복 (죽었다가 부활하면 다시 사용 가능)', effect: { bandageHeal: 3000 } },
@@ -2656,6 +2657,7 @@ const ANNOUNCEMENTS = [
       '기본공격 [가시 발사]: 멋진 가시를 날려요. 사거리 250, 1,500 피해!',
       '짭새 주변에는 원 3개가 계속 돌고 있어요. 원에 닿은 적은 1,500 피해를 받아요. (같은 적은 1초에 한 번만 맞아요)',
       '궁극기 [질주]: 조준한 방향으로 300px를 빠르게 돌진해요. 돌진하다 적에게 닿으면 2,000 피해! 궁극기는 사용하기 전에도 충전이 멈추지 않고 최대 3개까지 모아둘 수 있어요.',
+      '도는 원에 맞춰도 궁극기가 충전되고, 짭새의 궁극기 충전 속도는 2배예요!',
       '가젯 [은신]: 2초 동안 적에게 보이지 않아요.',
     ],
   },
@@ -6149,7 +6151,7 @@ function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hy
     dashStun: 0,         // 이번 돌진이 주는 기절 시간(초)
     dashHitIds: [],      // 이번 돌진(관통)에서 이미 피해를 준 대상 id 목록
     dashCharge: false,   // true면 이 돌진의 적중이 궁극기 게이지를 채움 (기본공격 돌진)
-    gearReloadBonus: (gear && gear.reloadSpeed) || 0, // 장착한 기어의 재장전 속도 증가율 (0.1 = 10% 빨라짐). 가젯의 재장전 가속과 곱해져서 적용됨
+    gearReloadBonus: (gear && gear.reloadSpeed) || 0, // 장착한 기어의 재장전 속도 증가율 (0.4 = 40% 빨라짐). 가젯의 재장전 가속과 곱해져서 적용됨
     gearRangeBonus: (gear && gear.fullAmmoRangeBonus) || 0, // 장착한 기어: 탄창이 3개일 때 발사체 기본공격 사거리 증가율 (0.2 = 20%). 클라이언트 조준선 표시에도 쓰임
     gearLowHpDamageBonus: (gear && gear.lowHpDamageBonus) || 0, // 장착한 기어: 체력이 50% 이하일 때 공격력 증가율 (0.15 = 15% 강화)
     gearFullHpTakenMult: (gear && gear.fullHpTakenMult) || 1, // 장착한 기어: 체력이 가득 차 있을 때 받는 피해 배율 (0.5 = 50% 감소)
@@ -6158,9 +6160,9 @@ function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hy
     gearMoveSpeedMult: (gear && gear.moveSpeedMult) || 1, // 장착한 기어(큰 탄창): 이동속도 배율 (0.9 = 10% 감소)
     moveSpeedTierMult: MOVE_SPEED_TIERS[getMoveSpeedTier(character)].mult, // 캐릭터의 이동속도 단계 배율 (느림 0.9 / 보통 1 / 빠름 1.1)
     gearLowHpSpeedBonus: (gear && gear.lowHpSpeedBonus) || 0,         // 장착한 기어: 체력 30% 이하일 때 이동속도 증가율
-    gearChainBonus: (gear && gear.chainDamageBonus) || 0, // 장착한 기어(파죽지세): 1초 안에 이어서 평타를 칠 때의 추가 피해율 (0.25 = 25%)
+    gearChainBonus: (gear && gear.chainDamageBonus) || 0, // 장착한 기어(파죽지세): 0.5초 안에 이어서 평타를 칠 때의 추가 피해율 (0.2 = 20%)
     lastBasicAttackAt: 0,   // 마지막으로 기본공격을 한 시각(ms) - 파죽지세용
-    gearChainOn: false,     // 가장 최근 기본공격이 '1초 안에 이어진 공격'이었는지 - 파죽지세용
+    gearChainOn: false,     // 가장 최근 기본공격이 '0.5초 안에 이어진 공격'이었는지 - 파죽지세용
     gearSacrificeCharge: (gear && gear.damageTakenUltCharge) || 0, // 장착한 기어(희생 정신): 잃은 체력 비율에 곱해 궁극기 게이지로 바꾸는 값
     gearGadgetCooldown: (gear && gear.gadgetCooldownSec) || 0,    // 장착한 기어(빠른 가젯): 가젯 재사용 대기시간(초). 0이면 기본값
     gadgetCooldownTotal: GADGET_COOLDOWN_SEC, // 이번 가젯 쿨다운의 전체 길이(초) - 클라이언트 버튼 표시용
@@ -6405,13 +6407,13 @@ function startStealth(match, p, seconds) {
     player.invisible = false;
   }, seconds * 1000);
 }
-// 기어 '파죽지세': 기본공격을 할 때마다 호출. 직전 기본공격 후 1초 안이면 이번 공격에 추가 피해가 붙음 (이전 공격이 빗나갔어도 상관없음)
+// 기어 '파죽지세': 기본공격을 할 때마다 호출. 직전 기본공격 후 0.5초 안이면 이번 공격에 추가 피해가 붙음 (이전 공격이 빗나갔어도 상관없음)
 function markBasicAttack(p, now) {
   p.gearChainOn = p.gearChainBonus > 0 && p.lastBasicAttackAt > 0 && now - p.lastBasicAttackAt <= GEAR_CHAIN_WINDOW_MS;
   p.lastBasicAttackAt = now;
   if (p.buffyBasicSpeedMult > 1) p.buffySpeedUntil = now + (p.buffyBasicSpeedSec || 0.2) * 1000; // 버피(기본공격): 공격 후 잠깐 이동속도 증가
 }
-// chain 이 true 인 공격의 피해 배율 (한 번만 곱해지므로 연속 공격해도 25%만 증가)
+// chain 이 true 인 공격의 피해 배율 (한 번만 곱해지므로 연속 공격해도 20%만 증가)
 function gearChainMult(shooter, chain) {
   return chain && shooter && shooter.gearChainBonus > 0 ? 1 + shooter.gearChainBonus : 1;
 }
@@ -7051,7 +7053,7 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
       buffyShot: buffyShotId ? { id: buffyShotId, total: pelletCount } : null, // 버피(기본공격): 이 발사의 총알 번호/전체 개수
       slowOnHit: isGadgetShot && p.buffyGadgetSlowMult < 1 ? { mult: p.buffyGadgetSlowMult, sec: p.buffyGadgetSlowSec || 1 } : null, // 버피(가젯): 맞은 적을 잠깐 느리게 함
       isUltimate,
-      chain: !isUltimate && p.gadget !== spec && !!p.gearChainOn, // 파죽지세: 이 발사체가 '1초 안에 이어진 기본공격'에서 나왔는지 (궁극기/가젯 제외)
+      chain: !isUltimate && p.gadget !== spec && !!p.gearChainOn, // 파죽지세: 이 발사체가 '0.5초 안에 이어진 기본공격'에서 나왔는지 (궁극기/가젯 제외)
       visual: skinVisual(p, spec.visual), // 스킨이 있으면 발사체 모양만 바뀜 (피해/속도/사거리는 spec 그대로)
       launchDuration: spec.launchDuration || 0, // 0보다 크면 맞은 적을 이 시간(초) 동안 하늘로 띄움 (시스템의 궁극기)
       landDamage: spec.landDamage || 0,         // 띄워진 적이 땅에 떨어질 때 받는 피해
@@ -8262,7 +8264,7 @@ function registerGameplayHandlers(socket) {
     const ammoBeforeShot = p.ammo;
     p.ammo -= 1;
     p.lastShotAt = now;
-    markBasicAttack(p, now); // 기어 '파죽지세': 직전 기본공격 후 1초 안인지 기록
+    markBasicAttack(p, now); // 기어 '파죽지세': 직전 기본공격 후 0.5초 안인지 기록
     // 기어: 쏘기 직전 탄창이 3개 이상이었으면 발사체 기본공격의 사거리 증가 (속도는 그대로 두고 수명을 늘려서 더 멀리 날아가게 함. 근접/돌진/던지기/충전 공격에는 적용 안 됨)
     const gearRangeMult = p.gearRangeBonus > 0 && ammoBeforeShot >= GEAR_FULL_AMMO ? 1 + p.gearRangeBonus : 1;
     const withGearRange = (spec) => (gearRangeMult > 1 && spec.lifetime ? { ...spec, lifetime: spec.lifetime * gearRangeMult } : spec);
@@ -9031,7 +9033,7 @@ function updateOrbits(match, now) {
         const key = `${pid}:${tid}`;
         if (now - (hits[key] || 0) < cdMs) continue;
         hits[key] = now;
-        applyDamage(match, t, spec.damage, pid, { chargeShooter: false });
+        applyDamage(match, t, spec.damage, pid, { chargeShooter: true }); // 원에 맞아도 궁극기 충전
       }
       // 적 터렛(성스럽다 등)
       for (const turret of match.turrets) {
@@ -9041,6 +9043,7 @@ function updateOrbits(match, now) {
         if (now - (hits[key] || 0) < cdMs) continue;
         hits[key] = now;
         turret.hp -= spec.damage * getDamageMultiplier(p);
+        chargeGauges(p);
       }
       match.turrets = match.turrets.filter((t) => t.hp > 0);
       // 보스
@@ -9050,7 +9053,7 @@ function updateOrbits(match, now) {
         const key = `${pid}:c${chicken.id}`;
         if (now - (hits[key] || 0) < cdMs) continue;
         hits[key] = now;
-        hitChicken(match, chicken, spec.damage * getDamageMultiplier(p), p.id, { charge: false });
+        hitChicken(match, chicken, spec.damage * getDamageMultiplier(p), p.id, { charge: true });
       }
       match.chickens = match.chickens.filter((c) => c.hp > 0);
     }
