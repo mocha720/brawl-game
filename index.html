@@ -583,6 +583,14 @@
   }
   .char-card.locked .char-avatar { filter: grayscale(0.75) brightness(0.8); }
   .char-card h3 { margin: 0 0 8px; font-family: var(--font-display); font-weight: 400; font-size: 22px; line-height: 1.2; }
+  .char-card .role-badge { display: inline-block; margin: 0 0 8px; padding: 2px 10px; font-size: 12px; font-weight: 700; line-height: 1.5; border-radius: 999px; color: #fff; background: #6b6fa8; border: 2px solid rgba(255,255,255,0.28); }
+  .char-card .role-badge.role-sniper { background: #d9486b; }
+  .char-card .role-badge.role-dealer { background: #e8832a; }
+  .char-card .role-badge.role-support { background: #2fa97c; }
+  .char-card .role-badge.role-tank { background: #3d7bd8; }
+  .char-card .role-badge.role-controller { background: #8a4fd6; }
+  .char-card .role-badge.role-thrower { background: #c49a1c; }
+  .char-card .role-badge.role-assassin { background: #4b4f7a; }
   .char-card .trophy-line {
     align-self: center; margin: 0 0 12px; padding: 5px 12px; font-size: 12px; line-height: 1.5; color: var(--sun);
     background: rgba(255, 201, 40, 0.1); border: 2px solid rgba(255, 201, 40, 0.28); border-radius: 12px;
@@ -1755,6 +1763,26 @@ function updateCamera() {
 
 let latestState = { players: {}, bullets: [], effects: [], waterPools: [], turrets: [], bombs: [], chickens: [] };
 
+// ===== 캐릭터 역할군 (선택 화면에 표시) =====
+const ROLE_INFO = {
+  sniper: { label: '저격수', icon: '🎯' },
+  dealer: { label: '대미지 딜러', icon: '💥' },
+  support: { label: '서포터', icon: '💚' },
+  tank: { label: '탱커', icon: '🛡️' },
+  controller: { label: '컨트롤러', icon: '🌀' },
+  thrower: { label: '투척수', icon: '💣' },
+  assassin: { label: '어쌔신', icon: '🗡️' },
+};
+const CHARACTER_ROLES = {
+  minam: 'sniper', ddongpari: 'sniper', guji: 'sniper',
+  jigi: 'dealer', syu: 'dealer', seongseureopda: 'dealer', yeoddongi: 'dealer', jinwoopark: 'dealer',
+  wonhyo: 'support',
+  byeongitong: 'tank', uphal: 'tank', baechu: 'tank',
+  bobae: 'controller', geunsuni: 'controller', chacha: 'controller',
+  ekhe: 'thrower', nai: 'thrower',
+  gwari: 'assassin', mocha: 'assassin', system: 'assassin', jjapsae: 'assassin', dol: 'assassin',
+};
+
 // ===== 캐릭터 정의 (선택 화면 표시용 - 실제 능력치는 서버가 검증/적용) =====
 const CHARACTERS = [
   {
@@ -2145,7 +2173,8 @@ function fireAttack() {
   if (ultimateArmed && me && me.ultimateCharge >= 100) {
     if (me.ultimate && (me.ultimate.type === 'leap' || me.ultimate.type === 'blackhole' || me.ultimate.type === 'fireLob' || me.ultimate.type === 'teleportLob')) socket.emit('ultimate', { distance: Math.round(getLeapAimDistance(me)) });
     else socket.emit('ultimate');
-    ultimateArmed = false;
+    // 짭새(holdLoad): 장전을 직접 해제하거나 모아둔 궁극기가 떨어질 때까지(updateUltimateButton에서 해제) 장전 상태를 유지해서 연달아 사용
+    if (!(me.ultimate && me.ultimate.holdLoad)) ultimateArmed = false;
     updateUltimateButton();
     SFX.ultimate();
   } else if (gadgetArmed && me && me.gadget && !(me.gadgetCooldownLeft > 0)) {
@@ -4414,6 +4443,7 @@ function renderCharacterList() {
       ${buffySparkles}
       ${fireWrap(`<div class="char-avatar" style="background:${equippedSkin && SKIN_LOOKS[equippedSkin] ? SKIN_LOOKS[equippedSkin].body : c.color};${equippedSkin && SKIN_LOOKS[equippedSkin] ? `box-shadow: inset 0 0 0 4px ${SKIN_LOOKS[equippedSkin].avatarRing || '#fff'};` : ''}">${escapeHtml(c.name.slice(0, 1))}</div>`, hyperOwned)}
       <h3>${escapeHtml(c.name)}${lvBadge}</h3>
+      ${CHARACTER_ROLES[c.id] ? `<div class="role-badge role-${CHARACTER_ROLES[c.id]}">${ROLE_INFO[CHARACTER_ROLES[c.id]].icon} ${ROLE_INFO[CHARACTER_ROLES[c.id]].label}</div>` : ''}
       ${buffyStrip}
       ${trophyLine}
       <div class="stat-line">❤️ 체력: ${c.maxHp.toLocaleString()} · 👟 ${escapeHtml(c.moveSpeedLabel || '보통')}</div>
@@ -5603,7 +5633,7 @@ function updateUltimateButton() {
   const btn = document.getElementById('ultimateButton');
   const me = latestState.players[myId];
   const charge = me ? me.ultimateCharge : 0;
-  if (charge < 100) ultimateArmed = false; // 게이지가 다 차지 않은 상태면 장전 불가(사망/리스폰 등)
+  if (charge < 100 || (me && !me.alive)) ultimateArmed = false; // 게이지가 다 차지 않은 상태면 장전 불가 / 짭새는 모아둔 궁극기를 다 쓰거나 죽으면 장전 자동 해제
   // 궁극기를 여러 개 모을 수 있는 캐릭터(짭새): 링은 '다음 궁극기 1개'까지의 진행도, 모인 개수는 숫자 배지로 표시
   const maxStock = me && me.ultMaxCharge ? Math.round(me.ultMaxCharge / 100) : 1;
   const stocks = Math.min(maxStock, Math.floor(charge / 100));
@@ -5630,6 +5660,12 @@ function updateUltimateButton() {
       const html = `<b>${escapeHtml(me.ultimate.name)}</b>${escapeHtml(me.ultimate.label || '')}`;
       if (label.dataset.html !== html) { label.innerHTML = html; label.dataset.html = html; } // 매 프레임 DOM을 다시 쓰지 않도록 바뀔 때만 갱신
     }
+  } else if (me && me.ultimate && me.ultimate.holdLoad && ultimateArmed) {
+    // 짭새: 장전 중 표시 (다시 누르면 해제)
+    const html = '<b>장전 중</b>다시 눌러 해제';
+    label.style.display = 'block';
+    if (label.dataset.html !== html) { label.innerHTML = html; label.dataset.html = html; }
+    if (inner.textContent !== '🤡') inner.textContent = '🤡';
   } else {
     if (label.style.display !== 'none') label.style.display = 'none';
     if (inner.textContent !== '🤡') inner.textContent = '🤡';
