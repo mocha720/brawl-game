@@ -150,6 +150,7 @@ const MATCH_CLEANUP_DELAY_MS = 600; // 승리 판정 후 마지막 상태를 한
 // 다른 아이디를 쓰고 싶으면 Render 환경변수 ADMIN_USERNAME 에 넣으면 된다. 반드시 이 아이디로 먼저 가입해서 선점해둘 것! (가입 전에는 누구나 이 아이디를 만들 수 있다)
 const ADMIN_USERNAME = (process.env.ADMIN_USERNAME || 'IQ1972').trim();
 const ADMIN_KEY = ADMIN_USERNAME.toLowerCase();
+const MAX_ADMIN_GIFT_COINS = 1000000; // 개발자 모드에서 한 번에 보낼 수 있는 코인 최대치 (잘못 입력해도 큰 사고가 나지 않도록)
 const BAN_PERMANENT = 253402300799000; // 영구 정지 = 9999년까지 정지
 const BAN_MAX_MINUTES = 60 * 24 * 365;  // 기간 정지의 최대 길이: 1년
 function isActiveBan(u) { return !!(u && u.bannedUntil && u.bannedUntil > Date.now() && u.key !== ADMIN_KEY); }
@@ -992,6 +993,8 @@ const CHARACTERS = {
       damageTakenMultiplier: 1, // 받는 피해 배율 (1 = 변화 없음)
       ultimateChargeMultiplier: 1.8,   // 발동 중 궁극기 게이지 충전량 배율 (1.8 = 80% 증가)
       ultimateDistanceMultiplier: 1.25, // 발동 중 궁극기(도약 강습) 최대 점프 거리 배율 (1.25 = 25% 증가)
+      basicRangeMultiplier: 1.5, // 발동 중 기본공격(양손 찌르기) 사거리 배율 (1.5 = 50% 증가) - 판정과 화면에 보이는 범위가 같이 늘어남
+      basicAngleMultiplier: 1.3, // 발동 중 기본공격 범위(부채꼴 각도) 배율 (1.3 = 30% 증가, 70도 -> 91도)
     },
     gadget: {
       name: '밧줄 돌진',
@@ -1242,7 +1245,7 @@ const CHARACTERS = {
     name: '짭새',
     moveSpeedTier: 'normal', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
     maxHp: 6000, // 1레벨 기준 체력
-    ultimateChargePerHit: 34, // 적중 1번당 궁극기 충전량(%). 기본값(17)의 2배 = 충전 속도 2배
+    ultimateChargePerHit: 23.8, // 적중 1번당 궁극기 충전량(%). 기본값(17)의 1.4배 (기존 34 = 2배에서 충전 속도 30% 감소: 34 x 0.7). 원에 맞춰서 충전되는 양도 이 값을 쓰므로 함께 줄어듦
     basic: {
       name: '가시 발사',
       damage: 1500,          // 1레벨 기준
@@ -1251,7 +1254,7 @@ const CHARACTERS = {
       lifetime: 0.5,         // 초 (사거리 = 500 x 0.5 = 250)
       visual: 'thorn',
       // 패시브: 몸 주위를 도는 원. 원에 닿은 적은 damage 피해 (같은 적은 hitCooldown초에 한 번만 맞음). 공격력 배율은 damage 에 자동 적용
-      orbit: { count: 3, radius: 78, orbRadius: 13, speed: 3.6, damage: 1500, hitCooldown: 1.0 }, // radius: 몸 중심에서 원까지 거리(px), orbRadius: 원 크기(px), speed: 회전 속도(라디안/초)
+      orbit: { count: 3, radius: 78, orbRadius: 13, speed: 3.6, damage: 1500, hitCooldown: 1.0, hitsToActivate: 3 }, // hitsToActivate: 처음에는 원이 없고, 기본공격(가시)을 이 횟수만큼 적중시켜야 원이 생김 (죽으면 사라지고 다시 맞혀야 함). radius: 몸 중심에서 원까지 거리(px), orbRadius: 원 크기(px), speed: 회전 속도(라디안/초)
     },
     ultimate: {
       name: '질주',
@@ -1627,7 +1630,7 @@ function describeBasic(b) {
   } else if (b.ammoRegenSeconds && b.ammoRegenSeconds < AMMO_REGEN_SECONDS) {
     parts.push(`재장전 속도 ${Math.round((AMMO_REGEN_SECONDS / b.ammoRegenSeconds - 1) * 100)}% 빠름`);
   }
-  if (b.orbit) parts.push(`몸 주위에 원 ${b.orbit.count}개가 계속 돌고 있음. 원에 닿은 적은 ${fmtNum(b.orbit.damage)} 피해 (같은 적은 ${b.orbit.hitCooldown}초에 한 번만 맞음). 원에 맞춰도 궁극기가 충전됨`);
+  if (b.orbit) parts.push(`${b.orbit.hitsToActivate > 0 ? `기본공격을 ${b.orbit.hitsToActivate}번 적중시키면 몸 주위에 원 ${b.orbit.count}개가 생겨서 계속 돌게 됨 (죽으면 사라지고 다시 ${b.orbit.hitsToActivate}번 맞혀야 함)` : `몸 주위에 원 ${b.orbit.count}개가 계속 돌고 있음`}. 원에 닿은 적은 ${fmtNum(b.orbit.damage)} 피해 (같은 적은 ${b.orbit.hitCooldown}초에 한 번만 맞음). 원에 맞춰도 궁극기가 충전됨`);
   return { name: b.name, damage, desc: parts.join(', ') };
 }
 
@@ -1895,6 +1898,8 @@ function describeHyper(hy) {
   if (hy.ultimateChargeMultiplier) parts.push(`발동 중 궁극기 충전량 ${pct(hy.ultimateChargeMultiplier)}% 증가`);
   if (hy.ultimateDistanceMultiplier) parts.push(`발동 중 궁극기 점프 거리 ${pct(hy.ultimateDistanceMultiplier)}% 증가`);
   if (hy.dashDistanceMultiplier) parts.push(`발동 중 기본공격(돌진) 거리 ${pct(hy.dashDistanceMultiplier)}% 증가`);
+  if (hy.basicRangeMultiplier) parts.push(`발동 중 기본공격 사거리 ${pct(hy.basicRangeMultiplier)}% 증가`);
+  if (hy.basicAngleMultiplier) parts.push(`발동 중 기본공격 범위(각도) ${pct(hy.basicAngleMultiplier)}% 증가`);
   if (hy.ultimateBounceTime) parts.push(`발동 중 궁극기의 고추가 적을 관통하고 벽에 튕기며 ${hy.ultimateBounceTime}초 동안 날아다니다 사라짐`);
   if (hy.poolRadiusMultiplier) parts.push(`발동 중 기본공격 웅덩이 범위 ${pct(hy.poolRadiusMultiplier)}% 증가`);
   if (hy.poolHeal) parts.push(`발동 중 기본공격 구름 안의 아군과 자신이 0.2초마다 ${hy.poolHeal} 회복 (1레벨 기준)`);
@@ -2025,6 +2030,10 @@ const BUFFY_CATALOG = [
   { id: 'byeongitong_basic', charId: 'byeongitong', kind: 'basic', desc: '기본공격(뚫어뻥)으로 적을 맞히면 0.2초 동안 이동속도 30% 증가', effect: { basicHitSpeedMult: 1.3, basicHitSpeedSec: 0.2 } },
   { id: 'byeongitong_gadget', charId: 'byeongitong', kind: 'gadget', desc: '가젯을 사용하면 0.5초 동안 받는 피해가 20% 감소하는 임시 보호막 생성', effect: { gadgetShieldTakenMult: 0.8, gadgetShieldSec: 0.5 } },
   { id: 'byeongitong_hyper', charId: 'byeongitong', kind: 'hyper', desc: '하이퍼 차지 발동 중 받는 피해가 20% 추가로 감소', effect: { hyperTakenMult: 0.8 } },
+  // 여똥이
+  { id: 'yeoddongi_basic', charId: 'yeoddongi', kind: 'basic', desc: '기본공격(똥가루) 탄속 5% 증가 (사거리는 그대로)', effect: { basicProjSpeedMult: 1.05 } },
+  { id: 'yeoddongi_gadget', charId: 'yeoddongi', kind: 'gadget', desc: '가젯(프링글스)으로 적을 밀치고 나면 2초 동안 받는 피해가 10% 감소하는 임시 보호막 생성', effect: { gadgetShieldTakenMult: 0.9, gadgetShieldSec: 2, gadgetShieldOnKnockback: true } },
+  { id: 'yeoddongi_hyper', charId: 'yeoddongi', kind: 'hyper', desc: '하이퍼 차지 발동 중 0.5초마다 체력 500 회복', effect: { hyperRegenAmount: 500, hyperRegenIntervalSec: 0.5 } },
   // 성스럽다
   { id: 'seongseureopda_basic', charId: 'seongseureopda', kind: 'basic', desc: '벽에 튕긴 뒤에 맞은 칼은 10% 추가 피해를 줌', effect: { bounceDamageMult: 1.1 } },
   { id: 'seongseureopda_gadget', charId: 'seongseureopda', kind: 'gadget', desc: '가젯(저격 사격)의 총알이 적을 맞혀도 사라지지 않고 관통함', effect: { gadgetPierce: true } },
@@ -2041,7 +2050,7 @@ function buffyCatalogPublic() {
 // 캐릭터에 장착된 기어들의 효과 합계 (최대 장착 수까지만 인정)
 function gearBonusOf(u, charId) {
   // reloadSpeed: 재장전 속도 증가율(덧셈) / fullHpTakenMult: 체력이 가득 찰 때 받는 피해 배율(곱셈, 1 = 효과 없음) / lowHpDamageBonus: 체력 50% 이하일 때 공격력 증가율(덧셈) / fullAmmoRangeBonus: 탄창이 가득(3개)일 때 사거리 증가율(덧셈)
-  const total = { reloadSpeed: 0, fullHpTakenMult: 1, lowHpDamageBonus: 0, fullAmmoRangeBonus: 0, healBonus: 0, startShield: 0, ultChargeBonus: 0, projectileSpeedBonus: 0, lowHpSpeedBonus: 0, chainDamageBonus: 0, damageTakenUltCharge: 0, gadgetCooldownSec: 0, bandageHeal: 0, ultStealthSec: 0, lifesteal: 0, hyperDurationBonusSec: 0, maxAmmoBonus: 0, moveSpeedMult: 1, buffyBasicRadiusMult: 1, buffyGadgetSlowMult: 1, buffyGadgetSlowSec: 0, buffyHyperUltRadiusMult: 1, buffyBasicSpeedMult: 1, buffyBasicSpeedSec: 0, buffyGadgetShieldMult: 1, buffyGadgetShieldSec: 0, buffyBasicPoolLifeBonus: 0, buffyGadgetReloadMult: 1, buffyGadgetReloadSec: 0, buffyHyperUltSpeedMult: 1, buffyAllHitSpeedMult: 1, buffyAllHitSpeedSec: 0, buffyAuraSlowMult: 1, buffyAuraRadius: 0, buffyHyperSpreadDegrees: 0, buffyHitSpeedMult: 1, buffyHitSpeedSec: 0, buffyHyperTakenMult: 1, buffyBounceDamageMult: 1, buffyGadgetPierce: false, buffyHyperProjRadiusMult: 1 };
+  const total = { reloadSpeed: 0, fullHpTakenMult: 1, lowHpDamageBonus: 0, fullAmmoRangeBonus: 0, healBonus: 0, startShield: 0, ultChargeBonus: 0, projectileSpeedBonus: 0, lowHpSpeedBonus: 0, chainDamageBonus: 0, damageTakenUltCharge: 0, gadgetCooldownSec: 0, bandageHeal: 0, ultStealthSec: 0, lifesteal: 0, hyperDurationBonusSec: 0, maxAmmoBonus: 0, moveSpeedMult: 1, buffyBasicRadiusMult: 1, buffyGadgetSlowMult: 1, buffyGadgetSlowSec: 0, buffyHyperUltRadiusMult: 1, buffyBasicSpeedMult: 1, buffyBasicSpeedSec: 0, buffyGadgetShieldMult: 1, buffyGadgetShieldSec: 0, buffyBasicPoolLifeBonus: 0, buffyGadgetReloadMult: 1, buffyGadgetReloadSec: 0, buffyHyperUltSpeedMult: 1, buffyAllHitSpeedMult: 1, buffyAllHitSpeedSec: 0, buffyAuraSlowMult: 1, buffyAuraRadius: 0, buffyHyperSpreadDegrees: 0, buffyHitSpeedMult: 1, buffyHitSpeedSec: 0, buffyHyperTakenMult: 1, buffyBounceDamageMult: 1, buffyGadgetPierce: false, buffyHyperProjRadiusMult: 1, buffyBasicProjSpeedMult: 1, buffyShieldOnKnock: false, buffyHyperRegenAmount: 0, buffyHyperRegenInterval: 0.5 };
   const seenGearIds = new Set(); // 같은 기어는 한 캐릭터에 한 번만 효과 적용 (이전 데이터의 중복 장착 대비)
   for (const g of ownedGearsOf(u).filter((x) => x.charId === charId).filter((x) => !seenGearIds.has(x.gearId) && seenGearIds.add(x.gearId)).slice(0, GEAR_MAX_PER_CHARACTER)) {
     if (!gearAllowedOn(g.gearId, charId)) continue; // 장착할 수 없는 캐릭터에 (잘못) 붙어 있어도 효과는 적용하지 않음
@@ -2086,7 +2095,9 @@ function gearBonusOf(u, charId) {
     if (e.bounceDamageMult) total.buffyBounceDamageMult *= e.bounceDamageMult;
     if (e.gadgetPierce) total.buffyGadgetPierce = true;
     if (e.hyperProjRadiusMult) total.buffyHyperProjRadiusMult *= e.hyperProjRadiusMult;
-    if (e.gadgetShieldTakenMult) { total.buffyGadgetShieldMult = e.gadgetShieldTakenMult; total.buffyGadgetShieldSec = e.gadgetShieldSec || 2; }
+    if (e.gadgetShieldTakenMult) { total.buffyGadgetShieldMult = e.gadgetShieldTakenMult; total.buffyGadgetShieldSec = e.gadgetShieldSec || 2; total.buffyShieldOnKnock = !!e.gadgetShieldOnKnockback; } // gadgetShieldOnKnockback: 가젯을 쓰는 순간이 아니라 가젯으로 적을 밀친 뒤에 보호막이 생김
+    if (e.basicProjSpeedMult) total.buffyBasicProjSpeedMult *= e.basicProjSpeedMult;
+    if (e.hyperRegenAmount) { total.buffyHyperRegenAmount = e.hyperRegenAmount; total.buffyHyperRegenInterval = e.hyperRegenIntervalSec || 0.5; }
   }
   return total;
 }
@@ -6231,6 +6242,11 @@ function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hy
     buffySpeedUntil: 0,                                                    // 이 시각(ms) 전까지 위 이동속도 증가가 적용됨
     buffyGadgetShieldMult: (gear && gear.buffyGadgetShieldMult) || 1,     // 버피(가젯): 임시 보호막이 있는 동안 받는 피해 배율
     buffyGadgetShieldSec: (gear && gear.buffyGadgetShieldSec) || 0,       // 버피(가젯): 임시 보호막 지속시간(초)
+    buffyShieldOnKnock: !!(gear && gear.buffyShieldOnKnock),              // 버피(가젯): true 이면 가젯으로 적을 밀친 뒤에 보호막이 생김 (여똥이). false 이면 가젯을 쓰는 순간 생김
+    buffyBasicProjSpeedMult: (gear && gear.buffyBasicProjSpeedMult) || 1, // 버피(기본공격): 기본공격 탄속 배율 (사거리는 그대로 유지)
+    buffyHyperRegenAmount: (gear && gear.buffyHyperRegenAmount) || 0,     // 버피(하이퍼차지): 하이퍼 차지 발동 중 주기마다 회복하는 체력
+    buffyHyperRegenInterval: (gear && gear.buffyHyperRegenInterval) || 0.5, // 버피(하이퍼차지): 위 회복이 일어나는 주기(초)
+    buffyHyperRegenNext: 0,                                                // 다음 회복 시각(ms)
     buffyBasicPoolLifeBonus: (gear && gear.buffyBasicPoolLifeBonus) || 0, // 버피(기본공격): 기본공격 웅덩이 지속시간 증가(초)
     buffyGadgetReloadMult: (gear && gear.buffyGadgetReloadMult) || 1,     // 버피(가젯): 가젯 사용 후 재장전 속도 배율
     buffyGadgetReloadSec: (gear && gear.buffyGadgetReloadSec) || 0,       // 버피(가젯): 재장전 가속 지속시간(초)
@@ -6284,7 +6300,7 @@ function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hy
     ultimateChargePerHit: character.ultimateChargePerHit || ULTIMATE_CHARGE_PER_HIT, // 캐릭터별로 다르게 설정 가능 (예: 슈는 펠릿이 많아 더 낮게)
     ultimateCharge: 0, // 0~100 (궁극기를 여러 개 모을 수 있는 캐릭터는 0~ultMaxCharge. 100마다 궁극기 1개)
     ultMaxCharge: 100 * ((character.ultimate && character.ultimate.maxCharges) || 1), // 모을 수 있는 궁극기 개수 x 100
-    orbit: character.basic && character.basic.orbit ? { count: character.basic.orbit.count, radius: character.basic.orbit.radius, orbRadius: character.basic.orbit.orbRadius, speed: character.basic.orbit.speed, t0: Date.now() } : null, // 몸 주위를 도는 원 (짭새). 각도 = speed x (서버시각 - t0)
+    orbit: character.basic && character.basic.orbit ? { count: character.basic.orbit.count, radius: character.basic.orbit.radius, orbRadius: character.basic.orbit.orbRadius, speed: character.basic.orbit.speed, t0: Date.now(), need: character.basic.orbit.hitsToActivate || 0, hits: 0, active: !(character.basic.orbit.hitsToActivate > 0) } : null, // 몸 주위를 도는 원 (짭새). 각도 = speed x (서버시각 - t0)
     // 하이퍼 차지: 획득한 플레이어(+hyper 스펙이 있는 캐릭터)만 가짐. 게이지는 궁극기처럼 기본공격 적중으로 참
     hasHyper: !!(hyperOwned && character.hyper),
     hyper: hyperOwned && character.hyper ? character.hyper : null,
@@ -6607,6 +6623,7 @@ function respawnPlayer(m, respawned, invincibleMs) {
   respawned.buffyAllHitUntil = 0;
   respawned.buffyAuraSlowUntil = 0;
   respawned.buffyShotHits = {};
+  if (respawned.orbit && respawned.orbit.need > 0) { respawned.orbit.active = false; respawned.orbit.hits = 0; } // 짭새: 죽으면 원이 사라지고 기본공격을 다시 맞혀야 생김
   respawned.speedBoostUntil = 0; // 리스폰 시 가젯 효과(이동속도 증가/충전/공격력 증가)도 초기화
   respawned.chargingUntil = 0;
   respawned.damageBoostFrom = 0;
@@ -7053,7 +7070,8 @@ function spawnProjectiles(match, p, spec, isUltimate, baseAngle = p.angle) {
   // 하이퍼 차지 발동 중 사거리 증가 (슈): 속도는 그대로 두고 수명을 늘려서 더 멀리 날아가게 함 (기본공격/궁극기 모두 적용)
   const hyperRange = p.hasHyper && p.hyper && p.hyper.rangeMultiplier && p.hyperUntil && Date.now() < p.hyperUntil ? p.hyper.rangeMultiplier : 1;
   // 기어: 투사체 속도 증가. 사거리는 그대로 두려고 수명은 같은 비율만큼 줄임
-  const gearProjSpeed = p.gearProjectileSpeedMult || 1;
+  const buffyProjSpeed = !isUltimate && p.gadget !== spec && p.buffyBasicProjSpeedMult ? p.buffyBasicProjSpeedMult : 1; // 버피(기본공격): 기본공격 탄속 증가 (가젯/궁극기 투사체는 제외)
+  const gearProjSpeed = (p.gearProjectileSpeedMult || 1) * buffyProjSpeed; // 속도가 빨라진 만큼 수명을 줄여서 사거리는 그대로 유지됨
   const bulletLife = (spec.lifetime * hyperRange) / gearProjSpeed;
   // 하이퍼 차지 발동 중 시스템의 궁극기: 공격 범위(소용돌이 크기) 증가 + 띄운 적이 떨어질 때 기절
   const hyperUltOn = isUltimate && p.hasHyper && p.hyper && p.hyperUntil && Date.now() < p.hyperUntil;
@@ -7294,8 +7312,13 @@ function grappleCast(match, p, angle, range) {
 }
 
 function performMeleeAttack(match, p, spec, isUltimate, angle = p.angle, stabIndex = 0) {
-  const halfAngle = ((spec.angleDegrees || 90) * Math.PI) / 180 / 2;
-  const range = spec.range || 120;
+  // 하이퍼 차지 발동 중 기본공격 사거리/범위 증가 (모카): 판정과 화면 이펙트(부채꼴 크기)가 같은 값을 쓰도록 여기서 한 번에 계산
+  const hyperBasicOn = !isUltimate && p.hasHyper && p.hyper && p.hyperUntil && Date.now() < p.hyperUntil;
+  const hyperBasicRange = hyperBasicOn && p.hyper.basicRangeMultiplier ? p.hyper.basicRangeMultiplier : 1;
+  const hyperBasicAngle = hyperBasicOn && p.hyper.basicAngleMultiplier ? p.hyper.basicAngleMultiplier : 1;
+  const arcDegrees = (spec.angleDegrees || 90) * hyperBasicAngle;
+  const halfAngle = (arcDegrees * Math.PI) / 180 / 2;
+  const range = (spec.range || 120) * hyperBasicRange;
   // 판정 보정(모카): 상대 몸통 크기만큼 각도를 너그럽게 보고, 위치 오차를 감안해 판정 거리를 조금 더 준다
   const reachPad = spec.hitAssist ? (spec.hitPadding || 0) : 0;
   const angleSlack = (distance, bodyRadius) => {
@@ -7313,7 +7336,7 @@ function performMeleeAttack(match, p, spec, isUltimate, angle = p.angle, stabInd
     x: p.x,
     y: p.y,
     angle,
-    arcDegrees: spec.angleDegrees || 90,
+    arcDegrees,
     radius: range,
     visual: skinVisual(p, spec.visual) || null, // 스킨이 있으면 근접 공격 연출 모양이 바뀜 (예: 변기통 용사의 검)
     side: stabIndex % 2 === 0 ? -1 : 1, // 양손 찌르기: 왼손/오른손 번갈아 표시
@@ -7908,6 +7931,34 @@ function registerAdminHandlers(socket) {
       await reply(ack, `${updated.name} 님의 정지를 해제했습니다.`);
     } catch (e) {
       console.error('adminUnban 오류', e);
+      ack({ ok: false, message: '서버 오류가 발생했습니다.' });
+    }
+  });
+
+  // 코인 보내기: 개발자가 원하는 유저(자기 자신 포함)에게 코인을 지급한다. 서버가 아이디/금액을 다시 검증하고, 접속 중이면 바로 코인 표시를 갱신하고 알려준다
+  socket.on('adminGiveCoins', async (data, ack) => {
+    if (!guard(ack)) return;
+    try {
+      const username = data && typeof data.username === 'string' ? data.username.trim() : '';
+      if (!username || username.length > 12) return ack({ ok: false, message: '코인을 보낼 아이디를 입력하세요.' });
+      const amount = Number(data && data.amount);
+      if (!Number.isInteger(amount) || amount < 1 || amount > MAX_ADMIN_GIFT_COINS) return ack({ ok: false, message: `보낼 코인은 1 ~ ${MAX_ADMIN_GIFT_COINS.toLocaleString()} 사이의 정수여야 합니다.` });
+      const key = username.toLowerCase();
+      const user = await db.findUser(key);
+      if (!user) return ack({ ok: false, message: '존재하지 않는 아이디입니다.' });
+      const updated = await db.addCoins(key, amount);
+      if (!updated) return ack({ ok: false, message: '코인을 보내지 못했습니다.' });
+      const sid = onlineUsers.get(key);
+      const target = sid && io.sockets.sockets.get(sid);
+      if (target) { // 접속 중이면 코인 표시를 바로 갱신하고 받았다고 알려줌
+        target.emit('profileUpdate', publicProfile(updated));
+        target.emit('coinGift', { coins: amount });
+      }
+      presenceCache = { at: 0, rows: null, total: 0 };
+      console.log(`[관리자] 코인 지급: ${updated.name} +${amount} (현재 ${updated.coins})`);
+      await reply(ack, `🪙 ${updated.name} 님에게 ${amount.toLocaleString()} 코인을 보냈습니다.${target ? ' (접속 중이어서 바로 반영됐어요)' : ' (다음에 접속하면 반영돼요)'}`);
+    } catch (e) {
+      console.error('adminGiveCoins 오류', e);
       ack({ ok: false, message: '서버 오류가 발생했습니다.' });
     }
   });
@@ -8755,7 +8806,7 @@ function registerGameplayHandlers(socket) {
       p.reloadBoostMultiplier = active ? Math.max(p.reloadBoostMultiplier || 1, p.buffyGadgetReloadMult) : p.buffyGadgetReloadMult;
       p.reloadBoostUntil = Math.max(active ? p.reloadBoostUntil : 0, nowG + p.buffyGadgetReloadSec * 1000);
     }
-    if (p.buffyGadgetShieldSec > 0) p.buffyShieldUntil = Date.now() + p.buffyGadgetShieldSec * 1000; // 버피(가젯): 임시 보호막 (받는 피해 감소)
+    if (p.buffyGadgetShieldSec > 0 && !p.buffyShieldOnKnock) p.buffyShieldUntil = Date.now() + p.buffyGadgetShieldSec * 1000; // 버피(가젯): 임시 보호막 (받는 피해 감소). 밀친 뒤 방식(여똥이)은 적을 밀쳤을 때 생김
   });
 
   // 하이퍼 차지 발동 요청 (하이퍼 차지를 획득했고 게이지가 100%일 때만 발동. 이미 발동 중이면 무시)
@@ -9165,6 +9216,7 @@ function updateOrbits(match, now) {
     const p = match.players[pid];
     const o = p.orbit;
     if (!o || !p.alive || !p.basic || !p.basic.orbit) continue;
+    if (!o.active) continue; // 기본공격을 충분히 적중시키기 전에는 원이 아직 없음
     if (p.leaping || p.airborneTimeLeft > 0) continue;
     const spec = p.basic.orbit; // 레벨에 따라 damage 가 커진 값
     const cdMs = (spec.hitCooldown || 1) * 1000;
@@ -9805,6 +9857,13 @@ function updateMatch(match, dt, now) {
           }
         } else {
           // 기본 공격만 궁극기 게이지를 충전시킴
+          { // 짭새: 기본공격 적중을 세어서 일정 횟수가 되면 몸 주위를 도는 원이 생김
+            const orbOwner = match.players[b.ownerId];
+            if (orbOwner && orbOwner.alive && orbOwner.orbit && !orbOwner.orbit.active && !b.isUltimate && orbOwner.gadget !== undefined) {
+              orbOwner.orbit.hits += 1;
+              if (orbOwner.orbit.hits >= orbOwner.orbit.need) { orbOwner.orbit.active = true; orbOwner.orbit.t0 = Date.now(); }
+            }
+          }
           applyDamage(match, target, bulletDamageFor(b, target), b.ownerId, { chargeShooter: !b.isUltimate, chain: b.chain, chargeScale: b.chargeScale }); // 미지의 돌의 조각은 chargeScale 만큼만 게이지 충전
           if (b.buffyShot) { // 버피(기본공격): 한 번에 나간 총알을 모두 맞히면 잠깐 이동속도 증가
             const shooter = match.players[b.ownerId];
@@ -9828,6 +9887,8 @@ function updateMatch(match, dt, now) {
             target.knockbackDistance = b.knockback;
             target.knockbackTimeLeft = KNOCKBACK_DURATION;
             target.knockbackTotalTime = KNOCKBACK_DURATION;
+            const knocker = match.players[b.ownerId];
+            if (knocker && knocker.alive && knocker.buffyShieldOnKnock && knocker.buffyGadgetShieldSec > 0) knocker.buffyShieldUntil = Date.now() + knocker.buffyGadgetShieldSec * 1000; // 버피(가젯, 여똥이): 적을 밀치고 나면 잠깐 받는 피해 감소 보호막
           }
         }
         break; // 이 총알은 이미 소모됨
@@ -10101,6 +10162,28 @@ function updateMatch(match, dt, now) {
   for (const pid in match.players) {
     const p = match.players[pid];
     p.inBush = p.alive && isInBush(match.bushes, p.x, p.y);
+  }
+
+  // 버피(하이퍼차지, 여똥이): 하이퍼 차지가 발동 중인 동안 주기마다 체력을 회복 (최대 체력 초과 불가, 회복 기어 적용)
+  {
+    const nowR = Date.now();
+    for (const pid in match.players) {
+      const p = match.players[pid];
+      if (!(p.buffyHyperRegenAmount > 0)) continue;
+      if (!p.alive || !p.hyperUntil || nowR >= p.hyperUntil) { p.buffyHyperRegenNext = 0; continue; }
+      const stepMs = Math.max(100, (p.buffyHyperRegenInterval || 0.5) * 1000);
+      if (!p.buffyHyperRegenNext) p.buffyHyperRegenNext = nowR + stepMs; // 발동하고 나서 첫 회복은 주기만큼 지난 뒤
+      while (nowR >= p.buffyHyperRegenNext && p.buffyHyperRegenNext < p.hyperUntil + 1) {
+        const before = p.hp;
+        p.hp = Math.min(p.maxHp, p.hp + p.buffyHyperRegenAmount * (p.gearHealMult || 1));
+        const gained = Math.round(p.hp - before);
+        if (gained > 0) {
+          effectIdCounter += 1;
+          match.effects.push({ id: effectIdCounter, type: 'healPlus', x: p.x, y: p.y, amount: gained, ownerId: p.id, life: 0.8, maxLife: 0.8 });
+        }
+        p.buffyHyperRegenNext += stepMs;
+      }
+    }
   }
 
   // 궁극기 자동 충전(모카): 궁극기 스펙의 passiveCharge(%/초)만큼 살아있는 동안 매 틱 궁극기 게이지가 저절로 참 (대결 시작 전에는 충전 안 됨)
