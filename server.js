@@ -700,9 +700,9 @@ const CHARACTERS = {
     basic: {
       name: '칼 던지기',
       damage: 1750,
-      speed: 600,
+      speed: 450,        // 탄속 25% 감소 (600 → 450)
       radius: 8,
-      lifetime: 0.735,   // 초 (사거리 ≈ 441px) - 기존 294px에서 50% 증가
+      lifetime: 0.98,    // 초 (사거리 ≈ 441px 유지) - 탄속이 25% 느려진 만큼 날아가는 시간을 늘려 사거리는 그대로
       visual: 'knife',
       bounceWalls: true, // 벽(장애물)/맵 끝에 닿으면 사라지지 않고 튕겨 나옴 (적에게 맞으면 사라짐)
       bounceRangeBonus: 0.5, // 처음 튕기는 순간 사거리(날아가는 시간)가 원래 사거리의 이 비율만큼 추가로 늘어남 (0.5 = 50%, 한 번만 적용)
@@ -725,7 +725,7 @@ const CHARACTERS = {
       type: 'burst',       // 조준한 방향으로 총알을 발사하는 가젯 (여기서는 총알 1발)
       bulletCount: 1,
       interval: 0,
-      damage: 2500,        // 1레벨 기준 피해
+      damage: 2000,        // 1레벨 기준 피해 (기존 2500에서 20% 감소)
       speed: 1800,         // 탄속이 매우 빠름 (기본공격 칼 600의 3배, 연발 사격 845의 2배 이상)
       radius: 8,
       lifetime: 0.47,      // 초 (사거리 ≈ 846px)
@@ -1487,6 +1487,34 @@ const CHARACTERS = {
       healAmount: 200,       // 기본공격 1번당 범위 안 아군 한 명이 회복하는 양 (1레벨 기준)
     },
   },
+  jinjeong: {
+    id: 'jinjeong',
+    name: '진정',
+    moveSpeedTier: 'normal', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
+    maxHp: 5500, // 1레벨 기준
+    basic: {
+      name: '광역 휘두르기',
+      type: 'melee',        // 발사체가 아니라 즉시 판정되는 근접 공격
+      damage: 1300,         // 부채꼴 안의 모든 적에게 주는 피해 (1레벨 기준)
+      allyHeal: 500,        // 같은 부채꼴 안의 아군(자신 제외)을 회복시키는 양 (1레벨 기준, 레벨이 오르면 공격력 배율만큼 늘어남)
+      angleDegrees: 75,     // 바라보는 방향을 중심으로 한 부채꼴의 전체 각도(중심각)
+      range: 170,           // 부채꼴 반경(사거리)
+      visual: 'jinjeongFan',
+      effectLife: 0.4,
+    },
+    ultimate: {
+      name: '단체 회복',
+      type: 'teamHeal',     // 조준 없이 즉시 발동, 자신을 포함한 살아있는 모든 아군의 체력을 healAmount씩 회복
+      healAmount: 2000,
+    },
+    gadget: {
+      name: '뿔피리 불기',
+      type: 'teamSpeedBoost', // 조준 불필요, 즉시 발동해서 자신을 포함한 모든 아군의 이동속도가 duration초 동안 빨라짐
+      instant: true,
+      duration: 4,          // 지속 시간(초)
+      speedMultiplier: 1.25, // 이동속도 배율 (1.25 = 25% 증가)
+    },
+  },
 };
 
 // ===== 캐릭터 설명(캐릭터 선택 화면용) 자동 생성 =====
@@ -1551,7 +1579,8 @@ function describeBasic(b) {
     if (b.shotInterval > 0) parts.push(`${b.shotInterval}초에 탄창 1개씩 소비하며 연사 (공격 버튼을 누르고 있으면 계속 공격)`);
   } else if (b.type === 'melee') {
     damage = b.damage;
-    parts.push(`전방 ${b.angleDegrees}도 부채꼴 범위(사거리 ${b.range})를 휘둘러 ${fmtNum(b.damage)} 피해를 주고 ${b.knockback}만큼 뒤로 밀쳐냄`);
+    parts.push(`전방 ${b.angleDegrees}도 부채꼴 범위(사거리 ${b.range})를 휘둘러 ${fmtNum(b.damage)} 피해를 주고${b.knockback ? ` ${b.knockback}만큼 뒤로 밀쳐냄` : ' 범위 안의 모든 적을 맞힘 (광역 피해)'}`);
+    if (b.allyHeal > 0) parts.push(`같은 범위 안의 아군(자신 제외)은 ${fmtNum(b.allyHeal)}씩 회복`);
   } else if (b.currentHpRatio > 0) {
     // 진우Park의 하트: 고정 피해가 아니라 대상의 현재 체력 비율로 피해를 줌
     parts.push(`하트를 발사해 적의 현재 체력의 ${Math.round(b.currentHpRatio * 100)}% 피해 (보호막이 있으면 보호막까지 합친 체력 기준)${b.executeBelowHp > 0 ? `, 맞은 적의 체력이 ${fmtNum(b.executeBelowHp)} 이하면 즉사` : ''}`);
@@ -1637,6 +1666,9 @@ function describeUltimate(u) {
       break;
     case 'heal':
       desc = '조준 불필요, 즉시 체력을 가득 채움';
+      break;
+    case 'teamHeal':
+      desc = `조준 불필요, 자신을 포함한 모든 아군의 체력을 즉시 ${fmtNum(u.healAmount)}씩 회복 (최대 체력까지)`;
       break;
     case 'timedBomb':
       desc = `조준 불필요, 자신의 위치에 설치. 반경 ${u.radius} 안의 적에게 ${u.tickInterval}초마다 ${fmtNum(u.tickDamage)} 피해 + 이동속도 ${Math.round((1 - u.slowMultiplier) * 100)}% 감소, ${u.fuseTime}초 뒤 ${fmtNum(u.explodeDamage)} 피해로 폭발`;
@@ -1725,6 +1757,9 @@ function describeGadget(g) {
     case 'speedBoost':
       desc = `${g.duration}초 동안 이동속도 ${fmtMult(g.speedMultiplier)}배`;
       break;
+    case 'teamSpeedBoost':
+      desc = `조준 불필요, 뿔피리를 불어 ${g.duration}초 동안 자신을 포함한 모든 아군의 이동속도가 ${Math.round((g.speedMultiplier - 1) * 100)}% 빨라짐`;
+      break;
     case 'sprint':
       desc = `조준한 방향으로 ${fmtNum(Math.round(g.speed * g.duration))}px를 순식간에 돌진, 피해나 기절을 주지 않는 도주용 (적을 통과함)`;
       break;
@@ -1795,7 +1830,7 @@ const LEVEL_TABLE = [
   { hp: 1.350, atk: 1.30, cost: 700 },
 ];
 const LEVEL_TABLE_PUBLIC = LEVEL_TABLE.slice(1).map((t, i) => ({ level: i + 1, hp: t.hp, atk: t.atk, cost: t.cost }));
-const DAMAGE_KEYS = new Set(['damage', 'sideDamage', 'minDamage', 'maxDamage', 'directDamage', 'poolDamage', 'poolFirstDamage', 'tickDamage', 'explodeDamage', 'landDamage']); // 공격력 배율을 적용할 수치 이름
+const DAMAGE_KEYS = new Set(['damage', 'sideDamage', 'minDamage', 'maxDamage', 'directDamage', 'poolDamage', 'poolFirstDamage', 'tickDamage', 'explodeDamage', 'landDamage', 'allyHeal']); // 공격력 배율을 적용할 수치 이름 (allyHeal: 진정의 기본공격 아군 회복량)
 function clampLevel(v) {
   const n = Math.floor(Number(v));
   if (!Number.isFinite(n) || n < 1) return 1;
@@ -2214,6 +2249,7 @@ const CHARACTER_PRICES = {
   chacha: 300,
   guji: 300,
   baechu: 300,
+  jinjeong: 300,
 };
 CHARACTER_PRICES[DEFAULT_CHARACTER_ID] = 0; // 기본 캐릭터는 항상 무료 (사용 가능한 캐릭터가 하나도 없는 상황 방지)
 function priceOf(id) {
@@ -2648,6 +2684,18 @@ function repeatMissionsView(u) {
 // id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
+  {
+    id: '2026-11-14-jinjeong',
+    date: '2026-11-14',
+    tag: 'new',
+    title: '새 캐릭터 [진정] 추가!',
+    items: [
+      '새 서포터 진정이 등장했어요! 체력 5,500(1레벨 기준) / 🪙 300 코인으로 잠금해제할 수 있어요.',
+      '기본공격 [광역 휘두르기]: 전방 75도 부채꼴 안의 적에게 1,300 피해, 같은 범위 안의 아군은 500 회복해요.',
+      '궁극기 [단체 회복]: 자신을 포함한 모든 아군의 체력을 즉시 2,000씩 회복해요.',
+      '가젯 [뿔피리 불기]: 4초 동안 자신을 포함한 모든 아군의 이동속도가 25% 빨라져요.',
+    ],
+  },
   {
     id: '2026-11-13-jjapsae',
     date: '2026-11-13',
@@ -7278,6 +7326,31 @@ function performMeleeAttack(match, p, spec, isUltimate, angle = p.angle, stabInd
     }
   }
 
+  // 진정의 기본공격: 같은 부채꼴 안에 있는 아군(자신 제외)의 체력을 allyHeal만큼 회복 (최대 체력 초과 불가)
+  if (spec.allyHeal > 0 && !match.over) {
+    const healAmt = Math.round(spec.allyHeal * getDamageMultiplier(p));
+    for (const pid in match.players) {
+      if (pid === p.id) continue;
+      const ally = match.players[pid];
+      if (!ally.alive || ally.team !== p.team) continue;
+      const adx = ally.x - p.x;
+      const ady = ally.y - p.y;
+      const adist = Math.sqrt(adx * adx + ady * ady);
+      if (adist > range + PLAYER_RADIUS) continue;
+      let adiff = Math.atan2(ady, adx) - angle;
+      while (adiff > Math.PI) adiff -= Math.PI * 2;
+      while (adiff < -Math.PI) adiff += Math.PI * 2;
+      if (Math.abs(adiff) > halfAngle + (adist <= PLAYER_RADIUS ? Math.PI : Math.asin(Math.min(1, PLAYER_RADIUS / adist)))) continue;
+      const before = ally.hp;
+      ally.hp = Math.min(ally.maxHp, ally.hp + healAmt * (ally.gearHealMult || 1)); // 회복 기어: 회복받는 쪽의 회복량 증가
+      const gained = Math.round(ally.hp - before);
+      if (gained > 0) {
+        effectIdCounter += 1;
+        match.effects.push({ id: effectIdCounter, type: 'healPlus', x: ally.x, y: ally.y, amount: gained, ownerId: p.id, life: 0.8, maxLife: 0.8 });
+      }
+    }
+  }
+
   // 적 터렛(성스럽다의 저격 터렛)도 근접 공격 범위/각도 판정에 함께 포함시켜 파괴할 수 있게 함
   for (const turret of match.turrets) {
     if (match.over) break;
@@ -7979,6 +8052,7 @@ io.on('connection', (socket) => {
       return;
     }
     const userKey = socket.data.userKey;
+    const aiMode = data && data.mode === '2v2' ? '2v2' : '1v1'; // AI 2:2: 내 편 AI 1명 + 상대 AI 2명 (그 밖의 값은 모두 1:1)
     const difficulty = aiDifficultyOf().id; // 난이도 구분 없음: 항상 AI전(강한 AI). 옛 클라이언트가 어떤 값을 보내도 무시
     let level = 1;
     let trophies = 0; // 대결 화면에 보여주기만 함 (AI 대결에서 이기면 난이도별 고정 트로피를 받지만, 이 값은 시작 시점의 트로피)
@@ -7998,7 +8072,7 @@ io.on('connection', (socket) => {
     if (!socket.connected || socket.data.userKey !== userKey) return;
     if (socketToMatch[socket.id] || isQueued(socket.id)) return;
     if (serverPause.on) { socket.emit('findMatchError', { message: serverPause.message }); return; }
-    startAiMatch(socket, requestedId, userKey, level, trophies, skin, hyper, difficulty, gear);
+    startAiMatch(socket, requestedId, userKey, level, trophies, skin, hyper, difficulty, gear, aiMode);
   });
 
   // 보스전: 혼자서 오늘의 보스와 대결. 하루(한국 시간 기준) 1번만 도전할 수 있고, 목숨은 3개.
@@ -8551,6 +8625,18 @@ function registerGameplayHandlers(socket) {
       // 원효대사의 가젯: duration초 동안 이동속도 증가 (재사용 시 새로 duration초로 갱신)
       p.speedBoostUntil = Date.now() + (gadget.duration || 2) * 1000;
       p.speedBoostMultiplier = gadget.speedMultiplier || 1.3;
+    } else if (gadget.type === 'teamSpeedBoost') {
+      // 진정의 뿔피리 불기: 자신을 포함한 살아있는 모든 아군이 duration초 동안 이동속도 증가 (이미 더 큰 속도 증가가 걸려 있으면 그 배율은 유지하고 시간만 늘림)
+      const nowMs = Date.now();
+      const boostMult = gadget.speedMultiplier || 1.25;
+      const boostUntil = nowMs + (gadget.duration || 4) * 1000;
+      for (const pid in match.players) {
+        const ally = match.players[pid];
+        if (!ally.alive || ally.team !== p.team) continue;
+        const active = ally.speedBoostUntil && nowMs < ally.speedBoostUntil;
+        ally.speedBoostMultiplier = Math.max(boostMult, active ? (ally.speedBoostMultiplier || 1) : 1);
+        ally.speedBoostUntil = Math.max(boostUntil, active ? ally.speedBoostUntil : 0);
+      }
     } else if (gadget.type === 'reloadBoost') {
       // 꽈리의 가젯: duration초 동안 재장전 속도 증가 (재사용 시 새로 duration초로 갱신)
       p.reloadBoostUntil = Date.now() + (gadget.duration || 3) * 1000;
@@ -8754,6 +8840,21 @@ function registerGameplayHandlers(socket) {
     } else if (ult.type === 'heal') {
       // 여똥이의 간식 처먹기: 조준 불필요, 즉시 체력을 가득 채움
       p.hp = p.maxHp;
+    } else if (ult.type === 'teamHeal') {
+      // 진정의 단체 회복: 조준 불필요, 자신을 포함한 살아있는 모든 아군의 체력을 healAmount씩 즉시 회복 (최대 체력 초과 불가)
+      for (const pid in match.players) {
+        const ally = match.players[pid];
+        if (!ally.alive || ally.team !== p.team) continue;
+        const before = ally.hp;
+        ally.hp = Math.min(ally.maxHp, ally.hp + (ult.healAmount || 2000) * (ally.gearHealMult || 1)); // 회복 기어: 회복받는 쪽의 회복량 증가
+        const gained = Math.round(ally.hp - before);
+        effectIdCounter += 1;
+        match.effects.push({ id: effectIdCounter, type: 'healAura', x: ally.x, y: ally.y, ownerId: p.id, life: 0.6, maxLife: 0.6 });
+        if (gained > 0) {
+          effectIdCounter += 1;
+          match.effects.push({ id: effectIdCounter, type: 'healPlus', x: ally.x, y: ally.y, amount: gained, ownerId: p.id, life: 0.8, maxLife: 0.8 });
+        }
+      }
     } else if (ult.type === 'timedBomb') {
       // 보배 폭발: 조준 불필요, 자신의 위치에 설치
       spawnBomb(match, p, ult);
@@ -10759,6 +10860,15 @@ function runAiBot(match, botId, ai, dt, now) {
     let use = false;
     let arg;
     if (ult.type === 'heal') use = myR < 0.55;
+    else if (ult.type === 'teamHeal') { // 아군 전체(자신 포함)의 부족한 체력 합이 충분히 크거나 누군가 위험할 때 사용
+      let missing = 0; let danger = false;
+      for (const q of Object.values(match.players)) {
+        if (q.team !== p.team || !q.alive) continue;
+        missing += q.maxHp - q.hp;
+        if (q.hp / (q.maxHp || 1) < 0.4) danger = true;
+      }
+      use = missing >= (ult.healAmount || 2000) * 1.2 || (danger && missing >= (ult.healAmount || 2000) * 0.6);
+    }
     else if (ult.type === 'stealth') use = !!target && dist < (mode === 'flee' ? 650 : 500) && mode !== 'hide'; // 도망칠 때 적극적으로 사용
     else if (!offensiveOK) use = false; // 도망/은신 중에는 공격 궁극기를 아낌
     else if (ult.type === 'leap' || ult.type === 'blackhole' || ult.type === 'fireLob' || ult.type === 'teleportLob') {
@@ -10803,7 +10913,7 @@ function runAiBot(match, botId, ai, dt, now) {
     else if (g.type === 'reflect') {
       // 적의 투사체가 자신 쪽으로 날아오고 있으면 사용
       use = match.bullets.some((b) => !b.lob && b.team !== p.team && Math.hypot(b.x - p.x, b.y - p.y) < 400 && (b.vx * (p.x - b.x) + b.vy * (p.y - b.y)) > 0);
-    } else if (g.type === 'speedBoost' || g.type === 'sprint' || g.type === 'invincible' || g.type === 'shield') {
+    } else if (g.type === 'speedBoost' || g.type === 'teamSpeedBoost' || g.type === 'sprint' || g.type === 'invincible' || g.type === 'shield') {
       use = !!target && dist < (escaping ? 600 : 400) && mode !== 'hide'; // 도망칠 때 탈출용으로 사용
       if (use && g.type === 'sprint' && mode === 'flee' && (moveX || moveY)) {
         h.playerUpdate({ x: p.x, y: p.y, angle: Math.atan2(moveY, moveX) }); // 돌진은 바라보는 방향으로 나가므로, 도망 방향을 보고 사용
@@ -10823,17 +10933,23 @@ function randomAiGear(charId) {
   return gearBonusOf({ gears: picks.map((gearId, i) => ({ uid: `ai_gear_${i}`, gearId, charId })) }, charId);
 }
 
-function startAiMatch(socket, characterId, userKey, level, trophies, skin, hyper, difficulty, gear) {
+function startAiMatch(socket, characterId, userKey, level, trophies, skin, hyper, difficulty, gear, aiMode) {
   const diff = aiDifficultyOf(difficulty);
+  const mode = aiMode === '2v2' ? '2v2' : '1v1';
   const ids = Object.keys(CHARACTERS);
-  const botCharId = ids[Math.floor(Math.random() * ids.length)];
-  aiBotCounter += 1;
-  const botSocket = createBotSocket(`ai_${aiBotCounter}`);
-  const entries = [
-    { socket, name: socket.data.displayName, characterId, userKey, trophies: trophies || 0, level, skin: skin || null, hyper: !!hyper, gear: gear || null },
-    { socket: botSocket, name: `AI ${CHARACTERS[botCharId].name}`, characterId: botCharId, userKey: null, trophies: 0, level, isBot: true, hyper: !!CHARACTERS[botCharId].hyper, gear: randomAiGear(botCharId) }, // AI도 무작위 기어 3개를 장착하고, 하이퍼 차지가 있는 캐릭터는 하이퍼 차지를 사용
-  ];
-  startMatch('1v1', entries, { ai: true, aiDifficulty: diff.id });
+  for (let i = ids.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [ids[i], ids[j]] = [ids[j], ids[i]]; } // 섞어서 AI끼리 캐릭터가 겹치지 않게 뽑음
+  const makeBot = (botCharId) => {
+    aiBotCounter += 1;
+    const botSocket = createBotSocket(`ai_${aiBotCounter}`);
+    return { socket: botSocket, name: `AI ${CHARACTERS[botCharId].name}`, characterId: botCharId, userKey: null, trophies: 0, level, isBot: true, hyper: !!CHARACTERS[botCharId].hyper, gear: randomAiGear(botCharId) }; // AI도 무작위 기어 3개를 장착하고, 하이퍼 차지가 있는 캐릭터는 하이퍼 차지를 사용
+  };
+  const me = { socket, name: socket.data.displayName, characterId, userKey, trophies: trophies || 0, level, skin: skin || null, hyper: !!hyper, gear: gear || null };
+  // startMatch 는 앞쪽 teamSize 명을 A팀(나와 같은 편), 나머지를 B팀으로 배정한다
+  // 1:1 → [나, 적AI] / 2:2 → [나, 내 편 AI, 적AI, 적AI]
+  const entries = mode === '2v2'
+    ? [me, makeBot(ids[0]), makeBot(ids[1]), makeBot(ids[2])]
+    : [me, makeBot(ids[0])];
+  startMatch(mode, entries, { ai: true, aiDifficulty: diff.id });
 }
 
 // ===== 훈련장 =====
