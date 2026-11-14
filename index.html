@@ -1277,6 +1277,10 @@
       <div class="mode-title">🤖 AI전</div>
       <div class="mode-desc">접속자가 없어도 AI와 대결 (강한 AI)<br>이기면 🪙 50코인 + 🏆 트로피 30<br>(전적·연승에는 영향이 없어요)</div>
     </div>
+    <div class="mode-card" data-mode="ai2v2">
+      <div class="mode-title">🤖 AI 2 : 2</div>
+      <div class="mode-desc">나 + AI 팀원 한 명이 AI 두 명과 2대2<br>이기면 🪙 50코인 + 🏆 트로피 30<br>(전적·연승에는 영향이 없어요)</div>
+    </div>
     <div class="mode-card" data-mode="training">
       <div class="mode-title">🎯 훈련장</div>
       <div class="mode-desc">혼자서 허수아비를 치며 자유롭게 연습<br>궁극기·하이퍼·가젯을 마음껏 · 보상/트로피/전적은 없어요</div>
@@ -1777,7 +1781,7 @@ const ROLE_INFO = {
 const CHARACTER_ROLES = {
   minam: 'sniper', ddongpari: 'sniper', guji: 'sniper',
   jigi: 'dealer', syu: 'dealer', seongseureopda: 'dealer', yeoddongi: 'dealer', jinwoopark: 'dealer',
-  wonhyo: 'support',
+  wonhyo: 'support', jinjeong: 'support',
   byeongitong: 'tank', uphal: 'tank', baechu: 'tank',
   bobae: 'controller', geunsuni: 'controller', chacha: 'controller',
   ekhe: 'thrower', nai: 'thrower',
@@ -1837,7 +1841,7 @@ const CHARACTERS = [
     maxHp: 6000,
     basic: { name: '칼 던지기', damage: 2000, desc: '벽(장애물)을 그대로 통과해서 날아감' },
     ultimate: { name: '저격 터렛 설치', desc: '조준 불필요, 체력 6,000의 자동 사격 터렛을 설치 (사거리 441, 0.5초마다 1,000 피해 저격탄 발사)' },
-    gadget: { name: '저격 사격', desc: '조준한 방향으로 탄속이 매우 빠른 총알 1발을 발사 (사거리 약 846), 2,500 피해 (15초마다 사용 가능)' },
+    gadget: { name: '저격 사격', desc: '조준한 방향으로 탄속이 매우 빠른 총알 1발을 발사 (사거리 약 846), 2,000 피해 (15초마다 사용 가능)' },
   },
   {
     id: 'yeoddongi',
@@ -1980,6 +1984,15 @@ const CHARACTERS = [
     basic: { name: '배추 회오리', damage: 250, desc: '자신을 중심으로 반경 130의 원을 그리며 범위 안의 모든 적에게 250 피해 (광역 공격), 탄창 10개, 0.1초에 탄창 1개씩 소비하며 연사, 재장전은 탄창 1개당 0.5초' },
     ultimate: { name: '배추 순간이동', desc: '배추를 포물선으로 느리게 던져(1.8초) 착지하는 순간 그 위치로 순간이동' },
     gadget: { name: '배춧잎 치유', desc: '이후 기본공격 10번 동안 공격할 때마다 원 안의 아군(자신 제외)의 체력을 각각 200씩 회복 (15초마다 사용 가능)' },
+  },
+  {
+    id: 'jinjeong',
+    name: '진정',
+    color: '#f5b83d',
+    maxHp: 5500,
+    basic: { name: '광역 휘두르기', damage: 1300, desc: '전방 75도 부채꼴 범위(사거리 170)를 휘둘러 1,300 피해를 주고 범위 안의 모든 적을 맞힘 (광역 피해). 같은 범위 안의 아군(자신 제외)은 500씩 회복' },
+    ultimate: { name: '단체 회복', desc: '조준 불필요, 자신을 포함한 모든 아군의 체력을 즉시 2,000씩 회복 (최대 체력까지)' },
+    gadget: { name: '뿔피리 불기', desc: '조준 불필요, 뿔피리를 불어 4초 동안 자신을 포함한 모든 아군의 이동속도가 25% 빨라짐' },
   },
 ];
 let selectedCharacterId = CHARACTERS[0].id;
@@ -4322,7 +4335,7 @@ document.querySelectorAll('.mode-card').forEach((card) => {
   card.addEventListener('click', () => {
     if (serverPauseInfo.on) { alert(serverPauseInfo.message || '서버 점검 중입니다. 잠시 후 다시 시도해주세요.'); return; }
     selectedMode = card.getAttribute('data-mode');
-    if (selectedMode === 'ai') selectedAiDifficulty = 'hard';
+    if (selectedMode === 'ai' || selectedMode === 'ai2v2') selectedAiDifficulty = 'hard';
     if (selectedMode === 'boss') { // 보스전은 하루 1번만 도전 가능 (최종 확인은 서버가 함)
       const bi = currentProfile && currentProfile.boss;
       if (bi && bi.used) { alert('오늘의 보스전은 이미 도전했어요!\n내일 다시 도전할 수 있어요.'); return; }
@@ -4600,11 +4613,12 @@ function doJoin() {
 function requestMatch() {
   document.getElementById('matchResultOverlay').classList.remove('open');
   document.getElementById('matchingStatus').textContent =
-    selectedMode === 'ranked' ? '🏆 경쟁전 상대를 찾는 중입니다...' : selectedMode === 'ai' ? 'AI 상대를 준비하는 중입니다...' : selectedMode === 'training' ? '🎯 훈련장을 준비하는 중입니다...' : selectedMode === 'boss' ? '👹 보스를 불러오는 중입니다...' : selectedMode === '3v3' ? '3:3 상대를 찾는 중입니다...' : selectedMode === '2v2' ? '2:2 상대를 찾는 중입니다...' : '1:1 상대를 찾는 중입니다...';
+    selectedMode === 'ranked' ? '🏆 경쟁전 상대를 찾는 중입니다...' : selectedMode === 'ai' ? 'AI 상대를 준비하는 중입니다...' : selectedMode === 'ai2v2' ? 'AI 팀원과 상대를 준비하는 중입니다...' : selectedMode === 'training' ? '🎯 훈련장을 준비하는 중입니다...' : selectedMode === 'boss' ? '👹 보스를 불러오는 중입니다...' : selectedMode === '3v3' ? '3:3 상대를 찾는 중입니다...' : selectedMode === '2v2' ? '2:2 상대를 찾는 중입니다...' : '1:1 상대를 찾는 중입니다...';
   document.getElementById('matchingOverlay').classList.add('open');
   if (selectedMode === 'ranked') socket.emit('findRankedMatch'); // 점수는 서버 저장소 기준, 캐릭터는 매칭 후 선택
   else if (selectedMode === 'boss') socket.emit('findBossMatch', { characterId: selectedCharacterId }); // 보스전: 하루 1번만 도전 가능 (서버가 확인)
   else if (selectedMode === 'training') socket.emit('findTrainingMatch', { characterId: selectedCharacterId }); // 훈련장: 대기열 없이 바로 시작, 보상/기록 없음
+  else if (selectedMode === 'ai2v2') socket.emit('findAiMatch', { characterId: selectedCharacterId, difficulty: selectedAiDifficulty, mode: '2v2' }); // AI 2:2: 내 편 AI 1명 + 상대 AI 2명, 대기열 없이 바로 시작
   else if (selectedMode === 'ai') socket.emit('findAiMatch', { characterId: selectedCharacterId, difficulty: selectedAiDifficulty }); // AI 대결: 대기열 없이 바로 시작. 이기면 난이도별 코인 + 고정 트로피
   else socket.emit('findMatch', { name: myName, characterId: selectedCharacterId, mode: selectedMode });
 }
@@ -4930,7 +4944,7 @@ socket.on('matchFound', (data) => {
   if (matchMode === '2v2' || matchMode === '3v3') {
     const teammate = (data.teammateNames || []).join(', ') || '??';
     const opponents = (data.opponentNames || []).join(', ') || '??';
-    addChatMessage({ id: 'system', name: '시스템', color: '#f1c40f', text: `팀원: ${teammate} / 상대: ${opponents}` });
+    addChatMessage({ id: 'system', name: '시스템', color: '#f1c40f', text: `팀원: ${teammate} / 상대: ${opponents}` + (matchIsAi ? ` (AI 대결 - 이기면 🪙 ${matchAiInfo ? matchAiInfo.coinReward : 0}코인 + 🏆 트로피 ${matchAiInfo ? matchAiInfo.trophyReward : 0}, 전적·연승에는 영향 없음)` : '') });
   } else {
     const opponent = (data.opponentNames && data.opponentNames[0]) || '??';
     addChatMessage({ id: 'system', name: '시스템', color: '#f1c40f', text: matchIsAi ? `상대: ${opponent} (AI전 - 이기면 🪙 ${matchAiInfo ? matchAiInfo.coinReward : 0}코인 + 🏆 트로피 ${matchAiInfo ? matchAiInfo.trophyReward : 0}, 전적·연승에는 영향 없음)` : `상대: ${opponent}` });
@@ -9734,6 +9748,33 @@ function drawCabbageRingEffect(e) {
 }
 
 // 배추의 가젯 사용 연출: 몸에서 초록 빛 고리가 퍼짐
+// 진정의 광역 휘두르기: 바라보는 방향으로 퍼지는 황금빛 부채꼴 (맞은 적은 피해, 범위 안 아군은 회복)
+function drawJinjeongFanEffect(e) {
+  const t = 1 - Math.max(0, Math.min(1, e.life / (e.maxLife || 0.4)));
+  const half = ((e.arcDegrees || 75) * Math.PI) / 180 / 2;
+  const r = e.radius * (0.55 + 0.45 * Math.min(1, t * 2.2));
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, 1 - t);
+  ctx.beginPath();
+  ctx.moveTo(e.x, e.y);
+  ctx.arc(e.x, e.y, r, e.angle - half, e.angle + half);
+  ctx.closePath();
+  const grad = ctx.createRadialGradient(e.x, e.y, r * 0.15, e.x, e.y, r);
+  grad.addColorStop(0, 'rgba(255, 233, 160, 0.15)');
+  grad.addColorStop(1, 'rgba(245, 184, 61, 0.55)');
+  ctx.fillStyle = grad;
+  ctx.fill();
+  ctx.lineWidth = 4;
+  ctx.strokeStyle = 'rgba(255, 214, 102, 0.95)';
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(e.x, e.y, r * 0.96, e.angle - half, e.angle + half);
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(120, 230, 150, 0.9)';
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawHealAuraEffect(e) {
   const p = Math.max(0, Math.min(1, 1 - e.life / (e.maxLife || 0.6)));
   ctx.save();
@@ -14030,6 +14071,8 @@ function drawEffect(e) {
     drawQuakeEffect(e);
   } else if (e.type === 'melee' && e.visual === 'plunger') {
     drawPlungerEffect(e);
+  } else if (e.type === 'melee' && e.visual === 'jinjeongFan') {
+    drawJinjeongFanEffect(e);
   } else if (e.type === 'melee' && e.visual === 'heroSword') {
     drawHeroSwordEffect(e);
   } else if (e.type === 'melee') {
