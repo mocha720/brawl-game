@@ -1380,6 +1380,13 @@
       <div id="adminBannedList"></div>
     </div>
     <div class="admin-section">
+      <h3>🪙 코인 보내기</h3>
+      <p class="panel-sub" style="margin:0">원하는 유저에게 코인을 바로 지급해요. 접속 중이면 바로 반영되고 알림이 가요. (한 번에 최대 1,000,000)</p>
+      <input id="adminGiftName" maxlength="12" placeholder="받을 아이디" autocomplete="off" />
+      <input id="adminGiftAmount" type="number" inputmode="numeric" min="1" max="1000000" step="1" placeholder="보낼 코인 (1 ~ 1,000,000)" autocomplete="off" />
+      <button id="adminGiftBtn" class="btn">🪙 코인 보내기</button>
+    </div>
+    <div class="admin-section">
       <h3>📢 공지사항 올리기</h3>
       <p class="panel-sub" style="margin:0">올리면 접속 중인 모두에게 바로 공지사항 버튼에 빨간 점이 뜨고, 서버를 다시 켜도 남아 있어요.</p>
       <select id="adminNoticeTag" aria-label="공지 종류">
@@ -1946,7 +1953,7 @@ const CHARACTERS = [
     name: '짭새',
     color: '#3b82f6',
     maxHp: 6000,
-    basic: { name: '가시 발사', damage: 1500, desc: '멋진 가시를 날려 1,500 피해 (사거리 약 250). 몸 주위에 원 3개가 계속 돌고 있고, 원에 닿은 적은 1,500 피해 (같은 적은 1초에 한 번만 맞음). 원에 맞춰도 궁극기가 충전되고, 궁극기 충전 속도는 2배' },
+    basic: { name: '가시 발사', damage: 1500, desc: '멋진 가시를 날려 1,500 피해 (사거리 약 250). 가시를 3번 적중시키면 몸 주위에 원 3개가 생겨서 계속 돌고 (죽으면 사라지고 다시 3번 맞혀야 함), 원에 닿은 적은 1,500 피해 (같은 적은 1초에 한 번만 맞음). 원에 맞춰도 궁극기가 충전되고, 궁극기 충전 속도는 1.4배' },
     ultimate: { name: '질주', damage: 2000, desc: '바라보는 방향으로 약 300px를 매우 빠르게 돌진, 적을 관통하며 지나간 모든 적에게 2,000 피해. 궁극기를 쓰기 전에도 충전이 멈추지 않고 최대 3개까지 모아둘 수 있음' },
     gadget: { name: '은신', desc: '조준 불필요, 2초 동안 적에게 보이지 않는 은신 상태가 됨 (15초마다 사용 가능)' },
   },
@@ -3511,6 +3518,27 @@ document.getElementById('adminBanBtn').addEventListener('click', () => {
     document.getElementById('adminBanName').value = '';
     document.getElementById('adminBanReason').value = '';
   });
+});
+document.getElementById('adminGiftBtn').addEventListener('click', () => {
+  const username = document.getElementById('adminGiftName').value.trim();
+  const amount = Number(document.getElementById('adminGiftAmount').value);
+  if (!username) { setAdminMsg('코인을 받을 아이디를 입력하세요.'); return; }
+  if (!Number.isInteger(amount) || amount < 1 || amount > 1000000) { setAdminMsg('보낼 코인은 1 ~ 1,000,000 사이의 정수로 입력하세요.'); return; }
+  if (!confirm(`${username} 님에게 🪙 ${amount.toLocaleString()} 코인을 보낼까요?`)) return;
+  adminCall('adminGiveCoins', { username, amount }, () => {
+    document.getElementById('adminGiftAmount').value = '';
+  });
+});
+// 개발자에게 코인을 받으면 화면을 가리지 않는 작은 알림을 잠깐 띄운다 (매치 중에도 방해되지 않게 alert 대신 사용)
+socket.on('coinGift', (data) => {
+  const coins = data && Number(data.coins);
+  if (!coins) return;
+  const el = document.createElement('div');
+  el.textContent = `🪙 개발자에게 ${coins.toLocaleString()} 코인을 받았어요!`;
+  el.style.cssText = 'position:fixed;top:calc(env(safe-area-inset-top,0px) + 14px);left:50%;transform:translateX(-50%);z-index:99999;padding:10px 18px;border-radius:999px;background:#f1c40f;color:#2b2200;font-weight:700;box-shadow:0 4px 0 rgba(0,0,0,0.35);transition:opacity .5s;pointer-events:none;';
+  document.body.appendChild(el);
+  setTimeout(() => { el.style.opacity = '0'; }, 3500);
+  setTimeout(() => el.remove(), 4100);
 });
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && document.getElementById('adminOverlay').classList.contains('open')) closeAdminDialog();
@@ -8616,31 +8644,31 @@ function drawOrbitOrbs(p) {
   const base = (o.speed * (sNow() - o.t0)) / 1000;
   ctx.save();
   if (p.invisible) ctx.globalAlpha = 0.45;
-  ctx.beginPath();
-  ctx.arc(p.x, p.y, o.radius, 0, Math.PI * 2);
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = 'rgba(120, 170, 255, 0.18)';
-  ctx.stroke();
+  const orbFull = o.active !== false;
+  if (orbFull) { ctx.beginPath(); ctx.arc(p.x, p.y, o.radius, 0, Math.PI * 2); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(120, 170, 255, 0.18)'; ctx.stroke(); } // 아직 기본공격을 충분히 맞히지 못했으면(active=false) 맞힌 횟수만큼 작고 흐린 원만 미리 보여줌
   for (let i = 0; i < o.count; i++) {
+    if (!orbFull && i >= (o.hits || 0)) continue;
     const a = base + (Math.PI * 2 * i) / o.count;
     const x = p.x + Math.cos(a) * o.radius;
     const y = p.y + Math.sin(a) * o.radius;
-    const g = ctx.createRadialGradient(x, y, 1, x, y, o.orbRadius * 1.8);
+    const orbR = orbFull ? o.orbRadius : o.orbRadius * 0.5;
+    ctx.globalAlpha = (p.invisible ? 0.45 : 1) * (orbFull ? 1 : 0.55);
+    const g = ctx.createRadialGradient(x, y, 1, x, y, orbR * 1.8);
     g.addColorStop(0, 'rgba(160, 200, 255, 0.55)');
     g.addColorStop(1, 'rgba(160, 200, 255, 0)');
     ctx.fillStyle = g;
     ctx.beginPath();
-    ctx.arc(x, y, o.orbRadius * 1.8, 0, Math.PI * 2);
+    ctx.arc(x, y, orbR * 1.8, 0, Math.PI * 2);
     ctx.fill();
     ctx.beginPath();
-    ctx.arc(x, y, o.orbRadius, 0, Math.PI * 2);
+    ctx.arc(x, y, orbR, 0, Math.PI * 2);
     ctx.fillStyle = '#3b82f6';
     ctx.fill();
     ctx.lineWidth = 2;
     ctx.strokeStyle = '#dbeafe';
     ctx.stroke();
     ctx.beginPath();
-    ctx.arc(x - o.orbRadius * 0.3, y - o.orbRadius * 0.3, o.orbRadius * 0.28, 0, Math.PI * 2);
+    ctx.arc(x - orbR * 0.3, y - orbR * 0.3, orbR * 0.28, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(255,255,255,0.8)';
     ctx.fill();
   }
