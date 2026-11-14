@@ -980,6 +980,7 @@ const CHARACTERS = {
       duration: 0.55,        // 공중에 떠 있는 시간(초). 이 동안은 조작 불가 + 피격/총알 무시 (길수록 점프가 느리게 보임)
       landRadius: 90,        // 착지 지점 주변 피해 반경
       reloadAmmo: true,      // 궁극기를 사용하면 즉시 탄창이 가득(3개) 재장전됨
+      passiveCharge: 5,      // 가만히 있어도 1초에 궁극기 게이지가 이 값(%)만큼 자동으로 충전됨 (기본공격 적중 충전과 별개로 계속 쌓임)
     },
     // 하이퍼 차지: 캐릭터를 최고 레벨(11)까지 키운 뒤 코인으로 획득하는 추가 스킬. 기본공격을 적중시켜 게이지를 채우고, 가득 차면 발동한다.
     hyper: {
@@ -993,11 +994,12 @@ const CHARACTERS = {
       ultimateDistanceMultiplier: 1.25, // 발동 중 궁극기(도약 강습) 최대 점프 거리 배율 (1.25 = 25% 증가)
     },
     gadget: {
-      name: '기합 충전',
-      type: 'ultCharge',     // 조준 불필요, 즉시 발동. duration초에 걸쳐 궁극기 게이지를 amount%만큼 천천히 채움
-      instant: true,
-      amount: 50,            // 채워지는 궁극기 게이지(%)
-      duration: 4,           // 다 채워지는 데 걸리는 시간(초)
+      name: '밧줄 돌진',
+      type: 'grapple',       // 조준한 방향으로 밧줄을 발사. 벽에 맞으면 그 벽 바로 앞까지, 적에게 맞으면 그 적 바로 앞까지 즉시 돌진 (아무것도 안 맞으면 쿨다운 없이 취소)
+      // instant 없음: 가젯 버튼을 누르면 '장전'되고, 조준한 뒤 공격 입력(마우스 클릭 / 오른쪽 스틱 놓기)으로 발사한다 (다시 누르면 장전 취소)
+      speed: 1500,           // 밧줄 속도(px/초). 사거리 = speed x lifetime (조준선 표시에도 쓰임)
+      lifetime: 0.3,         // 밧줄이 뻗어나가는 시간(초) -> 사거리 450px
+      dashSpeed: 1500,       // 맞은 뒤 돌진 속도(px/초). 돌진 시간 = 이동 거리 / dashSpeed (적/벽 근처 도착 후 멈춤)
     },
   },
   uphal: {
@@ -1709,6 +1711,7 @@ function describeUltimate(u) {
       if (u.damage) damage = u.damage;
   }
   if (u.maxCharges > 1) desc += `. 궁극기를 쓰기 전에도 충전이 멈추지 않고 최대 ${u.maxCharges}개까지 모아둘 수 있음`;
+  if (u.passiveCharge > 0) desc += `. 가만히 있어도 1초에 궁극기 게이지가 ${u.passiveCharge}%씩 자동으로 충전됨`;
   return { name: u.name, damage, desc };
 }
 
@@ -1774,6 +1777,9 @@ function describeGadget(g) {
       break;
     case 'heal':
       desc = `체력을 즉시 ${fmtNum(g.healAmount)} 회복 (최대 체력까지)`;
+      break;
+    case 'grapple':
+      desc = `조준한 방향으로 밧줄을 발사 (사거리 ${fmtNum(Math.round(g.speed * g.lifetime))}), 벽에 맞으면 그 벽 바로 앞까지, 적에게 맞으면 그 적 바로 앞까지 순식간에 돌진 (아무것도 맞지 않으면 쿨다운 없이 취소)`;
       break;
     case 'ultCharge':
       desc = `${g.duration}초에 걸쳐 궁극기 게이지를 ${g.amount}%만큼 천천히 채움`;
@@ -7260,6 +7266,33 @@ function updateBlackHoles(match, dt) {
 // 근접 공격(변기통의 뚫어뻥 휘두르기 등): 발사체 없이 즉시 판정되는 부채꼴 범위 공격
 // spec.angleDegrees: 바라보는 방향을 중심으로 한 부채꼴의 전체 각도, spec.range: 부채꼴 반경
 // spec.knockback이 있으면 맞은 대상을 공격자 반대 방향(바깥쪽)으로 밀어낸다
+// 모카의 밧줄(가젯): p 에서 angle 방향으로 range 만큼 밧줄을 뻗어 가장 먼저 닿는 것을 찾는다.
+// 적(보이는 적 플레이어)에 닿으면 몸이 맞닿는 거리까지, 벽/맵 끝에 닿으면 그 벽 바로 앞(몸이 들어갈 수 있는 마지막 자리)까지의 돌진 거리를 돌려준다.
+function grappleCast(match, p, angle, range) {
+  const dx = Math.cos(angle);
+  const dy = Math.sin(angle);
+  const STEP = 5;
+  const fits = (x, y) => x >= PLAYER_RADIUS && x <= ARENA_WIDTH - PLAYER_RADIUS && y >= PLAYER_RADIUS && y <= ARENA_HEIGHT - PLAYER_RADIUS && !collidesWithWalls(match.walls, x, y, PLAYER_RADIUS);
+  for (let d = STEP; d <= range; d += STEP) {
+    const x = p.x + dx * d;
+    const y = p.y + dy * d;
+    for (const pid in match.players) { // 적이 먼저 닿는지 (은신/공중에 있는 적은 밧줄이 닿지 않음)
+      const e = match.players[pid];
+      if (pid === p.id || !e.alive || e.team === p.team || e.invisible || e.leaping || e.airborneTimeLeft > 0) continue;
+      if (Math.hypot(e.x - x, e.y - y) < PLAYER_RADIUS + 4) {
+        const ed = Math.hypot(e.x - p.x, e.y - p.y);
+        return { kind: 'enemy', dashDist: Math.max(0, ed - PLAYER_RADIUS * 2), tipX: e.x, tipY: e.y, targetId: pid };
+      }
+    }
+    if (x < 0 || x > ARENA_WIDTH || y < 0 || y > ARENA_HEIGHT || collidesWithWalls(match.walls, x, y, 2)) { // 얇은 밧줄 끝이 벽에 닿음
+      let dd = d - STEP;
+      while (dd > 0 && !fits(p.x + dx * dd, p.y + dy * dd)) dd -= STEP; // 벽 바로 앞 = 몸이 들어갈 수 있는 마지막 자리
+      return { kind: 'wall', dashDist: Math.max(0, dd), tipX: Math.max(0, Math.min(ARENA_WIDTH, x)), tipY: Math.max(0, Math.min(ARENA_HEIGHT, y)) };
+    }
+  }
+  return { kind: 'miss', dashDist: 0, tipX: p.x + dx * range, tipY: p.y + dy * range };
+}
+
 function performMeleeAttack(match, p, spec, isUltimate, angle = p.angle, stabIndex = 0) {
   const halfAngle = ((spec.angleDegrees || 90) * Math.PI) / 180 / 2;
   const range = spec.range || 120;
@@ -8681,6 +8714,23 @@ function registerGameplayHandlers(socket) {
       p.healChargeAmount = gadget.healAmount || 200;
       effectIdCounter += 1;
       match.effects.push({ id: effectIdCounter, type: 'healAura', x: p.x, y: p.y, ownerId: p.id, life: 0.6, maxLife: 0.6 });
+    } else if (gadget.type === 'grapple') {
+      // 모카의 밧줄 돌진: 조준한 방향으로 밧줄을 쏴서, 벽에 맞으면 그 벽 앞까지 / 적에게 맞으면 그 적 앞까지 즉시 돌진.
+      // 실제 이동/벽 충돌은 변기통의 질주와 같은 돌진 처리(updateMatch)가 맡고, 피해/기절 없이 적을 통과하는 이동용(dashHarmless)이다.
+      // 밧줄이 아무것도 못 맞혔거나 이미 맞닿아 있어서 갈 곳이 없으면 쿨다운을 쓰지 않고 취소한다.
+      const ropeRange = (gadget.speed || 1500) * (gadget.lifetime || 0.3);
+      const cast = grappleCast(match, p, p.angle, ropeRange);
+      effectIdCounter += 1;
+      match.effects.push({ id: effectIdCounter, type: 'rope', ownerId: p.id, fromX: p.x, fromY: p.y, toX: cast.tipX, toY: cast.tipY, hit: cast.kind !== 'miss', life: 0.3, maxLife: 0.3 });
+      if (cast.dashDist < 10) return;
+      p.dashing = true;
+      p.dashHarmless = true;
+      p.dashSpeed = gadget.dashSpeed || 1500;
+      p.dashDirX = Math.cos(p.angle);
+      p.dashDirY = Math.sin(p.angle);
+      p.dashTimeLeft = cast.dashDist / p.dashSpeed;
+      p.dashTotal = p.dashTimeLeft;
+      p.dashHitIds = [];
     } else if (gadget.type === 'ultCharge') {
       // 모카의 가젯: duration초에 걸쳐 궁극기 게이지를 amount%만큼 천천히 채움 (재사용 시 새로 갱신, 실제 충전은 updateMatch가 수행)
       p.ultGadgetLeft = gadget.duration || 4;
@@ -10053,6 +10103,15 @@ function updateMatch(match, dt, now) {
     p.inBush = p.alive && isInBush(match.bushes, p.x, p.y);
   }
 
+  // 궁극기 자동 충전(모카): 궁극기 스펙의 passiveCharge(%/초)만큼 살아있는 동안 매 틱 궁극기 게이지가 저절로 참 (대결 시작 전에는 충전 안 됨)
+  if (Date.now() >= match.startsAt) {
+    for (const pid in match.players) {
+      const p = match.players[pid];
+      if (!p.alive || !p.ultimate || !(p.ultimate.passiveCharge > 0)) continue;
+      p.ultimateCharge = Math.min(p.ultMaxCharge || 100, p.ultimateCharge + p.ultimate.passiveCharge * dt * (p.gearUltChargeMult || 1));
+    }
+  }
+
   // 모카의 가젯 '기합 충전': 남은 시간 동안 매 틱 궁극기 게이지를 조금씩 채움
   for (const pid in match.players) {
     const p = match.players[pid];
@@ -10888,6 +10947,10 @@ function runAiBot(match, botId, ai, dt, now) {
     else if (g.type === 'reloadAmmo') use = p.ammo === 0;
     else if (g.type === 'reloadBoost') use = !!target && p.ammo <= 1;
     else if (g.type === 'ultCharge') use = !!target && p.ultimateCharge < 60;
+    else if (g.type === 'grapple') { // 밧줄 돌진: 벽에 막히지 않고 밧줄이 닿는 거리의 적에게 붙고 싶을 때 사용 (도망칠 때는 아낌)
+      const ropeR = (g.speed || 1500) * (g.lifetime || 0.3);
+      use = offensiveOK && !!target && dist > 190 && dist < ropeR * 0.9 && aiLineClear(match, p.x, p.y, target.x, target.y);
+    }
     else if (g.type === 'stealth') use = escaping && !!target && dist < 420; // 짭새: 위험할 때 은신
     else if (g.type === 'samjang') {
       use = escaping && !!target && dist < 380; // 위험할 때 탈출용: 적의 반대쪽(맵 안쪽 쪽으로 보정)으로 이동
