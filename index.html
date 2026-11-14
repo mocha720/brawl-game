@@ -1884,8 +1884,8 @@ const CHARACTERS = [
     color: '#6c5ce7',
     maxHp: 4800,
     basic: { name: '양손 찌르기', damage: 450, desc: '양손으로 4번 빠르게 찌름 (한 번당 450 피해, 사거리 짧음, 재장전 속도 50% 빠름)' },
-    ultimate: { name: '도약 강습', desc: '조준한 방향으로 벽을 무시하고 점프, 거리는 조준으로 100~304px 조절 (PC: 마우스 위치 / 모바일: 스틱을 당긴 정도), 착지 지점 주변 적에게 1,000 피해' },
-    gadget: { name: '기합 충전', desc: '4초에 걸쳐 궁극기 게이지를 50%만큼 천천히 채움 (15초마다 사용 가능)' },
+    ultimate: { name: '도약 강습', desc: '조준한 방향으로 벽을 무시하고 점프, 거리는 조준으로 100~304px 조절 (PC: 마우스 위치 / 모바일: 스틱을 당긴 정도), 착지 지점 주변 적에게 1,000 피해. 가만히 있어도 1초에 궁극기 게이지가 5%씩 자동으로 충전됨' },
+    gadget: { name: '밧줄 돌진', desc: '조준한 방향으로 밧줄을 발사 (사거리 450), 벽에 맞으면 그 벽 바로 앞까지, 적에게 맞으면 그 적 바로 앞까지 순식간에 돌진 (아무것도 맞지 않으면 쿨다운 없이 취소)' },
   },
   {
     id: 'uphal',
@@ -9775,6 +9775,30 @@ function drawJinjeongFanEffect(e) {
   ctx.restore();
 }
 
+// 모카의 밧줄: 모카(돌진해 가는 중이면 지금 위치)에서 맞은 곳까지 이어진 밧줄. 잠깐 보였다가 사라진다 (못 맞혔으면 끝이 점점 되돌아옴)
+function drawRopeEffect(e) {
+  const t = 1 - Math.max(0, Math.min(1, e.life / (e.maxLife || 0.3)));
+  const owner = latestState.players && latestState.players[e.ownerId];
+  const sx = owner ? owner.x : e.fromX;
+  const sy = owner ? owner.y : e.fromY;
+  const k = e.hit ? 1 : Math.max(0, 1 - Math.max(0, t - 0.4) / 0.6); // 못 맞힌 밧줄은 뒤쪽 절반 시간 동안 감겨 들어옴
+  const ex = e.fromX + (e.toX - e.fromX) * (e.hit ? 1 : Math.min(1, t * 4) * k);
+  const ey = e.fromY + (e.toY - e.fromY) * (e.hit ? 1 : Math.min(1, t * 4) * k);
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, 1 - t * t);
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = '#8d6e4a';
+  ctx.lineWidth = 5;
+  ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
+  ctx.strokeStyle = '#d7b98a';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([6, 6]);
+  ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey); ctx.stroke();
+  ctx.setLineDash([]);
+  if (e.hit) { ctx.fillStyle = '#c0c4cc'; ctx.beginPath(); ctx.arc(ex, ey, 6, 0, Math.PI * 2); ctx.fill(); } // 갈고리
+  ctx.restore();
+}
+
 function drawHealAuraEffect(e) {
   const p = Math.max(0, Math.min(1, 1 - e.life / (e.maxLife || 0.6)));
   ctx.save();
@@ -14057,6 +14081,8 @@ function drawEffect(e) {
     ctx.restore();
   } else if (e.type === 'melee' && e.visual === 'cabbageRing') {
     drawCabbageRingEffect(e);
+  } else if (e.type === 'rope') {
+    drawRopeEffect(e);
   } else if (e.type === 'healAura') {
     drawHealAuraEffect(e);
   } else if (e.type === 'healPlus') {
