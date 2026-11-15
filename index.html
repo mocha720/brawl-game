@@ -1728,7 +1728,8 @@ const DEVICE_ICON = { mobile: '📱', desktop: '💻' };
 const DEVICE_LABEL = { mobile: '📱 모바일', desktop: '💻 컴퓨터' };
 const matchDevices = {}; // 이번 매치 참가자의 기기 { socketId: 'mobile' | 'desktop' } (점수판 표시용)
 
-const socket = io({ auth: { device: MY_DEVICE } });
+// delta: 1 = 서버가 변경분만 보내는 방식('st')을 쓰겠다는 표시 (전송량 절약). websocket 을 먼저 시도해서 접속 때 오가는 데이터도 줄임
+const socket = io({ auth: { device: MY_DEVICE, delta: 1 }, transports: ['websocket', 'polling'] });
 
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
@@ -5358,7 +5359,65 @@ function drawHpBar(cx, y, barW, barH, hp, maxHp, shield, shieldMax) {
   ctx.restore();
 }
 
-socket.on('state', (state) => {
+// ===== 서버가 보내는 '변경분 상태'('st')를 예전 'state' 와 똑같은 모양으로 복원 =====
+// 서버는 바뀐 값만 보내므로, 마지막으로 받은 값을 기억해 두었다가 합쳐서 완전한 state 객체를 만든다.
+// 복원한 결과는 예전 방식으로 받은 것과 같은 모양이라, 아래 handleState 와 그림 그리는 코드는 그대로 쓴다.
+const net = { q: -1, wait: false, sets: {}, top: {} };
+const NET_SETS = { p: 'players', b: 'bullets', e: 'effects', w: 'waterPools', t: 'turrets', o: 'bombs', c: 'chickens' };
+const NET_AGED = { effects: true, waterPools: true }; // 남은 수명(life)을 서버 시계로 직접 줄여 가는 종류
+function netRequestResync() {
+  if (net.wait) return;
+  net.wait = true; // 전체 상태(f)가 올 때까지 변경분은 무시
+  socket.emit('stateResync');
+}
+function netApply(m) {
+  if (m.f) { // 전체 상태: 기억해 둔 값을 모두 버리고 새로 시작
+    net.sets = {};
+    net.top = {};
+    net.wait = false;
+  } else if (net.wait || m.q !== net.q + 1) { // 순서가 어긋남 -> 전체 상태 다시 요청
+    netRequestResync();
+    return null;
+  }
+  net.q = m.q;
+  const n = m.n;
+  if (m.t) Object.assign(net.top, m.t);
+  if (m.tx) for (const k of m.tx) delete net.top[k];
+  const state = { serverNow: n, players: {}, bullets: [], effects: [], waterPools: [], turrets: [], bombs: [], chickens: [] };
+  Object.assign(state, net.top);
+  for (const code in NET_SETS) {
+    const kind = NET_SETS[code];
+    let map = net.sets[kind];
+    if (!map) map = net.sets[kind] = new Map();
+    const d = m[code];
+    if (d) {
+      if (d.x) for (const key of d.x) map.delete(key);
+      if (d.u) {
+        for (const [key, delta] of d.u) {
+          let w = map.get(key);
+          if (!w) { w = { o: {}, a: undefined, l: 0 }; map.set(key, w); }
+          Object.assign(w.o, delta);
+          if (NET_AGED[kind] && typeof delta.life === 'number') { w.l = delta.life; w.a = n; }
+        }
+      }
+      if (d.k) for (const key in d.k) { const w = map.get(key) || map.get(Number(key)); if (w) for (const f of d.k[key]) delete w.o[f]; }
+    }
+    const aged = NET_AGED[kind] === true;
+    if (kind === 'players') {
+      for (const [key, w] of map) state.players[key] = Object.assign({}, w.o);
+    } else {
+      const arr = state[kind];
+      for (const w of map.values()) {
+        const o = Object.assign({}, w.o);
+        if (aged && w.a !== undefined) o.life = Math.max(0, w.l - (n - w.a) / 1000);
+        arr.push(o);
+      }
+    }
+  }
+  return state;
+}
+
+function handleState(state) {
   if (typeof state.serverNow === 'number') serverTimeOffset = state.serverNow - Date.now();
   window.__lastStateAt = Date.now();
   latestState = state;
@@ -5406,7 +5465,9 @@ socket.on('state', (state) => {
   updateGadgetButton();
   updateHyperButton();
   updateAmmoDisplay();
-});
+}
+socket.on('state', handleState); // 예전 방식(전체 상태) - 구버전 서버와의 호환용
+socket.on('st', (m) => { const st = netApply(m); if (st) handleState(st); }); // 변경분 방식
 
 // ===== 스코어보드 (동그란 버튼을 눌러야 보이게 토글) =====
 const scoreboardToggleBtn = document.getElementById('scoreboardToggleBtn');
