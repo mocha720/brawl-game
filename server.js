@@ -68,6 +68,7 @@ const ROUND_COUNTDOWN_MS = 2500;   // 모두 시작 위치로 돌아간 뒤 다�
 // 하루에 1번(한국 시간 기준)만 도전할 수 있다 (보석으로 다시 도전하는 기능은 없앴음). 오늘의 보스는 날짜에 따라 정해진다. 목숨은 3개이고 다 쓰면 패배, 보스를 쓰러뜨리면 승리.
 const BOSS_LIVES = 3;              // 목숨 개수
 const BOSS_REWARD_BLING = 1000;    // 보스를 쓰러뜨렸을 때 받는 블링(✨) - 아직 쓸 곳은 없지만 나중을 위해 모아 두는 재화 (원하는 값으로 바꾸세요)
+const AI_2V2_KILL_BLING = 200;      // AI 2:2 에서 이겼을 때, 내가 적을 처치한 횟수 1번마다 받는 블링(✨) (원하는 값으로 바꾸세요)
 const BOSS_PLAYER_SPEED = 106.4;   // 클라이언트 MOVE_SPEED(플레이어 기본 이동속도)와 같은 값 (기존 152에서 30% 감소). 보스 속도 = 이 값 x speedRatio
 const BOSSES = [
   {
@@ -1519,6 +1520,16 @@ const CHARACTERS = {
       duration: 4,          // 지속 시간(초)
       speedMultiplier: 1.25, // 이동속도 배율 (1.25 = 25% 증가)
     },
+    // 하이퍼 차지: 이동속도 +20%, 공격력 +10%, 받는 피해 -10%, 발동 중 궁극기(단체 회복)를 쓰면 자신을 포함한 모든 아군이 1초 동안 무적
+    hyper: {
+      name: '하이퍼 차지',
+      duration: 10,
+      chargeMultiplier: 0.45,
+      speedMultiplier: 1.2,
+      damageMultiplier: 1.1,
+      damageTakenMultiplier: 0.9,
+      ultimateAllyInvincibleSec: 1, // 발동 중 궁극기를 쓰면 자신을 포함한 모든 아군이 이 시간(초) 동안 어떤 피해도 받지 않음
+    },
   },
   jungan: {
     id: 'jungan',
@@ -1533,6 +1544,7 @@ const CHARACTERS = {
       centerDamage: 3000,     // 양팔이 모이는 지점(조준 방향 정면)에서 맞은 적은 광역 피해 대신 이 피해를 받음 (1레벨 기준, 겹쳐서 더해지지 않음)
       centerAngleDegrees: 30, // '양팔이 모이는 지점'으로 치는 정면 부채꼴의 전체 각도 (몸 크기만큼 너그럽게 판정)
       range: 130,             // 부채꼴 반경(사거리)
+      delay: 0.5,             // 공격 버튼을 누르고 이 시간(초)이 지난 뒤에 실제 공격이 나감. 기다리는 동안에는 이동 가능 (공격 방향은 누른 순간의 조준 방향으로 고정, 업할 선딜과 달리 움직임을 막지 않음)
       visual: 'junganArms',
       effectLife: 0.35,
     },
@@ -1545,6 +1557,14 @@ const CHARACTERS = {
       wallSlamDamage: 1000,   // 끌려오다가 벽에 박을 때마다(벽 하나에 한 번) 받는 피해 (1레벨 기준)
       tearDamage: 2500,       // 끌고 온 뒤 양손으로 찢을 때 주는 피해 (1레벨 기준)
       tearDuration: 0.9,      // 찢는 모션(붙잡고 -> 찢기) 시간(초). 모션이 끝나는 순간 피해가 들어감
+    },
+    gadget: {
+      name: '질주 보호막',
+      type: 'guardBoost',          // 조준 불필요, 즉시 발동해서 duration초 동안 이동속도 증가 + 받는 피해 감소(보호막)
+      instant: true,
+      duration: 5,                 // 지속 시간(초)
+      speedMultiplier: 1.05,       // 이동속도 배율 (1.05 = 5% 증가)
+      damageTakenMultiplier: 0.9,  // 받는 피해 배율 (0.9 = 10% 감소)
     },
   },
 };
@@ -1614,6 +1634,7 @@ function describeBasic(b) {
     parts.push(`전방 ${b.angleDegrees}도 부채꼴 범위(사거리 ${b.range})를 휘둘러 ${fmtNum(b.damage)} 피해를 주고${b.knockback ? ` ${b.knockback}만큼 뒤로 밀쳐냄` : ' 범위 안의 모든 적을 맞힘 (광역 피해)'}`);
     if (b.allyHeal > 0) parts.push(`같은 범위 안의 아군(자신 제외)은 ${fmtNum(b.allyHeal)}씩 회복`);
     if (b.centerDamage > 0) parts.push(`양팔이 모이는 조준 방향 정면(약 ${b.centerAngleDegrees || 30}도)에서 맞은 적은 광역 피해 대신 ${fmtNum(b.centerDamage)} 피해`);
+    if (b.delay > 0) parts.push(`공격 버튼을 누르고 ${b.delay}초 뒤에 발동 (기다리는 동안 이동 가능, 공격 방향은 누른 순간으로 고정)`);
   } else if (b.currentHpRatio > 0) {
     // 진우Park의 하트: 고정 피해가 아니라 대상의 현재 체력 비율로 피해를 줌
     parts.push(`하트를 발사해 적의 현재 체력의 ${Math.round(b.currentHpRatio * 100)}% 피해 (보호막이 있으면 보호막까지 합친 체력 기준)${b.executeBelowHp > 0 ? `, 맞은 적의 체력이 ${fmtNum(b.executeBelowHp)} 이하면 즉사` : ''}`);
@@ -1797,6 +1818,9 @@ function describeGadget(g) {
     case 'speedBoost':
       desc = `${g.duration}초 동안 이동속도 ${fmtMult(g.speedMultiplier)}배`;
       break;
+    case 'guardBoost':
+      desc = `조준 불필요, ${g.duration}초 동안 이동속도 ${Math.round((g.speedMultiplier - 1) * 100)}% 증가 + 받는 피해 ${Math.round((1 - g.damageTakenMultiplier) * 100)}% 감소 (보호막)`;
+      break;
     case 'teamSpeedBoost':
       desc = `조준 불필요, 뿔피리를 불어 ${g.duration}초 동안 자신을 포함한 모든 아군의 이동속도가 ${Math.round((g.speedMultiplier - 1) * 100)}% 빨라짐`;
       break;
@@ -1928,6 +1952,7 @@ function describeHyper(hy) {
   if (hy.ultimateDashReturn) parts.push('발동 중 궁극기를 쓰면 돌진했다가 출발한 자리로 다시 돌아오며, 갈 때와 올 때 모두 피해와 기절을 줌');
   if (hy.ultimateRadiusMultiplier) parts.push(`발동 중 궁극기의 공격 범위 ${pct(hy.ultimateRadiusMultiplier)}% 증가`);
   if (hy.ultimateLandStun) parts.push(`발동 중 궁극기로 띄운 적이 땅에 떨어지면 ${hy.ultimateLandStun}초 동안 기절`);
+  if (hy.ultimateAllyInvincibleSec) parts.push(`발동 중 궁극기를 쓰면 자신을 포함한 모든 아군이 ${hy.ultimateAllyInvincibleSec}초 동안 어떤 피해도 받지 않는 무적 상태가 됨`);
   if (hy.ultimateStrikeCount) parts.push(`발동 중 궁극기를 쓰면 번개가 ${hy.ultimateStrikeCount}개 떨어짐`);
   if (hy.ultimateChargeMultiplier) parts.push(`발동 중 궁극기 충전량 ${pct(hy.ultimateChargeMultiplier)}% 증가`);
   if (hy.ultimateDistanceMultiplier) parts.push(`발동 중 궁극기 점프 거리 ${pct(hy.ultimateDistanceMultiplier)}% 증가`);
@@ -2072,6 +2097,10 @@ const BUFFY_CATALOG = [
   { id: 'seongseureopda_basic', charId: 'seongseureopda', kind: 'basic', desc: '벽에 튕긴 뒤에 맞은 칼은 10% 추가 피해를 줌', effect: { bounceDamageMult: 1.1 } },
   { id: 'seongseureopda_gadget', charId: 'seongseureopda', kind: 'gadget', desc: '가젯(저격 사격)의 총알이 적을 맞혀도 사라지지 않고 관통함', effect: { gadgetPierce: true } },
   { id: 'seongseureopda_hyper', charId: 'seongseureopda', kind: 'hyper', desc: '하이퍼 차지 발동 중 투사체 크기가 5% 증가', effect: { hyperProjRadiusMult: 1.05 } },
+  // 진정
+  { id: 'jinjeong_basic', charId: 'jinjeong', kind: 'basic', desc: '기본공격(광역 휘두르기)을 할 때마다 자신도 체력 500 회복', effect: { basicSelfHeal: 500 } },
+  { id: 'jinjeong_gadget', charId: 'jinjeong', kind: 'gadget', desc: '가젯(뿔피리 불기)을 사용하면 자신을 포함한 모든 아군이 5초 동안 0.5초마다 체력 250 회복', effect: { gadgetTeamRegenAmount: 250, gadgetTeamRegenIntervalSec: 0.5, gadgetTeamRegenSec: 5 } },
+  { id: 'jinjeong_hyper', charId: 'jinjeong', kind: 'hyper', desc: '하이퍼 차지 지속시간 2초 증가 + 하이퍼 차지 발동 중 자신과 모든 아군의 재장전 속도 10% 증가', effect: { hyperDurationBonusSec: 2, hyperTeamReloadMult: 1.1 } },
 ].map((b) => ({ ...b, name: BUFFY_KIND_NAMES[b.kind] }));
 function buffyById(id) { return BUFFY_CATALOG.find((b) => b.id === id) || null; }
 function ownedBuffiesOf(u) { // 보유한 버피 id 목록 (카탈로그에 없는 값/중복은 무시)
@@ -2084,7 +2113,7 @@ function buffyCatalogPublic() {
 // 캐릭터에 장착된 기어들의 효과 합계 (최대 장착 수까지만 인정)
 function gearBonusOf(u, charId) {
   // reloadSpeed: 재장전 속도 증가율(덧셈) / fullHpTakenMult: 체력이 가득 찰 때 받는 피해 배율(곱셈, 1 = 효과 없음) / lowHpDamageBonus: 체력 50% 이하일 때 공격력 증가율(덧셈) / fullAmmoRangeBonus: 탄창이 가득(3개)일 때 사거리 증가율(덧셈)
-  const total = { reloadSpeed: 0, fullHpTakenMult: 1, lowHpDamageBonus: 0, fullAmmoRangeBonus: 0, healBonus: 0, startShield: 0, ultChargeBonus: 0, projectileSpeedBonus: 0, lowHpSpeedBonus: 0, chainDamageBonus: 0, damageTakenUltCharge: 0, gadgetCooldownSec: 0, bandageHeal: 0, ultStealthSec: 0, lifesteal: 0, hyperDurationBonusSec: 0, maxAmmoBonus: 0, moveSpeedMult: 1, buffyBasicRadiusMult: 1, buffyGadgetSlowMult: 1, buffyGadgetSlowSec: 0, buffyHyperUltRadiusMult: 1, buffyBasicSpeedMult: 1, buffyBasicSpeedSec: 0, buffyGadgetShieldMult: 1, buffyGadgetShieldSec: 0, buffyBasicPoolLifeBonus: 0, buffyGadgetReloadMult: 1, buffyGadgetReloadSec: 0, buffyHyperUltSpeedMult: 1, buffyAllHitSpeedMult: 1, buffyAllHitSpeedSec: 0, buffyAuraSlowMult: 1, buffyAuraRadius: 0, buffyHyperSpreadDegrees: 0, buffyHitSpeedMult: 1, buffyHitSpeedSec: 0, buffyHyperTakenMult: 1, buffyBounceDamageMult: 1, buffyGadgetPierce: false, buffyHyperProjRadiusMult: 1, buffyBasicProjSpeedMult: 1, buffyShieldOnKnock: false, buffyHyperRegenAmount: 0, buffyHyperRegenInterval: 0.5 };
+  const total = { reloadSpeed: 0, fullHpTakenMult: 1, lowHpDamageBonus: 0, fullAmmoRangeBonus: 0, healBonus: 0, startShield: 0, ultChargeBonus: 0, projectileSpeedBonus: 0, lowHpSpeedBonus: 0, chainDamageBonus: 0, damageTakenUltCharge: 0, gadgetCooldownSec: 0, bandageHeal: 0, ultStealthSec: 0, lifesteal: 0, hyperDurationBonusSec: 0, maxAmmoBonus: 0, moveSpeedMult: 1, buffyBasicRadiusMult: 1, buffyGadgetSlowMult: 1, buffyGadgetSlowSec: 0, buffyHyperUltRadiusMult: 1, buffyBasicSpeedMult: 1, buffyBasicSpeedSec: 0, buffyGadgetShieldMult: 1, buffyGadgetShieldSec: 0, buffyBasicPoolLifeBonus: 0, buffyGadgetReloadMult: 1, buffyGadgetReloadSec: 0, buffyHyperUltSpeedMult: 1, buffyAllHitSpeedMult: 1, buffyAllHitSpeedSec: 0, buffyAuraSlowMult: 1, buffyAuraRadius: 0, buffyHyperSpreadDegrees: 0, buffyHitSpeedMult: 1, buffyHitSpeedSec: 0, buffyHyperTakenMult: 1, buffyBounceDamageMult: 1, buffyGadgetPierce: false, buffyHyperProjRadiusMult: 1, buffyBasicProjSpeedMult: 1, buffyShieldOnKnock: false, buffyHyperRegenAmount: 0, buffyHyperRegenInterval: 0.5, buffyBasicSelfHeal: 0, buffyGadgetTeamRegenAmount: 0, buffyGadgetTeamRegenInterval: 0.5, buffyGadgetTeamRegenSec: 0, buffyHyperTeamReloadMult: 1 };
   const seenGearIds = new Set(); // 같은 기어는 한 캐릭터에 한 번만 효과 적용 (이전 데이터의 중복 장착 대비)
   for (const g of ownedGearsOf(u).filter((x) => x.charId === charId).filter((x) => !seenGearIds.has(x.gearId) && seenGearIds.add(x.gearId)).slice(0, GEAR_MAX_PER_CHARACTER)) {
     if (!gearAllowedOn(g.gearId, charId)) continue; // 장착할 수 없는 캐릭터에 (잘못) 붙어 있어도 효과는 적용하지 않음
@@ -2132,6 +2161,9 @@ function gearBonusOf(u, charId) {
     if (e.gadgetShieldTakenMult) { total.buffyGadgetShieldMult = e.gadgetShieldTakenMult; total.buffyGadgetShieldSec = e.gadgetShieldSec || 2; total.buffyShieldOnKnock = !!e.gadgetShieldOnKnockback; } // gadgetShieldOnKnockback: 가젯을 쓰는 순간이 아니라 가젯으로 적을 밀친 뒤에 보호막이 생김
     if (e.basicProjSpeedMult) total.buffyBasicProjSpeedMult *= e.basicProjSpeedMult;
     if (e.hyperRegenAmount) { total.buffyHyperRegenAmount = e.hyperRegenAmount; total.buffyHyperRegenInterval = e.hyperRegenIntervalSec || 0.5; }
+    if (e.basicSelfHeal) total.buffyBasicSelfHeal += e.basicSelfHeal;
+    if (e.gadgetTeamRegenAmount) { total.buffyGadgetTeamRegenAmount = e.gadgetTeamRegenAmount; total.buffyGadgetTeamRegenInterval = e.gadgetTeamRegenIntervalSec || 0.5; total.buffyGadgetTeamRegenSec = e.gadgetTeamRegenSec || 5; }
+    if (e.hyperTeamReloadMult) total.buffyHyperTeamReloadMult *= e.hyperTeamReloadMult;
   }
   return total;
 }
@@ -2744,7 +2776,7 @@ const ANNOUNCEMENTS = [
     items: [
       '새 어쌔신 중간이 등장했어요! 체력 5,500(1레벨 기준) / 이동속도 빠름 / 🪙 300 코인으로 잠금해제할 수 있어요.',
       '기본공격 [양팔 모으기]: 250도 범위로 양팔을 벌렸다 모아 범위 안의 적에게 1,500 피해, 양팔이 모이는 조준 방향 정면에서 맞은 적은 3,000 피해를 받아요.',
-      '궁극기 [잡아 찢기]: 조준한 방향으로 벽을 무시하는 손을 뻗어 처음 닿은 적을 끌고 와요. 끌려오다 벽에 박을 때마다 1,000 피해, 끌려온 뒤 양손으로 찢어서 2,500 피해를 줘요. 가젯은 없어요.',
+      '궁극기 [잡아 찢기]: 조준한 방향으로 벽을 무시하는 손을 뻗어 처음 닿은 적을 끌고 와요. 끌려오다 벽에 박을 때마다 1,000 피해, 끌려온 뒤 양손으로 찢어서 2,500 피해를 줘요. 가젯 [질주 보호막]: 5초 동안 이동속도가 5% 빨라지고 받는 피해가 10% 감소하는 보호막을 얻어요.',
     ],
   },
   {
@@ -5523,11 +5555,19 @@ async function settleAiMatch(match, winnerTeam, reason) {
     if (!key) continue;
     try {
       const bonus = rollHalloweenBonus(); // 🎃 할로윈 이벤트 중이면 승리할 때마다 50~500코인 추가 (기본 보상과 한 번에 지급)
-      const user = await db.addAiReward(key, diff.coinReward + bonus, p.characterId, diff.trophyReward);
+      let user = await db.addAiReward(key, diff.coinReward + bonus, p.characterId, diff.trophyReward);
+      // AI 2:2 승리: 내가 직접 적을 처치한 횟수(p.score) 1번마다 블링 지급 (내 편 AI의 처치는 포함하지 않음)
+      const kills = match.mode === '2v2' ? Math.max(0, p.score || 0) : 0;
+      const blingReward = kills * AI_2V2_KILL_BLING;
+      if (blingReward > 0) {
+        const withBling = await db.addBling(key, blingReward);
+        if (withBling) user = withBling;
+      }
       const s = io.sockets.sockets.get(pid);
       if (s && user) {
         s.emit('profileUpdate', publicProfile(user));
         if (bonus > 0) s.emit('aiBonus', { coins: bonus });
+        if (blingReward > 0) s.emit('aiBling', { kills, bling: blingReward });
       }
     } catch (e) {
       console.error('AI 대결 보상 지급 실패', key, e);
@@ -6293,6 +6333,15 @@ function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hy
     buffyHyperRegenAmount: (gear && gear.buffyHyperRegenAmount) || 0,     // 버피(하이퍼차지): 하이퍼 차지 발동 중 주기마다 회복하는 체력
     buffyHyperRegenInterval: (gear && gear.buffyHyperRegenInterval) || 0.5, // 버피(하이퍼차지): 위 회복이 일어나는 주기(초)
     buffyHyperRegenNext: 0,                                                // 다음 회복 시각(ms)
+    buffyBasicSelfHeal: (gear && gear.buffyBasicSelfHeal) || 0,           // 버피(기본공격, 진정): 기본공격을 할 때마다 자신이 회복하는 체력
+    buffyGadgetTeamRegenAmount: (gear && gear.buffyGadgetTeamRegenAmount) || 0,     // 버피(가젯, 진정): 가젯 사용 시 모든 아군이 주기마다 회복하는 체력
+    buffyGadgetTeamRegenInterval: (gear && gear.buffyGadgetTeamRegenInterval) || 0.5, // 위 회복 주기(초)
+    buffyGadgetTeamRegenSec: (gear && gear.buffyGadgetTeamRegenSec) || 0,           // 위 회복이 이어지는 시간(초)
+    buffyHyperTeamReloadMult: (gear && gear.buffyHyperTeamReloadMult) || 1,         // 버피(하이퍼차지, 진정): 하이퍼 차지 발동 중 자신과 모든 아군의 재장전 속도 배율
+    teamRegenUntil: 0,     // (받는 쪽) 이 시각(ms) 전까지 진정의 가젯 버피로 주기적으로 회복
+    teamRegenAmount: 0,
+    teamRegenInterval: 0.5,
+    teamRegenNext: 0,
     buffyBasicPoolLifeBonus: (gear && gear.buffyBasicPoolLifeBonus) || 0, // 버피(기본공격): 기본공격 웅덩이 지속시간 증가(초)
     buffyGadgetReloadMult: (gear && gear.buffyGadgetReloadMult) || 1,     // 버피(가젯): 가젯 사용 후 재장전 속도 배율
     buffyGadgetReloadSec: (gear && gear.buffyGadgetReloadSec) || 0,       // 버피(가젯): 재장전 가속 지속시간(초)
@@ -6330,6 +6379,7 @@ function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hy
     windupUntil: 0,    // 이 시각(ms) 전까지는 공격 선딜 중 (업할의 망치 지진) - 이동 불가, 조준 방향도 고정
     windupTotal: 0,    // 이번 선딜의 전체 길이(ms) - 클라이언트가 경고 범위 진행도를 그릴 때 사용
     windupAngle: 0,    // 이번 선딜이 시작된 순간의 조준 방향 - 선딜 중에는 이 방향으로 고정
+    windupMovable: false, // true 이면 선딜(발동 대기) 중에도 이동할 수 있음 (중간의 양팔 모으기)
     windupId: 0,       // 선딜 취소/무효화용 번호 (타이머 핸들은 상태에 넣지 않음 - 클라이언트로 전송되는 객체이므로)
     knockbackDirX: 0,   // 넉백(밀쳐냄) 진행 방향
     knockbackDirY: 0,
@@ -6384,6 +6434,8 @@ function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hy
     speedMultiplier: 1,     // 이동속도 배율. 매 틱 1로 초기화된 뒤 보배 폭탄 범위 등에 의해 낮아질 수 있음
     speedBoostUntil: 0,      // 이 시각(ms) 전까지 이동속도 증가 (원효대사의 가젯 '초인적인 힘')
     speedBoostMultiplier: 1,
+    gadgetGuardUntil: 0,     // 이 시각(ms) 전까지 가젯 보호막으로 받는 피해 감소 (중간의 가젯 '질주 보호막')
+    gadgetGuardMult: 1,      // 그동안 적용되는 받는 피해 배율
     chargingUntil: 0,        // 이 시각(ms) 전까지 충전 중 (보배의 가젯 '보조배터리 충전') - 이동/공격 불가
     damageBoostFrom: 0,      // damageBoostFrom ~ damageBoostUntil (ms) 동안 공격력 증가
     damageBoostUntil: 0,
@@ -6434,6 +6486,16 @@ function getDamageMultiplier(p) {
   if (p.gearLowHpDamageBonus > 0 && p.hp <= p.maxHp * GEAR_LOW_HP_RATIO) mult *= 1 + p.gearLowHpDamageBonus; // 기어: 체력이 50% 이하일 때 공격력 강화
   return mult;
 }
+// 버피(하이퍼차지, 진정): 같은 팀에 하이퍼 차지가 발동 중인 진정이 있으면 자신과 모든 아군의 재장전 속도가 빨라짐 (여러 명이면 가장 큰 배율 하나만 적용)
+function teamHyperReloadMult(match, p, now) {
+  let best = 1;
+  for (const qid in match.players) {
+    const q = match.players[qid];
+    if (!q.alive || q.team !== p.team) continue;
+    if (q.buffyHyperTeamReloadMult > best && q.hasHyper && q.hyper && q.hyperUntil && now < q.hyperUntil) best = q.buffyHyperTeamReloadMult;
+  }
+  return best;
+}
 // 받는 피해 배율 (하이퍼 차지 발동 중에는 받는 피해 감소)
 function getDamageTakenMultiplier(p) {
   let mult = 1;
@@ -6441,6 +6503,7 @@ function getDamageTakenMultiplier(p) {
   // 기어: 체력이 가득 차 있을 때(이 공격을 받기 직전 기준) 받는 피해 감소. 하이퍼 차지 감소와 곱해져서 적용됨
   if (p && p.gearFullHpTakenMult < 1 && p.hp >= p.maxHp) mult *= p.gearFullHpTakenMult;
   if (p && p.buffyShieldUntil && Date.now() < p.buffyShieldUntil) mult *= p.buffyGadgetShieldMult || 1; // 버피(가젯): 임시 보호막
+  if (p && p.gadgetGuardUntil && Date.now() < p.gadgetGuardUntil) mult *= p.gadgetGuardMult || 1; // 가젯(중간의 질주 보호막): 받는 피해 감소
   return mult;
 }
 // 기본공격이 적중했을 때 궁극기 게이지와 하이퍼 차지 게이지를 함께 채움
@@ -6675,6 +6738,9 @@ function respawnPlayer(m, respawned, invincibleMs) {
   respawned.buffyShotHits = {};
   if (respawned.orbit && respawned.orbit.need > 0) { respawned.orbit.active = false; respawned.orbit.hits = 0; } // 짭새: 죽으면 원이 사라지고 기본공격을 다시 맞혀야 생김
   respawned.speedBoostUntil = 0; // 리스폰 시 가젯 효과(이동속도 증가/충전/공격력 증가)도 초기화
+  respawned.gadgetGuardUntil = 0;
+  respawned.teamRegenUntil = 0; // 진정의 가젯 버피 회복도 초기화
+  respawned.teamRegenNext = 0;
   respawned.chargingUntil = 0;
   respawned.damageBoostFrom = 0;
   respawned.damageBoostUntil = 0;
@@ -7465,6 +7531,17 @@ function performMeleeAttack(match, p, spec, isUltimate, angle = p.angle, stabInd
         effectIdCounter += 1;
         match.effects.push({ id: effectIdCounter, type: 'healPlus', x: ally.x, y: ally.y, amount: gained, ownerId: p.id, life: 0.8, maxLife: 0.8 });
       }
+    }
+  }
+
+  // 버피(기본공격, 진정): 기본공격을 할 때마다 자신도 회복 (최대 체력 초과 불가, 회복 기어 적용)
+  if (spec.allyHeal > 0 && p.buffyBasicSelfHeal > 0 && p.alive && !match.over) {
+    const beforeSelf = p.hp;
+    p.hp = Math.min(p.maxHp, p.hp + p.buffyBasicSelfHeal * (p.gearHealMult || 1));
+    const gainedSelf = Math.round(p.hp - beforeSelf);
+    if (gainedSelf > 0) {
+      effectIdCounter += 1;
+      match.effects.push({ id: effectIdCounter, type: 'healPlus', x: p.x, y: p.y, amount: gainedSelf, ownerId: p.id, life: 0.8, maxLife: 0.8 });
     }
   }
 
@@ -8424,7 +8501,7 @@ function registerGameplayHandlers(socket) {
     if (typeof data.x !== 'number' || typeof data.y !== 'number') return;
 
     // 공격 선딜 중(업할)에는 위치도, 조준 방향도 바꿀 수 없다 (공격 버튼을 누른 순간의 방향으로 고정)
-    if (p.windupUntil && Date.now() < p.windupUntil) {
+    if (p.windupUntil && Date.now() < p.windupUntil && !p.windupMovable) {
       if (typeof p.windupAngle === 'number') p.angle = p.windupAngle;
       return;
     }
@@ -8513,6 +8590,30 @@ function registerGameplayHandlers(socket) {
         p.dashTimeLeft = dashSpec.duration;
         p.dashTotal = dashSpec.duration;
       }
+    } else if (p.basic.type === 'melee' && p.basic.delay > 0) {
+      // 중간의 양팔 모으기: 버튼을 누르고 delay초 뒤에 발동. 기다리는 동안 이동은 자유롭고, 공격 방향만 누른 순간으로 고정된다.
+      // 발동 시점의 내 위치에서 판정하므로, 움직이면 그 자리에서 공격이 나간다. (기절/사망/리스폰 시에는 취소)
+      const delayMs = p.basic.delay * 1000;
+      p.windupId = (p.windupId || 0) + 1;
+      const myWindupId = p.windupId;
+      p.windupMovable = true;
+      p.windupUntil = now + delayMs;
+      p.windupTotal = delayMs;
+      p.windupAngle = p.angle; // 클라이언트가 경고 범위를 이 방향으로 그림
+      const lockedAngle = p.angle;
+      const attackerId = p.id;
+      const atkSpec = p.basic;
+      const matchId = match.id;
+      setTimeout(() => {
+        const m = matches[matchId];
+        if (!m || m.over) return;
+        const s = m.players[attackerId];
+        if (!s || !s.alive || s.windupId !== myWindupId) return; // 죽었거나 리스폰/취소된 경우
+        s.windupUntil = 0;
+        s.windupMovable = false;
+        if (s.leaping || (s.stunnedUntil && Date.now() < s.stunnedUntil)) return; // 기다리는 중 기절당하면 공격이 취소됨
+        performMeleeAttack(m, s, atkSpec, false, lockedAngle);
+      }, delayMs);
     } else if ((p.basic.type === 'melee' || p.basic.type === 'quake') && p.basic.windup > 0) {
       // 업할의 망치 지진: 버튼을 누르면 windup초 동안 이동 불가 상태로 망치를 치켜들고, 시간이 지나면 그때의 조준 방향으로 지진 발동
       // 체력에 비례해서 선딜 단축: 체력 가득 = windup초, 체력이 줄어들수록 짧아짐 (공격 버튼을 누른 순간의 체력 기준, 최소 windupMin초)
@@ -8520,6 +8621,7 @@ function registerGameplayHandlers(socket) {
       const windupMs = Math.max((p.basic.windupMin || 0) * 1000, p.basic.windup * 1000 * hpRatio);
       p.windupId = (p.windupId || 0) + 1;
       const myWindupId = p.windupId;
+      p.windupMovable = false;
       p.windupUntil = now + windupMs;
       p.windupTotal = windupMs;
       p.windupAngle = p.angle; // 선딜이 시작된 순간의 조준 방향 - 선딜이 끝날 때까지 고정
@@ -8770,6 +8872,13 @@ function registerGameplayHandlers(socket) {
       // 원효대사의 가젯: duration초 동안 이동속도 증가 (재사용 시 새로 duration초로 갱신)
       p.speedBoostUntil = Date.now() + (gadget.duration || 2) * 1000;
       p.speedBoostMultiplier = gadget.speedMultiplier || 1.3;
+    } else if (gadget.type === 'guardBoost') {
+      // 중간의 가젯: duration초 동안 이동속도 증가 + 받는 피해 감소 (재사용 시 새로 duration초로 갱신)
+      const guardMs = (gadget.duration || 5) * 1000;
+      p.speedBoostUntil = Date.now() + guardMs;
+      p.speedBoostMultiplier = gadget.speedMultiplier || 1.05;
+      p.gadgetGuardUntil = Date.now() + guardMs;
+      p.gadgetGuardMult = gadget.damageTakenMultiplier || 0.9;
     } else if (gadget.type === 'teamSpeedBoost') {
       // 진정의 뿔피리 불기: 자신을 포함한 살아있는 모든 아군이 duration초 동안 이동속도 증가 (이미 더 큰 속도 증가가 걸려 있으면 그 배율은 유지하고 시간만 늘림)
       const nowMs = Date.now();
@@ -8781,6 +8890,13 @@ function registerGameplayHandlers(socket) {
         const active = ally.speedBoostUntil && nowMs < ally.speedBoostUntil;
         ally.speedBoostMultiplier = Math.max(boostMult, active ? (ally.speedBoostMultiplier || 1) : 1);
         ally.speedBoostUntil = Math.max(boostUntil, active ? ally.speedBoostUntil : 0);
+        if (p.buffyGadgetTeamRegenAmount > 0) { // 버피(가젯, 진정): 자신을 포함한 모든 아군이 일정 시간 동안 주기마다 체력 회복 (다시 쓰면 새로 시작)
+          const regenStepMs = Math.max(100, (p.buffyGadgetTeamRegenInterval || 0.5) * 1000);
+          ally.teamRegenAmount = p.buffyGadgetTeamRegenAmount;
+          ally.teamRegenInterval = p.buffyGadgetTeamRegenInterval || 0.5;
+          ally.teamRegenUntil = nowMs + (p.buffyGadgetTeamRegenSec || 5) * 1000;
+          ally.teamRegenNext = nowMs + regenStepMs;
+        }
       }
     } else if (gadget.type === 'reloadBoost') {
       // 꽈리의 가젯: duration초 동안 재장전 속도 증가 (재사용 시 새로 duration초로 갱신)
@@ -9014,9 +9130,14 @@ function registerGameplayHandlers(socket) {
       p.phaseSpeedMult = ult.speedMultiplier || 1.05;
     } else if (ult.type === 'teamHeal') {
       // 진정의 단체 회복: 조준 불필요, 자신을 포함한 살아있는 모든 아군의 체력을 healAmount씩 즉시 회복 (최대 체력 초과 불가)
+      // 하이퍼 차지 발동 중이면 자신을 포함한 모든 아군이 ultimateAllyInvincibleSec초 동안 무적
+      const nowHeal = Date.now();
+      const healHyperOn = p.hasHyper && p.hyper && p.hyperUntil && nowHeal < p.hyperUntil;
+      const allyInvSec = healHyperOn ? (p.hyper.ultimateAllyInvincibleSec || 0) : 0;
       for (const pid in match.players) {
         const ally = match.players[pid];
         if (!ally.alive || ally.team !== p.team) continue;
+        if (allyInvSec > 0) ally.invincibleUntil = Math.max(ally.invincibleUntil || 0, nowHeal + allyInvSec * 1000);
         const before = ally.hp;
         ally.hp = Math.min(ally.maxHp, ally.hp + (ult.healAmount || 2000) * (ally.gearHealMult || 1)); // 회복 기어: 회복받는 쪽의 회복량 증가
         const gained = Math.round(ally.hp - before);
@@ -10317,6 +10438,28 @@ function updateMatch(match, dt, now) {
 
   updateGrabs(match, dt, now); // 중간의 궁극기 '잡아 찢기' 진행
 
+  // 버피(가젯, 진정): 가젯을 맞은 아군(자신 포함)이 정해진 시간 동안 주기마다 체력을 회복 (최대 체력 초과 불가, 회복 기어 적용)
+  {
+    const nowT = Date.now();
+    for (const pid in match.players) {
+      const p = match.players[pid];
+      if (!p.teamRegenUntil) continue;
+      if (!p.alive) { p.teamRegenUntil = 0; p.teamRegenNext = 0; continue; } // 죽으면 회복 중단
+      const stepT = Math.max(100, (p.teamRegenInterval || 0.5) * 1000);
+      while (p.teamRegenNext && nowT >= p.teamRegenNext && p.teamRegenNext <= p.teamRegenUntil) {
+        const beforeT = p.hp;
+        p.hp = Math.min(p.maxHp, p.hp + p.teamRegenAmount * (p.gearHealMult || 1));
+        const gainedT = Math.round(p.hp - beforeT);
+        if (gainedT > 0) {
+          effectIdCounter += 1;
+          match.effects.push({ id: effectIdCounter, type: 'healPlus', x: p.x, y: p.y, amount: gainedT, ownerId: p.id, life: 0.8, maxLife: 0.8 });
+        }
+        p.teamRegenNext += stepT;
+      }
+      if (nowT >= p.teamRegenUntil) { p.teamRegenUntil = 0; p.teamRegenNext = 0; } // 마지막 회복까지 마친 뒤 종료
+    }
+  }
+
   // 버피(하이퍼차지, 여똥이): 하이퍼 차지가 발동 중인 동안 주기마다 체력을 회복 (최대 체력 초과 불가, 회복 기어 적용)
   {
     const nowR = Date.now();
@@ -10390,7 +10533,7 @@ function updateMatch(match, dt, now) {
     if (p.reloadAllAtOnce) {
       // 시스템: 탄창을 전부 쓴 뒤에야 재장전이 시작되고, 시간이 다 차면 한꺼번에 가득 참 (중간에는 한 발씩 차지 않음)
       if (p.ammo <= 0) {
-        p.ammoRegenElapsed += dt * (1 + (p.gearReloadBonus || 0)) * (p.reloadBoostUntil && now < p.reloadBoostUntil ? p.reloadBoostMultiplier || 1 : 1);
+        p.ammoRegenElapsed += dt * (1 + (p.gearReloadBonus || 0)) * (p.reloadBoostUntil && now < p.reloadBoostUntil ? p.reloadBoostMultiplier || 1 : 1) * teamHyperReloadMult(match, p, now);
         if (p.ammoRegenElapsed >= (p.ammoRegenSeconds || AMMO_REGEN_SECONDS)) {
           p.ammo = p.maxAmmo;
           p.ammoRegenElapsed = 0;
@@ -10400,7 +10543,7 @@ function updateMatch(match, dt, now) {
       }
     } else if (p.ammo < p.maxAmmo) {
       // 탄창이 가득 차지 않았으면 시간이 지날 때마다 한 발씩 채워짐
-      p.ammoRegenElapsed += dt * (1 + (p.gearReloadBonus || 0)) * (p.reloadBoostUntil && now < p.reloadBoostUntil ? p.reloadBoostMultiplier || 1 : 1);
+      p.ammoRegenElapsed += dt * (1 + (p.gearReloadBonus || 0)) * (p.reloadBoostUntil && now < p.reloadBoostUntil ? p.reloadBoostMultiplier || 1 : 1) * teamHyperReloadMult(match, p, now);
       const regenSec = p.ammoRegenSeconds || AMMO_REGEN_SECONDS;
       if (p.ammoRegenElapsed >= regenSec) {
         p.ammo = Math.min(p.maxAmmo, p.ammo + 1);
@@ -10437,13 +10580,27 @@ function updateMatch(match, dt, now) {
 function buildVisiblePlayers(match, viewerId) {
   const viewer = match.players[viewerId];
   const result = {};
+  // 죽은 시청자(팀전 관전)는 자기 위치가 아니라 '살아있는 아군'의 시야를 그대로 본다.
+  // 아군 중 한 명이라도 볼 수 있는 적이면 보이고, 모든 아군에게 숨은 적만 좌표를 빼고 보낸다.
+  let spectateMates = null;
+  if (viewer && !viewer.alive && !viewer.isDummy) {
+    const mates = [];
+    for (const mid in match.players) {
+      const m = match.players[mid];
+      if (mid !== viewerId && m.team === viewer.team && m.alive && !m.isDummy) mates.push(m);
+    }
+    if (mates.length > 0) spectateMates = mates;
+  }
   for (const pid in match.players) {
     const p = match.players[pid];
     if (!viewer || pid === viewerId || p.team === viewer.team || p.isDummy) { // 훈련장 허수아비는 덤불 안에 있어도 항상 보임
       result[pid] = p;
       continue;
     }
-    if (isHiddenFromEnemy(match.bushes, p, viewer)) {
+    const hiddenFromViewer = spectateMates
+      ? spectateMates.every((m) => isHiddenFromEnemy(match.bushes, p, m))
+      : isHiddenFromEnemy(match.bushes, p, viewer);
+    if (hiddenFromViewer) {
       const { x, y, ...rest } = p; // 위치 정보만 제거
       result[pid] = rest;
     } else {
@@ -11214,7 +11371,7 @@ function runAiBot(match, botId, ai, dt, now) {
     else if (g.type === 'reflect') {
       // 적의 투사체가 자신 쪽으로 날아오고 있으면 사용
       use = match.bullets.some((b) => !b.lob && b.team !== p.team && Math.hypot(b.x - p.x, b.y - p.y) < 400 && (b.vx * (p.x - b.x) + b.vy * (p.y - b.y)) > 0);
-    } else if (g.type === 'speedBoost' || g.type === 'teamSpeedBoost' || g.type === 'sprint' || g.type === 'invincible' || g.type === 'shield') {
+    } else if (g.type === 'speedBoost' || g.type === 'guardBoost' || g.type === 'teamSpeedBoost' || g.type === 'sprint' || g.type === 'invincible' || g.type === 'shield') {
       use = !!target && dist < (escaping ? 600 : 400) && mode !== 'hide'; // 도망칠 때 탈출용으로 사용
       if (use && g.type === 'sprint' && mode === 'flee' && (moveX || moveY)) {
         h.playerUpdate({ x: p.x, y: p.y, angle: Math.atan2(moveY, moveX) }); // 돌진은 바라보는 방향으로 나가므로, 도망 방향을 보고 사용
