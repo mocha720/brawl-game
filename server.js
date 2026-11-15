@@ -608,7 +608,7 @@ const CHARACTERS = {
     id: 'wonhyo',
     name: '원효대사',
     moveSpeedTier: 'slow', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
-    maxHp: 6500, // 기존 7500에서 너프
+    maxHp: 5000, // 1레벨 기준 (7500 -> 6500 -> 5000으로 너프)
     basic: {
       name: '해골물 뿌리기',
       type: 'skullwater',
@@ -1178,7 +1178,7 @@ const CHARACTERS = {
       distance: 364,          // 최대 투척 거리(px) - 기존 520에서 30% 감소
       minDistance: 0,       // 최소 투척 거리(px). 조준(PC 마우스 위치 / 모바일 스틱 당김)에 따라 minDistance ~ distance 사이로 조절됨
       selfKnockback: 220,     // 폭발 범위 안에 자신(나이)이 있으면 폭발 중심 바깥쪽으로 이만큼(px) 날아감. 자신에게는 피해 없음
-      ammoRegenSeconds: AMMO_REGEN_SECONDS * 1.4, // 기본공격 재장전 시간이 다른 캐릭터보다 40% 느림 (1.8초 -> 2.52초)
+      ammoRegenSeconds: (AMMO_REGEN_SECONDS * 1.4) / 1.3, // 기본공격 재장전 속도 30% 빠르게 (재장전 시간 = 기존 2.52초 / 1.3 = 약 1.94초). 기본 재장전(1.8초)보다는 여전히 조금 느림
       flightTime: 1.25,       // 던진 뒤 땅에 떨어져 폭발할 때까지 걸리는 시간(초) - 공격 후 1.25초 뒤 착지 (기존 2초). 던지는 거리와 상관없이 항상 같음 (가까울수록 느리게, 멀수록 빠르게 날아감)
       radius: 12,
       arcHeight: 110,         // 포물선 최고 높이(px) - 화면 연출용 (판정에는 영향 없음)
@@ -1501,7 +1501,7 @@ const CHARACTERS = {
       name: '광역 휘두르기',
       type: 'melee',        // 발사체가 아니라 즉시 판정되는 근접 공격
       damage: 1300,         // 부채꼴 안의 모든 적에게 주는 피해 (1레벨 기준)
-      allyHeal: 500,        // 같은 부채꼴 안의 아군(자신 제외)을 회복시키는 양 (1레벨 기준, 레벨이 오르면 공격력 배율만큼 늘어남)
+      allyHeal: 700,        // 같은 부채꼴 안의 아군(자신 제외)을 회복시키는 양 (1레벨 기준, 레벨이 오르면 공격력 배율만큼 늘어남) - 500에서 상향
       angleDegrees: 75,     // 바라보는 방향을 중심으로 한 부채꼴의 전체 각도(중심각)
       range: 170,           // 부채꼴 반경(사거리)
       visual: 'jinjeongFan',
@@ -1518,6 +1518,33 @@ const CHARACTERS = {
       instant: true,
       duration: 4,          // 지속 시간(초)
       speedMultiplier: 1.25, // 이동속도 배율 (1.25 = 25% 증가)
+    },
+  },
+  jungan: {
+    id: 'jungan',
+    name: '중간',
+    moveSpeedTier: 'fast', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
+    maxHp: 5500, // 1레벨 기준
+    basic: {
+      name: '양팔 모으기',
+      type: 'melee',          // 발사체가 아니라 즉시 판정되는 근접 공격
+      damage: 1500,           // 부채꼴 안의 모든 적에게 주는 광역 피해 (1레벨 기준)
+      angleDegrees: 250,      // 양팔을 벌린 범위: 조준 방향을 중심으로 한 부채꼴의 전체 각도(중심각)
+      centerDamage: 3000,     // 양팔이 모이는 지점(조준 방향 정면)에서 맞은 적은 광역 피해 대신 이 피해를 받음 (1레벨 기준, 겹쳐서 더해지지 않음)
+      centerAngleDegrees: 30, // '양팔이 모이는 지점'으로 치는 정면 부채꼴의 전체 각도 (몸 크기만큼 너그럽게 판정)
+      range: 130,             // 부채꼴 반경(사거리)
+      visual: 'junganArms',
+      effectLife: 0.35,
+    },
+    ultimate: {
+      name: '잡아 찢기',
+      type: 'grab',           // 조준한 방향으로 손을 뻗어 닿은 첫 적을 끌어와서 양손으로 찢음 (손은 벽을 무시하고 지나가며, 끌려오는 적도 벽을 뚫고 오면서 벽에 박힘)
+      range: 750,             // 손이 뻗어나가는 최대 거리(px)
+      handSpeed: 1800,        // 손이 뻗어나가는 속도(px/초)
+      pullSpeed: 1500,        // 적을 끌어오는 속도(px/초)
+      wallSlamDamage: 1000,   // 끌려오다가 벽에 박을 때마다(벽 하나에 한 번) 받는 피해 (1레벨 기준)
+      tearDamage: 2500,       // 끌고 온 뒤 양손으로 찢을 때 주는 피해 (1레벨 기준)
+      tearDuration: 0.9,      // 찢는 모션(붙잡고 -> 찢기) 시간(초). 모션이 끝나는 순간 피해가 들어감
     },
   },
 };
@@ -1586,6 +1613,7 @@ function describeBasic(b) {
     damage = b.damage;
     parts.push(`전방 ${b.angleDegrees}도 부채꼴 범위(사거리 ${b.range})를 휘둘러 ${fmtNum(b.damage)} 피해를 주고${b.knockback ? ` ${b.knockback}만큼 뒤로 밀쳐냄` : ' 범위 안의 모든 적을 맞힘 (광역 피해)'}`);
     if (b.allyHeal > 0) parts.push(`같은 범위 안의 아군(자신 제외)은 ${fmtNum(b.allyHeal)}씩 회복`);
+    if (b.centerDamage > 0) parts.push(`양팔이 모이는 조준 방향 정면(약 ${b.centerAngleDegrees || 30}도)에서 맞은 적은 광역 피해 대신 ${fmtNum(b.centerDamage)} 피해`);
   } else if (b.currentHpRatio > 0) {
     // 진우Park의 하트: 고정 피해가 아니라 대상의 현재 체력 비율로 피해를 줌
     parts.push(`하트를 발사해 적의 현재 체력의 ${Math.round(b.currentHpRatio * 100)}% 피해 (보호막이 있으면 보호막까지 합친 체력 기준)${b.executeBelowHp > 0 ? `, 맞은 적의 체력이 ${fmtNum(b.executeBelowHp)} 이하면 즉사` : ''}`);
@@ -1671,6 +1699,12 @@ function describeUltimate(u) {
       break;
     case 'heal':
       desc = '조준 불필요, 즉시 체력을 가득 채움';
+      break;
+    case 'phase':
+      desc = `조준 불필요, ${u.duration}초 동안 이동속도가 ${Math.round((u.speedMultiplier - 1) * 100)}% 빨라지고 벽을 뚫고 이동할 수 있음 (끝났을 때 벽 안이면 가까운 빈 자리로 밀려남)`;
+      break;
+    case 'grab':
+      desc = `조준한 방향으로 손을 뻗어(사거리 ${fmtNum(u.range)}, 벽은 무시하고 지나감) 처음 닿은 적을 끌어옴. 적은 벽을 뚫고 끌려오다가 벽에 박을 때마다 ${fmtNum(u.wallSlamDamage)} 피해를 받고, 끌려온 뒤 양손으로 붙잡혀 찢기며 ${fmtNum(u.tearDamage)} 피해를 받음 (잡고 있는 동안 중간도 움직일 수 없음)`;
       break;
     case 'teamHeal':
       desc = `조준 불필요, 자신을 포함한 모든 아군의 체력을 즉시 ${fmtNum(u.healAmount)}씩 회복 (최대 체력까지)`;
@@ -1839,7 +1873,7 @@ const LEVEL_TABLE = [
   { hp: 1.350, atk: 1.30, cost: 700 },
 ];
 const LEVEL_TABLE_PUBLIC = LEVEL_TABLE.slice(1).map((t, i) => ({ level: i + 1, hp: t.hp, atk: t.atk, cost: t.cost }));
-const DAMAGE_KEYS = new Set(['damage', 'sideDamage', 'minDamage', 'maxDamage', 'directDamage', 'poolDamage', 'poolFirstDamage', 'tickDamage', 'explodeDamage', 'landDamage', 'allyHeal']); // 공격력 배율을 적용할 수치 이름 (allyHeal: 진정의 기본공격 아군 회복량)
+const DAMAGE_KEYS = new Set(['damage', 'sideDamage', 'minDamage', 'maxDamage', 'directDamage', 'poolDamage', 'poolFirstDamage', 'tickDamage', 'explodeDamage', 'landDamage', 'allyHeal', 'centerDamage', 'wallSlamDamage', 'tearDamage']); // 공격력 배율을 적용할 수치 이름 (allyHeal: 진정의 기본공격 아군 회복량)
 function clampLevel(v) {
   const n = Math.floor(Number(v));
   if (!Number.isFinite(n) || n < 1) return 1;
@@ -2267,6 +2301,7 @@ const CHARACTER_PRICES = {
   guji: 300,
   baechu: 300,
   jinjeong: 300,
+  jungan: 300,
 };
 CHARACTER_PRICES[DEFAULT_CHARACTER_ID] = 0; // 기본 캐릭터는 항상 무료 (사용 가능한 캐릭터가 하나도 없는 상황 방지)
 function priceOf(id) {
@@ -2702,13 +2737,24 @@ function repeatMissionsView(u) {
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
   {
+    id: '2026-11-15-jungan',
+    date: '2026-11-15',
+    tag: 'new',
+    title: '새 캐릭터 [중간] 추가!',
+    items: [
+      '새 어쌔신 중간이 등장했어요! 체력 5,500(1레벨 기준) / 이동속도 빠름 / 🪙 300 코인으로 잠금해제할 수 있어요.',
+      '기본공격 [양팔 모으기]: 250도 범위로 양팔을 벌렸다 모아 범위 안의 적에게 1,500 피해, 양팔이 모이는 조준 방향 정면에서 맞은 적은 3,000 피해를 받아요.',
+      '궁극기 [잡아 찢기]: 조준한 방향으로 벽을 무시하는 손을 뻗어 처음 닿은 적을 끌고 와요. 끌려오다 벽에 박을 때마다 1,000 피해, 끌려온 뒤 양손으로 찢어서 2,500 피해를 줘요. 가젯은 없어요.',
+    ],
+  },
+  {
     id: '2026-11-14-jinjeong',
     date: '2026-11-14',
     tag: 'new',
     title: '새 캐릭터 [진정] 추가!',
     items: [
       '새 서포터 진정이 등장했어요! 체력 5,500(1레벨 기준) / 🪙 300 코인으로 잠금해제할 수 있어요.',
-      '기본공격 [광역 휘두르기]: 전방 75도 부채꼴 안의 적에게 1,300 피해, 같은 범위 안의 아군은 500 회복해요.',
+      '기본공격 [광역 휘두르기]: 전방 75도 부채꼴 안의 적에게 1,300 피해, 같은 범위 안의 아군은 700 회복해요.',
       '궁극기 [단체 회복]: 자신을 포함한 모든 아군의 체력을 즉시 2,000씩 회복해요.',
       '가젯 [뿔피리 불기]: 4초 동안 자신을 포함한 모든 아군의 이동속도가 25% 빨라져요.',
     ],
@@ -6306,7 +6352,11 @@ function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hy
     hyper: hyperOwned && character.hyper ? character.hyper : null,
     hyperCharge: 0,  // 0~100
     hyperUntil: 0,   // 이 시각(ms) 전까지 하이퍼 차지 발동 중
-    wallPassUntil: 0, // 이 시각(ms) 전까지 벽 통과 (원효대사 하이퍼 + 은신)
+    wallPassUntil: 0, // 이 시각(ms) 전까지 벽 통과 (원효대사 하이퍼 + 은신, 중간의 궁극기)
+    grab: null, // 중간의 '잡아 찢기' 진행 상태 (null 이면 사용 중이 아님)
+    grabbedBy: null, // 지금 누구에게 붙잡혀 끌려가는 중인지
+    phaseSpeedUntil: 0, // 이 시각(ms) 전까지 이동속도 증가 (중간의 궁극기 '유령 질주')
+    phaseSpeedMult: 1,
     wallPass: false,
     ejecting: false,  // 벽 통과가 끝나 벽 밖으로 밀려나는 중
     hyperLeft: 0,    // 남은 발동 시간(초) - 클라이언트 표시용 (서버/클라이언트 시계가 달라서 시각 대신 남은 시간을 보냄)
@@ -6631,6 +6681,9 @@ function respawnPlayer(m, respawned, invincibleMs) {
   respawned.hyperUntil = 0; // 하이퍼 차지 발동 중이었다면 해제 (게이지는 궁극기처럼 유지)
   respawned.hyperLeft = 0;
   respawned.wallPassUntil = 0;
+  respawned.phaseSpeedUntil = 0;
+  respawned.grab = null;
+  respawned.grabbedBy = null;
   respawned.wallPass = false;
   respawned.ejecting = false;
   respawned.knockbackTimeLeft = 0;
@@ -7337,6 +7390,7 @@ function performMeleeAttack(match, p, spec, isUltimate, angle = p.angle, stabInd
     y: p.y,
     angle,
     arcDegrees,
+    centerArcDegrees: spec.centerDamage > 0 ? (spec.centerAngleDegrees || 30) : 0, // 중간: 양팔이 모이는 정면 범위(연출용)
     radius: range,
     visual: skinVisual(p, spec.visual) || null, // 스킨이 있으면 근접 공격 연출 모양이 바뀜 (예: 변기통 용사의 검)
     side: stabIndex % 2 === 0 ? -1 : 1, // 양손 찌르기: 왼손/오른손 번갈아 표시
@@ -7362,7 +7416,14 @@ function performMeleeAttack(match, p, spec, isUltimate, angle = p.angle, stabInd
     while (diff < -Math.PI) diff += Math.PI * 2;
     if (Math.abs(diff) > halfAngle + angleSlack(dist, PLAYER_RADIUS)) continue;
 
-    applyDamage(match, target, spec.damage, p.id, { chargeShooter: !isUltimate, chain: !isUltimate && p.gearChainOn });
+    // 양팔이 모이는 지점(조준 방향 정면)에서 맞으면 광역 피해 대신 중앙 피해 (중간). 몸 크기만큼 각도를 너그럽게 봄
+    let hitDamage = spec.damage;
+    if (spec.centerDamage > 0) {
+      const centerHalf = (((spec.centerAngleDegrees || 30) * Math.PI) / 180) / 2;
+      const centerSlack = dist <= PLAYER_RADIUS ? Math.PI : Math.asin(Math.min(1, PLAYER_RADIUS / dist));
+      if (Math.abs(diff) <= centerHalf + centerSlack) hitDamage = spec.centerDamage;
+    }
+    applyDamage(match, target, hitDamage, p.id, { chargeShooter: !isUltimate, chain: !isUltimate && p.gearChainOn });
     if (!isUltimate && p.buffyHitSpeedMult > 1) p.buffyHitSpeedUntil = Date.now() + (p.buffyHitSpeedSec || 0.2) * 1000; // 버피(기본공격): 적을 맞히면 잠깐 이동속도 증가
     if (match.over) break;
 
@@ -8941,6 +9002,16 @@ function registerGameplayHandlers(socket) {
     } else if (ult.type === 'heal') {
       // 여똥이의 간식 처먹기: 조준 불필요, 즉시 체력을 가득 채움
       p.hp = p.maxHp;
+    } else if (ult.type === 'grab') {
+      // 중간의 잡아 찢기: 조준 방향으로 손을 뻗는다. 이후 손의 이동/잡기/끌어오기/찢기는 updateGrabs(매 틱)가 진행하고, 그동안 중간은 기절과 같은 방식으로 움직이지 못한다
+      p.grab = { phase: 'reach', angle: p.angle, dist: 0, maxDist: ult.range || 750, handSpeed: ult.handSpeed || 1800, pullSpeed: ult.pullSpeed || 1500, tearDuration: ult.tearDuration || 0.9, tipX: p.x, tipY: p.y, targetId: null, tearT: 0, destX: 0, destY: 0 };
+      p.stunnedUntil = Math.max(p.stunnedUntil || 0, Date.now() + 150);
+    } else if (ult.type === 'phase') {
+      // 중간의 유령 질주: 조준 불필요, duration초 동안 벽을 통과(wallPass)하고 이동속도 증가. 이미 벽 통과 중이면 시간만 늘림
+      const nowMs = Date.now();
+      p.wallPassUntil = Math.max(p.wallPassUntil || 0, nowMs + (ult.duration || 5) * 1000);
+      p.phaseSpeedUntil = nowMs + (ult.duration || 5) * 1000;
+      p.phaseSpeedMult = ult.speedMultiplier || 1.05;
     } else if (ult.type === 'teamHeal') {
       // 진정의 단체 회복: 조준 불필요, 자신을 포함한 살아있는 모든 아군의 체력을 healAmount씩 즉시 회복 (최대 체력 초과 불가)
       for (const pid in match.players) {
@@ -9260,6 +9331,85 @@ function updateOrbits(match, now) {
         hitChicken(match, chicken, spec.damage * getDamageMultiplier(p), p.id, { charge: true });
       }
       match.chickens = match.chickens.filter((c) => c.hp > 0);
+    }
+  }
+}
+
+// 중간의 궁극기 '잡아 찢기' 진행: 손 뻗기(reach) -> 적 끌어오기(pull) -> 양손으로 찢기(tear)
+// 손은 벽을 무시한다. 끌려오는 적도 벽을 뚫고 오며, 벽 안으로 들어가는 순간마다 한 번씩 wallSlamDamage 를 받는다.
+// 중간과 붙잡힌 적은 매 틱 짧은 기절을 갱신해서(끝나면 0.15초 안에 풀림) 행동/이동이 서버 위치로 고정된다.
+function releaseGrabbed(match, p, target) {
+  if (!target) return;
+  if (target.grabbedBy === p.id) target.grabbedBy = null;
+  target.grabInWall = false;
+  if (target.alive && collidesWithWalls(match.walls, target.x, target.y, PLAYER_RADIUS)) { // 벽 안에서 풀려나면 가까운 빈 자리로
+    const spot = findFreeSpotNear(match.walls, target.x, target.y, 400);
+    target.x = spot.x; target.y = spot.y;
+  }
+}
+function updateGrabs(match, dt, now) {
+  for (const pid in match.players) {
+    const p = match.players[pid];
+    const g = p.grab;
+    if (!g) continue;
+    const spec = p.ultimate || {};
+    const target = g.targetId ? match.players[g.targetId] : null;
+    if (!p.alive || match.over) { releaseGrabbed(match, p, target); p.grab = null; continue; }
+    p.stunnedUntil = Math.max(p.stunnedUntil || 0, now + 150); // 사용하는 동안 중간은 움직이거나 다른 행동을 할 수 없음
+    if (g.phase === 'reach') {
+      const prevD = g.dist;
+      g.dist = Math.min(g.maxDist, g.dist + g.handSpeed * dt);
+      const cx = Math.cos(g.angle), cy = Math.sin(g.angle);
+      const ax = p.x + cx * prevD, ay = p.y + cy * prevD;
+      g.tipX = p.x + cx * g.dist; g.tipY = p.y + cy * g.dist;
+      let best = null, bestT = Infinity;
+      for (const eid in match.players) { // 손은 벽을 무시하고 직진: 이번 틱에 손이 지나간 선분에 닿는 첫 적을 잡는다
+        const e = match.players[eid];
+        if (eid === pid || !e.alive || e.team === p.team || e.invisible || e.leaping || e.airborneTimeLeft > 0 || e.grabbedBy || (e.invincibleUntil && now < e.invincibleUntil)) continue;
+        const sx = g.tipX - ax, sy = g.tipY - ay;
+        const len2 = sx * sx + sy * sy || 1;
+        const tt = Math.max(0, Math.min(1, ((e.x - ax) * sx + (e.y - ay) * sy) / len2));
+        if (Math.hypot(e.x - (ax + sx * tt), e.y - (ay + sy * tt)) <= PLAYER_RADIUS + 10 && tt < bestT) { best = e; bestT = tt; }
+      }
+      if (best) {
+        g.phase = 'pull'; g.targetId = best.id; best.grabbedBy = p.id; best.grabInWall = false;
+        best.dashing = false; best.knockbackTimeLeft = 0; best.windupUntil = 0; // 붙잡히면 하던 돌진/넉백/공격 준비는 끊김
+        const dxp = best.x - p.x, dyp = best.y - p.y, dp = Math.hypot(dxp, dyp) || 1;
+        const hold = PLAYER_RADIUS * 2 + 8; // 끌려와서 멈추는 자리: 중간 바로 앞 (벽 안이면 가까운 빈 자리로)
+        const spot = findFreeSpotNear(match.walls, p.x + (dxp / dp) * hold, p.y + (dyp / dp) * hold, 160);
+        g.destX = spot.x; g.destY = spot.y;
+      } else if (g.dist >= g.maxDist) {
+        p.grab = null; // 아무도 못 잡고 손이 끝까지 뻗었으면 끝 (궁극기는 이미 사용됨)
+      }
+      continue;
+    }
+    if (!target || !target.alive) { releaseGrabbed(match, p, target); p.grab = null; continue; }
+    target.stunnedUntil = Math.max(target.stunnedUntil || 0, now + 150);
+    target.lastServerControlAt = now;
+    if (g.phase === 'pull') {
+      const dx = g.destX - target.x, dy = g.destY - target.y;
+      const d = Math.hypot(dx, dy);
+      const step = g.pullSpeed * dt;
+      if (d <= step) { target.x = g.destX; target.y = g.destY; g.phase = 'tear'; g.tearT = 0; }
+      else { target.x += (dx / d) * step; target.y += (dy / d) * step; }
+      g.tipX = target.x; g.tipY = target.y;
+      const inWall = collidesWithWalls(match.walls, target.x, target.y, PLAYER_RADIUS);
+      if (inWall && !target.grabInWall) { // 벽 안으로 들어가는 순간 한 번 박음 (벽 하나를 지나갈 때마다 1번)
+        applyDamage(match, target, spec.wallSlamDamage || 1000, p.id, { chargeShooter: false });
+        effectIdCounter += 1;
+        match.effects.push({ id: effectIdCounter, type: 'wallSlam', x: target.x, y: target.y, angle: g.angle, ownerId: p.id, life: 0.5, maxLife: 0.5 });
+      }
+      target.grabInWall = inWall;
+    } else if (g.phase === 'tear') {
+      target.x = g.destX; target.y = g.destY;
+      g.tearT += dt;
+      if (g.tearT >= g.tearDuration) { // 찢는 모션이 끝나는 순간 피해
+        applyDamage(match, target, spec.tearDamage || 2500, p.id, { chargeShooter: false });
+        effectIdCounter += 1;
+        match.effects.push({ id: effectIdCounter, type: 'tearBurst', x: target.x, y: target.y, angle: g.angle, ownerId: p.id, life: 0.9, maxLife: 0.9 });
+        releaseGrabbed(match, p, target);
+        p.grab = null;
+      }
     }
   }
 }
@@ -10123,6 +10273,7 @@ function updateMatch(match, dt, now) {
   for (const pid in match.players) {
     const p = match.players[pid];
     if (p.speedBoostUntil && now < p.speedBoostUntil) p.speedMultiplier *= p.speedBoostMultiplier || 1;
+    if (p.phaseSpeedUntil && now < p.phaseSpeedUntil) p.speedMultiplier *= p.phaseSpeedMult || 1; // 중간의 유령 질주
     if (p.slowUntil && now < p.slowUntil) p.speedMultiplier *= p.slowMult || 1; // 버피(가젯) 감속
     if (p.buffySpeedUntil && now < p.buffySpeedUntil) p.speedMultiplier *= p.buffyBasicSpeedMult || 1; // 버피(기본공격): 공격 후 잠깐 빨라짐
     if (p.buffyHitSpeedUntil && now < p.buffyHitSpeedUntil) p.speedMultiplier *= p.buffyHitSpeedMult || 1; // 버피(기본공격): 적을 맞힌 뒤 잠깐 빨라짐 (변기통)
@@ -10163,6 +10314,8 @@ function updateMatch(match, dt, now) {
     const p = match.players[pid];
     p.inBush = p.alive && isInBush(match.bushes, p.x, p.y);
   }
+
+  updateGrabs(match, dt, now); // 중간의 궁극기 '잡아 찢기' 진행
 
   // 버피(하이퍼차지, 여똥이): 하이퍼 차지가 발동 중인 동안 주기마다 체력을 회복 (최대 체력 초과 불가, 회복 기어 적용)
   {
@@ -11002,6 +11155,8 @@ function runAiBot(match, botId, ai, dt, now) {
     let use = false;
     let arg;
     if (ult.type === 'heal') use = myR < 0.55;
+    else if (ult.type === 'grab') use = offensiveOK && !!target && dist > 130 && dist < (ult.range || 750) * 0.85; // 중간: 손은 벽을 무시하므로 시야와 상관없이 사거리 안의 적에게 사용
+    else if (ult.type === 'phase') use = !!target && (mode === 'flee' || mode === 'desperate' || (dist > 260 && dist < 800)); // 중간: 도망칠 때나 적에게 달려들 때 벽을 뚫고 이동
     else if (ult.type === 'teamHeal') { // 아군 전체(자신 포함)의 부족한 체력 합이 충분히 크거나 누군가 위험할 때 사용
       let missing = 0; let danger = false;
       for (const q of Object.values(match.players)) {
