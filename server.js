@@ -16,16 +16,34 @@ const server = http.createServer(app);
 // 연결이 끊겼을 때(와이파이 끊김, 앱 전환 등 '정상 종료'가 아닌 경우) 서버가 이를 훨씬 빨리
 // 감지하도록 함. 기본값 그대로면 최대 45초 가까이 disconnect 이벤트가 늦게 발생해서,
 // 대기 중이던 다른 사람 화면의 인원수가 한참 동안 줄어들지 않는 것처럼 보였음.
+// WS_COMPRESS=1 환경변수를 주면 소켓 메시지를 deflate 압축해서 보냄 (전송량은 더 줄지만 서버 CPU를 더 씀. 기본은 꺼짐)
+const WS_COMPRESS = process.env.WS_COMPRESS === '1';
 const io = new Server(server, {
   pingInterval: 8000,
   pingTimeout: 5000,
+  perMessageDeflate: WS_COMPRESS ? { threshold: 512, zlibDeflateOptions: { level: 1 }, serverNoContextTakeover: true, clientNoContextTakeover: true } : false,
 });
 
 // Render 배포 환경에서는 PORT 환경변수를 사용해야 함
 const PORT = process.env.PORT || 3000;
 
 // index.html 등 정적 파일을 같은 폴더에서 서빙
-app.use(express.static(path.join(__dirname)));
+// ===== 정적 파일 전송량 절약 =====
+// 1) gzip 압축: index.html(약 780KB)이 접속할 때마다 그대로 나가던 것을 압축해서 보냄
+let compression = null;
+try { compression = require('compression'); } catch (e) { console.warn('compression 모듈이 없어 HTTP 압축 없이 실행합니다 (npm install 필요)'); }
+if (compression) app.use(compression());
+// 2) 서버 소스/설정 파일이 정적 파일로 내려가지 않게 막음 (예전에는 /server.js, /package.json 이 그대로 다운로드 가능했음)
+app.use((req, res, next) => (/^\/(server\.js|package(-lock)?\.json|\.env[^/]*|node_modules\/|\.git\/)/i.test(req.path) ? res.status(404).end() : next()));
+// 3) 캐시: bgm.mp3 같은 큰 파일은 브라우저가 7일 동안 다시 받지 않게 하고, html 은 ETag 로 '바뀐 게 없으면 304(본문 없음)' 응답
+app.use(express.static(path.join(__dirname), {
+  etag: true,
+  lastModified: true,
+  setHeaders(res, filePath) {
+    if (/\.(html?|js|css)$/i.test(filePath)) res.setHeader('Cache-Control', 'no-cache');
+    else res.setHeader('Cache-Control', 'public, max-age=604800');
+  },
+}));
 
 // ===== 게임 설정값 =====
 const ARENA_WIDTH = 770;    // 맵 크기 30% 추가 축소 (1100 → 770)
@@ -8166,6 +8184,15 @@ function registerAdminHandlers(socket) {
 io.on('connection', (socket) => {
   console.log(`플레이어 접속: ${socket.id}`);
   socket.data.device = normalizeDevice(socket.handshake.auth && socket.handshake.auth.device, socket.handshake.headers['user-agent']);
+  socket.data.netDelta = !!(socket.handshake.auth && socket.handshake.auth.delta === 1); // 변경분 전송('st')을 이해하는 클라이언트인지
+  // 변경분 전송에서 클라이언트가 순서가 어긋났다고 판단하면 전체 상태를 다시 요청한다 (1초에 한 번까지만 허용)
+  socket.on('stateResync', () => {
+    const nowT = Date.now();
+    if (socket.data.lastResyncAt && nowT - socket.data.lastResyncAt < 1000) return;
+    socket.data.lastResyncAt = nowT;
+    const m = matches[socketToMatch[socket.id]];
+    if (m && m.netCache) delete m.netCache[socket.id];
+  });
   broadcastOnlineCount();
   registerAdminHandlers(socket); // 개발자 모드 (정지 / 서버 일시정지) - 개발자 계정만 사용 가능
   if (serverPause.on) socket.emit('serverPause', pauseInfo()); // 점검 중에 들어온 사람에게도 안내 배너를 보여줌
@@ -11637,6 +11664,177 @@ function startBossMatch(socket, characterId, userKey, level, trophies, skin, hyp
   startMatch('1v1', entries, { boss: spec });
 }
 
+// ===== 네트워크 전송량 절약 (상태 전송) =====
+// 예전에는 매 틱(초당 20번)마다 모든 플레이어의 '전체' 필드(약 190개, 캐릭터 스펙 포함)와 모든 총알/이펙트를 통째로 JSON 으로 보냈다.
+// 지금은 클라이언트마다 '마지막으로 보낸 값'을 기억해 두고, 바뀐 값만 보낸다 ('st' 이벤트). 추가로
+//  - 클라이언트(index.html)가 전혀 쓰지 않는 서버 전용 필드는 아예 보내지 않고 (NET_DROP),
+//  - 소수점은 3자리로 반올림하고 (17자리 -> 7자리),
+//  - 이펙트/장판의 남은 수명(life)은 클라이언트가 서버 시계로 직접 줄여 가므로, 어긋날 때만 보낸다.
+// 구버전 클라이언트(접속할 때 delta 표시가 없는 경우)에게는 예전 'state' 를 그대로 보내서 호환된다.
+const STATE_SEND_EVERY = 1;        // N틱마다 한 번 전송. 1 = 초당 20번(기본), 2 = 초당 10번 (전송량 절반, 대신 화면이 덜 부드러움)
+const NET_LIFE_TOLERANCE = 0.12;   // 서버 예상 수명과 이만큼(초) 이상 어긋나면 수명을 다시 보냄
+const NET_STATIC_KEYS = new Set(['basic', 'ultimate', 'gadget', 'hyper']); // 캐릭터 스펙(제자리에서 바뀌지 않고 통째로 교체만 됨) - 참조 비교
+const NET_DROP = {
+  players: new Set(["inBush", "stealthId", "dashTimeLeft", "dashSpeed", "dashDamage", "dashStun", "dashHitIds", "dashCharge", "gearReloadBonus", "gearLowHpDamageBonus", "gearFullHpTakenMult", "gearUltChargeMult", "gearProjectileSpeedMult", "gearMoveSpeedMult", "moveSpeedTierMult", "gearLowHpSpeedBonus", "gearChainBonus", "lastBasicAttackAt", "gearChainOn", "gearSacrificeCharge", "gearGadgetCooldown", "gearLifesteal", "buffyBasicRadiusMult", "buffyGadgetSlowMult", "buffyGadgetSlowSec", "buffyBasicSpeedMult", "buffyBasicSpeedSec", "buffySpeedUntil", "buffyGadgetShieldMult", "buffyGadgetShieldSec", "buffyShieldOnKnock", "buffyBasicProjSpeedMult", "buffyHyperRegenAmount", "buffyHyperRegenInterval", "buffyHyperRegenNext", "buffyBasicSelfHeal", "buffyGadgetTeamRegenAmount", "buffyGadgetTeamRegenInterval", "buffyGadgetTeamRegenSec", "buffyHyperTeamReloadMult", "teamRegenUntil", "teamRegenAmount", "teamRegenInterval", "teamRegenNext", "buffyBasicPoolLifeBonus", "buffyGadgetReloadMult", "buffyGadgetReloadSec", "buffyHyperUltSpeedMult", "buffyAllHitSpeedMult", "buffyAllHitSpeedSec", "buffyAllHitUntil", "buffyShotHits", "buffyAuraSlowMult", "buffyAuraSlowUntil", "buffyAuraSlowCur", "buffyHyperSpreadDegrees", "buffyUltSpeedUntil", "buffyHitSpeedMult", "buffyHitSpeedSec", "buffyBounceDamageMult", "buffyGadgetPierce", "buffyHyperProjRadiusMult", "buffyHitSpeedUntil", "buffyHyperTakenMult", "gearHyperDurationBonus", "gearBandageHeal", "bandageUsed", "gearUltStealthSec", "gearHealMult", "gearShieldMax", "lastHitAt", "fullHpSince", "reloadBoostUntil", "reloadBoostMultiplier", "windupId", "knockbackDirX", "knockbackDirY", "knockbackDistance", "knockbackTotalTime", "ultimateChargePerHit", "hyperUntil", "wallPassUntil", "grabbedBy", "phaseSpeedUntil", "phaseSpeedMult", "healChargeAmount", "leapEndsAt", "leapDamage", "leapDirectDamage", "leapKnockback", "leapStun", "ultGadgetLeft", "ultGadgetRate", "speedBoostMultiplier", "gadgetGuardMult", "damageBoostMultiplier", "reloadAllAtOnce", "moveDirX", "moveDirY", "lastMoveAt", "airborneLandDamage", "airborneBy", "airborneStunUntil", "chargeStartAt", "ammoRegenSeconds", "ammoRegenElapsed", "lastShotAt", "lastDamageAt", "hitIds", "leapTargetX", "leapTargetY", "leapRadius", "leapDirectRadius"]),
+  bullets: new Set(["isUltimate", "explodeDamage", "explodeVisual", "explodeChargesUlt", "teleportOwner", "selfKnockback", "eggSplat", "directDamage", "poolLifetime", "poolTickInterval", "poolDamage", "poolHeal", "poolVisual", "poolChargesUlt", "poolFirstDamage", "poolChargeScale", "slowMultiplier", "knockback", "prevX", "prevY", "originX", "originY", "fresh", "bounceTime", "closeRange", "distScale", "executeBelowHp", "currentHpRatio", "buffyShot", "slowOnHit", "chain", "launchDuration", "landDamage", "landStun", "pierceTargets", "hitIds", "outLeft", "gearProjSpeed", "baseSpeed", "bounce", "pierceWalls", "wallBounce", "bounceDamageMult", "bounced", "bounceBonus", "bounceRangeBonus", "breakShield", "poolOnImpact", "hyperPoolRadius", "hyperPoolHeal", "poolGas", "poolOnExpire", "splitInto"]),
+  effects: new Set(["landLife"]),
+  waterPools: new Set(["tickTimer", "tickInterval", "firstDamage", "firstHitIds", "chargesUlt", "chargeScale", "poolChargeScale", "slowMultiplier"]),
+  turrets: new Set(["fireInterval", "fireCooldown", "bulletSpeed", "bulletRadius", "bulletLifetime"]),
+  bombs: new Set(["tickInterval", "tickTimer", "tickDamage", "explodeDamage", "slowMultiplier", "exploded"]),
+  chickens: new Set(["attackInterval", "attackRange", "attackCooldown", "moveSpeed", "chaseRange", "chargeRange", "chargeSpeed", "chargeMaxTime", "retreatTime", "retreatSpeed", "retreatTimeLeft", "chargeTimeLeft"]),
+};
+const NET_AGED = { effects: true, waterPools: true }; // life 가 시간에 따라 줄어드는 종류 (클라이언트가 직접 줄임)
+const NET_CODE = { players: 'p', bullets: 'b', effects: 'e', waterPools: 'w', turrets: 't', bombs: 'o', chickens: 'c' };
+let netTick = 0;
+
+function netRound(v) {
+  if (typeof v !== 'number') return v;
+  if (!Number.isFinite(v)) return null;
+  return Number.isInteger(v) ? v : Math.round(v * 1000) / 1000;
+}
+function netSlimNested(v, depth) {
+  if (v === null || typeof v !== 'object') return netRound(v);
+  if (depth > 6) return v;
+  if (Array.isArray(v)) return v.map((x) => netSlimNested(x, depth + 1));
+  const out = {};
+  for (const k in v) {
+    const x = v[k];
+    if (x === undefined || typeof x === 'function') continue;
+    out[k] = netSlimNested(x, depth + 1);
+  }
+  return out;
+}
+const netStaticSlim = new WeakMap(); // 캐릭터 스펙 객체 -> 반올림한 복사본 (같은 객체면 같은 복사본을 돌려줘서 참조 비교가 가능)
+function netSlimStatic(v) {
+  if (v === null || typeof v !== 'object') return v;
+  let c = netStaticSlim.get(v);
+  if (!c) { c = netSlimNested(v, 0); netStaticSlim.set(v, c); }
+  return c;
+}
+function netSlim(kind, src) {
+  const drop = NET_DROP[kind];
+  const out = {};
+  for (const k in src) {
+    if (drop.has(k)) continue;
+    const v = src[k];
+    if (v === undefined || typeof v === 'function') continue;
+    if (v !== null && typeof v === 'object') out[k] = (kind === 'players' && NET_STATIC_KEYS.has(k)) ? netSlimStatic(v) : netSlimNested(v, 0);
+    else out[k] = netRound(v);
+  }
+  return out;
+}
+function netSig(kind, k, v) {
+  if (v !== null && typeof v === 'object') return (kind === 'players' && NET_STATIC_KEYS.has(k)) ? v : JSON.stringify(v);
+  return v;
+}
+// 한 개체의 이번 틱 변경분을 구하고, 기억해 둔 값(entry)을 갱신한다. 반환: { delta, removed }
+function netDiff(kind, entry, slim, nowMs) {
+  let delta = null, removed = null;
+  const sigs = entry.sigs;
+  const aged = NET_AGED[kind] === true;
+  for (const k in slim) {
+    const v = slim[k];
+    if (aged && k === 'life' && typeof v === 'number') {
+      const predicted = entry.life === undefined ? NaN : entry.life - (nowMs - entry.lifeAt) / 1000;
+      if (!(Math.abs(v - predicted) <= NET_LIFE_TOLERANCE)) {
+        (delta || (delta = {})).life = v;
+        entry.life = v;
+        entry.lifeAt = nowMs;
+      }
+      continue;
+    }
+    const sig = netSig(kind, k, v);
+    if (sigs[k] !== sig) {
+      sigs[k] = sig;
+      (delta || (delta = {}))[k] = v;
+    }
+  }
+  for (const k in sigs) {
+    if (!(k in slim)) { delete sigs[k]; (removed || (removed = [])).push(k); }
+  }
+  return { delta, removed };
+}
+// items: [[key, slimObj], ...] -> 이 종류의 변경분 { u: [[key, delta]...], x: [사라진 key...], k: { key: [없어진 필드...] } } (변경이 없으면 null)
+function netEncodeSet(cache, kind, items, nowMs) {
+  let map = cache.sets[kind];
+  if (!map) map = cache.sets[kind] = new Map();
+  const seen = new Set();
+  let u = null, x = null, kk = null;
+  for (let i = 0; i < items.length; i++) {
+    let key = items[i][0];
+    if (seen.has(key)) { let n = 1; while (seen.has(key + '~' + n)) n += 1; key = key + '~' + n; } // 혹시 id 가 겹쳐도 서로 다른 개체로 취급
+    seen.add(key);
+    let entry = map.get(key);
+    const isNew = !entry;
+    if (isNew) { entry = { sigs: {} }; map.set(key, entry); }
+    const { delta, removed } = netDiff(kind, entry, items[i][1], nowMs);
+    if (isNew || delta) (u || (u = [])).push([key, delta || {}]);
+    if (removed) (kk || (kk = {}))[key] = removed;
+  }
+  for (const key of map.keys()) if (!seen.has(key)) { map.delete(key); (x || (x = [])).push(key); }
+  if (!u && !x && !kk) return null;
+  const out = {};
+  if (u) out.u = u;
+  if (x) out.x = x;
+  if (kk) out.k = kk;
+  return out;
+}
+function netTopValue(match, now, key) {
+  switch (key) {
+    case 'gameMode': return match.gameMode;
+    case 'lockMs': return Math.max(0, match.startsAt - now);
+    case 'round': return match.roundsActive ? { n: match.round, max: KNOCKOUT_ROUNDS_MAX, toWin: KNOCKOUT_ROUNDS_TO_WIN, A: match.roundWins.A, B: match.roundWins.B } : undefined;
+    case 'bossLives': return match.boss ? match.bossLives : undefined;
+    case 'gemHold': return gemHoldView(match, now);
+    default: return undefined;
+  }
+}
+const NET_TOP_KEYS = ['gameMode', 'lockMs', 'round', 'bossLives', 'gemHold'];
+
+// 한 명의 플레이어에게 이번 틱의 변경분을 보낸다.
+function sendDeltaState(match, pid, socket, now, slimCache) {
+  if (!match.netCache) match.netCache = {};
+  let cache = match.netCache[pid];
+  if (!cache) cache = match.netCache[pid] = { seq: 0, fresh: true, sets: {}, top: {} };
+  const msg = { q: cache.seq, n: now };
+  cache.seq += 1;
+  if (cache.fresh) { msg.f = 1; cache.fresh = false; }
+
+  // 맨 위 단계 값들 (게임 종류, 라운드 현황 등) - 바뀐 것만
+  let t = null, tx = null;
+  for (const key of NET_TOP_KEYS) {
+    const v = netTopValue(match, now, key);
+    const sig = v === undefined ? '' : JSON.stringify(v);
+    if (cache.top[key] !== sig) {
+      cache.top[key] = sig;
+      if (v === undefined) (tx || (tx = [])).push(key);
+      else (t || (t = {}))[key] = v;
+    }
+  }
+  if (t) msg.t = t;
+  if (tx) msg.tx = tx;
+
+  const slimOf = (kind, obj) => {
+    let c = slimCache.get(obj);
+    if (!c) { c = netSlim(kind, obj); slimCache.set(obj, c); }
+    return c;
+  };
+  const sets = {
+    players: (() => { const vis = buildVisiblePlayers(match, pid); const items = []; for (const id in vis) items.push([id, slimOf('players', vis[id])]); return items; })(),
+    bullets: buildVisibleBullets(match, pid).map((b) => [b.id, slimOf('bullets', b)]),
+    effects: match.effects.map((e) => [e.id, slimOf('effects', e)]),
+    waterPools: match.waterPools.map((w) => [w.id, slimOf('waterPools', w)]),
+    turrets: match.turrets.map((o) => [o.id, slimOf('turrets', o)]),
+    bombs: match.bombs.map((o) => [o.id, slimOf('bombs', o)]),
+    chickens: match.chickens.map((o) => [o.id, slimOf('chickens', o)]),
+  };
+  for (const kind in sets) {
+    const d = netEncodeSet(cache, kind, sets[kind], now);
+    if (d) msg[NET_CODE[kind]] = d;
+  }
+  socket.emit('st', msg);
+}
+
 // ===== 서버 게임 루프 =====
 // 진행 중인 모든 매치를 독립적으로 갱신하고, 각 매치의 상태는 그 매치에 속한 플레이어들에게만 전송한다
 // (덤불/은신 은닉을 위해 방 전체 브로드캐스트 대신 플레이어별로 필터링해서 개별 전송한다.
@@ -11653,6 +11851,8 @@ function updateTraining(match) {
 function gameLoop() {
   const dt = TICK_MS / 1000;
   const now = Date.now();
+  netTick += 1;
+  const sendNow = netTick % STATE_SEND_EVERY === 0;
 
   for (const matchId in matches) {
     const match = matches[matchId];
@@ -11666,8 +11866,14 @@ function gameLoop() {
     updateGemGrab(match, now); // 쨍그랩 모드: 보석 생성/획득/승리 판정
     if (!match.over) flushGems(match);
 
+    if (!sendNow) continue; // STATE_SEND_EVERY 가 2 이상이면 일부 틱은 계산만 하고 전송은 건너뜀
+
+    const slimCache = new Map(); // 이번 틱에 같은 개체를 여러 명에게 보낼 때 한 번만 가공하기 위한 캐시
     for (const pid in match.players) {
-      io.to(pid).emit('state', {
+      const sock = io.sockets.sockets.get(pid);
+      if (!sock) continue; // AI 봇 / 훈련장 허수아비 / 보스가 소환한 AI 는 받을 사람이 없으므로 계산도 하지 않음
+      if (sock.data && sock.data.netDelta) { sendDeltaState(match, pid, sock, now, slimCache); continue; }
+      sock.emit('state', { // 구버전 클라이언트용 (예전 방식 그대로)
         serverNow: now, // 클라이언트가 서버 시계와의 차이를 보정할 수 있게
         lockMs: Math.max(0, match.startsAt - now), // 서버가 아직 입력을 막고 있는 남은 시간(진단용)
         gameMode: match.gameMode,
