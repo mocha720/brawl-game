@@ -1792,7 +1792,7 @@ const CHARACTER_ROLES = {
   byeongitong: 'tank', uphal: 'tank', baechu: 'tank',
   bobae: 'controller', geunsuni: 'controller', chacha: 'controller',
   ekhe: 'thrower', nai: 'thrower',
-  gwari: 'assassin', mocha: 'assassin', system: 'assassin', jjapsae: 'assassin', dol: 'assassin',
+  gwari: 'assassin', jungan: 'assassin', mocha: 'assassin', system: 'assassin', jjapsae: 'assassin', dol: 'assassin',
 };
 
 // ===== 캐릭터 정의 (선택 화면 표시용 - 실제 능력치는 서버가 검증/적용) =====
@@ -1828,7 +1828,7 @@ const CHARACTERS = [
     id: 'wonhyo',
     name: '원효대사',
     color: '#9b59b6',
-    maxHp: 6500,
+    maxHp: 5000,
     basic: { name: '해골물 뿌리기', desc: '적 직접 적중 시 700 피해 + 그 자리에 물웅덩이 생성 (적 0.5초마다 1000 피해 / 아군 0.5초마다 300 회복, 1.5초 후 소멸, 적 터렛도 파괴 가능)' },
     ultimate: { name: '은신', desc: '5초 동안 적에게 보이지 않음' },
     gadget: { name: '초인적인 힘', desc: '2초 동안 이동속도 1.3배 (15초마다 사용 가능)' },
@@ -1935,7 +1935,7 @@ const CHARACTERS = [
     name: '나이',
     color: '#fd79a8',
     maxHp: 6000,
-    basic: { name: '실내화 던지기', damage: 2500, desc: '실내화를 포물선으로 던져 땅에 착지하면 폭발 (벽을 넘어감), 던지는 거리는 조준으로 100~364px 조절 (거리와 상관없이 1.25초 뒤에 착지), 폭발 반경 64 안의 적에게 2,500 피해 (폭발 범위 안에 자신이 있으면 피해 없이 날아감), 재장전 시간 40% 증가' },
+    basic: { name: '실내화 던지기', damage: 2500, desc: '실내화를 포물선으로 던져 땅에 착지하면 폭발 (벽을 넘어감), 던지는 거리는 조준으로 100~364px 조절 (거리와 상관없이 1.25초 뒤에 착지), 폭발 반경 64 안의 적에게 2,500 피해 (폭발 범위 안에 자신이 있으면 피해 없이 날아감), 재장전 시간 8% 증가' },
     ultimate: { name: '슛', damage: 1500, desc: '조준한 방향으로 벽을 무시하고 점프, 거리는 조준으로 100~320px 조절 (공중에서는 피격 불가), 착지 지점 반경 100 안의 적에게 1,500 피해 + 1초 기절' },
     gadget: { name: '반사 방어막', desc: '2초 동안 반사 방어막을 둘러 자신에게 날아오는 모든 투사체를 원래 쏜 사람 쪽으로 튕겨냄 (15초마다 사용 가능)' },
   },
@@ -1997,9 +1997,17 @@ const CHARACTERS = [
     name: '진정',
     color: '#f5b83d',
     maxHp: 5500,
-    basic: { name: '광역 휘두르기', damage: 1300, desc: '전방 75도 부채꼴 범위(사거리 170)를 휘둘러 1,300 피해를 주고 범위 안의 모든 적을 맞힘 (광역 피해). 같은 범위 안의 아군(자신 제외)은 500씩 회복' },
+    basic: { name: '광역 휘두르기', damage: 1300, desc: '전방 75도 부채꼴 범위(사거리 170)를 휘둘러 1,300 피해를 주고 범위 안의 모든 적을 맞힘 (광역 피해). 같은 범위 안의 아군(자신 제외)은 700씩 회복' },
     ultimate: { name: '단체 회복', desc: '조준 불필요, 자신을 포함한 모든 아군의 체력을 즉시 2,000씩 회복 (최대 체력까지)' },
     gadget: { name: '뿔피리 불기', desc: '조준 불필요, 뿔피리를 불어 4초 동안 자신을 포함한 모든 아군의 이동속도가 25% 빨라짐' },
+  },
+  {
+    id: 'jungan',
+    name: '중간',
+    color: '#9b5de5',
+    maxHp: 5500,
+    basic: { name: '양팔 모으기', damage: 1500, desc: '전방 250도 부채꼴 범위(사거리 130)에 양팔을 벌렸다 모아 범위 안의 모든 적에게 1,500 피해 (광역 피해). 양팔이 모이는 조준 방향 정면(약 30도)에서 맞은 적은 광역 피해 대신 3,000 피해' },
+    ultimate: { name: '잡아 찢기', desc: '조준한 방향으로 손을 뻗어(사거리 750, 벽은 무시하고 지나감) 처음 닿은 적을 끌어옴. 적은 벽을 뚫고 끌려오다가 벽에 박을 때마다 1,000 피해를 받고, 끌려온 뒤 양손으로 붙잡혀 찢기며 2,500 피해를 받음 (잡고 있는 동안 중간도 움직일 수 없음)' },
   },
 ];
 let selectedCharacterId = CHARACTERS[0].id;
@@ -9002,7 +9010,7 @@ function drawPlayer(p, isMe) {
   if (p.chargingUntil && sNow() < p.chargingUntil) {
     ctx.font = `${PLAYER_RADIUS}px sans-serif`;
     ctx.fillText('🔋', p.x, p.y - PLAYER_RADIUS - 34);
-  } else if (!p.leaping && !(p.airborneTimeLeft > 0) && p.stunnedUntil && sNow() < p.stunnedUntil) {
+  } else if (!p.leaping && !(p.airborneTimeLeft > 0) && !p.grab && p.stunnedUntil && sNow() < p.stunnedUntil) { // 잡기(중간의 궁극기)를 쓰는 중인 중간은 기절이 아니므로 별 표시 안 함
     ctx.font = `${PLAYER_RADIUS}px sans-serif`;
     ctx.fillText('💫', p.x, p.y - PLAYER_RADIUS - 34);
   }
@@ -9017,6 +9025,7 @@ function drawPlayer(p, isMe) {
     if (p.damageBoostUntil && nowMs >= p.damageBoostFrom && nowMs < p.damageBoostUntil) {
       ctx.fillText('🔥', p.x, p.y - PLAYER_RADIUS - 34);
     }
+    if (p.wallPass) ctx.fillText('👻', p.x + PLAYER_RADIUS * 0.6, p.y - PLAYER_RADIUS - 6); // 벽 통과 중(중간의 유령 질주)
   }
 
   // HP 바 (숫자 포함)
@@ -9776,6 +9785,278 @@ function drawCabbageRingEffect(e) {
 }
 
 // 배추의 가젯 사용 연출: 몸에서 초록 빛 고리가 퍼짐
+// ===== 중간의 궁극기 '잡아 찢기' 연출 =====
+// 보라색 에너지 손(갈퀴)을 그린다. grip: 0 = 활짝 편 손, 1 = 꽉 쥔 손
+function drawGrabHand(x, y, ang, s, grip, alpha) {
+  ctx.save();
+  ctx.globalAlpha = alpha == null ? 1 : alpha;
+  ctx.translate(x, y);
+  ctx.rotate(ang);
+  const glow = ctx.createRadialGradient(0, 0, 2, 0, 0, 26 * s);
+  glow.addColorStop(0, 'rgba(200,150,255,0.55)');
+  glow.addColorStop(1, 'rgba(155,93,229,0)');
+  ctx.fillStyle = glow;
+  ctx.beginPath(); ctx.arc(0, 0, 26 * s, 0, Math.PI * 2); ctx.fill();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  const spread = (1 - grip) * 0.8;
+  for (let k = -2; k <= 1; k++) { // 손가락 4개: 편 손은 부채처럼 벌어지고, 쥔 손은 안쪽으로 구부러짐
+    const base = (k + 0.5) * (0.28 + spread * 0.5);
+    const len1 = 11 * s, len2 = 9 * s;
+    const bend = grip * 1.15;
+    const x1 = 7 * s + Math.cos(base) * len1, y1 = Math.sin(base) * len1 + (k + 0.5) * 1.5 * s;
+    const a2 = base + (k < -0.5 ? 1 : -1) * 0 + (base >= 0 ? -bend : bend) * 0.6;
+    const x2 = x1 + Math.cos(a2) * len2, y2 = y1 + Math.sin(a2) * len2;
+    ctx.strokeStyle = '#2a0f4d'; ctx.lineWidth = 7 * s;
+    ctx.beginPath(); ctx.moveTo(6 * s, (k + 0.5) * 3.2 * s); ctx.lineTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    ctx.strokeStyle = '#a66bff'; ctx.lineWidth = 4.5 * s;
+    ctx.beginPath(); ctx.moveTo(6 * s, (k + 0.5) * 3.2 * s); ctx.lineTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+    ctx.fillStyle = '#f3e5ff'; // 갈고리 같은 손톱
+    ctx.beginPath(); ctx.arc(x2, y2, 2.4 * s, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.strokeStyle = '#2a0f4d'; ctx.lineWidth = 7 * s; // 엄지
+  ctx.beginPath(); ctx.moveTo(2 * s, 8 * s); ctx.lineTo(10 * s, (12 - grip * 3) * s); ctx.stroke();
+  ctx.strokeStyle = '#a66bff'; ctx.lineWidth = 4.5 * s;
+  ctx.beginPath(); ctx.moveTo(2 * s, 8 * s); ctx.lineTo(10 * s, (12 - grip * 3) * s); ctx.stroke();
+  ctx.fillStyle = '#7b3fc4'; // 손바닥
+  ctx.strokeStyle = '#f3e5ff'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.ellipse(0, 0, 10 * s, 9 * s, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.restore();
+}
+
+// 어깨(x0,y0)에서 손(x1,y1)까지 이어지는 에너지 팔: 굵은 보라 선 + 밝은 심 + 마디마다 관절
+function drawGrabArm(x0, y0, x1, y1, width, wobble, alpha) {
+  const dx = x1 - x0, dy = y1 - y0, len = Math.hypot(dx, dy) || 1;
+  const nx = -dy / len, ny = dx / len;
+  const seg = Math.max(2, Math.round(len / 18));
+  const pts = [];
+  for (let i = 0; i <= seg; i++) {
+    const u = i / seg;
+    const w = Math.sin(u * Math.PI) * wobble * Math.sin(u * 13 + performance.now() / 60);
+    pts.push([x0 + dx * u + nx * w, y0 + dy * u + ny * w]);
+  }
+  ctx.save();
+  ctx.globalAlpha = alpha == null ? 1 : alpha;
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  const path = () => { ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]); };
+  ctx.strokeStyle = 'rgba(155,93,229,0.35)'; ctx.lineWidth = width * 2.2; path(); ctx.stroke();
+  ctx.strokeStyle = '#2a0f4d'; ctx.lineWidth = width * 1.25; path(); ctx.stroke();
+  ctx.strokeStyle = '#8e4ff0'; ctx.lineWidth = width; path(); ctx.stroke();
+  ctx.strokeStyle = '#e9d5ff'; ctx.lineWidth = Math.max(1.5, width * 0.28); path(); ctx.stroke();
+  ctx.fillStyle = '#c9a0ff';
+  for (let i = 1; i < pts.length - 1; i += 2) { ctx.beginPath(); ctx.arc(pts[i][0], pts[i][1], width * 0.55, 0, Math.PI * 2); ctx.fill(); }
+  ctx.restore();
+}
+
+function drawGrabArms(p, pc, tv) {
+  const g = p.grab;
+  const a = g.angle;
+  const ca = Math.cos(a), sa = Math.sin(a);
+  const now = performance.now();
+  ctx.save();
+  ctx.translate(0, -(PLAYER_RADIUS * 0.45) / TILT); // 몸통 높이에서
+  if (g.phase === 'reach') {
+    const dist = Math.hypot(g.tipX - pc.x, g.tipY - pc.y);
+    const tx = pc.x + ca * dist, ty = pc.y + sa * dist; // 중간 위치 기준으로 항상 곧게 뻗음
+    drawGrabArm(pc.x, pc.y, tx, ty, 6, 3, 0.95);
+    drawGrabHand(tx, ty, a, 1.15, 0, 1);
+    ctx.restore();
+    return;
+  }
+  if (!tv) { ctx.restore(); return; }
+  if (g.phase === 'pull') {
+    // 끌려오는 적: 뒤로 늘어나는 잔상 + 중간에게서 팔이 뻗어 적을 움켜쥠
+    ctx.lineCap = 'round';
+    for (let i = 1; i <= 4; i++) {
+      ctx.strokeStyle = `rgba(190,140,255,${0.28 - i * 0.05})`;
+      ctx.lineWidth = 16 - i * 2;
+      ctx.beginPath(); ctx.moveTo(tv.x + ca * i * 22, tv.y + sa * i * 22); ctx.lineTo(tv.x + ca * (i * 22 + 18), tv.y + sa * (i * 22 + 18)); ctx.stroke();
+    }
+    drawGrabArm(pc.x, pc.y, tv.x, tv.y, 6, 2, 0.95);
+    drawGrabHand(tv.x, tv.y, a + Math.PI, 1.25, 1, 1);
+    ctx.restore();
+    return;
+  }
+  // ===== 찢기 =====
+  const u = Math.max(0, Math.min(1, g.tearT / (g.tearDuration || 0.9)));
+  const nx = -sa, ny = ca; // 찢는 방향(좌우)
+  const windup = Math.min(1, u / 0.55);
+  const rip = u > 0.55 ? Math.pow((u - 0.55) / 0.45, 2) : 0;
+  const shake = (1 - rip) * windup * 2.6;
+  const jx = Math.sin(now / 17) * shake, jy = Math.cos(now / 13) * shake;
+  const cx = tv.x + jx, cy = tv.y + jy;
+  const off = 20 + 8 * windup + 62 * rip; // 손과 적 사이의 간격: 처음엔 붙잡고, 마지막에 확 벌어짐
+  const lx = cx + nx * off, ly = cy + ny * off;
+  const rx = cx - nx * off, ry = cy - ny * off;
+  // 기운이 모이는 빛 (찢기 직전까지 점점 강해짐)
+  const glowR = 30 + 34 * windup;
+  const gl = ctx.createRadialGradient(cx, cy, 3, cx, cy, glowR);
+  gl.addColorStop(0, `rgba(255,255,255,${0.15 + 0.45 * windup * (1 - rip)})`);
+  gl.addColorStop(0.5, `rgba(190,130,255,${0.35 * windup})`);
+  gl.addColorStop(1, 'rgba(155,93,229,0)');
+  ctx.fillStyle = gl;
+  ctx.beginPath(); ctx.arc(cx, cy, glowR, 0, Math.PI * 2); ctx.fill();
+  // 안쪽으로 빨려 드는 불꽃
+  if (u < 0.55) {
+    ctx.fillStyle = 'rgba(240,225,255,0.9)';
+    for (let i = 0; i < 10; i++) {
+      const ang = (i / 10) * Math.PI * 2 + now / 400;
+      const rr = (1 - ((now / 500 + i * 0.37) % 1)) * 58;
+      ctx.beginPath(); ctx.arc(cx + Math.cos(ang) * rr, cy + Math.sin(ang) * rr, 2.2, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  // 찢어지는 균열: 찢기 중반부터 조준 방향 축을 따라 갈라지며 벌어짐
+  if (u > 0.3) {
+    const k = Math.min(1, (u - 0.3) / 0.7);
+    const half = 12 + 52 * k;
+    const wid = 2 + 9 * rip;
+    const jag = (t) => Math.sin(t * 17.3 + 1.7) * 5 + Math.sin(t * 7.1) * 3;
+    const crack = () => {
+      ctx.beginPath();
+      for (let i = 0; i <= 12; i++) {
+        const t = (i / 12) * 2 - 1;
+        const px = cx + ca * half * t + nx * jag(t) * (0.5 + rip), py = cy + sa * half * t + ny * jag(t) * (0.5 + rip);
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+    };
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(120,40,200,0.85)'; ctx.lineWidth = wid + 7; crack(); ctx.stroke();
+    ctx.strokeStyle = '#ffffff'; ctx.lineWidth = Math.max(1.5, wid); crack(); ctx.stroke();
+  }
+  // 어깨에서 두 손까지 이어진 팔 + 두 손 (쥔 손으로 양옆에서 붙잡음)
+  drawGrabArm(pc.x + nx * 7, pc.y + ny * 7, lx, ly, 5.5, 1.5 + rip * 3, 0.95);
+  drawGrabArm(pc.x - nx * 7, pc.y - ny * 7, rx, ry, 5.5, 1.5 + rip * 3, 0.95);
+  drawGrabHand(lx, ly, Math.atan2(-ny, -nx), 1.2, 1 - rip * 0.4, 1);
+  drawGrabHand(rx, ry, Math.atan2(ny, nx), 1.2, 1 - rip * 0.4, 1);
+  ctx.restore();
+}
+
+// 찢는 순간의 폭발: 눈부신 섬광 + 퍼지는 충격파 + 조준 축을 가르는 베기 + 양옆으로 갈라져 날아가는 조각들 + 불꽃
+function drawTearBurstEffect(e) {
+  const t = 1 - Math.max(0, Math.min(1, e.life / (e.maxLife || 0.9)));
+  const ca = Math.cos(e.angle), sa = Math.sin(e.angle);
+  const nx = -sa, ny = ca;
+  const ease = 1 - Math.pow(1 - t, 3);
+  ctx.save();
+  ctx.translate(e.x, e.y - (PLAYER_RADIUS * 0.45) / TILT);
+  // 섬광
+  if (t < 0.25) {
+    const fa = 1 - t / 0.25;
+    const fg = ctx.createRadialGradient(0, 0, 2, 0, 0, 110);
+    fg.addColorStop(0, `rgba(255,255,255,${0.95 * fa})`);
+    fg.addColorStop(0.35, `rgba(215,170,255,${0.7 * fa})`);
+    fg.addColorStop(1, 'rgba(155,93,229,0)');
+    ctx.fillStyle = fg; ctx.beginPath(); ctx.arc(0, 0, 110, 0, Math.PI * 2); ctx.fill();
+  }
+  // 충격파 두 겹
+  ctx.lineWidth = 7 * (1 - t) + 1;
+  ctx.strokeStyle = `rgba(230,200,255,${0.9 * (1 - t)})`;
+  ctx.beginPath(); ctx.arc(0, 0, 20 + 150 * ease, 0, Math.PI * 2); ctx.stroke();
+  ctx.lineWidth = 3 * (1 - t) + 1;
+  ctx.strokeStyle = `rgba(255,255,255,${0.8 * (1 - t)})`;
+  ctx.beginPath(); ctx.arc(0, 0, 10 + 105 * ease, 0, Math.PI * 2); ctx.stroke();
+  // 조준 축을 가르는 한 줄기 베기 (길게 번쩍였다가 사라짐)
+  const slashA = Math.max(0, 1 - t / 0.55);
+  if (slashA > 0) {
+    const L = 120 * Math.min(1, t / 0.12 + 0.2);
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = `rgba(140,60,230,${0.75 * slashA})`; ctx.lineWidth = 16 * slashA + 2;
+    ctx.beginPath(); ctx.moveTo(-ca * L, -sa * L); ctx.lineTo(ca * L, sa * L); ctx.stroke();
+    ctx.strokeStyle = `rgba(255,255,255,${slashA})`; ctx.lineWidth = 5 * slashA + 1;
+    ctx.beginPath(); ctx.moveTo(-ca * L, -sa * L); ctx.lineTo(ca * L, sa * L); ctx.stroke();
+  }
+  // 갈라져 양옆으로 날아가는 반원 조각
+  ctx.globalAlpha = Math.max(0, 1 - t * 1.15);
+  for (const side of [-1, 1]) {
+    const d = 12 + 120 * ease;
+    ctx.save();
+    ctx.translate(nx * d * side, ny * d * side);
+    ctx.rotate(e.angle + (side > 0 ? 0 : Math.PI) + Math.PI / 2 * 0 + side * ease * 0.9);
+    ctx.fillStyle = 'rgba(160,100,235,0.55)';
+    ctx.strokeStyle = 'rgba(245,235,255,0.95)'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(0, 0, 24 * (1 - t * 0.5), -Math.PI / 2, Math.PI / 2); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+  // 사방으로 튀는 불꽃
+  ctx.lineCap = 'round';
+  for (let i = 0; i < 18; i++) {
+    const ang = (i / 18) * Math.PI * 2 + (i % 2 ? 0.13 : 0);
+    const r0 = 14 + 120 * ease * (0.55 + (i % 5) * 0.12);
+    const r1 = r0 + 14 * (1 - t);
+    ctx.strokeStyle = i % 3 === 0 ? `rgba(255,236,160,${1 - t})` : `rgba(215,170,255,${1 - t})`;
+    ctx.lineWidth = 3 * (1 - t) + 0.5;
+    ctx.beginPath(); ctx.moveTo(Math.cos(ang) * r0, Math.sin(ang) * r0); ctx.lineTo(Math.cos(ang) * r1, Math.sin(ang) * r1); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// 벽에 박힐 때의 충격: 부서지는 먼지 고리 + 박힌 방향으로 튀는 파편
+function drawWallSlamEffect(e) {
+  const t = 1 - Math.max(0, Math.min(1, e.life / (e.maxLife || 0.5)));
+  const ease = 1 - Math.pow(1 - t, 2);
+  ctx.save();
+  ctx.translate(e.x, e.y - (PLAYER_RADIUS * 0.45) / TILT);
+  ctx.lineCap = 'round';
+  ctx.lineWidth = 6 * (1 - t) + 1;
+  ctx.strokeStyle = `rgba(235,225,255,${0.9 * (1 - t)})`;
+  ctx.beginPath(); ctx.arc(0, 0, 8 + 48 * ease, 0, Math.PI * 2); ctx.stroke();
+  for (let i = 0; i < 10; i++) {
+    const ang = (i / 10) * Math.PI * 2;
+    const r0 = 10 + 44 * ease, r1 = r0 + 12 * (1 - t);
+    ctx.strokeStyle = i % 2 ? `rgba(255,240,170,${1 - t})` : `rgba(190,140,255,${1 - t})`;
+    ctx.lineWidth = 3.2 * (1 - t) + 0.6;
+    ctx.beginPath(); ctx.moveTo(Math.cos(ang) * r0, Math.sin(ang) * r0); ctx.lineTo(Math.cos(ang) * r1, Math.sin(ang) * r1); ctx.stroke();
+  }
+  if (t < 0.3) { // 박히는 순간 번쩍
+    const fg = ctx.createRadialGradient(0, 0, 1, 0, 0, 44);
+    fg.addColorStop(0, `rgba(255,255,255,${0.9 * (1 - t / 0.3)})`);
+    fg.addColorStop(1, 'rgba(200,160,255,0)');
+    ctx.fillStyle = fg; ctx.beginPath(); ctx.arc(0, 0, 44, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+// 중간의 양팔 모으기: 250도로 벌린 양팔이 조준 방향 정면으로 모이며 쓸어옴. 모이는 정면(약 30도)은 금빛으로 강조됨
+function drawJunganArmsEffect(e) {
+  const t = 1 - Math.max(0, Math.min(1, e.life / (e.maxLife || 0.35)));
+  const half = ((e.arcDegrees || 250) * Math.PI) / 180 / 2;
+  const sweep = 1 - Math.pow(1 - Math.min(1, t / 0.65), 3); // 처음엔 빠르게 모이다가 천천히 멈춤
+  const r = e.radius;
+  const a1 = e.angle - half * (1 - sweep);
+  const a2 = e.angle + half * (1 - sweep);
+  ctx.save();
+  ctx.globalAlpha = Math.max(0, 1 - Math.max(0, t - 0.55) / 0.45);
+  ctx.lineCap = 'round';
+  // 쓸고 간 범위(연한 보라)
+  ctx.beginPath();
+  ctx.moveTo(e.x, e.y);
+  ctx.arc(e.x, e.y, r, e.angle - half, e.angle + half);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(155, 93, 229, 0.18)';
+  ctx.fill();
+  // 양팔
+  ctx.strokeStyle = 'rgba(190, 140, 255, 0.95)';
+  ctx.lineWidth = 9;
+  for (const a of [a1, a2]) {
+    ctx.beginPath(); ctx.moveTo(e.x, e.y); ctx.lineTo(e.x + Math.cos(a) * r, e.y + Math.sin(a) * r); ctx.stroke();
+  }
+  // 양팔이 모이는 정면: 다 모였을 때 금빛으로 번쩍임
+  if (e.centerArcDegrees > 0 && sweep > 0.8) {
+    const ch = (e.centerArcDegrees * Math.PI) / 180 / 2;
+    ctx.beginPath();
+    ctx.moveTo(e.x, e.y);
+    ctx.arc(e.x, e.y, r, e.angle - ch, e.angle + ch);
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(255, 214, 102, 0.55)';
+    ctx.fill();
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = 'rgba(255, 233, 160, 0.95)';
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 // 진정의 광역 휘두르기: 바라보는 방향으로 퍼지는 황금빛 부채꼴 (맞은 적은 피해, 범위 안 아군은 회복)
 function drawJinjeongFanEffect(e) {
   const t = 1 - Math.max(0, Math.min(1, e.life / (e.maxLife || 0.4)));
@@ -13587,6 +13868,8 @@ function drawWaterPool(pool) {
 }
 
 function drawEffect(e) {
+  if (e.type === 'tearBurst') { drawTearBurstEffect(e); return; }
+  if (e.type === 'wallSlam') { drawWallSlamEffect(e); return; }
   if (e.type === 'stoneBurst') {
     // 돌이 갈라지는 순간: 먼지 고리 + 퍼지는 방향(부채꼴)으로 뻗는 금 + 파편
     const prog = 1 - Math.max(0, Math.min(1, e.life / (e.maxLife || 0.35)));
@@ -14125,6 +14408,8 @@ function drawEffect(e) {
     drawQuakeEffect(e);
   } else if (e.type === 'melee' && e.visual === 'plunger') {
     drawPlungerEffect(e);
+  } else if (e.type === 'melee' && e.visual === 'junganArms') {
+    drawJunganArmsEffect(e);
   } else if (e.type === 'melee' && e.visual === 'jinjeongFan') {
     drawJinjeongFanEffect(e);
   } else if (e.type === 'melee' && e.visual === 'heroSword') {
@@ -15475,6 +15760,15 @@ function render() {
   }
   upright.sort((a, b) => a.y - b.y);
   for (const it of upright) it.fn();
+
+  // 중간의 궁극기 '잡아 찢기': 뻗어나가는 손 / 끌려오는 적 / 양손으로 찢는 모션 (플레이어 위에 그림)
+  for (const pid in playersObj) {
+    const gp = playersObj[pid];
+    if (!gp.grab || !gp.alive || typeof gp.x !== 'number') continue;
+    const gt = gp.grab.targetId ? playersObj[gp.grab.targetId] : null;
+    const rpc = renderPos[pid], rpt = gt ? renderPos[gp.grab.targetId] : null;
+    drawGrabArms(gp, rpc || gp, gt ? (rpt || gt) : null);
+  }
 
   // 날아가는 투사체: 몸통 중심 높이에 떠서 날아가도록 그림
   {
