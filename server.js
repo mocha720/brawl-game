@@ -1443,7 +1443,7 @@ const CHARACTERS = {
       damage: 500,          // 발사 지점에서 아주 가까이 맞았을 때의 피해 (1레벨 기준) = minDamage
       distanceScaling: true, // true면 날아간 거리에 비례해서 피해가 minDamage -> maxDamage 로 커짐
       minDamage: 500,       // 매우 가까이서 맞혔을 때 (1레벨 기준)
-      maxDamage: 3500,      // 사거리 끝에서 맞혔을 때 (1레벨 기준) - 3,000 → 3,500 버프
+      maxDamage: 3000,      // 사거리 끝에서 맞혔을 때 (1레벨 기준) - 최대 3,000 (3,500에서 조정)
       speed: 500,           // px/초
       radius: 12,           // 총알 크기 (보통)
       lifetime: 1,          // 초 -> 사거리 = 500px
