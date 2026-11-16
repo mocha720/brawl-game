@@ -640,9 +640,9 @@ const CHARACTERS = {
       poolRadius: 90,       // 물웅덩이 반경
       poolLifetime: 1.5,    // 물웅덩이가 유지되는 시간(초) - 기존 2.5초에서 너프
       poolTickInterval: 0.5, // 대미지/회복이 적용되는 주기(초)
-      poolDamage: 560,      // 적이 물에 닿았을 때 주기당 대미지 (기존 1000 → 700 → 560: 지속 대미지 공격력 20% 감소)
+      poolDamage: 392,      // 적이 물에 닿았을 때 주기당 대미지 (기존 1000 → 700 → 560 → 392: 지속 대미지 공격력 30% 추가 감소)
       poolHeal: 300,        // 자신/아군이 물에 닿았을 때 주기당 회복량 (기존 500에서 너프)
-      directDamage: 1200,   // 해골이 물이 퍼지기 전에 적(플레이어/터렛)에게 직접 적중했을 때 주는 대미지 (기존 700에서 변경)
+      directDamage: 960,    // 해골이 물이 퍼지기 전에 적(플레이어/터렛)에게 직접 적중했을 때 주는 대미지 (기존 700 → 1200 → 960: 직접 피해 20% 감소)
       ammoRegenSeconds: AMMO_REGEN_SECONDS * 1.3, // 기본공격 재장전 시간이 다른 캐릭터보다 30% 느림
     },
     ultimate: {
@@ -1484,11 +1484,11 @@ const CHARACTERS = {
     basic: {
       name: '배추 회오리',
       type: 'melee',        // 발사체가 아니라 즉시 판정되는 근접 공격. angleDegrees 가 360이면 자신을 중심으로 한 원 전체(광역)가 범위가 됨
-      damage: 250,          // 탄창 1개당 피해 (1레벨 기준)
+      damage: 500,          // 탄창 1개당 피해 (1레벨 기준) - 탄창 10개→5개로 줄이는 대신 250에서 2배
       angleDegrees: 360,    // 주변을 빙 둘러 원을 그리며 공격
       range: 130,           // 원의 반경(px)
-      maxAmmo: 10,          // 탄창 10개 (기어 '큰 탄창'은 장착 불가)
-      shotInterval: 0.1,    // 공격 속도: 0.1초에 탄창 1개씩 소비 (shotInterval 이 없는 캐릭터는 FIRE_COOLDOWN_MS 를 씀)
+      maxAmmo: 5,           // 탄창 5개 (기존 10개) (기어 '큰 탄창'은 장착 불가)
+      shotInterval: 0.2,    // 공격 속도: 0.2초에 탄창 1개씩 소비 (기존 0.1초) (shotInterval 이 없는 캐릭터는 FIRE_COOLDOWN_MS 를 씀)
       ammoRegenSeconds: 0.5, // 재장전 속도: 탄창 1개당 0.5초
       visual: 'cabbageRing', // 배춧잎이 돌며 퍼지는 원형 연출
       effectLife: 0.5,      // 연출이 화면에 남는 시간(초)
@@ -1509,6 +1509,16 @@ const CHARACTERS = {
       instant: true,
       charges: 10,           // 효과가 적용되는 기본공격 횟수
       healAmount: 200,       // 기본공격 1번당 범위 안 아군 한 명이 회복하는 양 (1레벨 기준)
+    },
+    // 하이퍼 차지: 이동속도 +30%, 공격력 +25%, 받는 피해 -35%, 발동 중 궁극기(순간이동 배추)가 50% 더 빠르게 날아감
+    hyper: {
+      name: '하이퍼 차지',
+      duration: 10,
+      chargeMultiplier: 0.45,
+      speedMultiplier: 1.3,
+      damageMultiplier: 1.25,
+      damageTakenMultiplier: 0.65,
+      ultimateProjectileSpeedMultiplier: 1.5, // 발동 중 궁극기로 던지는 배추의 비행 속도 배율 (1.5 = 50% 증가 -> 착지까지 걸리는 시간이 1/1.5로 줄어듦)
     },
   },
   jinjeong: {
@@ -1897,7 +1907,7 @@ function describeGadget(g) {
 // 밸런스 기준: 11레벨 = 체력 +35%, 공격력 +30%. (1레벨 상대로 맞붙으면 약 1.75배 유리 -> 실력으로 뒤집을 수 있는 수준)
 // 레벨 1->11 강화 총비용은 2,720코인 (1:1 승리 보상 45코인 기준 약 60승). 수치를 바꾸고 싶으면 이 표만 고치면 된다.
 const MAX_CHARACTER_LEVEL = 11;
-// 하이퍼 차지(추가 스킬): 최고 레벨을 찍은 캐릭터가 코인으로 획득. hyper 스펙이 있는 캐릭터에만 존재한다. (현재는 미남, 지기, 슈, 변기통, 시스템, 엑헤, 모카, 원효대사, 보배, 성스럽다, 여똥이)
+// 하이퍼 차지(추가 스킬): 최고 레벨을 찍은 캐릭터가 코인으로 획득. hyper 스펙이 있는 캐릭터에만 존재한다. (현재는 미남, 지기, 슈, 변기통, 시스템, 엑헤, 모카, 원효대사, 보배, 성스럽다, 여똥이, 진정, 배추 등)
 const HYPER_PRICE = 1000;
 const HYPER_REQUIRED_LEVEL = MAX_CHARACTER_LEVEL;
 const LEVEL_TABLE = [
@@ -1972,6 +1982,7 @@ function describeHyper(hy) {
   if (hy.ultimateLandStun) parts.push(`발동 중 궁극기로 띄운 적이 땅에 떨어지면 ${hy.ultimateLandStun}초 동안 기절`);
   if (hy.ultimateAllyInvincibleSec) parts.push(`발동 중 궁극기를 쓰면 자신을 포함한 모든 아군이 ${hy.ultimateAllyInvincibleSec}초 동안 어떤 피해도 받지 않는 무적 상태가 됨`);
   if (hy.ultimateStrikeCount) parts.push(`발동 중 궁극기를 쓰면 번개가 ${hy.ultimateStrikeCount}개 떨어짐`);
+  if (hy.ultimateProjectileSpeedMultiplier) parts.push(`발동 중 궁극기로 던지는 배추가 ${pct(hy.ultimateProjectileSpeedMultiplier)}% 더 빠른 속도로 날아감`);
   if (hy.ultimateChargeMultiplier) parts.push(`발동 중 궁극기 충전량 ${pct(hy.ultimateChargeMultiplier)}% 증가`);
   if (hy.ultimateDistanceMultiplier) parts.push(`발동 중 궁극기 점프 거리 ${pct(hy.ultimateDistanceMultiplier)}% 증가`);
   if (hy.dashDistanceMultiplier) parts.push(`발동 중 기본공격(돌진) 거리 ${pct(hy.dashDistanceMultiplier)}% 증가`);
@@ -6973,7 +6984,9 @@ function spawnLob(match, p, spec, sentDistance) {
   const dist = Math.max(minD, Math.min(maxD, sent));
   const tx = Math.max(0, Math.min(ARENA_WIDTH, p.x + Math.cos(p.angle) * dist));
   const ty = Math.max(0, Math.min(ARENA_HEIGHT, p.y + Math.sin(p.angle) * dist));
-  const travel = spec.flightTime || 1.25; // 거리와 상관없이 고정된 비행 시간
+  // 하이퍼 차지 발동 중 배추의 궁극기: 배추가 더 빠르게 날아감 (속도 x배 = 착지까지 걸리는 시간 1/x)
+  const hyperLobSpeed = spec.teleportLob && p.hasHyper && p.hyper && p.hyper.ultimateProjectileSpeedMultiplier && p.hyperUntil && Date.now() < p.hyperUntil ? p.hyper.ultimateProjectileSpeedMultiplier : 1;
+  const travel = (spec.flightTime || 1.25) / hyperLobSpeed; // 거리와 상관없이 고정된 비행 시간
   bulletIdCounter += 1;
   match.bullets.push({
     id: bulletIdCounter,
@@ -8579,7 +8592,7 @@ function registerGameplayHandlers(socket) {
     const now = Date.now();
     if (p.basic.type === 'charge') return; // 똥파리는 shoot이 아니라 chargeStart/chargeRelease로 공격함
     if (p.windupUntil && now < p.windupUntil) return; // 공격 선딜 중에는 다시 공격할 수 없음
-    // 연사 방지 (최소 발사 간격): 캐릭터에 shotInterval(초)이 있으면 그 값(배추 0.1초), 없으면 공통 FIRE_COOLDOWN_MS.
+    // 연사 방지 (최소 발사 간격): 캐릭터에 shotInterval(초)이 있으면 그 값(배추 0.2초), 없으면 공통 FIRE_COOLDOWN_MS.
     // 아주 짧은 간격은 네트워크 지터로 요청이 몰려 들어와도 씹히지 않도록 10ms 여유를 둔다.
     const minShotGapMs = p.basic.shotInterval > 0 ? Math.max(0, p.basic.shotInterval * 1000 - 10) : FIRE_COOLDOWN_MS;
     if (now - p.lastShotAt < minShotGapMs) return;
