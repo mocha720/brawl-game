@@ -501,7 +501,7 @@ const CHARACTERS = {
     basic: {
       name: '총 쏘기',
       damage: 1540,    // 기존 2200에서 공격력 30% 감소
-      speed: 845,      // px/초 (기존 650에서 30% 증가)
+      speed: 676,      // px/초 (기존 650 → 845 → 676: 탄속 20% 감소)
       radius: 6,
       lifetime: 1.5,   // 초
       visual: 'rifleBullet', // 실제 총알 모양 (탄두 + 황동 탄피 + 궤적)
@@ -733,9 +733,9 @@ const CHARACTERS = {
       hp: 6000,              // 터렛 자체 체력 (총알에 맞으면 줄어들고 0이 되면 파괴됨) - 기존 4000에서 버프
       radius: 22,
       range: 441,             // 이 범위 안의 적만 자동으로 조준/사격 (기존 294에서 50% 증가)
-      fireInterval: 0.5,      // 초마다 한 발씩 발사
+      fireInterval: 0.75,     // 초마다 한 발씩 발사 (기존 0.5초에서 느려짐)
       damage: 1000,          // 터렛 총알 1발당 대미지 (1레벨 기준) - 기존 500에서 변경
-      bulletSpeed: 900,
+      bulletSpeed: 630,       // 터렛 탄속 (기존 900에서 30% 감소)
       bulletRadius: 6,
       bulletLifetime: 1.2,
       visual: 'turret',
@@ -761,7 +761,7 @@ const CHARACTERS = {
       damageMultiplier: 1.25,   // 공격력 배율 (1.25 = 25% 강화)
       damageTakenMultiplier: 0.95, // 받는 피해 배율 (0.95 = 5% 감소)
       rangeMultiplier: 2,       // 발동 중 사거리 배율 (2 = 2배). 칼(기본공격)은 날아가는 시간이 늘어나고, 저격 터렛은 조준 사거리와 총알 사거리가 늘어남
-      turretBulletBounce: true, // 발동 중 저격 터렛의 총알이 벽/맵 끝에 닿으면 튕겨 나옴 (적에게 맞으면 사라짐)
+      turretFireInterval: 0.5,  // 발동 중 저격 터렛의 연사속도(초마다 한 발). 평소(0.75초)보다 빨라짐. 총알이 벽에 튕기던 효과는 없앴음
     },
   },
   yeoddongi: {
@@ -1995,6 +1995,7 @@ function describeHyper(hy) {
   if (hy.ultimateSummonAttackSpeedMultiplier) parts.push(`발동 중 궁극기로 소환한 닭의 공격 속도 ${pct(hy.ultimateSummonAttackSpeedMultiplier)}% 증가`);
   if (hy.ultimateWallPass) parts.push('발동 중 궁극기(은신)를 쓰면 은신하는 동안 벽을 통과할 수 있고, 은신이 끝났을 때 벽 안에 있으면 밖으로 밀려남');
   if (hy.rangeMultiplier) parts.push(hy.rangeMultiplier >= 2 ? `발동 중 기본공격과 궁극기 사거리 ${hy.rangeMultiplier}배` : `발동 중 기본공격과 궁극기 사거리 ${pct(hy.rangeMultiplier)}% 증가`);
+  if (hy.turretFireInterval) parts.push(`발동 중 저격 터렛이 ${hy.turretFireInterval}초마다 한 발씩 발사`);
   if (hy.turretBulletBounce) parts.push('발동 중 저격 터렛의 총알이 벽/맵 끝에 닿으면 튕겨 나옴 (적에게 맞으면 사라짐)');
   return { name: hy.name, desc: parts.join('. ') + '.' };
 }
@@ -9839,12 +9840,13 @@ function updateMatch(match, dt, now) {
   for (const turret of match.turrets) {
     if (match.over) break;
     if (turret.isGate) continue; // 문지기 모드의 문은 공격하지 않음 (맞기만 함)
-    turret.fireCooldown -= dt;
-    if (turret.fireCooldown > 0) continue;
-
-    // 주인이 하이퍼 차지 발동 중이면 (성스럽다) 이 터렛의 사거리가 늘어나고 총알이 벽에 튕김 - 발동 전에 설치한 터렛도 발동 중에는 똑같이 적용
+    // 주인이 하이퍼 차지 발동 중이면 (성스럽다) 이 터렛의 사거리가 늘어나고 연사속도가 빨라짐 - 발동 전에 설치한 터렛도 발동 중에는 똑같이 적용
     const turretOwner = match.players[turret.ownerId];
     const turretHyper = turretOwner && turretOwner.hasHyper && turretOwner.hyper && turretOwner.hyperUntil && Date.now() < turretOwner.hyperUntil ? turretOwner.hyper : null;
+    const turretFireInterval = turretHyper && turretHyper.turretFireInterval ? turretHyper.turretFireInterval : turret.fireInterval;
+    turret.fireCooldown -= dt;
+    if (turret.fireCooldown > turretFireInterval) turret.fireCooldown = turretFireInterval; // 발동 직전에 쏜 터렛도 남은 대기시간이 새 연사속도를 넘지 않게 (발동 즉시 빨라짐)
+    if (turret.fireCooldown > 0) continue;
     const turretRangeMult = turretHyper && turretHyper.rangeMultiplier ? turretHyper.rangeMultiplier : 1;
     const turretBounce = !!(turretHyper && turretHyper.turretBulletBounce);
     const turretRange = turret.range * turretRangeMult;
@@ -9899,7 +9901,7 @@ function updateMatch(match, dt, now) {
       pierceWalls: turretBounce, // 튕기는 총알은 '벽에 닿아 멈춤' 판정을 건너뛰고 대신 직접 튕김 처리 (성스럽다의 칼과 같은 방식)
       wallBounce: turretBounce,  // true면 벽/맵 끝에 튕김 (적에게 맞으면 사라짐)
     });
-    turret.fireCooldown = turret.fireInterval;
+    turret.fireCooldown = turretFireInterval;
   }
 
   // 닭(엑헤 궁극기) AI: 가장 가까운 적(플레이어/터렛/적 닭)을 자동으로 추격하고, 닿으면 주기적으로 공격한다
