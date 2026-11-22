@@ -9070,8 +9070,8 @@ function drawPlayer(p, isMe) {
   }
 
   // 임시 보호막 표시 (버피 - 가젯): 초록/금빛으로 맥동하는 막. 사라지기 직전 0.4초는 깜빡임
-  if (p.alive && p.buffyShieldUntil && sNow() < p.buffyShieldUntil) {
-    const left = p.buffyShieldUntil - sNow();
+  if (p.alive && ((p.buffyShieldUntil && sNow() < p.buffyShieldUntil) || (p.buffyDashGuardUntil && sNow() < p.buffyDashGuardUntil))) { // 꽈리의 돌진 직후 피해 감소(buffyDashGuardUntil)도 같은 막으로 표시
+    const left = Math.max(p.buffyShieldUntil || 0, p.buffyDashGuardUntil || 0) - sNow();
     const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 120);
     const fade = left < 400 ? (0.4 + 0.6 * Math.abs(Math.sin(Date.now() / 50))) : 1;
     ctx.save();
@@ -16178,6 +16178,10 @@ function drawLeapIndicator(me, spec) {
   const dist = getAimDistanceFor(me, u);
   const lx = Math.max(PLAYER_RADIUS, Math.min(ARENA_WIDTH - PLAYER_RADIUS, me.x + Math.cos(angle) * dist));
   const ly = Math.max(PLAYER_RADIUS, Math.min(ARENA_HEIGHT - PLAYER_RADIUS, me.y + Math.sin(angle) * dist));
+  // 하이퍼 차지 발동 중 궁극기 점프 거리/착지 범위 증가 (서버도 같은 배율을 씀)
+  const hyperLeftOn = me.hyperLeft > 0 && me.hyper && u === me.ultimate;
+  const hyperDistMul = hyperLeftOn && me.hyper.ultimateDistanceMultiplier ? me.hyper.ultimateDistanceMultiplier : 1;
+  const hyperLandMul = hyperLeftOn && me.hyper.ultimateLandRadiusMultiplier ? me.hyper.ultimateLandRadiusMultiplier : 1;
 
   ctx.save();
   // 점프할 수 있는 최대 거리 (연한 점선 원)
@@ -16185,7 +16189,7 @@ function drawLeapIndicator(me, spec) {
   ctx.strokeStyle = 'rgba(162, 155, 254, 0.3)';
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.arc(me.x, me.y, u.distance, 0, Math.PI * 2);
+  ctx.arc(me.x, me.y, u.distance * hyperDistMul, 0, Math.PI * 2);
   ctx.stroke();
 
   // 현재 점프 경로
@@ -16200,7 +16204,7 @@ function drawLeapIndicator(me, spec) {
   // 착지 지점과 피해 범위
   ctx.setLineDash([]);
   ctx.beginPath();
-  ctx.arc(lx, ly, u.landRadius, 0, Math.PI * 2);
+  ctx.arc(lx, ly, u.landRadius * hyperLandMul, 0, Math.PI * 2);
   ctx.fillStyle = 'rgba(108, 92, 231, 0.22)';
   ctx.fill();
   ctx.lineWidth = 3;
