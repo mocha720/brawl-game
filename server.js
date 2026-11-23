@@ -1034,7 +1034,7 @@ const CHARACTERS = {
       type: 'quake',         // 망치를 내려쳐서 조준 방향으로 즉시 판정되는 지진 (부채꼴 범위 + 기절)
       damage: 2000,
       stunDuration: 0.3,     // 맞은 적을 기절시키는 시간(초) - 기존 0.5초에서 감소
-      angleDegrees: 33.6,    // 지진이 퍼지는 부채꼴 전체 각도 (조준 방향 기준) - 28도에서 20% 증가 (기존 40도 → 30% 감소 → 20% 증가)
+      angleDegrees: 60,      // 지진이 퍼지는 부채꼴 전체 각도(중심각, 조준 방향 기준). 기존 33.6도에서 60도로 넓힘
       range: 196,            // 사거리 - 기존 280에서 30% 감소
       windupMin: 0.2,        // 체력이 매우 적을 때도 선딜이 이 시간(초)보다 짧아지지는 않음
       windup: 1.5,           // 체력이 가득 찼을 때의 선딜(초) - 기존 1초에서 1.5초로. 체력이 줄어들수록 비례해서 짧아짐 (체력 50%면 0.75초, 최소 windupMin). 공격 버튼을 누른 뒤 이 시간이 지나야 지진이 실제로 나감. 그동안 이동 불가 + 조준 방향도 고정 (공격 버튼을 누른 순간의 방향으로 나감)
@@ -1204,6 +1204,17 @@ const CHARACTERS = {
       radius: 14,
       lifetime: 1.1,           // 사거리 ≈ 572px
       visual: 'poopBomb',
+    },
+    // 하이퍼 차지: 캐릭터를 최고 레벨(11)까지 키운 뒤 코인으로 획득하는 추가 스킬. 기본공격을 적중시켜 게이지를 채우고, 가득 차면 발동한다.
+    hyper: {
+      name: '하이퍼 차지',
+      duration: 10,             // 지속 시간(초)
+      chargeMultiplier: 0.45,   // 게이지 충전량 배율 (0.45 = 궁극기 충전량의 45%, 거기에 전체 보너스 +15%가 곱해짐). 발동 중에는 충전되지 않음
+      speedMultiplier: 1.2,     // 이동속도 배율 (1.2 = 20% 증가)
+      damageMultiplier: 1.1,    // 공격력 배율 (1.1 = 10% 강화)
+      damageTakenMultiplier: 0.9, // 받는 피해 배율 (0.9 = 10% 감소)
+      basicChargeRateMultiplier: 1.25, // 발동 중 기본공격(똥 날리기) 충전 속도 배율 (1.25 = 25% 빨라짐 -> 완전 충전 2초가 1.6초로)
+      chargingDamageTakenMultiplier: 0.7, // 발동 중 기본공격을 충전하는 동안 추가로 곱해지는 받는 피해 배율 (0.7 = 30% 감소, 위 damageTakenMultiplier 와 곱해짐)
     },
   },
   nai: {
@@ -1929,7 +1940,7 @@ function describeGadget(g) {
 // 밸런스 기준: 11레벨 = 체력 +35%, 공격력 +30%. (1레벨 상대로 맞붙으면 약 1.75배 유리 -> 실력으로 뒤집을 수 있는 수준)
 // 레벨 1->11 강화 총비용은 2,720코인 (1:1 승리 보상 45코인 기준 약 60승). 수치를 바꾸고 싶으면 이 표만 고치면 된다.
 const MAX_CHARACTER_LEVEL = 11;
-// 하이퍼 차지(추가 스킬): 최고 레벨을 찍은 캐릭터가 코인으로 획득. hyper 스펙이 있는 캐릭터에만 존재한다. (현재는 미남, 지기, 슈, 변기통, 시스템, 엑헤, 모카, 원효대사, 보배, 성스럽다, 여똥이, 진정, 배추, 업할, 진우Park 등)
+// 하이퍼 차지(추가 스킬): 최고 레벨을 찍은 캐릭터가 코인으로 획득. hyper 스펙이 있는 캐릭터에만 존재한다. (현재는 미남, 지기, 슈, 변기통, 시스템, 엑헤, 모카, 원효대사, 보배, 성스럽다, 여똥이, 진정, 배추, 업할, 진우Park, 똥파리 등)
 const HYPER_PRICE = 1000;
 const HYPER_REQUIRED_LEVEL = MAX_CHARACTER_LEVEL;
 const LEVEL_TABLE = [
@@ -2008,6 +2019,8 @@ function describeHyper(hy) {
   if (hy.ultimateProjectileSpeedMultiplier) parts.push(`발동 중 궁극기로 던지는 배추가 ${pct(hy.ultimateProjectileSpeedMultiplier)}% 더 빠른 속도로 날아감`);
   if (hy.ultimateChargeMultiplier) parts.push(`발동 중 궁극기 충전량 ${pct(hy.ultimateChargeMultiplier)}% 증가`);
   if (hy.basicCurrentHpRatio) parts.push(`발동 중 기본공격(하트)이 적의 현재 체력(보호막 포함)의 ${Math.round(hy.basicCurrentHpRatio * 100)}%만큼 피해를 줌`);
+  if (hy.basicChargeRateMultiplier) parts.push(`발동 중 기본공격 충전 속도 ${pct(hy.basicChargeRateMultiplier)}% 증가`);
+  if (hy.chargingDamageTakenMultiplier) parts.push(`발동 중 기본공격을 충전하는 동안 받는 피해 ${100 - Math.round(hy.chargingDamageTakenMultiplier * 100)}% 추가 감소`);
   if (hy.ultimateLandRadiusMultiplier) parts.push(`발동 중 궁극기 착지 피해 범위 ${pct(hy.ultimateLandRadiusMultiplier)}% 증가`);
   if (hy.ultimateDistanceMultiplier) parts.push(`발동 중 궁극기 점프 거리 ${pct(hy.ultimateDistanceMultiplier)}% 증가`);
   if (hy.dashDistanceMultiplier) parts.push(`발동 중 기본공격(돌진) 거리 ${pct(hy.dashDistanceMultiplier)}% 증가`);
@@ -2160,6 +2173,10 @@ const BUFFY_CATALOG = [
   // 모카
   { id: 'mocha_basic', charId: 'mocha', kind: 'basic', desc: '기본공격(양손 찌르기) 탄창이 1개 더 늘어남 (3개 → 4개)', effect: { maxAmmoBonus: 1 } },
   { id: 'mocha_gadget', charId: 'mocha', kind: 'gadget', desc: '가젯(밧줄 돌진)을 사용하면 2초 동안 받는 피해가 25% 감소하는 임시 보호막을 즉시 얻음', effect: { gadgetShieldTakenMult: 0.75, gadgetShieldSec: 2 } },
+  // 엑헤
+  { id: 'ekhe_basic', charId: 'ekhe', kind: 'basic', desc: '기본공격(계란 던지기)을 사용하면 즉시 체력 100 회복', effect: { basicHealAmount: 100 } },
+  { id: 'ekhe_gadget', charId: 'ekhe', kind: 'gadget', desc: '가젯(수호의 파동)으로 적을 밀쳐낸 뒤 0.5초 동안 이동속도가 50% 증가', effect: { gadgetPushSpeedMult: 1.5, gadgetPushSpeedSec: 0.5 } },
+  { id: 'ekhe_hyper', charId: 'ekhe', kind: 'hyper', desc: '하이퍼 차지 발동 중 닭을 최대 2마리까지 소환할 수 있음', effect: { hyperMaxChickens: 2 } },
   // 꽈리
   { id: 'gwari_basic', charId: 'gwari', kind: 'basic', desc: '기본공격(돌진 박치기) 돌진이 끝난 뒤 0.25초 동안 받는 피해가 20% 감소', effect: { basicDashGuardMult: 0.8, basicDashGuardSec: 0.25 } },
   { id: 'gwari_gadget', charId: 'gwari', kind: 'gadget', desc: '가젯(쌈장 변신)을 사용한 뒤(변신이 끝나면) 1.5초 동안 이동속도가 20% 증가', effect: { gadgetSpeedMult: 1.2, gadgetSpeedSec: 1.5 } },
@@ -2185,7 +2202,7 @@ function buffyCatalogPublic() {
 // 캐릭터에 장착된 기어들의 효과 합계 (최대 장착 수까지만 인정)
 function gearBonusOf(u, charId) {
   // reloadSpeed: 재장전 속도 증가율(덧셈) / fullHpTakenMult: 체력이 가득 찰 때 받는 피해 배율(곱셈, 1 = 효과 없음) / lowHpDamageBonus: 체력 50% 이하일 때 공격력 증가율(덧셈) / fullAmmoRangeBonus: 탄창이 가득(3개)일 때 사거리 증가율(덧셈)
-  const total = { reloadSpeed: 0, fullHpTakenMult: 1, lowHpDamageBonus: 0, fullAmmoRangeBonus: 0, healBonus: 0, startShield: 0, ultChargeBonus: 0, projectileSpeedBonus: 0, lowHpSpeedBonus: 0, chainDamageBonus: 0, damageTakenUltCharge: 0, gadgetCooldownSec: 0, bandageHeal: 0, ultStealthSec: 0, lifesteal: 0, hyperDurationBonusSec: 0, maxAmmoBonus: 0, moveSpeedMult: 1, buffyBasicRadiusMult: 1, buffyGadgetSlowMult: 1, buffyGadgetSlowSec: 0, buffyHyperUltRadiusMult: 1, buffyBasicSpeedMult: 1, buffyBasicSpeedSec: 0, buffyGadgetShieldMult: 1, buffyGadgetShieldSec: 0, buffyBasicPoolLifeBonus: 0, buffyGadgetReloadMult: 1, buffyGadgetReloadSec: 0, buffyHyperUltSpeedMult: 1, buffyAllHitSpeedMult: 1, buffyAllHitSpeedSec: 0, buffyAuraSlowMult: 1, buffyAuraRadius: 0, buffyHyperSpreadDegrees: 0, buffyHitSpeedMult: 1, buffyHitSpeedSec: 0, buffyHyperTakenMult: 1, buffyBounceDamageMult: 1, buffyGadgetPierce: false, buffyHyperProjRadiusMult: 1, buffyBasicProjSpeedMult: 1, buffyShieldOnKnock: false, buffyHyperRegenAmount: 0, buffyHyperRegenInterval: 0.5, buffyBasicSelfHeal: 0, buffyGadgetTeamRegenAmount: 0, buffyGadgetTeamRegenInterval: 0.5, buffyGadgetTeamRegenSec: 0, buffyHyperTeamReloadMult: 1, buffyHyperReloadMult: 1, buffyBasicWindupSec: 0, buffyGadgetChargeSec: 0, buffyDashGuardMult: 1, buffyDashGuardSec: 0, buffyGadgetSpeedMult: 1, buffyGadgetSpeedSec: 0, buffyHyperKillReload: false };
+  const total = { reloadSpeed: 0, fullHpTakenMult: 1, lowHpDamageBonus: 0, fullAmmoRangeBonus: 0, healBonus: 0, startShield: 0, ultChargeBonus: 0, projectileSpeedBonus: 0, lowHpSpeedBonus: 0, chainDamageBonus: 0, damageTakenUltCharge: 0, gadgetCooldownSec: 0, bandageHeal: 0, ultStealthSec: 0, lifesteal: 0, hyperDurationBonusSec: 0, maxAmmoBonus: 0, moveSpeedMult: 1, buffyBasicRadiusMult: 1, buffyGadgetSlowMult: 1, buffyGadgetSlowSec: 0, buffyHyperUltRadiusMult: 1, buffyBasicSpeedMult: 1, buffyBasicSpeedSec: 0, buffyGadgetShieldMult: 1, buffyGadgetShieldSec: 0, buffyBasicPoolLifeBonus: 0, buffyGadgetReloadMult: 1, buffyGadgetReloadSec: 0, buffyHyperUltSpeedMult: 1, buffyAllHitSpeedMult: 1, buffyAllHitSpeedSec: 0, buffyAuraSlowMult: 1, buffyAuraRadius: 0, buffyHyperSpreadDegrees: 0, buffyHitSpeedMult: 1, buffyHitSpeedSec: 0, buffyHyperTakenMult: 1, buffyBounceDamageMult: 1, buffyGadgetPierce: false, buffyHyperProjRadiusMult: 1, buffyBasicProjSpeedMult: 1, buffyShieldOnKnock: false, buffyHyperRegenAmount: 0, buffyHyperRegenInterval: 0.5, buffyBasicSelfHeal: 0, buffyGadgetTeamRegenAmount: 0, buffyGadgetTeamRegenInterval: 0.5, buffyGadgetTeamRegenSec: 0, buffyHyperTeamReloadMult: 1, buffyHyperReloadMult: 1, buffyBasicWindupSec: 0, buffyGadgetChargeSec: 0, buffyDashGuardMult: 1, buffyDashGuardSec: 0, buffyGadgetSpeedMult: 1, buffyGadgetSpeedSec: 0, buffyHyperKillReload: false, buffyBasicHeal: 0, buffyPushSpeedMult: 1, buffyPushSpeedSec: 0, buffyHyperMaxChickens: 1 };
   const seenGearIds = new Set(); // 같은 기어는 한 캐릭터에 한 번만 효과 적용 (이전 데이터의 중복 장착 대비)
   for (const g of ownedGearsOf(u).filter((x) => x.charId === charId).filter((x) => !seenGearIds.has(x.gearId) && seenGearIds.add(x.gearId)).slice(0, GEAR_MAX_PER_CHARACTER)) {
     if (!gearAllowedOn(g.gearId, charId)) continue; // 장착할 수 없는 캐릭터에 (잘못) 붙어 있어도 효과는 적용하지 않음
@@ -2239,6 +2256,9 @@ function gearBonusOf(u, charId) {
     if (e.maxAmmoBonus) total.maxAmmoBonus += e.maxAmmoBonus; // 버피(기본공격, 모카): 탄창 수 증가 (기어 '큰 탄창'과 같은 값을 써서 플레이어 생성 시 maxAmmo/ammo 에 반영됨)
     if (e.basicDashGuardMult) { total.buffyDashGuardMult = e.basicDashGuardMult; total.buffyDashGuardSec = e.basicDashGuardSec || 0.25; } // 버피(기본공격, 꽈리): 돌진이 끝난 뒤 잠깐 받는 피해 감소
     if (e.gadgetSpeedMult) { total.buffyGadgetSpeedMult = e.gadgetSpeedMult; total.buffyGadgetSpeedSec = e.gadgetSpeedSec || 1.5; } // 버피(가젯, 꽈리): 쌈장 변신이 끝난 뒤 잠깐 이동속도 증가
+    if (e.basicHealAmount) total.buffyBasicHeal += e.basicHealAmount; // 버피(기본공격, 엑헤): 기본공격을 쓸 때마다 즉시 체력 회복
+    if (e.gadgetPushSpeedMult) { total.buffyPushSpeedMult = e.gadgetPushSpeedMult; total.buffyPushSpeedSec = e.gadgetPushSpeedSec || 0.5; } // 버피(가젯, 엑헤): 적을 밀쳐낸 뒤 잠깐 이동속도 증가
+    if (e.hyperMaxChickens) total.buffyHyperMaxChickens = Math.max(total.buffyHyperMaxChickens, e.hyperMaxChickens); // 버피(하이퍼차지, 엑헤): 하이퍼 차지 중 동시에 둘 수 있는 닭 수
     if (e.hyperKillReload) total.buffyHyperKillReload = true; // 버피(하이퍼차지, 꽈리): 하이퍼 차지 발동 중 적을 처치하면 탄창 전부 재장전
     if (e.gadgetChargeTimeSec) total.buffyGadgetChargeSec = e.gadgetChargeTimeSec; // 버피(가젯, 보배): 보조배터리 충전의 무방비(충전) 시간(초)
     if (e.basicWindupSec) total.buffyBasicWindupSec = e.basicWindupSec; // 버피(기본공격, 업할): 체력이 가득 찼을 때의 선딜(초)
@@ -2847,6 +2867,28 @@ function repeatMissionsView(u) {
 // id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
+  {
+    id: '2026-11-23-ddongpari-hyper',
+    date: '2026-11-23',
+    tag: 'new',
+    title: '똥파리 하이퍼 차지 추가!',
+    items: [
+      '똥파리에게 하이퍼 차지가 생겼어요. 발동 중 이동속도 20% 증가, 공격력 10% 강화, 받는 피해 10% 감소예요.',
+      '발동 중 기본공격(똥 날리기) 충전 속도가 25% 빨라져요. (완전 충전 2초 → 1.6초)',
+      '발동 중 기본공격을 충전하는 동안에는 받는 피해가 30% 더 줄어요.',
+    ],
+  },
+  {
+    id: '2026-11-23-ekhe-buffy',
+    date: '2026-11-23',
+    tag: 'new',
+    title: '엑헤 버피 추가!',
+    items: [
+      '기본공격 버피: 계란을 던지면 즉시 체력을 100 회복해요.',
+      '가젯 버피: 수호의 파동으로 적을 밀쳐내면 0.5초 동안 이동속도가 50% 빨라져요.',
+      '하이퍼차지 버피: 하이퍼 차지 발동 중 닭을 최대 2마리까지 소환할 수 있어요.',
+    ],
+  },
   {
     id: '2026-11-22-gwari-buffy',
     date: '2026-11-22',
@@ -6481,6 +6523,11 @@ function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hy
     buffyGadgetTeamRegenAmount: (gear && gear.buffyGadgetTeamRegenAmount) || 0,     // 버피(가젯, 진정): 가젯 사용 시 모든 아군이 주기마다 회복하는 체력
     buffyGadgetTeamRegenInterval: (gear && gear.buffyGadgetTeamRegenInterval) || 0.5, // 위 회복 주기(초)
     buffyGadgetTeamRegenSec: (gear && gear.buffyGadgetTeamRegenSec) || 0,           // 위 회복이 이어지는 시간(초)
+    buffyBasicHeal: (gear && gear.buffyBasicHeal) || 0,                             // 버피(기본공격, 엑헤): 기본공격을 쓸 때마다 즉시 회복하는 체력
+    buffyPushSpeedMult: (gear && gear.buffyPushSpeedMult) || 1,                     // 버피(가젯, 엑헤): 적을 밀쳐낸 뒤 이동속도 배율
+    buffyPushSpeedSec: (gear && gear.buffyPushSpeedSec) || 0,                       // 버피(가젯, 엑헤): 그 지속시간(초)
+    buffyPushSpeedUntil: 0,                                                        // 이 시각(ms) 전까지 위 이동속도 증가 유지
+    buffyHyperMaxChickens: (gear && gear.buffyHyperMaxChickens) || 1,               // 버피(하이퍼차지, 엑헤): 하이퍼 차지 발동 중 동시에 둘 수 있는 닭 수 (1 = 효과 없음)
     buffyDashGuardMult: (gear && gear.buffyDashGuardMult) || 1,                     // 버피(기본공격, 꽈리): 돌진이 끝난 뒤 받는 피해 배율 (1 = 효과 없음)
     buffyDashGuardSec: (gear && gear.buffyDashGuardSec) || 0,                       // 버피(기본공격, 꽈리): 그 지속시간(초)
     buffyDashGuardUntil: 0,                                                        // 이 시각(ms) 전까지 위 피해 감소 유지 (클라이언트도 이 값으로 보호막을 그림)
@@ -6651,6 +6698,11 @@ function teamHyperReloadMult(match, p, now) {
   return best;
 }
 // 버피(하이퍼차지, 모카): 자신의 하이퍼 차지가 발동 중일 때만 재장전 속도가 빨라짐 (진정처럼 아군에게 퍼지지 않는 자기 전용 효과)
+// 하이퍼 차지(똥파리): 발동 중에는 기본공격 충전이 빨라짐. baseSec(원래 완전 충전 시간)를 실제 충전 시간으로 바꿔 줌
+function effectiveChargeTime(p, baseSec, now) {
+  const on = p.hasHyper && p.hyper && p.hyper.basicChargeRateMultiplier && p.hyperUntil && now < p.hyperUntil;
+  return on ? baseSec / p.hyper.basicChargeRateMultiplier : baseSec;
+}
 function selfHyperReloadMult(p, now) {
   return p.buffyHyperReloadMult > 1 && p.hasHyper && p.hyper && p.hyperUntil && now < p.hyperUntil ? p.buffyHyperReloadMult : 1;
 }
@@ -6661,6 +6713,7 @@ function getDamageTakenMultiplier(p) {
   // 기어: 체력이 가득 차 있을 때(이 공격을 받기 직전 기준) 받는 피해 감소. 하이퍼 차지 감소와 곱해져서 적용됨
   if (p && p.gearFullHpTakenMult < 1 && p.hp >= p.maxHp) mult *= p.gearFullHpTakenMult;
   if (p && p.buffyShieldUntil && Date.now() < p.buffyShieldUntil) mult *= p.buffyGadgetShieldMult || 1; // 버피(가젯): 임시 보호막
+  if (p && p.chargeStartAt && p.hyperUntil && Date.now() < p.hyperUntil && p.hyper && p.hyper.chargingDamageTakenMultiplier) mult *= p.hyper.chargingDamageTakenMultiplier; // 하이퍼 차지(똥파리): 발동 중 기본공격을 충전하는 동안 받는 피해 추가 감소
   if (p && p.buffyDashGuardUntil && Date.now() < p.buffyDashGuardUntil) mult *= p.buffyDashGuardMult || 1; // 버피(기본공격, 꽈리): 돌진 직후 잠깐 받는 피해 감소
   if (p && p.gadgetGuardUntil && Date.now() < p.gadgetGuardUntil) mult *= p.gadgetGuardMult || 1; // 가젯(중간의 질주 보호막): 받는 피해 감소
   return mult;
@@ -6899,6 +6952,7 @@ function respawnPlayer(m, respawned, invincibleMs) {
   respawned.buffyUltSpeedUntil = 0;
   respawned.buffyDashGuardUntil = 0; // 꽈리 버피(돌진 직후 피해 감소 / 쌈장 직후 이동속도)도 초기화
   respawned.buffyGadgetSpeedUntil = 0;
+  respawned.buffyPushSpeedUntil = 0; // 엑헤 가젯 버피 이동속도 증가도 초기화
   respawned.buffyAllHitUntil = 0;
   respawned.buffyAuraSlowUntil = 0;
   respawned.buffyShotHits = {};
@@ -7805,8 +7859,16 @@ function spawnTurret(match, p, spec) {
 
 // 닭 소환(엑헤 궁극기): 자신의 위치 옆에 닭을 소환한다. 실제 추격/공격은 updateMatch의 닭 AI 루프에서 처리
 function spawnChicken(match, p, spec) {
-  // 같은 사람의 닭이 남아있으면 먼저 제거하고 새로 소환 (닭이 무한히 쌓이지 않도록)
-  match.chickens = match.chickens.filter((c) => c.ownerId !== p.id);
+  // 같은 사람의 닭이 한도(기본 1마리)만큼 남아있으면 가장 오래된 닭부터 제거하고 새로 소환 (닭이 무한히 쌓이지 않도록)
+  // 버피(하이퍼차지, 엑헤): 하이퍼 차지 발동 중에는 한도가 늘어남 (하이퍼가 끝난 뒤 소환하면 다시 1마리로 정리됨)
+  const hyperOnC = p.hasHyper && p.hyper && p.hyperUntil && Date.now() < p.hyperUntil;
+  const maxChickens = hyperOnC && p.buffyHyperMaxChickens > 1 ? p.buffyHyperMaxChickens : 1;
+  const myChickens = match.chickens.filter((c) => c.ownerId === p.id);
+  const removeCount = Math.max(0, myChickens.length - (maxChickens - 1));
+  if (removeCount > 0) {
+    const removeIds = new Set(myChickens.slice(0, removeCount).map((c) => c.id)); // match.chickens 는 소환 순서대로 쌓이므로 앞쪽이 가장 오래된 닭
+    match.chickens = match.chickens.filter((c) => !removeIds.has(c.id));
+  }
 
   chickenIdCounter += 1;
   match.chickens.push({
@@ -8741,6 +8803,15 @@ function registerGameplayHandlers(socket) {
     p.ammo -= 1;
     p.lastShotAt = now;
     markBasicAttack(p, now); // 기어 '파죽지세': 직전 기본공격 후 0.5초 안인지 기록
+    if (p.buffyBasicHeal > 0) { // 버피(기본공격, 엑헤): 기본공격을 쓰는 즉시 체력 회복 (최대 체력 초과 불가, 회복 기어 적용)
+      const hpBefore = p.hp;
+      p.hp = Math.min(p.maxHp, p.hp + p.buffyBasicHeal * (p.gearHealMult || 1));
+      const gainedHp = Math.round(p.hp - hpBefore);
+      if (gainedHp > 0) {
+        effectIdCounter += 1;
+        match.effects.push({ id: effectIdCounter, type: 'healPlus', x: p.x, y: p.y, amount: gainedHp, ownerId: p.id, life: 0.8, maxLife: 0.8 });
+      }
+    }
     // 기어: 쏘기 직전 탄창이 3개 이상이었으면 발사체 기본공격의 사거리 증가 (속도는 그대로 두고 수명을 늘려서 더 멀리 날아가게 함. 근접/돌진/던지기/충전 공격에는 적용 안 됨)
     const gearRangeMult = p.gearRangeBonus > 0 && ammoBeforeShot >= GEAR_FULL_AMMO ? 1 + p.gearRangeBonus : 1;
     const withGearRange = (spec) => (gearRangeMult > 1 && spec.lifetime ? { ...spec, lifetime: spec.lifetime * gearRangeMult } : spec);
@@ -8903,7 +8974,7 @@ function registerGameplayHandlers(socket) {
     if (now - p.lastShotAt < (spec.fireCooldown || 0) * 1000) return; // 발사 후 쿨다운 중에는 발사 불가
     if (data && typeof data.angle === 'number' && Number.isFinite(data.angle)) p.angle = data.angle;
 
-    const ratio = Math.max(0, Math.min(1, heldSec / (spec.chargeTime || 3)));
+    const ratio = Math.max(0, Math.min(1, heldSec / effectiveChargeTime(p, spec.chargeTime || 3, now)));
     const damage = roundTo(spec.minDamage + (spec.maxDamage - spec.minDamage) * ratio, 5);
     p.lastShotAt = now;
     markBasicAttack(p, now); // 기어 '파죽지세'
@@ -9017,6 +9088,7 @@ function registerGameplayHandlers(socket) {
         p.shieldMax = p.shieldHp;
       }
       const now = Date.now();
+      let pushedCount = 0; // 실제로 밀려난 적의 수 (엑헤 가젯 버피 조건)
       for (const pid in match.players) {
         if (pid === p.id) continue;
         const target = match.players[pid];
@@ -9033,11 +9105,13 @@ function registerGameplayHandlers(socket) {
         target.knockbackDistance = gadget.pushDistance;
         target.knockbackTimeLeft = KNOCKBACK_DURATION;
         target.knockbackTotalTime = KNOCKBACK_DURATION;
+        pushedCount += 1;
         if (gadget.type === 'shockwave' && gadget.damage > 0) { // 구지의 가젯: 밀쳐내면서 피해도 줌 (궁극기 게이지는 충전하지 않음)
           applyDamage(match, target, gadget.damage, p.id, { chargeShooter: false });
           if (match.over) return;
         }
       }
+      if (pushedCount > 0 && p.buffyPushSpeedMult > 1) p.buffyPushSpeedUntil = now + (p.buffyPushSpeedSec || 0.5) * 1000; // 버피(가젯, 엑헤): 적을 1명 이상 밀쳐냈으면 잠깐 이동속도 증가
       effectIdCounter += 1;
       match.effects.push({ id: effectIdCounter, type: gadget.type === 'shockwave' ? 'shockwave' : 'shieldPush', ownerId: p.id, x: p.x, y: p.y, radius: gadget.pushRadius, life: 0.5, maxLife: 0.5 }); // 퍼져나가는 파동 연출
     } else if (gadget.type === 'reflect') {
@@ -10583,6 +10657,7 @@ function updateMatch(match, dt, now) {
     if (p.slowUntil && now < p.slowUntil) p.speedMultiplier *= p.slowMult || 1; // 버피(가젯) 감속
     if (p.buffySpeedUntil && now < p.buffySpeedUntil) p.speedMultiplier *= p.buffyBasicSpeedMult || 1; // 버피(기본공격): 공격 후 잠깐 빨라짐
     if (p.buffyHitSpeedUntil && now < p.buffyHitSpeedUntil) p.speedMultiplier *= p.buffyHitSpeedMult || 1; // 버피(기본공격): 적을 맞힌 뒤 잠깐 빨라짐 (변기통)
+    if (p.buffyPushSpeedUntil && now < p.buffyPushSpeedUntil) p.speedMultiplier *= p.buffyPushSpeedMult || 1; // 버피(가젯, 엑헤): 적을 밀쳐낸 뒤 잠깐 빨라짐
     if (p.buffyGadgetSpeedUntil && now < p.buffyGadgetSpeedUntil) p.speedMultiplier *= p.buffyGadgetSpeedMult || 1; // 버피(가젯, 꽈리): 쌈장 변신이 끝난 뒤 잠깐 빨라짐
     if (p.buffyUltSpeedUntil && now < p.buffyUltSpeedUntil) p.speedMultiplier *= p.buffyHyperUltSpeedMult || 1; // 버피(하이퍼차지): 은신하는 동안 더 빨라짐
     if (p.buffyAllHitUntil && now < p.buffyAllHitUntil) p.speedMultiplier *= p.buffyAllHitSpeedMult || 1; // 버피(기본공격): 총알을 모두 맞힌 뒤 잠깐 빨라짐
@@ -10609,7 +10684,7 @@ function updateMatch(match, dt, now) {
         p.chargeStartAt = 0;
         p.chargeRatio = 0;
       } else {
-        p.chargeRatio = Math.max(0, Math.min(1, (now - p.chargeStartAt) / 1000 / (p.basic.chargeTime || 3)));
+        p.chargeRatio = Math.max(0, Math.min(1, (now - p.chargeStartAt) / 1000 / effectiveChargeTime(p, p.basic.chargeTime || 3, now)));
         p.speedMultiplier *= p.basic.chargeSpeedMultiplier || 1;
       }
     }
@@ -11834,7 +11909,7 @@ const STATE_SEND_EVERY = 1;        // N틱마다 한 번 전송. 1 = 초당 20�
 const NET_LIFE_TOLERANCE = 0.12;   // 서버 예상 수명과 이만큼(초) 이상 어긋나면 수명을 다시 보냄
 const NET_STATIC_KEYS = new Set(['basic', 'ultimate', 'gadget', 'hyper']); // 캐릭터 스펙(제자리에서 바뀌지 않고 통째로 교체만 됨) - 참조 비교
 const NET_DROP = {
-  players: new Set(["inBush", "stealthId", "dashTimeLeft", "dashSpeed", "dashDamage", "dashStun", "dashHitIds", "dashCharge", "gearReloadBonus", "gearLowHpDamageBonus", "gearFullHpTakenMult", "gearUltChargeMult", "gearProjectileSpeedMult", "gearMoveSpeedMult", "moveSpeedTierMult", "gearLowHpSpeedBonus", "gearChainBonus", "lastBasicAttackAt", "gearChainOn", "gearSacrificeCharge", "gearGadgetCooldown", "gearLifesteal", "buffyBasicRadiusMult", "buffyGadgetSlowMult", "buffyGadgetSlowSec", "buffyBasicSpeedMult", "buffyBasicSpeedSec", "buffySpeedUntil", "buffyGadgetShieldMult", "buffyGadgetShieldSec", "buffyShieldOnKnock", "buffyBasicProjSpeedMult", "buffyHyperRegenAmount", "buffyHyperRegenInterval", "buffyHyperRegenNext", "buffyBasicSelfHeal", "buffyGadgetTeamRegenAmount", "buffyGadgetTeamRegenInterval", "buffyGadgetTeamRegenSec", "buffyHyperTeamReloadMult", "teamRegenUntil", "teamRegenAmount", "teamRegenInterval", "teamRegenNext", "buffyBasicPoolLifeBonus", "buffyGadgetReloadMult", "buffyGadgetReloadSec", "buffyHyperUltSpeedMult", "buffyAllHitSpeedMult", "buffyAllHitSpeedSec", "buffyAllHitUntil", "buffyShotHits", "buffyAuraSlowMult", "buffyAuraSlowUntil", "buffyAuraSlowCur", "buffyHyperSpreadDegrees", "buffyUltSpeedUntil", "buffyHitSpeedMult", "buffyHitSpeedSec", "buffyBounceDamageMult", "buffyGadgetPierce", "buffyHyperProjRadiusMult", "buffyHitSpeedUntil", "buffyHyperTakenMult", "buffyHyperReloadMult", "buffyBasicWindupSec", "buffyGadgetChargeSec", "buffyDashGuardMult", "buffyDashGuardSec", "buffyGadgetSpeedMult", "buffyGadgetSpeedSec", "buffyGadgetSpeedUntil", "buffyHyperKillReload", "gearHyperDurationBonus", "gearBandageHeal", "bandageUsed", "gearUltStealthSec", "gearHealMult", "gearShieldMax", "lastHitAt", "fullHpSince", "reloadBoostUntil", "reloadBoostMultiplier", "windupId", "knockbackDirX", "knockbackDirY", "knockbackDistance", "knockbackTotalTime", "ultimateChargePerHit", "hyperUntil", "wallPassUntil", "grabbedBy", "phaseSpeedUntil", "phaseSpeedMult", "healChargeAmount", "leapEndsAt", "leapDamage", "leapDirectDamage", "leapKnockback", "leapStun", "ultGadgetLeft", "ultGadgetRate", "speedBoostMultiplier", "gadgetGuardMult", "damageBoostMultiplier", "reloadAllAtOnce", "moveDirX", "moveDirY", "lastMoveAt", "airborneLandDamage", "airborneBy", "airborneStunUntil", "chargeStartAt", "ammoRegenSeconds", "ammoRegenElapsed", "lastShotAt", "lastDamageAt", "hitIds", "leapTargetX", "leapTargetY", "leapRadius", "leapDirectRadius"]),
+  players: new Set(["inBush", "stealthId", "dashTimeLeft", "dashSpeed", "dashDamage", "dashStun", "dashHitIds", "dashCharge", "gearReloadBonus", "gearLowHpDamageBonus", "gearFullHpTakenMult", "gearUltChargeMult", "gearProjectileSpeedMult", "gearMoveSpeedMult", "moveSpeedTierMult", "gearLowHpSpeedBonus", "gearChainBonus", "lastBasicAttackAt", "gearChainOn", "gearSacrificeCharge", "gearGadgetCooldown", "gearLifesteal", "buffyBasicRadiusMult", "buffyGadgetSlowMult", "buffyGadgetSlowSec", "buffyBasicSpeedMult", "buffyBasicSpeedSec", "buffySpeedUntil", "buffyGadgetShieldMult", "buffyGadgetShieldSec", "buffyShieldOnKnock", "buffyBasicProjSpeedMult", "buffyHyperRegenAmount", "buffyHyperRegenInterval", "buffyHyperRegenNext", "buffyBasicSelfHeal", "buffyGadgetTeamRegenAmount", "buffyGadgetTeamRegenInterval", "buffyGadgetTeamRegenSec", "buffyHyperTeamReloadMult", "teamRegenUntil", "teamRegenAmount", "teamRegenInterval", "teamRegenNext", "buffyBasicPoolLifeBonus", "buffyGadgetReloadMult", "buffyGadgetReloadSec", "buffyHyperUltSpeedMult", "buffyAllHitSpeedMult", "buffyAllHitSpeedSec", "buffyAllHitUntil", "buffyShotHits", "buffyAuraSlowMult", "buffyAuraSlowUntil", "buffyAuraSlowCur", "buffyHyperSpreadDegrees", "buffyUltSpeedUntil", "buffyHitSpeedMult", "buffyHitSpeedSec", "buffyBounceDamageMult", "buffyGadgetPierce", "buffyHyperProjRadiusMult", "buffyHitSpeedUntil", "buffyHyperTakenMult", "buffyHyperReloadMult", "buffyBasicWindupSec", "buffyGadgetChargeSec", "buffyDashGuardMult", "buffyDashGuardSec", "buffyGadgetSpeedMult", "buffyGadgetSpeedSec", "buffyGadgetSpeedUntil", "buffyHyperKillReload", "buffyBasicHeal", "buffyPushSpeedMult", "buffyPushSpeedSec", "buffyPushSpeedUntil", "buffyHyperMaxChickens", "gearHyperDurationBonus", "gearBandageHeal", "bandageUsed", "gearUltStealthSec", "gearHealMult", "gearShieldMax", "lastHitAt", "fullHpSince", "reloadBoostUntil", "reloadBoostMultiplier", "windupId", "knockbackDirX", "knockbackDirY", "knockbackDistance", "knockbackTotalTime", "ultimateChargePerHit", "hyperUntil", "wallPassUntil", "grabbedBy", "phaseSpeedUntil", "phaseSpeedMult", "healChargeAmount", "leapEndsAt", "leapDamage", "leapDirectDamage", "leapKnockback", "leapStun", "ultGadgetLeft", "ultGadgetRate", "speedBoostMultiplier", "gadgetGuardMult", "damageBoostMultiplier", "reloadAllAtOnce", "moveDirX", "moveDirY", "lastMoveAt", "airborneLandDamage", "airborneBy", "airborneStunUntil", "chargeStartAt", "ammoRegenSeconds", "ammoRegenElapsed", "lastShotAt", "lastDamageAt", "hitIds", "leapTargetX", "leapTargetY", "leapRadius", "leapDirectRadius"]),
   bullets: new Set(["isUltimate", "explodeDamage", "explodeVisual", "explodeChargesUlt", "teleportOwner", "selfKnockback", "eggSplat", "directDamage", "poolLifetime", "poolTickInterval", "poolDamage", "poolHeal", "poolVisual", "poolChargesUlt", "poolFirstDamage", "poolChargeScale", "slowMultiplier", "knockback", "prevX", "prevY", "originX", "originY", "fresh", "bounceTime", "closeRange", "distScale", "executeBelowHp", "currentHpRatio", "buffyShot", "slowOnHit", "chain", "launchDuration", "landDamage", "landStun", "pierceTargets", "hitIds", "outLeft", "gearProjSpeed", "baseSpeed", "bounce", "pierceWalls", "wallBounce", "bounceDamageMult", "bounced", "bounceBonus", "bounceRangeBonus", "breakShield", "poolOnImpact", "hyperPoolRadius", "hyperPoolHeal", "poolGas", "poolOnExpire", "splitInto"]),
   effects: new Set(["landLife"]),
   waterPools: new Set(["tickTimer", "tickInterval", "firstDamage", "firstHitIds", "chargesUlt", "chargeScale", "poolChargeScale", "slowMultiplier"]),
