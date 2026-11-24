@@ -2219,7 +2219,7 @@ function fireAttack() {
     if (!(me.ultimate && me.ultimate.holdLoad)) ultimateArmed = false;
     updateUltimateButton();
     SFX.ultimate();
-  } else if (gadgetArmed && me && me.gadget && !(me.gadgetCooldownLeft > 0)) {
+  } else if (gadgetArmed && me && me.gadget && !(me.gadgetCooldownLeft > 0) && gadgetAmmoOk(me)) {
     if (me.gadget.type === 'leap') socket.emit('gadget', { distance: Math.round(getAimDistanceFor(me, me.gadget)) }); // 점프 가젯: 조준한 거리만큼 점프
     else socket.emit('gadget');
     gadgetArmed = false;
@@ -5812,11 +5812,16 @@ function updateHyperButton() {
 // ===== 가젯 =====
 // 조준이 필요한 가젯(예: 연발 사격)은 '장전' 상태로 전환되고, 이후 기본 공격 입력으로 발사한다.
 // 조준이 필요 없는 가젯(instant, 예: 탄창 충전)은 누르는 즉시 발동한다.
+// 가젯이 탄창을 소모하는 경우(성스럽다의 저격 사격) 탄창이 충분한지
+function gadgetAmmoOk(me) {
+  return !(me && me.gadget && me.gadget.ammoCost > 0) || (me.ammo || 0) >= me.gadget.ammoCost;
+}
 function activateGadgetControl() {
   if (!joined || inCountdown()) return;
   const me = latestState.players[myId];
   if (!me || !me.alive || !me.gadget) return;
   if (me.gadgetCooldownLeft > 0) return;
+  if (!gadgetAmmoOk(me)) return; // 가젯이 탄창을 소모하는데 탄창이 모자라면 사용 불가 (성스럽다)
 
   if (me.gadget.instant) {
     socket.emit('gadget');
@@ -5849,10 +5854,11 @@ function updateGadgetButton() {
   if (!hasGadget) { gadgetArmed = false; return; }
 
   const left = me.gadgetCooldownLeft || 0;
-  if (left > 0 || !me.alive) gadgetArmed = false; // 쿨다운 중이거나 사망 시 장전 불가
+  const ammoOk = gadgetAmmoOk(me);
+  if (left > 0 || !me.alive || !ammoOk) gadgetArmed = false; // 쿨다운 중이거나 사망, 또는 탄창이 모자라면 장전 불가
   const progress = Math.round((1 - left / (me.gadgetCooldownTotal || GADGET_COOLDOWN_SEC)) * 100); // 기어(빠른 가젯)로 쿨다운이 달라질 수 있어 서버가 보낸 전체 길이를 우선 사용
   btn.style.background = `conic-gradient(#003580 ${progress}%, rgba(255,255,255,0.15) ${progress}%)`;
-  btn.classList.toggle('ready', left <= 0);
+  btn.classList.toggle('ready', left <= 0 && ammoOk);
   btn.classList.toggle('armed', gadgetArmed);
   btn.querySelector('.gad-cd').textContent = left > 0 ? String(Math.ceil(left)) : '';
 }
