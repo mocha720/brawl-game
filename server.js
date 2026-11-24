@@ -715,8 +715,8 @@ const CHARACTERS = {
   seongseureopda: {
     id: 'seongseureopda',
     name: '성스럽다',
-    moveSpeedTier: 'fast', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%)
-    maxHp: 6000,
+    moveSpeedTier: 'normal', // 이동속도 단계: slow(느림 -10%) / normal(보통) / fast(빠름 +10%) - 빠름에서 보통으로 너프
+    maxHp: 5500,             // 기존 6000에서 너프
     basic: {
       name: '칼 던지기',
       damage: 1750,
@@ -725,7 +725,7 @@ const CHARACTERS = {
       lifetime: 0.98,    // 초 (사거리 ≈ 441px 유지) - 탄속이 25% 느려진 만큼 날아가는 시간을 늘려 사거리는 그대로
       visual: 'knife',
       bounceWalls: true, // 벽(장애물)/맵 끝에 닿으면 사라지지 않고 튕겨 나옴 (적에게 맞으면 사라짐)
-      bounceRangeBonus: 0.5, // 처음 튕기는 순간 사거리(날아가는 시간)가 원래 사거리의 이 비율만큼 추가로 늘어남 (0.5 = 50%, 한 번만 적용)
+      bounceRangeBonus: 0.25, // 처음 튕기는 순간 사거리(날아가는 시간)가 원래 사거리의 이 비율만큼 추가로 늘어남 (0.25 = 25%, 한 번만 적용) - 기존 50%에서 너프
     },
     ultimate: {
       name: '저격 터렛 설치',
@@ -733,9 +733,9 @@ const CHARACTERS = {
       hp: 6000,              // 터렛 자체 체력 (총알에 맞으면 줄어들고 0이 되면 파괴됨) - 기존 4000에서 버프
       radius: 22,
       range: 441,             // 이 범위 안의 적만 자동으로 조준/사격 (기존 294에서 50% 증가)
-      fireInterval: 0.75,     // 초마다 한 발씩 발사 (기존 0.5초에서 느려짐)
+      fireInterval: 1.25,     // 초마다 한 발씩 발사 (기존 0.75초에서 너프)
       damage: 1000,          // 터렛 총알 1발당 대미지 (1레벨 기준) - 기존 500에서 변경
-      bulletSpeed: 630,       // 터렛 탄속 (기존 900에서 30% 감소)
+      bulletSpeed: 441,       // 터렛 탄속 (630에서 30% 더 감소, 처음 900에서는 약 51% 감소)
       bulletRadius: 6,
       bulletLifetime: 1.2,
       visual: 'turret',
@@ -743,6 +743,7 @@ const CHARACTERS = {
     gadget: {
       name: '저격 사격',
       type: 'burst',       // 조준한 방향으로 총알을 발사하는 가젯 (여기서는 총알 1발)
+      ammoCost: 1,         // 사용할 때 탄창을 이만큼 소모 (탄창이 모자라면 사용 불가). 소모한 탄창은 기본공격처럼 재장전됨
       bulletCount: 1,
       interval: 0,
       damage: 2000,        // 1레벨 기준 피해 (기존 2500에서 20% 감소)
@@ -761,7 +762,7 @@ const CHARACTERS = {
       damageMultiplier: 1.25,   // 공격력 배율 (1.25 = 25% 강화)
       damageTakenMultiplier: 0.95, // 받는 피해 배율 (0.95 = 5% 감소)
       rangeMultiplier: 2,       // 발동 중 사거리 배율 (2 = 2배). 칼(기본공격)은 날아가는 시간이 늘어나고, 저격 터렛은 조준 사거리와 총알 사거리가 늘어남
-      turretFireInterval: 0.5,  // 발동 중 저격 터렛의 연사속도(초마다 한 발). 평소(0.75초)보다 빨라짐. 총알이 벽에 튕기던 효과는 없앴음
+      turretFireInterval: 0.5,  // 발동 중 저격 터렛의 연사속도(초마다 한 발). 평소(1.25초)보다 빨라짐. 총알이 벽에 튕기던 효과는 없앴음
     },
   },
   yeoddongi: {
@@ -1931,7 +1932,8 @@ function describeGadget(g) {
     default:
       break;
   }
-  return { name: g.name, desc: desc ? `${desc} (${GADGET_COOLDOWN_SEC}초마다 사용 가능)` : '' };
+  const ammoNote = g.ammoCost > 0 ? ` (사용할 때 탄창 ${g.ammoCost}개 소모)` : '';
+  return { name: g.name, desc: desc ? `${desc}${ammoNote} (${GADGET_COOLDOWN_SEC}초마다 사용 가능)` : '' };
 }
 
 // ===== 캐릭터 강화(레벨) 시스템 =====
@@ -2867,6 +2869,20 @@ function repeatMissionsView(u) {
 // id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
+  {
+    id: '2026-11-24-seongseureopda-nerf',
+    date: '2026-11-24',
+    tag: 'balance',
+    title: '성스럽다 밸런스 조정',
+    items: [
+      '체력이 6000 → 5500으로 줄었어요.',
+      '이동속도가 빠름 → 보통으로 줄었어요.',
+      '기본공격(칼 던지기)이 벽에 튕기면 사거리가 50%가 아니라 25% 늘어나요.',
+      '궁극기 저격 터렛이 0.75초가 아니라 1.25초에 한 발씩 발사해요.',
+      '궁극기 저격 터렛의 탄속이 30% 느려졌어요.',
+      '가젯 저격 사격을 쓰려면 이제 탄창 1개를 소모해요. 탄창이 없으면 쓸 수 없어요.',
+    ],
+  },
   {
     id: '2026-11-23-ddongpari-hyper',
     date: '2026-11-23',
@@ -8999,6 +9015,7 @@ function registerGameplayHandlers(socket) {
     if (!p || !p.alive) return;
     if (p.dashing || p.knockbackTimeLeft > 0 || (p.stunnedUntil && Date.now() < p.stunnedUntil)) return;
     if (!p.gadget || p.gadgetCooldownLeft > 0) return;
+    if (p.gadget.ammoCost > 0 && p.ammo < p.gadget.ammoCost) return; // 탄창이 모자라면 가젯 사용 불가 (성스럽다의 저격 사격)
 
     const gadget = p.gadget;
 
@@ -9229,6 +9246,7 @@ function registerGameplayHandlers(socket) {
       p.damageBoostMultiplier = gadget.damageMultiplier || 1.5;
     }
 
+    if (gadget.ammoCost > 0) p.ammo = Math.max(0, p.ammo - gadget.ammoCost); // 가젯 사용 비용: 탄창 소모 (재장전은 기존 규칙대로 진행)
     const gadgetCd = p.gearGadgetCooldown > 0 ? Math.min(GADGET_COOLDOWN_SEC, p.gearGadgetCooldown) : GADGET_COOLDOWN_SEC; // 기어 '빠른 가젯'
     p.gadgetCooldownLeft = gadgetCd;
     p.gadgetCooldownTotal = gadgetCd;
