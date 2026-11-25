@@ -336,21 +336,61 @@
   .rd-char { padding: 12px 4px; border-radius: 12px; border: 3px solid var(--ink); color: #fff; font-weight: 700; font-size: 15px; cursor: pointer; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.45); }
   .rd-char:disabled { opacity: 0.4; cursor: default; }
   .rd-char.picked { outline: 3px solid var(--sun); }
-  /* ----- 2:2 벤/픽 화면 (경쟁전 선택 화면의 스타일을 그대로 재사용) ----- */
-  #duoDraftOverlay { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; box-sizing: border-box; text-align: center; color: var(--paper); padding: 16px; overflow-y: auto; background: rgba(10, 11, 30, 0.94); z-index: 35; }
+  /* ----- 2:2 벤/픽 화면: 우리 팀(파랑, 왼쪽) vs 상대 팀(빨강, 오른쪽)을 색과 글씨로 확실히 구분 ----- */
+  #duoDraftOverlay { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; box-sizing: border-box; text-align: center; color: var(--paper); padding: max(14px, env(safe-area-inset-top, 0px)) max(14px, env(safe-area-inset-right, 0px)) max(14px, env(safe-area-inset-bottom, 0px)) max(14px, env(safe-area-inset-left, 0px)); overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; touch-action: pan-y; background: rgba(10, 11, 30, 0.95); z-index: 35; }
   #duoDraftOverlay.open { display: flex; }
-  #duoDraftOverlay > .panel { margin: auto; width: min(620px, 100%); }
-  .dd-totals { font-size: 14px; color: var(--mute); margin: 2px 0 8px; }
-  .dd-players { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 8px 0; }
-  .dd-player { padding: 8px 6px; border-radius: 12px; background: rgba(255, 255, 255, 0.07); border-left: 6px solid #777; text-align: left; }
-  .dd-player.me, .dd-player.ally { border-left-color: #4da3ff; }
-  .dd-player.enemy { border-left-color: #ff6b6b; }
-  .dd-player.current { outline: 3px solid var(--sun); }
-  .dd-player .nm { font-weight: 700; word-break: break-all; font-size: 14px; }
-  .dd-player .tr { color: var(--mute); font-size: 12px; margin-top: 2px; }
-  .dd-player .pk { margin-top: 4px; font-size: 14px; font-weight: 700; }
-  .dd-bans { min-height: 22px; font-size: 14px; margin: 6px 0; color: #ff9d9d; }
+  #duoDraftOverlay > .panel { margin: auto; width: min(680px, 100%); }
+  .dd-head { display: flex; align-items: center; justify-content: center; gap: 16px; } /* 제목과 타이머를 가운데에 모아서 오른쪽 위 음악/효과음 버튼에 가려지지 않게 */
+  .dd-head .panel-title { margin: 0; text-align: left; }
+  .dd-timer { font-family: var(--font-display); font-size: 36px; color: var(--sun); min-width: 44px; text-align: left; }
+  .dd-timer.urgent { color: #ff5c5c; animation: ddPulse 0.5s infinite alternate; }
+  @keyframes ddPulse { to { transform: scale(1.18); } }
+  .dd-steps { display: flex; justify-content: center; gap: 6px; margin: 8px 0 10px; font-size: 13px; }
+  .dd-step { padding: 3px 12px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); color: var(--mute); }
+  .dd-step.on { background: var(--sun); color: #1b1b2f; font-weight: 800; }
+  .dd-step.done { opacity: 0.55; }
+  .dd-teams { display: grid; grid-template-columns: 1fr auto 1fr; gap: 6px; align-items: stretch; }
+  .dd-vs { align-self: center; font-family: var(--font-display); font-size: 24px; color: var(--sun); }
+  .dd-team { border-radius: 14px; padding: 8px; text-align: left; }
+  .dd-team-mine { background: rgba(60, 140, 255, 0.16); border: 2px solid #4da3ff; }
+  .dd-team-enemy { background: rgba(255, 80, 80, 0.16); border: 2px solid #ff6b6b; }
+  .dd-team-head { text-align: center; margin-bottom: 4px; }
+  .dd-team-name { display: block; font-weight: 800; font-size: 17px; }
+  .dd-team-mine .dd-team-name { color: #7fbcff; }
+  .dd-team-enemy .dd-team-name { color: #ff8f8f; }
+  .dd-team-total { font-size: 12px; color: var(--mute); }
+  .dd-first { display: inline-block; margin-top: 3px; font-size: 11px; padding: 1px 9px; border-radius: 999px; background: var(--sun); color: #1b1b2f; font-weight: 800; }
+  .dd-card { display: flex; gap: 8px; align-items: center; padding: 7px; margin-top: 6px; border-radius: 10px; background: rgba(0, 0, 0, 0.3); }
+  .dd-card.me { background: rgba(77, 163, 255, 0.3); }
+  .dd-card.current { outline: 3px solid var(--sun); box-shadow: 0 0 14px rgba(255, 214, 102, 0.55); }
+  .dd-order { flex: 0 0 26px; height: 26px; line-height: 26px; text-align: center; border-radius: 50%; background: rgba(255, 255, 255, 0.16); font-weight: 800; font-size: 13px; }
+  .dd-card-body { min-width: 0; flex: 1; }
+  .dd-card .nm { font-weight: 700; font-size: 14px; word-break: break-all; }
+  .dd-me { margin-left: 5px; padding: 0 7px; border-radius: 999px; background: #4da3ff; color: #fff; font-size: 11px; font-weight: 800; }
+  .dd-card .tr { font-size: 11px; color: var(--mute); }
+  .dd-card .pk { margin-top: 3px; font-size: 12px; min-height: 18px; }
+  .dd-pick { display: inline-block; padding: 1px 9px; border-radius: 999px; font-weight: 800; font-size: 12px; color: #fff; text-shadow: 0 1px 0 rgba(0, 0, 0, 0.45); }
+  #duoDraftOverlay .rd-status { margin-top: 10px; font-size: 17px; }
+  #duoDraftOverlay .rd-status.myturn { color: var(--sun); }
+  .dd-bans { margin: 6px 0 2px; min-height: 22px; font-size: 13px; }
+  .dd-ban-chip { display: inline-block; margin: 2px 3px; padding: 2px 9px; border-radius: 999px; background: rgba(255, 80, 80, 0.22); border: 1px solid #ff6b6b; color: #ffb0b0; }
+  .dd-chars { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; margin-top: 8px; }
+  .dd-char { padding: 10px 4px; border-radius: 12px; border: 3px solid var(--ink); color: #fff; font-weight: 700; font-size: 14px; cursor: pointer; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.45); }
+  .dd-char small { display: block; font-weight: 600; font-size: 11px; opacity: 0.95; }
+  .dd-char:disabled { opacity: 0.35; cursor: default; filter: grayscale(0.7); }
+  .dd-char.picked { outline: 3px solid var(--sun); }
   #ddSkipBan { margin-top: 10px; }
+  #duoDraftOverlay > .panel { padding-bottom: 24px; }
+  /* 가로 화면(높이가 낮은 모바일): 위쪽(팀 정보)이 한 화면에 더 많이 보이도록 여백을 줄임. 넘치는 부분은 위아래로 스크롤 */
+  @media (max-height: 520px) {
+    #duoDraftOverlay { padding: max(8px, env(safe-area-inset-top, 0px)) max(8px, env(safe-area-inset-right, 0px)) max(8px, env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px)); } /* 노치가 있는 가로 화면에서 왼쪽/오른쪽 칸이 가려지지 않게 */
+    .dd-head .panel-title { font-size: 22px; }
+    .dd-timer { font-size: 28px; }
+    .dd-steps { margin: 4px 0 6px; }
+    .dd-team { padding: 6px; }
+    .dd-card { padding: 5px 7px; margin-top: 4px; }
+    #duoDraftOverlay .rd-status { margin-top: 6px; font-size: 15px; }
+  }
 
   /* ----- 기어 상점 ----- */
   /* ----- 기어 상점 ----- */
@@ -1288,7 +1328,7 @@
     </div>
     <div class="mode-card" data-mode="2v2">
       <div class="mode-title">2 : 2</div>
-      <div class="mode-desc">팀원과 함께 2대2 협동전</div>
+      <div class="mode-desc">팀원과 함께 2대2 협동전 · 매칭 후 벤/픽으로 캐릭터를 골라요<br>참가 조건: 캐릭터 8개 이상 보유<br><b id="duoReqText"></b></div>
     </div>
     <div class="mode-card" data-mode="ranked">
       <div class="mode-title">🏆 경쟁전</div>
@@ -1637,14 +1677,20 @@
 
 <div id="duoDraftOverlay">
   <div class="panel">
-    <h2 class="panel-title" id="ddTitle">⚔️ 2:2 벤 · 픽</h2>
-    <div class="dd-totals" id="ddTotals"></div>
-    <div class="dd-players" id="ddPlayers"></div>
+    <div class="dd-head">
+      <h2 class="panel-title" id="ddTitle">⚔️ 2:2 벤 · 픽</h2>
+      <div class="dd-timer" id="ddTimer"></div>
+    </div>
+    <div class="dd-steps" id="ddSteps"></div>
+    <div class="dd-teams">
+      <div class="dd-team dd-team-mine" id="ddTeamMine"></div>
+      <div class="dd-vs">VS</div>
+      <div class="dd-team dd-team-enemy" id="ddTeamEnemy"></div>
+    </div>
     <div class="rd-status" id="ddStatus"></div>
-    <div class="rd-timer" id="ddTimer"></div>
     <div class="rd-info" id="ddInfo"></div>
     <div class="dd-bans" id="ddBans"></div>
-    <div class="rd-chars" id="ddChars"></div>
+    <div class="dd-chars" id="ddChars"></div>
     <button id="ddSkipBan" class="btn btn-ghost" style="display:none">벤하지 않기</button>
   </div>
 </div>
@@ -4314,7 +4360,14 @@ function rankedTierOfScore(score) {
   for (const x of tiers) if ((score || 0) >= x.min) t = x;
   return t;
 }
+function updateDuoCard() { // 2:2 카드에 현재 보유 캐릭터 수와 참가 가능 여부 표시
+  const el = document.getElementById('duoReqText');
+  if (!el) return;
+  const e = currentProfile && currentProfile.duoEligibility;
+  el.textContent = e ? (e.ok ? `✅ 참가 가능 (보유 ${e.have}개)` : `❌ 캐릭터 ${e.have}/${e.need}개 · ${e.need - e.have}개 더 필요`) : '';
+}
 function updateRankedCard() {
+  updateDuoCard();
   const el = document.getElementById('rankedTierText');
   if (!el) return;
   if (!currentProfile) { el.textContent = ''; return; }
@@ -4379,6 +4432,7 @@ socket.on('rankedCancelled', (d) => {
 });
 // ===== 사람과 하는 2:2: 매칭 후 벤 -> 픽 =====
 // 서버가 상태를 보낼 때마다(매칭 직후 / 누가 벤을 끝냈을 때 / 벤이 끝나 픽으로 넘어갈 때 / 누가 고를 때마다) 화면을 다시 그린다.
+// 화면은 왼쪽 '우리 팀'(파랑)과 오른쪽 '상대 팀'(빨강)으로 나뉘고, 각 칸에 선택 순서/총 트로피/고른 캐릭터가 표시된다.
 let ddEndsAt = 0;
 let ddTimerInterval = null;
 function closeDuoDraft() {
@@ -4390,18 +4444,33 @@ socket.on('duoDraft', (d) => {
   document.getElementById('matchingOverlay').classList.remove('open');
   document.getElementById('modeOverlay').style.display = 'none';
   document.getElementById('duoDraftOverlay').classList.add('open');
-  const nameOf = (id) => { const ch = CHARACTERS.find((x) => x.id === id); return ch ? ch.name : id; };
-  const sideLabel = { me: '(나)', ally: '(우리 팀)', enemy: '(상대 팀)' };
+  const charOf = (id) => CHARACTERS.find((x) => x.id === id);
+  const nameOf = (id) => { const ch = charOf(id); return ch ? ch.name : id; };
   const isBan = d.phase === 'ban';
-  document.getElementById('ddTitle').textContent = isBan ? '🚫 2:2 벤 단계' : '⚔️ 2:2 캐릭터 선택';
-  const tt = d.teamTotals || { mine: 0, enemy: 0 };
-  document.getElementById('ddTotals').textContent = `🏆 총 트로피 합: 우리 팀 ${Number(tt.mine).toLocaleString()} vs 상대 팀 ${Number(tt.enemy).toLocaleString()}`;
-  document.getElementById('ddPlayers').innerHTML = (d.players || []).map((p) => {
-    const pk = isBan
-      ? (p.banned ? '✅ 벤 완료' : '벤 고르는 중...')
-      : (p.characterId ? `🎯 ${escapeHtml(nameOf(p.characterId))}` : (p.current ? '고르는 중...' : '대기'));
-    return `<div class="dd-player ${p.side}${p.current ? ' current' : ''}"><div class="nm">${isBan ? '' : p.order + '. '}${escapeHtml(p.name)} ${sideLabel[p.side] || ''}</div><div class="tr">🏆 ${Number(p.total).toLocaleString()}</div><div class="pk">${pk}</div></div>`;
+  document.getElementById('ddTitle').textContent = isBan ? '🚫 벤 단계' : '⚔️ 캐릭터 선택';
+  document.getElementById('ddSteps').innerHTML = ['① 벤', '② 선택', '③ 모드·맵 투표'].map((t, i) => {
+    const cur = isBan ? 0 : 1;
+    return `<span class="dd-step${i === cur ? ' on' : (i < cur ? ' done' : '')}">${t}</span>`;
   }).join('');
+
+  const players = d.players || [];
+  const card = (p) => {
+    let pk;
+    if (isBan) pk = p.banned ? '✅ 벤 완료' : '<span style="color:var(--mute)">벤 고르는 중...</span>';
+    else if (p.characterId) { const ch = charOf(p.characterId); pk = `<span class="dd-pick" style="background:${ch ? ch.color : '#555'}">${escapeHtml(nameOf(p.characterId))}</span>`; }
+    else pk = p.current ? '<b style="color:var(--sun)">고르는 중...</b>' : '<span style="color:var(--mute)">대기</span>';
+    return `<div class="dd-card${p.side === 'me' ? ' me' : ''}${p.current ? ' current' : ''}">
+      <div class="dd-order" title="캐릭터를 고르는 순서">${p.order}</div>
+      <div class="dd-card-body"><div class="nm">${escapeHtml(p.name)}${p.side === 'me' ? '<span class="dd-me">나</span>' : ''}</div><div class="tr">🏆 ${Number(p.total).toLocaleString()}</div><div class="pk">${pk}</div></div>
+    </div>`;
+  };
+  const mine = players.filter((p) => p.side === 'me' || p.side === 'ally').sort((x, y) => (x.side === 'me' ? -1 : 0) - (y.side === 'me' ? -1 : 0)); // 내가 맨 위
+  const enemy = players.filter((p) => p.side === 'enemy').sort((x, y) => x.order - y.order);
+  const tt = d.teamTotals || { mine: 0, enemy: 0 };
+  const head = (label, icon, total) => `<div class="dd-team-head"><span class="dd-team-name">${icon} ${label}</span><div class="dd-team-total">총 🏆 ${Number(total).toLocaleString()}</div></div>`;
+  document.getElementById('ddTeamMine').innerHTML = head('우리 팀', '🔵', tt.mine) + mine.map(card).join('');
+  document.getElementById('ddTeamEnemy').innerHTML = head('상대 팀', '🔴', tt.enemy) + enemy.map(card).join('');
+
   const statusEl = document.getElementById('ddStatus');
   const infoEl = document.getElementById('ddInfo');
   const box = document.getElementById('ddChars');
@@ -4409,16 +4478,27 @@ socket.on('duoDraft', (d) => {
   box.innerHTML = '';
   skipBtn.style.display = 'none';
   skipBtn.onclick = null;
-  document.getElementById('ddBans').textContent = (d.bans && d.bans.length) ? `🚫 벤된 캐릭터: ${d.bans.map(nameOf).join(', ')}` : (isBan ? '' : '🚫 벤된 캐릭터가 없어요');
-  const addButtons = (ids, onPick) => {
-    ids.forEach((id) => {
-      const ch = CHARACTERS.find((x) => x.id === id);
+  statusEl.classList.toggle('myturn', !!d.yourTurn);
+  document.getElementById('ddBans').innerHTML = (d.bans && d.bans.length)
+    ? '🚫 벤된 캐릭터: ' + d.bans.map((id) => `<span class="dd-ban-chip">${escapeHtml(nameOf(id))}</span>`).join('')
+    : (isBan ? '' : '🚫 벤된 캐릭터가 없어요');
+
+  // 캐릭터 버튼 (내가 행동할 차례일 때만 표시). 고를 수 없는 캐릭터는 이유와 함께 흐리게 보여줌
+  const optSet = new Set(d.options || []);
+  const takenSet = new Set(players.map((p) => p.characterId).filter(Boolean));
+  const bannedSet = new Set(d.bans || []);
+  const addButtons = (onPick) => {
+    CHARACTERS.forEach((ch) => {
+      const enabled = optSet.has(ch.id);
+      let why = '';
+      if (!enabled) why = bannedSet.has(ch.id) ? '🚫 벤' : (takenSet.has(ch.id) ? '선택됨' : '🔒 미보유');
       const btn = document.createElement('button');
-      btn.className = 'rd-char';
-      btn.style.background = ch ? ch.color : '#555';
-      btn.textContent = ch ? ch.name : id;
+      btn.className = 'dd-char';
+      btn.style.background = ch.color;
+      btn.disabled = !enabled;
+      btn.innerHTML = `${escapeHtml(ch.name)}${why ? `<small>${why}</small>` : ''}`;
       btn.addEventListener('click', () => {
-        onPick(id);
+        onPick(ch.id);
         box.querySelectorAll('button').forEach((b) => { b.disabled = true; });
         btn.classList.add('picked');
       });
@@ -4427,9 +4507,9 @@ socket.on('duoDraft', (d) => {
   };
   if (isBan) {
     if (d.yourTurn) {
-      statusEl.textContent = '벤할 캐릭터를 1개 고르세요! (모두에게 선택 금지)';
+      statusEl.textContent = '🚫 벤할 캐릭터를 1개 고르세요! (모두에게 선택 금지)';
       infoEl.textContent = '벤은 4명이 동시에 하고, 모두 끝나면 결과가 공개돼요. 시간이 지나면 벤 없이 넘어가요.';
-      addButtons(d.options || [], (id) => socket.emit('duoBan', { characterId: id }));
+      addButtons((id) => socket.emit('duoBan', { characterId: id }));
       skipBtn.style.display = 'inline-block';
       skipBtn.onclick = () => { socket.emit('duoBan', { characterId: '' }); skipBtn.style.display = 'none'; box.innerHTML = ''; };
     } else {
@@ -4437,13 +4517,19 @@ socket.on('duoDraft', (d) => {
       infoEl.textContent = '';
     }
   } else {
-    const cur = (d.players || []).find((p) => p.current);
-    statusEl.textContent = d.yourTurn ? '내가 캐릭터를 고를 차례예요!' : (cur ? `${cur.name} 님이 캐릭터를 고르는 중...` : '');
-    infoEl.textContent = `고르는 순서: ${d.firstSide === 'mine' ? '우리 팀' : '상대 팀'}(총 트로피 합이 더 큰 팀)의 1명 → 상대 팀 2명 → 마지막 1명. 이미 뽑힌 캐릭터는 고를 수 없어요.`;
-    if (d.yourTurn) addButtons(d.options || [], (id) => socket.emit('duoPick', { characterId: id }));
+    const cur = players.find((p) => p.current);
+    const curTeam = cur ? (cur.side === 'enemy' ? '상대 팀' : '우리 팀') : '';
+    statusEl.textContent = d.yourTurn ? '🎯 내가 캐릭터를 고를 차례예요!' : (cur ? `${curTeam} ${cur.name} 님이 고르는 중...` : '');
+    infoEl.textContent = '고르는 순서(번호)는 무작위로 정해졌어요 · 이미 뽑힌/벤된 캐릭터는 고를 수 없어요';
+    if (d.yourTurn) addButtons((id) => socket.emit('duoPick', { characterId: id }));
   }
   ddEndsAt = Date.now() + (d.endsInMs || 0);
-  const tick = () => { document.getElementById('ddTimer').textContent = `${Math.max(0, Math.ceil((ddEndsAt - Date.now()) / 1000))}`; };
+  const timerEl = document.getElementById('ddTimer');
+  const tick = () => {
+    const sec = Math.max(0, Math.ceil((ddEndsAt - Date.now()) / 1000));
+    timerEl.textContent = sec;
+    timerEl.classList.toggle('urgent', sec <= 5);
+  };
   tick();
   if (ddTimerInterval) clearInterval(ddTimerInterval);
   ddTimerInterval = setInterval(tick, 250);
@@ -4510,6 +4596,8 @@ document.querySelectorAll('.mode-card').forEach((card) => {
       return;
     }
     if (selectedMode === '2v2') { // 사람과 하는 2:2: 캐릭터는 매칭된 뒤 벤/픽 단계에서 고르므로 바로 대기열로
+      const el = currentProfile && currentProfile.duoEligibility;
+      if (el && !el.ok) { alert(`2:2는 캐릭터를 ${el.need}개 이상 보유해야 참가할 수 있어요. (현재 ${el.have}개)`); return; } // 서버도 한 번 더 확인함
       document.getElementById('modeOverlay').style.display = 'none';
       requestMatch();
       return;
