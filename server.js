@@ -2899,6 +2899,16 @@ function repeatMissionsView(u) {
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
   {
+    id: '2026-11-26-duo-order',
+    date: '2026-11-26',
+    tag: 'balance',
+    title: '2:2 선택 순서 변경',
+    items: [
+      '2:2 벤/픽에서 캐릭터를 고르는 순서가 총 트로피와 상관없이 무작위로 정해져요.',
+      '가로 화면(모바일)에서도 벤/픽 화면을 위아래로 스크롤해서 우리 팀과 상대 팀을 확인할 수 있어요.',
+    ],
+  },
+  {
     id: '2026-11-26-jungan-buffy',
     date: '2026-11-26',
     tag: 'new',
@@ -2917,8 +2927,9 @@ const ANNOUNCEMENTS = [
     title: '2:2 매칭 방식이 바뀌었어요! (벤 · 픽)',
     items: [
       '사람과 하는 2:2는 이제 캐릭터를 고르기 전에 먼저 매칭돼요. 4명이 모이면 캐릭터를 골라요.',
+      '2:2 참가 조건: 캐릭터를 8개 이상 보유해야 해요.',
       '벤 단계: 4명이 동시에 캐릭터를 1개씩 벤(선택 금지)할 수 있어요. 벤된 캐릭터는 아무도 고를 수 없어요.',
-      '선택 순서: 두 사람의 총 트로피 합이 더 큰 팀에서 총 트로피가 더 큰 사람이 먼저 → 상대 팀 2명 → 마지막으로 처음 고른 팀의 남은 팀원이 골라요. 이미 뽑힌 캐릭터는 고를 수 없어요.',
+      '선택 순서: 4명이 무작위 순서로 한 명씩 골라요. 이미 뽑힌 캐릭터는 고를 수 없어요.',
       '모두 고르면 게임 종류와 맵 투표를 하고 시작해요.',
       '벤/선택 중에 누가 나가면 기록 없이 매칭이 취소돼요.',
     ],
@@ -4014,6 +4025,7 @@ function publicProfile(u) {
     aiBonusEvent: halloweenBonusView(),
     gemExchange: GEM_EXCHANGE,
     rankedEligibility: rankedEligibility(u),
+    duoEligibility: duoEligibility(u), // 2:2 참가 조건(캐릭터 8개 이상) 충족 여부와 현재 보유 수 - 클라이언트가 안내에 사용
     rankedScore: u.rankedScore || 0, rankedTiers: RANKED_TIERS.map((t) => ({ id: t.id, name: t.name, min: t.min, icon: t.icon })),
     events: activeEvents().map((e) => ({ id: e.id, name: e.name, coins: e.coins || 0, gems: e.gems || 0, bling: e.bling || 0, desc: e.desc, endsAt: e.endsAt || null, claimed: (u.redeemed || []).includes(eventClaimCode(e)) })) };
 }
@@ -6129,12 +6141,17 @@ function rankedCancelDraftFor(socketId) {
 // ===== 사람과 하는 2:2: 매칭 -> 벤 -> 픽 -> (게임 종류/맵 투표) -> 시작 =====
 // 예전에는 캐릭터를 먼저 고르고 대기열에 들어갔지만, 이제는 4명이 매칭된 뒤에 캐릭터를 정한다.
 //  1) 벤 단계: 4명이 동시에 각자 캐릭터 1개씩 벤(선택 금지)한다. 벤된 캐릭터는 아무도 고를 수 없다. (시간이 지나면 벤 없이 넘어감)
-//  2) 픽 단계: 두 사람의 '총 트로피 합'이 더 큰 팀의 '총 트로피가 더 큰 사람'이 먼저 고르고,
-//     그다음 상대 팀 2명(총 트로피가 더 큰 사람 먼저), 마지막으로 처음 고른 팀의 남은 팀원이 고른다. 이미 뽑힌 캐릭터는 고를 수 없다.
+//  2) 픽 단계: 4명이 무작위 순서로 한 명씩 고른다 (팀과 상관없이 섞음). 이미 뽑힌 캐릭터는 고를 수 없다.
 //  3) 다 고르면 startMatch 가 기존처럼 게임 종류/맵 투표를 열고 시작한다.
-// 총 트로피 = 그 사람이 가진 모든 캐릭터의 트로피 합 (서버 저장소 기준). 총합이 같으면 무작위.
+// 총 트로피(그 사람이 가진 모든 캐릭터의 트로피 합)는 이제 순서에는 쓰지 않고 화면 표시용으로만 보여준다.
 const DUO_BAN_MS = 15000;   // 벤 시간 (모두 벤하면 바로 끝남)
 const DUO_PICK_MS = 20000;  // 한 사람당 캐릭터 선택 시간 (시간이 지나면 무작위로 자동 선택)
+// 2:2 참가 조건: 캐릭터를 8개 이상 보유. (벤 4개 + 상대가 고른 캐릭터 3개를 빼도 항상 고를 캐릭터가 1개 이상 남도록)
+const DUO_REQ_CHARACTERS = 8;
+function duoEligibility(u) {
+  const have = u ? effectiveUnlocked(u).length : 0;
+  return { ok: have >= DUO_REQ_CHARACTERS, have, need: DUO_REQ_CHARACTERS };
+}
 const duoDrafts = {};       // draftId -> 벤/픽 진행 상태
 const socketToDuoDraft = {}; // socketId -> draftId
 let duoDraftCounter = 0;
@@ -6148,18 +6165,18 @@ function totalTrophiesOf(u) {
 function startDuoDraft(entries) {
   const teamA = entries.slice(0, 2);
   const teamB = entries.slice(2, 4);
-  entries.forEach((e) => { e.tieKey = Math.random(); }); // 총 트로피가 같을 때 무작위로 정하기 위한 값
   const sumOf = (t) => t.reduce((sum, e) => sum + (e.totalTrophies || 0), 0);
-  const totals = { A: sumOf(teamA), B: sumOf(teamB) };
-  const firstTeam = totals.A > totals.B ? 'A' : totals.B > totals.A ? 'B' : (Math.random() < 0.5 ? 'A' : 'B');
-  const byTrophy = (t) => [...t].sort((x, y) => ((y.totalTrophies || 0) - (x.totalTrophies || 0)) || (x.tieKey - y.tieKey));
-  const first = byTrophy(firstTeam === 'A' ? teamA : teamB);
-  const second = byTrophy(firstTeam === 'A' ? teamB : teamA);
+  const totals = { A: sumOf(teamA), B: sumOf(teamB) }; // 화면 표시용 (순서에는 쓰지 않음)
+  const pickOrder = [...entries]; // 캐릭터를 고르는 순서: 4명을 무작위로 섞음 (Fisher-Yates)
+  for (let i = pickOrder.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pickOrder[i], pickOrder[j]] = [pickOrder[j], pickOrder[i]];
+  }
   duoDraftCounter += 1;
   const draft = {
     id: `duo_${duoDraftCounter}`,
     entries, teamA, teamB, totals,
-    pickOrder: [first[0], second[0], second[1], first[1]], // 1번째 -> 상대 2명 -> 마지막은 먼저 고른 팀의 남은 팀원
+    pickOrder,     // 캐릭터를 고르는 순서 (무작위)
     phase: 'ban',
     bans: {},      // socketId -> 벤한 캐릭터 id ('' 이면 벤하지 않음). 키가 없으면 아직 안 정함
     banned: [],    // 벤 단계가 끝난 뒤 확정된 벤 목록
@@ -8722,13 +8739,17 @@ io.on('connection', (socket) => {
     if (mode === '2v2') {
       const duoUserKey = socket.data.userKey;
       let totalTrophies = 0;
+      let eligibility = null;
       try {
         const u = await db.findUser(duoUserKey);
         totalTrophies = totalTrophiesOf(u);
+        eligibility = duoEligibility(u);
       } catch (e) {
         console.error('총 트로피 조회 실패', duoUserKey, e);
       }
       if (!socket.connected || socket.data.userKey !== duoUserKey) return;
+      if (!eligibility) { socket.emit('findMatchError', { message: '계정 정보를 불러오지 못했어요. 잠시 후 다시 시도해 주세요.' }); return; }
+      if (!eligibility.ok) { socket.emit('findMatchError', { message: `2:2는 캐릭터를 ${eligibility.need}개 이상 보유해야 참가할 수 있어요. (현재 ${eligibility.have}개)` }); return; } // 서버에서도 확인 (클라이언트 우회 방지)
       if (socketToMatch[socket.id] || isQueued(socket.id)) return;
       if (serverPause.on) { socket.emit('findMatchError', { message: serverPause.message }); return; }
       queues[mode].push({ socket, name, userKey: duoUserKey, totalTrophies });
