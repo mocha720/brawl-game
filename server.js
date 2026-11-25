@@ -1,5 +1,5 @@
 // server.js
-// 브롤스타즈 스타일 2D 탑다운 매칭 슈팅 게임 - 서버 (1:1 / 2:2 / 3:3 지원)
+// 브롤스타즈 스타일 2D 탑다운 매칭 슈팅 게임 - 서버 (1:1 / 2:2 지원, 사람과 하는 3:3은 폐지)
 
 const express = require('express');
 const http = require('http');
@@ -65,12 +65,12 @@ const MODES = {
   // trophyLoss: 패배할 때 그 매치에서 쓴 캐릭터가 잃는 트로피 (0 아래로는 내려가지 않음)
   '1v1': { size: 2, teamSize: 1, winScore: 5, coinReward: 45, trophyReward: 15, trophyLoss: 5 },
   '2v2': { size: 4, teamSize: 2, winScore: 8, coinReward: 60, trophyReward: 12, trophyLoss: 4 },
-  '3v3': { size: 6, teamSize: 3, winScore: 12, coinReward: 75, trophyReward: 10, trophyLoss: 3 }, // 3:3 팀전 (한 팀 3명)
+  // 사람과 하는 3:3은 폐지됨 (예전 클라이언트가 '3v3' 을 보내도 findMatch 에서 거절함)
 };
 // ===== 게임 종류(규칙) =====
-// 매칭 모드(1v1/2v2/3v3)로 인원이 정해지면, 매칭된 사람들이 투표해서 어떤 규칙으로 할지 정한다 (동표면 무작위)
+// 매칭 모드(1v1/2v2)로 인원이 정해지면, 매칭된 사람들이 투표해서 어떤 규칙으로 할지 정한다 (동표면 무작위)
 const GAME_MODES = {
-  knockout: { name: '녹아우', desc: '1:1은 목표 킬 수를 먼저 채우면 승리. 2:2·3:3은 라운드제: 죽으면 그 라운드가 끝날 때까지 부활 못 하고, 상대 팀을 전멸시키면 라운드 승리! 3라운드 중 2번 이기면 승리' },
+  knockout: { name: '녹아우', desc: '1:1은 목표 킬 수를 먼저 채우면 승리. 2:2는 라운드제: 죽으면 그 라운드가 끝날 때까지 부활 못 하고, 상대 팀을 전멸시키면 라운드 승리! 3라운드 중 2번 이기면 승리' },
   gatekeeper: { name: '문지기', desc: '상대 리스폰 근처에 있는 문을 먼저 공격해 파괴하면 승리' },
   gemgrab: { name: '쨍그랩', desc: '중앙 구멍에서 나오는 보석을 모아 팀 보석 15개 이상을 10초 동안 유지하면 승리' },
 };
@@ -2193,6 +2193,10 @@ const BUFFY_CATALOG = [
   { id: 'ekhe_basic', charId: 'ekhe', kind: 'basic', desc: '기본공격(계란 던지기)을 사용하면 즉시 체력 100 회복', effect: { basicHealAmount: 100 } },
   { id: 'ekhe_gadget', charId: 'ekhe', kind: 'gadget', desc: '가젯(수호의 파동)으로 적을 밀쳐낸 뒤 0.5초 동안 이동속도가 50% 증가', effect: { gadgetPushSpeedMult: 1.5, gadgetPushSpeedSec: 0.5 } },
   { id: 'ekhe_hyper', charId: 'ekhe', kind: 'hyper', desc: '하이퍼 차지 발동 중 닭을 최대 2마리까지 소환할 수 있음', effect: { hyperMaxChickens: 2 } },
+  // 중간
+  { id: 'jungan_basic', charId: 'jungan', kind: 'basic', desc: '기본공격(양팔 모으기)을 누르고 발동을 기다리는 0.5초 동안 받는 피해가 25% 감소 + 기본공격 사거리 10% 증가', effect: { basicDelayGuardMult: 0.75, basicRangeMult: 1.1 } },
+  { id: 'jungan_gadget', charId: 'jungan', kind: 'gadget', desc: '가젯(질주 보호막)이 유지되는 동안 150px 안에 있는 적의 이동속도와 재장전 속도가 10% 감소', effect: { gadgetAuraSlowMult: 0.9, gadgetAuraReloadMult: 0.9, gadgetAuraRadius: 150, gadgetAuraDuringGuard: true } },
+  { id: 'jungan_hyper', charId: 'jungan', kind: 'hyper', desc: '하이퍼 차지 지속시간 2초 증가 + 하이퍼 차지 발동 중 벽을 통과하여 이동', effect: { hyperDurationBonusSec: 2, hyperWallPass: true } },
   // 진우Park
   { id: 'jinwoopark_basic', charId: 'jinwoopark', kind: 'basic', desc: '기본공격(하트)을 맞추면 적의 이동속도가 0.5초 동안 10% 감소', effect: { basicHitSlowMult: 0.9, basicHitSlowSec: 0.5 } },
   { id: 'jinwoopark_gadget', charId: 'jinwoopark', kind: 'gadget', desc: '가젯(소다 마시기)을 사용하면 3초 동안 이동속도가 10% 증가', effect: { gadgetSpeedMult: 1.1, gadgetSpeedSec: 3 } },
@@ -2222,7 +2226,7 @@ function buffyCatalogPublic() {
 // 캐릭터에 장착된 기어들의 효과 합계 (최대 장착 수까지만 인정)
 function gearBonusOf(u, charId) {
   // reloadSpeed: 재장전 속도 증가율(덧셈) / fullHpTakenMult: 체력이 가득 찰 때 받는 피해 배율(곱셈, 1 = 효과 없음) / lowHpDamageBonus: 체력 50% 이하일 때 공격력 증가율(덧셈) / fullAmmoRangeBonus: 탄창이 가득(3개)일 때 사거리 증가율(덧셈)
-  const total = { reloadSpeed: 0, fullHpTakenMult: 1, lowHpDamageBonus: 0, fullAmmoRangeBonus: 0, healBonus: 0, startShield: 0, ultChargeBonus: 0, projectileSpeedBonus: 0, lowHpSpeedBonus: 0, chainDamageBonus: 0, damageTakenUltCharge: 0, gadgetCooldownSec: 0, bandageHeal: 0, ultStealthSec: 0, lifesteal: 0, hyperDurationBonusSec: 0, maxAmmoBonus: 0, moveSpeedMult: 1, buffyBasicRadiusMult: 1, buffyGadgetSlowMult: 1, buffyGadgetSlowSec: 0, buffyHyperUltRadiusMult: 1, buffyBasicSpeedMult: 1, buffyBasicSpeedSec: 0, buffyGadgetShieldMult: 1, buffyGadgetShieldSec: 0, buffyBasicPoolLifeBonus: 0, buffyGadgetReloadMult: 1, buffyGadgetReloadSec: 0, buffyHyperUltSpeedMult: 1, buffyAllHitSpeedMult: 1, buffyAllHitSpeedSec: 0, buffyAuraSlowMult: 1, buffyAuraRadius: 0, buffyHyperSpreadDegrees: 0, buffyHitSpeedMult: 1, buffyHitSpeedSec: 0, buffyHyperTakenMult: 1, buffyBounceDamageMult: 1, buffyGadgetPierce: false, buffyHyperProjRadiusMult: 1, buffyBasicProjSpeedMult: 1, buffyShieldOnKnock: false, buffyHyperRegenAmount: 0, buffyHyperRegenInterval: 0.5, buffyBasicSelfHeal: 0, buffyGadgetTeamRegenAmount: 0, buffyGadgetTeamRegenInterval: 0.5, buffyGadgetTeamRegenSec: 0, buffyHyperTeamReloadMult: 1, buffyHyperReloadMult: 1, buffyBasicWindupSec: 0, buffyGadgetChargeSec: 0, buffyDashGuardMult: 1, buffyDashGuardSec: 0, buffyGadgetSpeedMult: 1, buffyGadgetSpeedSec: 0, buffyHyperKillReload: false, buffyBasicHeal: 0, buffyPushSpeedMult: 1, buffyPushSpeedSec: 0, buffyHyperMaxChickens: 1, buffyBasicSlowMult: 1, buffyBasicSlowSec: 0, buffyUltHitCharge: 0 };
+  const total = { reloadSpeed: 0, fullHpTakenMult: 1, lowHpDamageBonus: 0, fullAmmoRangeBonus: 0, healBonus: 0, startShield: 0, ultChargeBonus: 0, projectileSpeedBonus: 0, lowHpSpeedBonus: 0, chainDamageBonus: 0, damageTakenUltCharge: 0, gadgetCooldownSec: 0, bandageHeal: 0, ultStealthSec: 0, lifesteal: 0, hyperDurationBonusSec: 0, maxAmmoBonus: 0, moveSpeedMult: 1, buffyBasicRadiusMult: 1, buffyGadgetSlowMult: 1, buffyGadgetSlowSec: 0, buffyHyperUltRadiusMult: 1, buffyBasicSpeedMult: 1, buffyBasicSpeedSec: 0, buffyGadgetShieldMult: 1, buffyGadgetShieldSec: 0, buffyBasicPoolLifeBonus: 0, buffyGadgetReloadMult: 1, buffyGadgetReloadSec: 0, buffyHyperUltSpeedMult: 1, buffyAllHitSpeedMult: 1, buffyAllHitSpeedSec: 0, buffyAuraSlowMult: 1, buffyAuraRadius: 0, buffyHyperSpreadDegrees: 0, buffyHitSpeedMult: 1, buffyHitSpeedSec: 0, buffyHyperTakenMult: 1, buffyBounceDamageMult: 1, buffyGadgetPierce: false, buffyHyperProjRadiusMult: 1, buffyBasicProjSpeedMult: 1, buffyShieldOnKnock: false, buffyHyperRegenAmount: 0, buffyHyperRegenInterval: 0.5, buffyBasicSelfHeal: 0, buffyGadgetTeamRegenAmount: 0, buffyGadgetTeamRegenInterval: 0.5, buffyGadgetTeamRegenSec: 0, buffyHyperTeamReloadMult: 1, buffyHyperReloadMult: 1, buffyBasicWindupSec: 0, buffyGadgetChargeSec: 0, buffyDashGuardMult: 1, buffyDashGuardSec: 0, buffyGadgetSpeedMult: 1, buffyGadgetSpeedSec: 0, buffyHyperKillReload: false, buffyBasicHeal: 0, buffyPushSpeedMult: 1, buffyPushSpeedSec: 0, buffyHyperMaxChickens: 1, buffyBasicSlowMult: 1, buffyBasicSlowSec: 0, buffyUltHitCharge: 0, buffyDelayGuardMult: 1, buffyBasicRangeMult: 1, buffyAuraReloadMult: 1, buffyAuraDuringGuard: false, buffyHyperWallPass: false };
   const seenGearIds = new Set(); // 같은 기어는 한 캐릭터에 한 번만 효과 적용 (이전 데이터의 중복 장착 대비)
   for (const g of ownedGearsOf(u).filter((x) => x.charId === charId).filter((x) => !seenGearIds.has(x.gearId) && seenGearIds.add(x.gearId)).slice(0, GEAR_MAX_PER_CHARACTER)) {
     if (!gearAllowedOn(g.gearId, charId)) continue; // 장착할 수 없는 캐릭터에 (잘못) 붙어 있어도 효과는 적용하지 않음
@@ -2277,6 +2281,11 @@ function gearBonusOf(u, charId) {
     if (e.basicDashGuardMult) { total.buffyDashGuardMult = e.basicDashGuardMult; total.buffyDashGuardSec = e.basicDashGuardSec || 0.25; } // 버피(기본공격, 꽈리): 돌진이 끝난 뒤 잠깐 받는 피해 감소
     if (e.gadgetSpeedMult) { total.buffyGadgetSpeedMult = e.gadgetSpeedMult; total.buffyGadgetSpeedSec = e.gadgetSpeedSec || 1.5; } // 버피(가젯, 꽈리): 쌈장 변신이 끝난 뒤 잠깐 이동속도 증가
     if (e.basicHitSlowMult) { total.buffyBasicSlowMult = e.basicHitSlowMult; total.buffyBasicSlowSec = e.basicHitSlowSec || 0.5; } // 버피(기본공격, 진우Park): 맞은 적의 이동속도를 잠깐 낮춤
+    if (e.basicDelayGuardMult) total.buffyDelayGuardMult = e.basicDelayGuardMult; // 버피(기본공격, 중간): 발동을 기다리는 동안 받는 피해 배율
+    if (e.basicRangeMult) total.buffyBasicRangeMult *= e.basicRangeMult; // 버피(기본공격, 중간): 기본공격 사거리 배율
+    if (e.gadgetAuraReloadMult) total.buffyAuraReloadMult = e.gadgetAuraReloadMult; // 버피(가젯, 중간): 주변 적의 재장전 속도 배율
+    if (e.gadgetAuraDuringGuard) total.buffyAuraDuringGuard = true; // 버피(가젯, 중간): 보호막 대신 '질주 보호막'이 유지되는 동안 효과 유지
+    if (e.hyperWallPass) total.buffyHyperWallPass = true; // 버피(하이퍼차지, 중간): 하이퍼 차지 발동 중 벽 통과
     if (e.ultHitCharge) total.buffyUltHitCharge += e.ultHitCharge; // 버피(하이퍼차지, 진우Park): 궁극기(착지)가 적에게 맞으면 즉시 궁극기 게이지 충전(%)
     if (e.basicHealAmount) total.buffyBasicHeal += e.basicHealAmount; // 버피(기본공격, 엑헤): 기본공격을 쓸 때마다 즉시 체력 회복
     if (e.gadgetPushSpeedMult) { total.buffyPushSpeedMult = e.gadgetPushSpeedMult; total.buffyPushSpeedSec = e.gadgetPushSpeedSec || 0.5; } // 버피(가젯, 엑헤): 적을 밀쳐낸 뒤 잠깐 이동속도 증가
@@ -2889,6 +2898,31 @@ function repeatMissionsView(u) {
 // id 는 겹치지 않게 (클라이언트는 가장 최신 공지의 id 를 기억해서, 아직 안 읽은 공지가 있으면 버튼에 빨간 점을 띄운다)
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
+  {
+    id: '2026-11-26-jungan-buffy',
+    date: '2026-11-26',
+    tag: 'new',
+    title: '중간 버피 추가! / 3:3 모드 종료',
+    items: [
+      '기본공격 버피: 양팔 모으기가 발동되기를 기다리는 0.5초 동안 받는 피해가 25% 감소하고, 기본공격 사거리가 10% 늘어나요.',
+      '가젯 버피: 질주 보호막이 유지되는 동안 150px 안의 적은 이동속도와 재장전 속도가 10% 느려져요.',
+      '하이퍼차지 버피: 하이퍼 차지 지속시간이 2초 늘어나고, 발동 중 벽을 통과해서 이동할 수 있어요.',
+      '사람과 하는 3:3 모드가 없어졌어요. 1:1, 2:2, 경쟁전을 이용해 주세요.',
+    ],
+  },
+  {
+    id: '2026-11-25-duo-draft',
+    date: '2026-11-25',
+    tag: 'new',
+    title: '2:2 매칭 방식이 바뀌었어요! (벤 · 픽)',
+    items: [
+      '사람과 하는 2:2는 이제 캐릭터를 고르기 전에 먼저 매칭돼요. 4명이 모이면 캐릭터를 골라요.',
+      '벤 단계: 4명이 동시에 캐릭터를 1개씩 벤(선택 금지)할 수 있어요. 벤된 캐릭터는 아무도 고를 수 없어요.',
+      '선택 순서: 두 사람의 총 트로피 합이 더 큰 팀에서 총 트로피가 더 큰 사람이 먼저 → 상대 팀 2명 → 마지막으로 처음 고른 팀의 남은 팀원이 골라요. 이미 뽑힌 캐릭터는 고를 수 없어요.',
+      '모두 고르면 게임 종류와 맵 투표를 하고 시작해요.',
+      '벤/선택 중에 누가 나가면 기록 없이 매칭이 취소돼요.',
+    ],
+  },
   {
     id: '2026-11-25-jinwoopark-buffy',
     date: '2026-11-25',
@@ -6092,6 +6126,179 @@ function rankedCancelDraftFor(socketId) {
   });
 }
 
+// ===== 사람과 하는 2:2: 매칭 -> 벤 -> 픽 -> (게임 종류/맵 투표) -> 시작 =====
+// 예전에는 캐릭터를 먼저 고르고 대기열에 들어갔지만, 이제는 4명이 매칭된 뒤에 캐릭터를 정한다.
+//  1) 벤 단계: 4명이 동시에 각자 캐릭터 1개씩 벤(선택 금지)한다. 벤된 캐릭터는 아무도 고를 수 없다. (시간이 지나면 벤 없이 넘어감)
+//  2) 픽 단계: 두 사람의 '총 트로피 합'이 더 큰 팀의 '총 트로피가 더 큰 사람'이 먼저 고르고,
+//     그다음 상대 팀 2명(총 트로피가 더 큰 사람 먼저), 마지막으로 처음 고른 팀의 남은 팀원이 고른다. 이미 뽑힌 캐릭터는 고를 수 없다.
+//  3) 다 고르면 startMatch 가 기존처럼 게임 종류/맵 투표를 열고 시작한다.
+// 총 트로피 = 그 사람이 가진 모든 캐릭터의 트로피 합 (서버 저장소 기준). 총합이 같으면 무작위.
+const DUO_BAN_MS = 15000;   // 벤 시간 (모두 벤하면 바로 끝남)
+const DUO_PICK_MS = 20000;  // 한 사람당 캐릭터 선택 시간 (시간이 지나면 무작위로 자동 선택)
+const duoDrafts = {};       // draftId -> 벤/픽 진행 상태
+const socketToDuoDraft = {}; // socketId -> draftId
+let duoDraftCounter = 0;
+
+function totalTrophiesOf(u) {
+  const t = (u && u.trophies) || {};
+  return Object.keys(t).reduce((sum, id) => sum + (Number(t[id]) || 0), 0);
+}
+
+// 큐에서 4명이 모이면 호출: 앞의 2명은 A팀, 뒤의 2명은 B팀 (기존 매칭과 같은 팀 배정)
+function startDuoDraft(entries) {
+  const teamA = entries.slice(0, 2);
+  const teamB = entries.slice(2, 4);
+  entries.forEach((e) => { e.tieKey = Math.random(); }); // 총 트로피가 같을 때 무작위로 정하기 위한 값
+  const sumOf = (t) => t.reduce((sum, e) => sum + (e.totalTrophies || 0), 0);
+  const totals = { A: sumOf(teamA), B: sumOf(teamB) };
+  const firstTeam = totals.A > totals.B ? 'A' : totals.B > totals.A ? 'B' : (Math.random() < 0.5 ? 'A' : 'B');
+  const byTrophy = (t) => [...t].sort((x, y) => ((y.totalTrophies || 0) - (x.totalTrophies || 0)) || (x.tieKey - y.tieKey));
+  const first = byTrophy(firstTeam === 'A' ? teamA : teamB);
+  const second = byTrophy(firstTeam === 'A' ? teamB : teamA);
+  duoDraftCounter += 1;
+  const draft = {
+    id: `duo_${duoDraftCounter}`,
+    entries, teamA, teamB, totals,
+    pickOrder: [first[0], second[0], second[1], first[1]], // 1번째 -> 상대 2명 -> 마지막은 먼저 고른 팀의 남은 팀원
+    phase: 'ban',
+    bans: {},      // socketId -> 벤한 캐릭터 id ('' 이면 벤하지 않음). 키가 없으면 아직 안 정함
+    banned: [],    // 벤 단계가 끝난 뒤 확정된 벤 목록
+    picks: {},     // socketId -> 고른 캐릭터 id
+    turn: 0,
+    endsAt: 0, timer: null, finishing: false,
+  };
+  duoDrafts[draft.id] = draft;
+  entries.forEach((e) => { socketToDuoDraft[e.socket.id] = draft.id; });
+  duoSetTimer(draft, DUO_BAN_MS);
+  emitDuoDraft(draft);
+}
+
+// 이 사람이 고를 수 있는 캐릭터: 잠금해제했고, 벤되지 않았고, 아직 아무도 고르지 않은 캐릭터. 하나도 없으면 조건을 차례로 완화(멈춤 방지)
+function duoOptionsFor(draft, socket) {
+  const all = [...socket.data.unlocked].filter((id) => CHARACTERS[id]);
+  const banned = new Set(draft.banned);
+  const taken = new Set(Object.values(draft.picks));
+  let opts = all.filter((id) => !banned.has(id) && !taken.has(id));
+  if (!opts.length) opts = all.filter((id) => !taken.has(id));
+  if (!opts.length) opts = all;
+  return opts;
+}
+
+function emitDuoDraft(draft) {
+  const curEntry = draft.phase === 'pick' ? draft.pickOrder[draft.turn] : null;
+  const teamOf = (e) => (draft.teamA.includes(e) ? 'A' : 'B');
+  draft.entries.forEach((me) => {
+    if (!me.socket.connected) return;
+    const myTeam = teamOf(me);
+    const sideOf = (e) => (e === me ? 'me' : (teamOf(e) === myTeam ? 'ally' : 'enemy'));
+    const myBan = draft.bans[me.socket.id];
+    const yourTurn = draft.phase === 'ban' ? myBan === undefined : curEntry === me;
+    me.socket.emit('duoDraft', {
+      draftId: draft.id,
+      phase: draft.phase,                         // 'ban' | 'pick'
+      endsInMs: Math.max(0, draft.endsAt - Date.now()),
+      players: draft.pickOrder.map((e, idx) => ({
+        name: e.name,
+        side: sideOf(e),                          // 'me' | 'ally' | 'enemy'
+        total: e.totalTrophies || 0,              // 그 사람의 총 트로피
+        order: idx + 1,                           // 캐릭터를 고르는 순서 (1~4)
+        characterId: draft.picks[e.socket.id] || null,
+        current: !!curEntry && curEntry === e,
+        banned: draft.bans[e.socket.id] !== undefined, // 벤 단계에서 벤을 끝냈는지 (무엇을 벤했는지는 단계가 끝날 때까지 비공개)
+      })),
+      teamTotals: { mine: draft.totals[myTeam], enemy: draft.totals[myTeam === 'A' ? 'B' : 'A'] },
+      firstSide: sideOf(draft.pickOrder[0]) === 'enemy' ? 'enemy' : 'mine', // 먼저 고르는 팀
+      bans: draft.phase === 'pick' ? draft.banned : [],
+      myBan: myBan === undefined ? null : (myBan || ''), // null = 아직 안 함, '' = 벤하지 않음
+      yourTurn,
+      options: draft.phase === 'ban' ? (myBan === undefined ? Object.keys(CHARACTERS) : []) : (curEntry === me ? duoOptionsFor(draft, me.socket) : []),
+    });
+  });
+}
+
+function duoSetTimer(draft, ms) {
+  if (draft.timer) clearTimeout(draft.timer);
+  draft.endsAt = Date.now() + ms;
+  draft.timer = setTimeout(() => {
+    const d = duoDrafts[draft.id];
+    if (!d || d.finishing) return;
+    if (d.phase === 'ban') { duoFinishBans(d); return; } // 시간 초과: 아직 안 한 사람은 벤 없이 넘어감
+    const e = d.pickOrder[d.turn];
+    const opts = duoOptionsFor(d, e.socket);
+    if (!opts.length) { duoCancelDraftFor(e.socket.id); return; }
+    duoApplyPick(d, e, opts[Math.floor(Math.random() * opts.length)]); // 시간 초과: 무작위 자동 선택
+  }, ms + 500);
+}
+
+function duoApplyBan(draft, entry, characterId) {
+  if (draft.bans[entry.socket.id] !== undefined) return; // 한 번만 벤할 수 있음
+  draft.bans[entry.socket.id] = characterId || '';
+  if (draft.entries.every((e) => draft.bans[e.socket.id] !== undefined)) duoFinishBans(draft);
+  else emitDuoDraft(draft); // 누가 벤을 끝냈는지 다른 사람에게도 표시
+}
+
+function duoFinishBans(draft) {
+  if (draft.phase !== 'ban') return;
+  draft.banned = [...new Set(draft.entries.map((e) => draft.bans[e.socket.id]).filter((id) => id && CHARACTERS[id]))];
+  draft.phase = 'pick';
+  draft.turn = 0;
+  duoSetTimer(draft, DUO_PICK_MS);
+  emitDuoDraft(draft);
+}
+
+function duoApplyPick(draft, entry, characterId) {
+  draft.picks[entry.socket.id] = characterId;
+  draft.turn += 1;
+  if (draft.turn >= draft.pickOrder.length) { finishDuoDraft(draft); return; }
+  duoSetTimer(draft, DUO_PICK_MS);
+  emitDuoDraft(draft);
+}
+
+// 4명이 모두 골랐으면 서버 저장소에서 레벨/스킨/하이퍼/기어/트로피를 읽어 일반 2:2 매치로 시작 (이후 게임 종류/맵 투표는 startMatch 가 연다)
+async function finishDuoDraft(draft) {
+  if (draft.finishing) return;
+  draft.finishing = true;
+  if (draft.timer) { clearTimeout(draft.timer); draft.timer = null; }
+  const ordered = [...draft.teamA, ...draft.teamB]; // startMatch 는 앞의 2명을 A팀, 뒤의 2명을 B팀으로 배정
+  const finalEntries = [];
+  for (const e of ordered) {
+    const characterId = draft.picks[e.socket.id];
+    let trophies = 0, level = 1, skin = null, hyper = false, gear = null;
+    try {
+      const u = await db.findUser(e.userKey);
+      trophies = (u && u.trophies && u.trophies[characterId]) || 0;
+      level = levelOf(u, characterId);
+      skin = equippedSkinOf(u, characterId);
+      hyper = hasHyper(u, characterId);
+      gear = gearBonusOf(u, characterId);
+    } catch (err) {
+      console.error('2:2 캐릭터 정보 조회 실패', e.userKey, err);
+    }
+    finalEntries.push({ socket: e.socket, name: e.name, characterId, userKey: e.userKey, trophies, level, skin, hyper, gear });
+  }
+  delete duoDrafts[draft.id];
+  draft.entries.forEach((e) => { if (socketToDuoDraft[e.socket.id] === draft.id) delete socketToDuoDraft[e.socket.id]; });
+  if (finalEntries.some((e) => !e.socket.connected || socketToMatch[e.socket.id])) { // 조회하는 사이에 누가 나간 경우: 기록 없이 취소
+    finalEntries.forEach((e) => { if (e.socket.connected) e.socket.emit('duoDraftCancelled', { message: '누군가 나가서 2:2 매칭이 취소됐어요. 다시 매칭을 시작해 주세요.' }); });
+    return;
+  }
+  startMatch('2v2', finalEntries);
+}
+
+// 벤/픽 중에 누가 나가면 (기록 없이) 취소하고 남은 사람에게 알린다
+function duoCancelDraftFor(socketId) {
+  const id = socketToDuoDraft[socketId];
+  const draft = id && duoDrafts[id];
+  if (!draft) { delete socketToDuoDraft[socketId]; return; }
+  if (draft.finishing) return; // 마무리 중이면 finishDuoDraft 가 연결 상태를 확인해서 처리
+  if (draft.timer) { clearTimeout(draft.timer); draft.timer = null; }
+  delete duoDrafts[id];
+  draft.entries.forEach((e) => {
+    delete socketToDuoDraft[e.socket.id];
+    if (e.socket.id !== socketId && e.socket.connected) e.socket.emit('duoDraftCancelled', { message: '누군가 나가서 2:2 매칭이 취소됐어요. 다시 매칭을 시작해 주세요.' });
+  });
+}
+
 // 경쟁전 점수 정산: 정상 종료는 이긴 사람 +50~100 / 진 사람 -25~50. 중도 이탈로 끝나면 나간 사람은 패배로 감점, 남은 사람은 승리로 점수를 얻는다.
 async function settleRankedMatch(match, winnerTeam, reason, leaverId) {
   const normalEnd = reason === 'scoreLimit' || reason === 'gateDestroyed' || reason === 'gemsCollected' || reason === 'roundsWon';
@@ -6590,6 +6797,13 @@ function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hy
     buffyGadgetTeamRegenAmount: (gear && gear.buffyGadgetTeamRegenAmount) || 0,     // 버피(가젯, 진정): 가젯 사용 시 모든 아군이 주기마다 회복하는 체력
     buffyGadgetTeamRegenInterval: (gear && gear.buffyGadgetTeamRegenInterval) || 0.5, // 위 회복 주기(초)
     buffyGadgetTeamRegenSec: (gear && gear.buffyGadgetTeamRegenSec) || 0,           // 위 회복이 이어지는 시간(초)
+    buffyDelayGuardMult: (gear && gear.buffyDelayGuardMult) || 1,                   // 버피(기본공격, 중간): 발동을 기다리는 동안 받는 피해 배율 (1 = 효과 없음)
+    buffyDelayGuardUntil: 0,                                                       // 이 시각(ms) 전까지 위 피해 감소 유지
+    buffyBasicRangeMult: (gear && gear.buffyBasicRangeMult) || 1,                   // 버피(기본공격, 중간): 기본공격 사거리 배율 (클라이언트도 조준선에 사용)
+    buffyAuraReloadMult: (gear && gear.buffyAuraReloadMult) || 1,                   // 버피(가젯, 중간): 주변 적의 재장전 속도 배율
+    buffyAuraReloadCur: 1,                                                         // (맞는 쪽) 현재 적용 중인 재장전 배율
+    buffyAuraDuringGuard: !!(gear && gear.buffyAuraDuringGuard),                    // 버피(가젯, 중간): 질주 보호막이 유지되는 동안 주변 적에게 효과 (클라이언트도 범위 표시에 사용)
+    buffyHyperWallPass: !!(gear && gear.buffyHyperWallPass),                        // 버피(하이퍼차지, 중간): 하이퍼 차지 발동 중 벽 통과
     buffyBasicSlowMult: (gear && gear.buffyBasicSlowMult) || 1,                     // 버피(기본공격, 진우Park): 맞은 적의 이동속도 배율 (1 = 효과 없음)
     buffyBasicSlowSec: (gear && gear.buffyBasicSlowSec) || 0,                       // 버피(기본공격, 진우Park): 그 지속시간(초)
     buffyUltHitCharge: (gear && gear.buffyUltHitCharge) || 0,                       // 버피(하이퍼차지, 진우Park): 궁극기가 적에게 맞으면 즉시 충전되는 궁극기 게이지(%)
@@ -6774,6 +6988,10 @@ function effectiveChargeTime(p, baseSec, now) {
   const on = p.hasHyper && p.hyper && p.hyper.basicChargeRateMultiplier && p.hyperUntil && now < p.hyperUntil;
   return on ? baseSec / p.hyper.basicChargeRateMultiplier : baseSec;
 }
+// 버피(가젯, 중간): 중간의 질주 보호막 근처에 있는 동안 재장전이 느려짐 (이동속도 감소와 같이 매 틱 갱신되어 0.15초만 유지)
+function auraReloadMult(p, now) {
+  return p.buffyAuraSlowUntil && now < p.buffyAuraSlowUntil ? (p.buffyAuraReloadCur || 1) : 1;
+}
 function selfHyperReloadMult(p, now) {
   return p.buffyHyperReloadMult > 1 && p.hasHyper && p.hyper && p.hyperUntil && now < p.hyperUntil ? p.buffyHyperReloadMult : 1;
 }
@@ -6785,6 +7003,7 @@ function getDamageTakenMultiplier(p) {
   if (p && p.gearFullHpTakenMult < 1 && p.hp >= p.maxHp) mult *= p.gearFullHpTakenMult;
   if (p && p.buffyShieldUntil && Date.now() < p.buffyShieldUntil) mult *= p.buffyGadgetShieldMult || 1; // 버피(가젯): 임시 보호막
   if (p && p.chargeStartAt && p.hyperUntil && Date.now() < p.hyperUntil && p.hyper && p.hyper.chargingDamageTakenMultiplier) mult *= p.hyper.chargingDamageTakenMultiplier; // 하이퍼 차지(똥파리): 발동 중 기본공격을 충전하는 동안 받는 피해 추가 감소
+  if (p && p.buffyDelayGuardUntil && Date.now() < p.buffyDelayGuardUntil) mult *= p.buffyDelayGuardMult || 1; // 버피(기본공격, 중간): 공격 발동을 기다리는 동안 받는 피해 감소
   if (p && p.buffyDashGuardUntil && Date.now() < p.buffyDashGuardUntil) mult *= p.buffyDashGuardMult || 1; // 버피(기본공격, 꽈리): 돌진 직후 잠깐 받는 피해 감소
   if (p && p.gadgetGuardUntil && Date.now() < p.gadgetGuardUntil) mult *= p.gadgetGuardMult || 1; // 가젯(중간의 질주 보호막): 받는 피해 감소
   return mult;
@@ -7024,6 +7243,7 @@ function respawnPlayer(m, respawned, invincibleMs) {
   respawned.buffyDashGuardUntil = 0; // 꽈리 버피(돌진 직후 피해 감소 / 쌈장 직후 이동속도)도 초기화
   respawned.buffyGadgetSpeedUntil = 0;
   respawned.buffyPushSpeedUntil = 0; // 엑헤 가젯 버피 이동속도 증가도 초기화
+  respawned.buffyDelayGuardUntil = 0; // 중간 기본공격 버피 피해 감소도 초기화
   respawned.buffyAllHitUntil = 0;
   respawned.buffyAuraSlowUntil = 0;
   respawned.buffyShotHits = {};
@@ -7734,7 +7954,7 @@ function performMeleeAttack(match, p, spec, isUltimate, angle = p.angle, stabInd
   const hyperUltOmni = isUltimate && p.hasHyper && p.hyper && p.hyper.ultimateOmni && p.hyperUntil && Date.now() < p.hyperUntil;
   const arcDegrees = hyperUltOmni ? 360 : (spec.angleDegrees || 90) * hyperBasicAngle;
   const halfAngle = (arcDegrees * Math.PI) / 180 / 2;
-  const range = (spec.range || 120) * hyperBasicRange;
+  const range = (spec.range || 120) * hyperBasicRange * (!isUltimate && p.buffyBasicRangeMult > 1 ? p.buffyBasicRangeMult : 1); // 버피(기본공격, 중간): 사거리 증가
   // 판정 보정(모카): 상대 몸통 크기만큼 각도를 너그럽게 보고, 위치 오차를 감안해 판정 거리를 조금 더 준다
   const reachPad = spec.hitAssist ? (spec.hitPadding || 0) : 0;
   const angleSlack = (distance, bodyRadius) => {
@@ -8053,7 +8273,8 @@ function tryMatchmaking(mode) {
   let matched = false;
   while (queues[mode].length >= cfg.size) {
     const entries = queues[mode].splice(0, cfg.size);
-    startMatch(mode, entries);
+    if (mode === '2v2') startDuoDraft(entries); // 사람과 하는 2:2는 매칭된 뒤 벤/픽으로 캐릭터를 정한다
+    else startMatch(mode, entries);
     matched = true;
   }
 
@@ -8229,6 +8450,7 @@ function leaveQueue(socketId) {
 }
 
 function isQueued(socketId) {
+  if (socketToDuoDraft[socketId]) return true; // 2:2 벤/픽 중에도 다른 매칭/AI전을 시작하지 못하게 대기 중으로 취급
   if (socketToDraft[socketId]) return true; // 경쟁전 캐릭터 선택 중에도 다른 매칭/AI전을 시작하지 못하게 대기 중으로 취급
   return Object.keys(queues).some((mode) => queues[mode].some((q) => q.socket.id === socketId));
 }
@@ -8492,8 +8714,29 @@ io.on('connection', (socket) => {
     if (!socket.data.userKey) { socket.emit('findMatchError', { message: '로그인이 필요합니다.' }); return; }
     if (serverPause.on) { socket.emit('findMatchError', { message: serverPause.message }); return; } // 서버 일시정지 중에는 새 매칭 불가
 
+    if (data && data.mode === '3v3') { socket.emit('findMatchError', { message: '3:3 모드는 더 이상 지원하지 않아요. 1:1 또는 2:2를 이용해 주세요.' }); return; } // 폐지된 모드 (예전 화면이 열려 있어도 1:1 대기열로 잘못 들어가지 않게 막음)
     const mode = data && MODES[data.mode] ? data.mode : '1v1';
     const name = socket.data.displayName; // 닉네임은 로그인한 아이디로 고정
+
+    // 사람과 하는 2:2: 캐릭터는 고르지 않고 대기열에 들어간다. 4명이 모이면 벤/픽 단계에서 캐릭터를 정함 (총 트로피는 서버 저장소 기준)
+    if (mode === '2v2') {
+      const duoUserKey = socket.data.userKey;
+      let totalTrophies = 0;
+      try {
+        const u = await db.findUser(duoUserKey);
+        totalTrophies = totalTrophiesOf(u);
+      } catch (e) {
+        console.error('총 트로피 조회 실패', duoUserKey, e);
+      }
+      if (!socket.connected || socket.data.userKey !== duoUserKey) return;
+      if (socketToMatch[socket.id] || isQueued(socket.id)) return;
+      if (serverPause.on) { socket.emit('findMatchError', { message: serverPause.message }); return; }
+      queues[mode].push({ socket, name, userKey: duoUserKey, totalTrophies });
+      broadcastQueueStatus(mode);
+      tryMatchmaking(mode);
+      return;
+    }
+
     const requestedId = data && data.characterId;
     // 서버가 직접 캐릭터 ID를 검증 (클라이언트가 보낸 능력치는 절대 신뢰하지 않음)
     if (!CHARACTERS[requestedId] || !socket.data.unlocked.has(requestedId)) {
@@ -8573,6 +8816,28 @@ io.on('connection', (socket) => {
     const characterId = data && data.characterId;
     if (typeof characterId !== 'string' || !rankedOptionsFor(draft, socket).includes(characterId)) return;
     rankedApplyPick(draft, entry, characterId);
+  });
+
+  // 2:2 벤 단계: 벤은 한 번만, 아무 캐릭터(내가 안 가진 캐릭터도)나 가능. characterId 가 비어 있으면 벤하지 않고 넘어감
+  socket.on('duoBan', (data) => {
+    const draft = duoDrafts[socketToDuoDraft[socket.id]];
+    if (!draft || draft.finishing || draft.phase !== 'ban') return;
+    const entry = draft.entries.find((e) => e.socket.id === socket.id);
+    if (!entry) return;
+    const characterId = data && data.characterId;
+    if (characterId && (typeof characterId !== 'string' || !CHARACTERS[characterId])) return;
+    duoApplyBan(draft, entry, characterId || '');
+  });
+
+  // 2:2 픽 단계: 내 차례일 때만, 내가 고를 수 있는 캐릭터(잠금해제 + 벤/중복 제외)만 인정
+  socket.on('duoPick', (data) => {
+    const draft = duoDrafts[socketToDuoDraft[socket.id]];
+    if (!draft || draft.finishing || draft.phase !== 'pick') return;
+    const entry = draft.pickOrder[draft.turn];
+    if (!entry || entry.socket.id !== socket.id) return;
+    const characterId = data && data.characterId;
+    if (typeof characterId !== 'string' || !duoOptionsFor(draft, socket).includes(characterId)) return;
+    duoApplyPick(draft, entry, characterId);
   });
 
   // AI 연습 대결: 대기열 없이 바로 AI 봇 1명과 1:1 매치를 시작한다.
@@ -8751,6 +9016,7 @@ io.on('connection', (socket) => {
     console.log(`플레이어 접속 해제: ${socket.id}`);
     releaseAccount(socket);
     rankedCancelDraftFor(socket.id); // 경쟁전 캐릭터 선택 중이었다면 점수 변화 없이 취소
+    duoCancelDraftFor(socket.id); // 2:2 벤/픽 중이었다면 취소하고 나머지에게 알림
     const queuedMode = Object.keys(queues).find((m) => queues[m].some((q) => q.socket.id === socket.id));
     leaveQueue(socket.id);
     if (queuedMode) broadcastQueueStatus(queuedMode); // 남아있는 대기자들에게 줄어든 인원수를 알림
@@ -8921,6 +9187,7 @@ function registerGameplayHandlers(socket) {
       const myWindupId = p.windupId;
       p.windupMovable = true;
       p.windupUntil = now + delayMs;
+      if (p.buffyDelayGuardMult < 1) p.buffyDelayGuardUntil = now + delayMs; // 버피(기본공격, 중간): 발동을 기다리는 동안 받는 피해 감소
       p.windupTotal = delayMs;
       p.windupAngle = p.angle; // 클라이언트가 경고 범위를 이 방향으로 그림
       const lockedAngle = p.angle;
@@ -9332,6 +9599,7 @@ function registerGameplayHandlers(socket) {
     p.hyperLeft = hyperTotalSec;
     p.hyperDurationTotal = hyperTotalSec;
     p.hyperCharge = 0;
+    if (p.buffyHyperWallPass) p.wallPassUntil = Math.max(p.wallPassUntil || 0, p.hyperUntil); // 버피(하이퍼차지, 중간): 발동 중 벽 통과 (끝날 때 벽 안이면 서버가 밖으로 옮겨줌)
     effectIdCounter += 1;
     match.effects.push({ id: effectIdCounter, type: 'hyperActivate', ownerId: p.id, x: p.x, y: p.y, radius: PLAYER_RADIUS * 3.2, life: 0.7, maxLife: 0.7 }); // 발동 순간 보랏빛 폭발 연출
   });
@@ -10721,13 +10989,14 @@ function updateMatch(match, dt, now) {
   // 버피(슈 가젯): 보호막이 남아 있는 동안 주변(buffyAuraRadius px) 적의 이동속도를 낮춤. 매 틱 새로 계산해서 0.15초만 유지되므로 범위를 벗어나거나 보호막이 사라지면 바로 풀림
   for (const pid in match.players) {
     const owner = match.players[pid];
-    if (!owner.alive || !(owner.buffyAuraRadius > 0) || !(owner.shieldHp > 0)) continue;
+    const auraOn = owner.shieldHp > 0 || (owner.buffyAuraDuringGuard && owner.gadgetGuardUntil && now < owner.gadgetGuardUntil); // 슈: 보호막이 있는 동안 / 중간: 질주 보호막이 유지되는 동안
+    if (!owner.alive || !(owner.buffyAuraRadius > 0) || !auraOn) continue;
     for (const tid in match.players) {
       const t = match.players[tid];
       if (!t.alive || t.team === owner.team) continue;
       if (Math.hypot(t.x - owner.x, t.y - owner.y) > owner.buffyAuraRadius) continue;
-      if (t.buffyAuraStamp === now) t.buffyAuraSlowCur = Math.min(t.buffyAuraSlowCur, owner.buffyAuraSlowMult); // 같은 틱에 여러 명이면 가장 강한 감속만
-      else { t.buffyAuraStamp = now; t.buffyAuraSlowCur = owner.buffyAuraSlowMult; }
+      if (t.buffyAuraStamp === now) { t.buffyAuraSlowCur = Math.min(t.buffyAuraSlowCur, owner.buffyAuraSlowMult); t.buffyAuraReloadCur = Math.min(t.buffyAuraReloadCur, owner.buffyAuraReloadMult || 1); } // 같은 틱에 여러 명이면 가장 강한 감속만
+      else { t.buffyAuraStamp = now; t.buffyAuraSlowCur = owner.buffyAuraSlowMult; t.buffyAuraReloadCur = owner.buffyAuraReloadMult || 1; }
       t.buffyAuraSlowUntil = now + 150;
     }
   }
@@ -10877,7 +11146,7 @@ function updateMatch(match, dt, now) {
     if (p.reloadAllAtOnce) {
       // 시스템: 탄창을 전부 쓴 뒤에야 재장전이 시작되고, 시간이 다 차면 한꺼번에 가득 참 (중간에는 한 발씩 차지 않음)
       if (p.ammo <= 0) {
-        p.ammoRegenElapsed += dt * (1 + (p.gearReloadBonus || 0)) * (p.reloadBoostUntil && now < p.reloadBoostUntil ? p.reloadBoostMultiplier || 1 : 1) * teamHyperReloadMult(match, p, now) * selfHyperReloadMult(p, now);
+        p.ammoRegenElapsed += dt * (1 + (p.gearReloadBonus || 0)) * (p.reloadBoostUntil && now < p.reloadBoostUntil ? p.reloadBoostMultiplier || 1 : 1) * teamHyperReloadMult(match, p, now) * selfHyperReloadMult(p, now) * auraReloadMult(p, now);
         if (p.ammoRegenElapsed >= (p.ammoRegenSeconds || AMMO_REGEN_SECONDS)) {
           p.ammo = p.maxAmmo;
           p.ammoRegenElapsed = 0;
@@ -10887,7 +11156,7 @@ function updateMatch(match, dt, now) {
       }
     } else if (p.ammo < p.maxAmmo) {
       // 탄창이 가득 차지 않았으면 시간이 지날 때마다 한 발씩 채워짐
-      p.ammoRegenElapsed += dt * (1 + (p.gearReloadBonus || 0)) * (p.reloadBoostUntil && now < p.reloadBoostUntil ? p.reloadBoostMultiplier || 1 : 1) * teamHyperReloadMult(match, p, now) * selfHyperReloadMult(p, now);
+      p.ammoRegenElapsed += dt * (1 + (p.gearReloadBonus || 0)) * (p.reloadBoostUntil && now < p.reloadBoostUntil ? p.reloadBoostMultiplier || 1 : 1) * teamHyperReloadMult(match, p, now) * selfHyperReloadMult(p, now) * auraReloadMult(p, now);
       const regenSec = p.ammoRegenSeconds || AMMO_REGEN_SECONDS;
       if (p.ammoRegenElapsed >= regenSec) {
         p.ammo = Math.min(p.maxAmmo, p.ammo + 1);
@@ -11992,7 +12261,7 @@ const STATE_SEND_EVERY = 1;        // N틱마다 한 번 전송. 1 = 초당 20�
 const NET_LIFE_TOLERANCE = 0.12;   // 서버 예상 수명과 이만큼(초) 이상 어긋나면 수명을 다시 보냄
 const NET_STATIC_KEYS = new Set(['basic', 'ultimate', 'gadget', 'hyper']); // 캐릭터 스펙(제자리에서 바뀌지 않고 통째로 교체만 됨) - 참조 비교
 const NET_DROP = {
-  players: new Set(["inBush", "stealthId", "dashTimeLeft", "dashSpeed", "dashDamage", "dashStun", "dashHitIds", "dashCharge", "gearReloadBonus", "gearLowHpDamageBonus", "gearFullHpTakenMult", "gearUltChargeMult", "gearProjectileSpeedMult", "gearMoveSpeedMult", "moveSpeedTierMult", "gearLowHpSpeedBonus", "gearChainBonus", "lastBasicAttackAt", "gearChainOn", "gearSacrificeCharge", "gearGadgetCooldown", "gearLifesteal", "buffyBasicRadiusMult", "buffyGadgetSlowMult", "buffyGadgetSlowSec", "buffyBasicSpeedMult", "buffyBasicSpeedSec", "buffySpeedUntil", "buffyGadgetShieldMult", "buffyGadgetShieldSec", "buffyShieldOnKnock", "buffyBasicProjSpeedMult", "buffyHyperRegenAmount", "buffyHyperRegenInterval", "buffyHyperRegenNext", "buffyBasicSelfHeal", "buffyGadgetTeamRegenAmount", "buffyGadgetTeamRegenInterval", "buffyGadgetTeamRegenSec", "buffyHyperTeamReloadMult", "teamRegenUntil", "teamRegenAmount", "teamRegenInterval", "teamRegenNext", "buffyBasicPoolLifeBonus", "buffyGadgetReloadMult", "buffyGadgetReloadSec", "buffyHyperUltSpeedMult", "buffyAllHitSpeedMult", "buffyAllHitSpeedSec", "buffyAllHitUntil", "buffyShotHits", "buffyAuraSlowMult", "buffyAuraSlowUntil", "buffyAuraSlowCur", "buffyHyperSpreadDegrees", "buffyUltSpeedUntil", "buffyHitSpeedMult", "buffyHitSpeedSec", "buffyBounceDamageMult", "buffyGadgetPierce", "buffyHyperProjRadiusMult", "buffyHitSpeedUntil", "buffyHyperTakenMult", "buffyHyperReloadMult", "buffyBasicWindupSec", "buffyGadgetChargeSec", "buffyDashGuardMult", "buffyDashGuardSec", "buffyGadgetSpeedMult", "buffyGadgetSpeedSec", "buffyGadgetSpeedUntil", "buffyHyperKillReload", "buffyBasicHeal", "buffyPushSpeedMult", "buffyPushSpeedSec", "buffyPushSpeedUntil", "buffyHyperMaxChickens", "buffyBasicSlowMult", "buffyBasicSlowSec", "buffyUltHitCharge", "leapIsUlt", "gearHyperDurationBonus", "gearBandageHeal", "bandageUsed", "gearUltStealthSec", "gearHealMult", "gearShieldMax", "lastHitAt", "fullHpSince", "reloadBoostUntil", "reloadBoostMultiplier", "windupId", "knockbackDirX", "knockbackDirY", "knockbackDistance", "knockbackTotalTime", "ultimateChargePerHit", "hyperUntil", "wallPassUntil", "grabbedBy", "phaseSpeedUntil", "phaseSpeedMult", "healChargeAmount", "leapEndsAt", "leapDamage", "leapDirectDamage", "leapKnockback", "leapStun", "ultGadgetLeft", "ultGadgetRate", "speedBoostMultiplier", "gadgetGuardMult", "damageBoostMultiplier", "reloadAllAtOnce", "moveDirX", "moveDirY", "lastMoveAt", "airborneLandDamage", "airborneBy", "airborneStunUntil", "chargeStartAt", "ammoRegenSeconds", "ammoRegenElapsed", "lastShotAt", "lastDamageAt", "hitIds", "leapTargetX", "leapTargetY", "leapRadius", "leapDirectRadius"]),
+  players: new Set(["inBush", "stealthId", "dashTimeLeft", "dashSpeed", "dashDamage", "dashStun", "dashHitIds", "dashCharge", "gearReloadBonus", "gearLowHpDamageBonus", "gearFullHpTakenMult", "gearUltChargeMult", "gearProjectileSpeedMult", "gearMoveSpeedMult", "moveSpeedTierMult", "gearLowHpSpeedBonus", "gearChainBonus", "lastBasicAttackAt", "gearChainOn", "gearSacrificeCharge", "gearGadgetCooldown", "gearLifesteal", "buffyBasicRadiusMult", "buffyGadgetSlowMult", "buffyGadgetSlowSec", "buffyBasicSpeedMult", "buffyBasicSpeedSec", "buffySpeedUntil", "buffyGadgetShieldMult", "buffyGadgetShieldSec", "buffyShieldOnKnock", "buffyBasicProjSpeedMult", "buffyHyperRegenAmount", "buffyHyperRegenInterval", "buffyHyperRegenNext", "buffyBasicSelfHeal", "buffyGadgetTeamRegenAmount", "buffyGadgetTeamRegenInterval", "buffyGadgetTeamRegenSec", "buffyHyperTeamReloadMult", "teamRegenUntil", "teamRegenAmount", "teamRegenInterval", "teamRegenNext", "buffyBasicPoolLifeBonus", "buffyGadgetReloadMult", "buffyGadgetReloadSec", "buffyHyperUltSpeedMult", "buffyAllHitSpeedMult", "buffyAllHitSpeedSec", "buffyAllHitUntil", "buffyShotHits", "buffyAuraSlowMult", "buffyAuraSlowUntil", "buffyAuraSlowCur", "buffyHyperSpreadDegrees", "buffyUltSpeedUntil", "buffyHitSpeedMult", "buffyHitSpeedSec", "buffyBounceDamageMult", "buffyGadgetPierce", "buffyHyperProjRadiusMult", "buffyHitSpeedUntil", "buffyHyperTakenMult", "buffyHyperReloadMult", "buffyBasicWindupSec", "buffyGadgetChargeSec", "buffyDashGuardMult", "buffyDashGuardSec", "buffyGadgetSpeedMult", "buffyGadgetSpeedSec", "buffyGadgetSpeedUntil", "buffyHyperKillReload", "buffyBasicHeal", "buffyPushSpeedMult", "buffyPushSpeedSec", "buffyPushSpeedUntil", "buffyHyperMaxChickens", "buffyBasicSlowMult", "buffyBasicSlowSec", "buffyUltHitCharge", "leapIsUlt", "buffyDelayGuardMult", "buffyDelayGuardUntil", "buffyAuraReloadMult", "buffyAuraReloadCur", "buffyHyperWallPass", "gearHyperDurationBonus", "gearBandageHeal", "bandageUsed", "gearUltStealthSec", "gearHealMult", "gearShieldMax", "lastHitAt", "fullHpSince", "reloadBoostUntil", "reloadBoostMultiplier", "windupId", "knockbackDirX", "knockbackDirY", "knockbackDistance", "knockbackTotalTime", "ultimateChargePerHit", "hyperUntil", "wallPassUntil", "grabbedBy", "phaseSpeedUntil", "phaseSpeedMult", "healChargeAmount", "leapEndsAt", "leapDamage", "leapDirectDamage", "leapKnockback", "leapStun", "ultGadgetLeft", "ultGadgetRate", "speedBoostMultiplier", "gadgetGuardMult", "damageBoostMultiplier", "reloadAllAtOnce", "moveDirX", "moveDirY", "lastMoveAt", "airborneLandDamage", "airborneBy", "airborneStunUntil", "chargeStartAt", "ammoRegenSeconds", "ammoRegenElapsed", "lastShotAt", "lastDamageAt", "hitIds", "leapTargetX", "leapTargetY", "leapRadius", "leapDirectRadius"]),
   bullets: new Set(["isUltimate", "explodeDamage", "explodeVisual", "explodeChargesUlt", "teleportOwner", "selfKnockback", "eggSplat", "directDamage", "poolLifetime", "poolTickInterval", "poolDamage", "poolHeal", "poolVisual", "poolChargesUlt", "poolFirstDamage", "poolChargeScale", "slowMultiplier", "knockback", "prevX", "prevY", "originX", "originY", "fresh", "bounceTime", "closeRange", "distScale", "executeBelowHp", "currentHpRatio", "buffyShot", "slowOnHit", "chain", "launchDuration", "landDamage", "landStun", "pierceTargets", "hitIds", "outLeft", "gearProjSpeed", "baseSpeed", "bounce", "pierceWalls", "wallBounce", "bounceDamageMult", "bounced", "bounceBonus", "bounceRangeBonus", "breakShield", "poolOnImpact", "hyperPoolRadius", "hyperPoolHeal", "poolGas", "poolOnExpire", "splitInto"]),
   effects: new Set(["landLife"]),
   waterPools: new Set(["tickTimer", "tickInterval", "firstDamage", "firstHitIds", "chargesUlt", "chargeScale", "poolChargeScale", "slowMultiplier"]),
