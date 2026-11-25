@@ -336,6 +336,21 @@
   .rd-char { padding: 12px 4px; border-radius: 12px; border: 3px solid var(--ink); color: #fff; font-weight: 700; font-size: 15px; cursor: pointer; text-shadow: 0 2px 0 rgba(0, 0, 0, 0.45); }
   .rd-char:disabled { opacity: 0.4; cursor: default; }
   .rd-char.picked { outline: 3px solid var(--sun); }
+  /* ----- 2:2 벤/픽 화면 (경쟁전 선택 화면의 스타일을 그대로 재사용) ----- */
+  #duoDraftOverlay { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; box-sizing: border-box; text-align: center; color: var(--paper); padding: 16px; overflow-y: auto; background: rgba(10, 11, 30, 0.94); z-index: 35; }
+  #duoDraftOverlay.open { display: flex; }
+  #duoDraftOverlay > .panel { margin: auto; width: min(620px, 100%); }
+  .dd-totals { font-size: 14px; color: var(--mute); margin: 2px 0 8px; }
+  .dd-players { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin: 8px 0; }
+  .dd-player { padding: 8px 6px; border-radius: 12px; background: rgba(255, 255, 255, 0.07); border-left: 6px solid #777; text-align: left; }
+  .dd-player.me, .dd-player.ally { border-left-color: #4da3ff; }
+  .dd-player.enemy { border-left-color: #ff6b6b; }
+  .dd-player.current { outline: 3px solid var(--sun); }
+  .dd-player .nm { font-weight: 700; word-break: break-all; font-size: 14px; }
+  .dd-player .tr { color: var(--mute); font-size: 12px; margin-top: 2px; }
+  .dd-player .pk { margin-top: 4px; font-size: 14px; font-weight: 700; }
+  .dd-bans { min-height: 22px; font-size: 14px; margin: 6px 0; color: #ff9d9d; }
+  #ddSkipBan { margin-top: 10px; }
 
   /* ----- 기어 상점 ----- */
   /* ----- 기어 상점 ----- */
@@ -1275,10 +1290,6 @@
       <div class="mode-title">2 : 2</div>
       <div class="mode-desc">팀원과 함께 2대2 협동전</div>
     </div>
-    <div class="mode-card" data-mode="3v3">
-      <div class="mode-title">3 : 3</div>
-      <div class="mode-desc">팀원 두 명과 함께 3대3 팀전</div>
-    </div>
     <div class="mode-card" data-mode="ranked">
       <div class="mode-title">🏆 경쟁전</div>
       <div class="mode-desc">1:1 티어전 · 티어가 높은 사람이 캐릭터를 먼저 골라요<br>참가 조건: Lv.9 이상 캐릭터 2개 이상<br>승리 +50~100점 / 패배 -25~50점<br><b id="rankedTierText"></b></div>
@@ -1621,6 +1632,20 @@
     <div class="rd-timer" id="rdTimer"></div>
     <div class="rd-info" id="rdInfo"></div>
     <div class="rd-chars" id="rdChars"></div>
+  </div>
+</div>
+
+<div id="duoDraftOverlay">
+  <div class="panel">
+    <h2 class="panel-title" id="ddTitle">⚔️ 2:2 벤 · 픽</h2>
+    <div class="dd-totals" id="ddTotals"></div>
+    <div class="dd-players" id="ddPlayers"></div>
+    <div class="rd-status" id="ddStatus"></div>
+    <div class="rd-timer" id="ddTimer"></div>
+    <div class="rd-info" id="ddInfo"></div>
+    <div class="dd-bans" id="ddBans"></div>
+    <div class="rd-chars" id="ddChars"></div>
+    <button id="ddSkipBan" class="btn btn-ghost" style="display:none">벤하지 않기</button>
   </div>
 </div>
 
@@ -4352,6 +4377,84 @@ socket.on('rankedCancelled', (d) => {
   document.getElementById('modeOverlay').style.display = 'flex';
   alert((d && d.message) || '경쟁전이 취소됐어요. 점수는 변하지 않아요.');
 });
+// ===== 사람과 하는 2:2: 매칭 후 벤 -> 픽 =====
+// 서버가 상태를 보낼 때마다(매칭 직후 / 누가 벤을 끝냈을 때 / 벤이 끝나 픽으로 넘어갈 때 / 누가 고를 때마다) 화면을 다시 그린다.
+let ddEndsAt = 0;
+let ddTimerInterval = null;
+function closeDuoDraft() {
+  document.getElementById('duoDraftOverlay').classList.remove('open');
+  if (ddTimerInterval) { clearInterval(ddTimerInterval); ddTimerInterval = null; }
+}
+socket.on('duoDraft', (d) => {
+  if (!d) return;
+  document.getElementById('matchingOverlay').classList.remove('open');
+  document.getElementById('modeOverlay').style.display = 'none';
+  document.getElementById('duoDraftOverlay').classList.add('open');
+  const nameOf = (id) => { const ch = CHARACTERS.find((x) => x.id === id); return ch ? ch.name : id; };
+  const sideLabel = { me: '(나)', ally: '(우리 팀)', enemy: '(상대 팀)' };
+  const isBan = d.phase === 'ban';
+  document.getElementById('ddTitle').textContent = isBan ? '🚫 2:2 벤 단계' : '⚔️ 2:2 캐릭터 선택';
+  const tt = d.teamTotals || { mine: 0, enemy: 0 };
+  document.getElementById('ddTotals').textContent = `🏆 총 트로피 합: 우리 팀 ${Number(tt.mine).toLocaleString()} vs 상대 팀 ${Number(tt.enemy).toLocaleString()}`;
+  document.getElementById('ddPlayers').innerHTML = (d.players || []).map((p) => {
+    const pk = isBan
+      ? (p.banned ? '✅ 벤 완료' : '벤 고르는 중...')
+      : (p.characterId ? `🎯 ${escapeHtml(nameOf(p.characterId))}` : (p.current ? '고르는 중...' : '대기'));
+    return `<div class="dd-player ${p.side}${p.current ? ' current' : ''}"><div class="nm">${isBan ? '' : p.order + '. '}${escapeHtml(p.name)} ${sideLabel[p.side] || ''}</div><div class="tr">🏆 ${Number(p.total).toLocaleString()}</div><div class="pk">${pk}</div></div>`;
+  }).join('');
+  const statusEl = document.getElementById('ddStatus');
+  const infoEl = document.getElementById('ddInfo');
+  const box = document.getElementById('ddChars');
+  const skipBtn = document.getElementById('ddSkipBan');
+  box.innerHTML = '';
+  skipBtn.style.display = 'none';
+  skipBtn.onclick = null;
+  document.getElementById('ddBans').textContent = (d.bans && d.bans.length) ? `🚫 벤된 캐릭터: ${d.bans.map(nameOf).join(', ')}` : (isBan ? '' : '🚫 벤된 캐릭터가 없어요');
+  const addButtons = (ids, onPick) => {
+    ids.forEach((id) => {
+      const ch = CHARACTERS.find((x) => x.id === id);
+      const btn = document.createElement('button');
+      btn.className = 'rd-char';
+      btn.style.background = ch ? ch.color : '#555';
+      btn.textContent = ch ? ch.name : id;
+      btn.addEventListener('click', () => {
+        onPick(id);
+        box.querySelectorAll('button').forEach((b) => { b.disabled = true; });
+        btn.classList.add('picked');
+      });
+      box.appendChild(btn);
+    });
+  };
+  if (isBan) {
+    if (d.yourTurn) {
+      statusEl.textContent = '벤할 캐릭터를 1개 고르세요! (모두에게 선택 금지)';
+      infoEl.textContent = '벤은 4명이 동시에 하고, 모두 끝나면 결과가 공개돼요. 시간이 지나면 벤 없이 넘어가요.';
+      addButtons(d.options || [], (id) => socket.emit('duoBan', { characterId: id }));
+      skipBtn.style.display = 'inline-block';
+      skipBtn.onclick = () => { socket.emit('duoBan', { characterId: '' }); skipBtn.style.display = 'none'; box.innerHTML = ''; };
+    } else {
+      statusEl.textContent = d.myBan ? `내 벤: ${nameOf(d.myBan)} · 다른 사람을 기다리는 중...` : '벤하지 않고 다른 사람을 기다리는 중...';
+      infoEl.textContent = '';
+    }
+  } else {
+    const cur = (d.players || []).find((p) => p.current);
+    statusEl.textContent = d.yourTurn ? '내가 캐릭터를 고를 차례예요!' : (cur ? `${cur.name} 님이 캐릭터를 고르는 중...` : '');
+    infoEl.textContent = `고르는 순서: ${d.firstSide === 'mine' ? '우리 팀' : '상대 팀'}(총 트로피 합이 더 큰 팀)의 1명 → 상대 팀 2명 → 마지막 1명. 이미 뽑힌 캐릭터는 고를 수 없어요.`;
+    if (d.yourTurn) addButtons(d.options || [], (id) => socket.emit('duoPick', { characterId: id }));
+  }
+  ddEndsAt = Date.now() + (d.endsInMs || 0);
+  const tick = () => { document.getElementById('ddTimer').textContent = `${Math.max(0, Math.ceil((ddEndsAt - Date.now()) / 1000))}`; };
+  tick();
+  if (ddTimerInterval) clearInterval(ddTimerInterval);
+  ddTimerInterval = setInterval(tick, 250);
+});
+// 누가 나가는 등으로 벤/픽 중에 취소됨 (기록 없음) -> 메인 화면으로
+socket.on('duoDraftCancelled', (d) => {
+  closeDuoDraft();
+  document.getElementById('matchingOverlay').classList.remove('open');
+  document.getElementById('modeOverlay').style.display = 'flex';
+  alert((d && d.message) || '2:2 매칭이 취소됐어요.');
+});
 // 경쟁전 결과: 점수 증감과 티어 변화를 결과 화면에 표시
 socket.on('rankedResult', (r) => {
   if (!r) return;
@@ -4369,7 +4472,8 @@ socket.on('rankedResult', (r) => {
 socket.on('findMatchError', (data) => {
   document.getElementById('matchingOverlay').classList.remove('open');
   alert((data && data.message) || '매칭을 시작할 수 없습니다.');
-  goToCharacterSelect();
+  if (selectedMode === '2v2' || selectedMode === 'ranked') goToModeSelect(); // 캐릭터를 미리 고르지 않는 모드는 메인 화면으로
+  else goToCharacterSelect();
 });
 
 let selectedMode = '1v1';
@@ -4401,6 +4505,11 @@ document.querySelectorAll('.mode-card').forEach((card) => {
     if (selectedMode === 'ranked') { // 경쟁전: 캐릭터는 매칭된 뒤 선택 단계에서 고르므로 바로 대기열로
       const el = currentProfile && currentProfile.rankedEligibility; // 참가 조건 (최종 확인은 서버가 함)
       if (el && !el.ok) { alert(`경쟁전은 Lv.${el.level} 이상 캐릭터를 ${el.need}개 이상 보유해야 참가할 수 있어요.\n(현재 ${el.have}개)`); return; }
+      document.getElementById('modeOverlay').style.display = 'none';
+      requestMatch();
+      return;
+    }
+    if (selectedMode === '2v2') { // 사람과 하는 2:2: 캐릭터는 매칭된 뒤 벤/픽 단계에서 고르므로 바로 대기열로
       document.getElementById('modeOverlay').style.display = 'none';
       requestMatch();
       return;
@@ -4671,7 +4780,7 @@ function doJoin() {
 function requestMatch() {
   document.getElementById('matchResultOverlay').classList.remove('open');
   document.getElementById('matchingStatus').textContent =
-    selectedMode === 'ranked' ? '🏆 경쟁전 상대를 찾는 중입니다...' : selectedMode === 'ai' ? 'AI 상대를 준비하는 중입니다...' : selectedMode === 'ai2v2' ? 'AI 팀원과 상대를 준비하는 중입니다...' : selectedMode === 'training' ? '🎯 훈련장을 준비하는 중입니다...' : selectedMode === 'boss' ? '👹 보스를 불러오는 중입니다...' : selectedMode === '3v3' ? '3:3 상대를 찾는 중입니다...' : selectedMode === '2v2' ? '2:2 상대를 찾는 중입니다...' : '1:1 상대를 찾는 중입니다...';
+    selectedMode === '2v2' ? '⚔️ 2:2 상대를 찾는 중입니다... (4명이 모이면 벤/픽으로 캐릭터를 골라요)' : selectedMode === 'ranked' ? '🏆 경쟁전 상대를 찾는 중입니다...' : selectedMode === 'ai' ? 'AI 상대를 준비하는 중입니다...' : selectedMode === 'ai2v2' ? 'AI 팀원과 상대를 준비하는 중입니다...' : selectedMode === 'training' ? '🎯 훈련장을 준비하는 중입니다...' : selectedMode === 'boss' ? '👹 보스를 불러오는 중입니다...' : selectedMode === '3v3' ? '3:3 상대를 찾는 중입니다...' : selectedMode === '2v2' ? '2:2 상대를 찾는 중입니다...' : '1:1 상대를 찾는 중입니다...';
   document.getElementById('matchingOverlay').classList.add('open');
   if (selectedMode === 'ranked') socket.emit('findRankedMatch'); // 점수는 서버 저장소 기준, 캐릭터는 매칭 후 선택
   else if (selectedMode === 'boss') socket.emit('findBossMatch', { characterId: selectedCharacterId }); // 보스전: 하루 1번만 도전 가능 (서버가 확인)
@@ -4955,6 +5064,7 @@ function updateGateHud(state) {
 // 상대(들)가 정해지면 매치가 시작된다: 대기 화면을 닫고 새 아레나 상태로 게임 화면을 초기화
 socket.on('matchFound', (data) => {
   closeRankedDraft();
+  closeDuoDraft();
   myId = data.id;
   myTeam = data.team;
   matchMode = data.mode || '1v1';
@@ -8878,7 +8988,8 @@ function drawPlayer(p, isMe) {
     ctx.rotate(aim);
     ctx.beginPath();
     ctx.moveTo(0, 0);
-    ctx.arc(0, 0, p.basic.range, -half, half);
+    const warnRange = p.basic.range * (p.buffyBasicRangeMult > 1 ? p.buffyBasicRangeMult : 1) * (p.hyperLeft > 0 && p.hyper && p.hyper.basicRangeMultiplier ? p.hyper.basicRangeMultiplier : 1); // 버피/하이퍼 사거리 증가 반영 (서버 판정과 같게)
+    ctx.arc(0, 0, warnRange, -half, half);
     ctx.closePath();
     ctx.fillStyle = 'rgba(231, 76, 60, 0.12)';
     ctx.fill();
@@ -8887,7 +8998,7 @@ function drawPlayer(p, isMe) {
     ctx.stroke();
     ctx.beginPath();
     ctx.moveTo(0, 0);
-    ctx.arc(0, 0, p.basic.range * prog, -half, half);
+    ctx.arc(0, 0, warnRange * prog, -half, half);
     ctx.closePath();
     ctx.fillStyle = 'rgba(231, 76, 60, 0.30)';
     ctx.fill();
@@ -9061,7 +9172,7 @@ function drawPlayer(p, isMe) {
   }
 
   // 슈의 가젯 버피: 보호막이 있는 동안 주변 적의 이동속도를 늦추는 범위를 본인/아군에게 보여줌
-  if (p.alive && p.shieldHp > 0 && p.buffyAuraRadius > 0 && (isMe || p.team === myTeam)) {
+  if (p.alive && (p.shieldHp > 0 || (p.buffyAuraDuringGuard && p.gadgetGuardUntil && sNow() < p.gadgetGuardUntil)) && p.buffyAuraRadius > 0 && (isMe || p.team === myTeam)) { // 슈: 보호막이 있는 동안 / 중간: 질주 보호막이 유지되는 동안
     const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 200);
     ctx.save();
     ctx.beginPath();
@@ -16292,6 +16403,7 @@ function drawAimRangeIndicator() {
     } else {
       range = me.basic.range || me.basic.distance || me.basic.speed * me.basic.lifetime; // 근접 공격(찌르기 등)은 range, 투척(나이)은 distance
       if (me.gearRangeBonus > 0 && me.ammo >= 3 && !me.basic.range && !me.basic.distance && me.basic.speed && me.basic.lifetime) range *= 1 + me.gearRangeBonus; // 기어: 탄창이 3개일 때 발사체 기본공격 사거리 증가
+      if (me.buffyBasicRangeMult > 1 && me.basic.range) range *= me.buffyBasicRangeMult; // 버피(기본공격, 중간): 사거리 증가
       if (me.hyperLeft > 0 && me.hyper && me.hyper.basicRangeMultiplier && me.basic.range) range *= me.hyper.basicRangeMultiplier; // 하이퍼 차지 발동 중 근접 기본공격 사거리 증가 (중간/모카) - 서버 판정과 같은 배율
       if (me.hyperLeft > 0 && me.hyper && me.hyper.dashDistanceMultiplier) range *= me.hyper.dashDistanceMultiplier; // 하이퍼 차지 발동 중 돌진 거리 증가 (꽈리)
     }
