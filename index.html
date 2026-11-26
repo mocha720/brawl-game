@@ -381,12 +381,25 @@
   .dd-char.picked { outline: 3px solid var(--sun); }
   #ddSkipBan { margin-top: 10px; }
   #duoDraftOverlay > .panel { padding-bottom: 24px; }
+  /* 매칭 직후 무작위로 정해진 게임 모드 + 맵 (벤/픽은 이걸 보고 함) */
+  .dd-match { display: flex; gap: 12px; align-items: center; justify-content: center; margin: 0 0 10px; padding: 8px 10px; border-radius: 12px; background: rgba(255, 255, 255, 0.07); text-align: left; }
+  .dd-map-thumb { flex: 0 0 96px; }
+  .dd-map-thumb svg { width: 96px; height: auto; display: block; border-radius: 8px; border: 2px solid rgba(255, 255, 255, 0.25); }
+  .dd-match-text { min-width: 0; flex: 1; }
+  .dd-match-mode { font-weight: 800; color: var(--sun); font-size: 16px; }
+  .dd-match-map { font-weight: 700; font-size: 14px; margin-top: 2px; }
+  .dd-match-desc { font-size: 11px; color: var(--mute); margin-top: 3px; line-height: 1.35; }
+  .dd-match-note { font-size: 11px; color: #8fd3ff; margin-top: 2px; }
   /* 가로 화면(높이가 낮은 모바일): 위쪽(팀 정보)이 한 화면에 더 많이 보이도록 여백을 줄임. 넘치는 부분은 위아래로 스크롤 */
   @media (max-height: 520px) {
     #duoDraftOverlay { padding: max(8px, env(safe-area-inset-top, 0px)) max(8px, env(safe-area-inset-right, 0px)) max(8px, env(safe-area-inset-bottom, 0px)) max(8px, env(safe-area-inset-left, 0px)); } /* 노치가 있는 가로 화면에서 왼쪽/오른쪽 칸이 가려지지 않게 */
     .dd-head .panel-title { font-size: 22px; }
     .dd-timer { font-size: 28px; }
     .dd-steps { margin: 4px 0 6px; }
+    .dd-match { margin-bottom: 6px; padding: 5px 8px; }
+    .dd-map-thumb { flex-basis: 70px; }
+    .dd-map-thumb svg { width: 70px; }
+    .dd-match-desc { display: none; }
     .dd-team { padding: 6px; }
     .dd-card { padding: 5px 7px; margin-top: 4px; }
     #duoDraftOverlay .rd-status { margin-top: 6px; font-size: 15px; }
@@ -1682,6 +1695,7 @@
       <div class="dd-timer" id="ddTimer"></div>
     </div>
     <div class="dd-steps" id="ddSteps"></div>
+    <div class="dd-match" id="ddMatch"></div>
     <div class="dd-teams">
       <div class="dd-team dd-team-mine" id="ddTeamMine"></div>
       <div class="dd-vs">VS</div>
@@ -4448,10 +4462,16 @@ socket.on('duoDraft', (d) => {
   const nameOf = (id) => { const ch = charOf(id); return ch ? ch.name : id; };
   const isBan = d.phase === 'ban';
   document.getElementById('ddTitle').textContent = isBan ? '🚫 벤 단계' : '⚔️ 캐릭터 선택';
-  document.getElementById('ddSteps').innerHTML = ['① 벤', '② 선택', '③ 모드·맵 투표'].map((t, i) => {
+  document.getElementById('ddSteps').innerHTML = ['① 벤', '② 선택', '③ 시작'].map((t, i) => {
     const cur = isBan ? 0 : 1;
     return `<span class="dd-step${i === cur ? ' on' : (i < cur ? ' done' : '')}">${t}</span>`;
   }).join('');
+
+  // 매칭 직후 무작위로 정해진 게임 모드와 맵 (맵 미리보기는 투표 화면과 같은 그리기 함수를 씀)
+  if (d.arena) { ARENA_WIDTH = d.arena.width; ARENA_HEIGHT = d.arena.height; } // mapThumbSvg 가 아레나 크기를 쓰므로 먼저 맞춤 (경기가 시작될 때 다시 설정됨)
+  const gm = d.gameMode || {};
+  const mp = d.map || {};
+  document.getElementById('ddMatch').innerHTML = `<div class="dd-map-thumb">${mp.id ? mapThumbSvg(mp) : ''}</div><div class="dd-match-text"><div class="dd-match-mode">🎮 ${escapeHtml(gm.name || '')} 모드</div><div class="dd-match-map">🗺 ${escapeHtml(mp.name || '')} 맵</div><div class="dd-match-desc">${escapeHtml(gm.desc || '')}</div><div class="dd-match-note">🎲 무작위로 정해졌어요</div></div>`;
 
   const players = d.players || [];
   const card = (p) => {
@@ -4467,9 +4487,9 @@ socket.on('duoDraft', (d) => {
   const mine = players.filter((p) => p.side === 'me' || p.side === 'ally').sort((x, y) => (x.side === 'me' ? -1 : 0) - (y.side === 'me' ? -1 : 0)); // 내가 맨 위
   const enemy = players.filter((p) => p.side === 'enemy').sort((x, y) => x.order - y.order);
   const tt = d.teamTotals || { mine: 0, enemy: 0 };
-  const head = (label, icon, total) => `<div class="dd-team-head"><span class="dd-team-name">${icon} ${label}</span><div class="dd-team-total">총 🏆 ${Number(total).toLocaleString()}</div></div>`;
-  document.getElementById('ddTeamMine').innerHTML = head('우리 팀', '🔵', tt.mine) + mine.map(card).join('');
-  document.getElementById('ddTeamEnemy').innerHTML = head('상대 팀', '🔴', tt.enemy) + enemy.map(card).join('');
+  const head = (label, icon, total, first) => `<div class="dd-team-head"><span class="dd-team-name">${icon} ${label}</span><div class="dd-team-total">총 🏆 ${Number(total).toLocaleString()}</div>${first ? '<span class="dd-first">⭐ 먼저 선택</span>' : ''}</div>`;
+  document.getElementById('ddTeamMine').innerHTML = head('우리 팀', '🔵', tt.mine, d.firstSide === 'mine') + mine.map(card).join('');
+  document.getElementById('ddTeamEnemy').innerHTML = head('상대 팀', '🔴', tt.enemy, d.firstSide === 'enemy') + enemy.map(card).join('');
 
   const statusEl = document.getElementById('ddStatus');
   const infoEl = document.getElementById('ddInfo');
@@ -4508,7 +4528,7 @@ socket.on('duoDraft', (d) => {
   if (isBan) {
     if (d.yourTurn) {
       statusEl.textContent = '🚫 벤할 캐릭터를 1개 고르세요! (모두에게 선택 금지)';
-      infoEl.textContent = '벤은 4명이 동시에 하고, 모두 끝나면 결과가 공개돼요. 시간이 지나면 벤 없이 넘어가요.';
+      infoEl.textContent = '벤은 4명이 동시에 해요. 같은 캐릭터를 두 사람이 벤할 수 없어서, 먼저 벤한 캐릭터는 바로 표시되고 고를 수 없어요. 시간이 지나면 벤 없이 넘어가요.';
       addButtons((id) => socket.emit('duoBan', { characterId: id }));
       skipBtn.style.display = 'inline-block';
       skipBtn.onclick = () => { socket.emit('duoBan', { characterId: '' }); skipBtn.style.display = 'none'; box.innerHTML = ''; };
@@ -4520,7 +4540,7 @@ socket.on('duoDraft', (d) => {
     const cur = players.find((p) => p.current);
     const curTeam = cur ? (cur.side === 'enemy' ? '상대 팀' : '우리 팀') : '';
     statusEl.textContent = d.yourTurn ? '🎯 내가 캐릭터를 고를 차례예요!' : (cur ? `${curTeam} ${cur.name} 님이 고르는 중...` : '');
-    infoEl.textContent = '고르는 순서(번호)는 무작위로 정해졌어요 · 이미 뽑힌/벤된 캐릭터는 고를 수 없어요';
+    infoEl.textContent = `고르는 순서(번호): ${d.firstSide === 'mine' ? '우리 팀' : '상대 팀'} 1명 → ${d.firstSide === 'mine' ? '상대 팀' : '우리 팀'} 2명 → 마지막은 처음 고른 팀의 남은 1명 · 이미 뽑힌/벤된 캐릭터는 고를 수 없어요`;
     if (d.yourTurn) addButtons((id) => socket.emit('duoPick', { characterId: id }));
   }
   ddEndsAt = Date.now() + (d.endsInMs || 0);
@@ -4533,6 +4553,11 @@ socket.on('duoDraft', (d) => {
   tick();
   if (ddTimerInterval) clearInterval(ddTimerInterval);
   ddTimerInterval = setInterval(tick, 250);
+});
+// 거의 동시에 같은 캐릭터를 벤해서 내 요청이 거절됨: 서버가 최신 벤 목록을 다시 보내 주므로(버튼이 다시 켜짐) 안내만 표시
+socket.on('duoBanRejected', (d) => {
+  const infoEl = document.getElementById('ddInfo');
+  if (infoEl) { infoEl.textContent = '⚠ ' + ((d && d.message) || '다른 캐릭터를 골라 주세요.'); infoEl.style.color = '#ff9d9d'; setTimeout(() => { infoEl.style.color = ''; }, 3000); }
 });
 // 누가 나가는 등으로 벤/픽 중에 취소됨 (기록 없음) -> 메인 화면으로
 socket.on('duoDraftCancelled', (d) => {
@@ -5096,6 +5121,9 @@ socket.on('modeVoteResult', (data) => {
     voteState.counts = data.counts || voteState.counts;
     voteState.mapCounts = data.mapCounts || voteState.mapCounts;
     renderVoteUi(data);
+  } else if (data.preset) { // 벤/픽 전에 이미 정해진 모드/맵 (투표 없음): 대결 화면에 한 줄 안내
+    const el = document.getElementById('vsVote');
+    if (el) { el.classList.add('open'); el.innerHTML = `<div class="vote-title">이번 판</div><div class="vote-note">🎮 ${escapeHtml(data.gameModeName || '')} 모드 · 🗺 ${escapeHtml(data.mapName || '')} 맵 (벤/픽 전에 무작위로 정해졌어요)</div>`; }
   }
 });
 
