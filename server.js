@@ -2899,6 +2899,26 @@ function repeatMissionsView(u) {
 // date: 표시용 날짜 문자열 / tag: 'new'(신규) | 'balance'(밸런스) | 'fix'(수정) | 'etc' / items: 항목별 한 줄 설명
 const ANNOUNCEMENTS = [
   {
+    id: '2026-11-27-duo-ban-pick',
+    date: '2026-11-27',
+    tag: 'balance',
+    title: '2:2 벤/픽 규칙 변경',
+    items: [
+      '같은 캐릭터를 두 사람이 벤할 수 없어요. 먼저 벤한 사람이 우선이고, 벤된 캐릭터는 바로 모두에게 보여요.',
+      '캐릭터 선택 순서: 한 팀의 1번 → 상대 팀 2명 → 마지막으로 처음 고른 팀의 남은 1명 순서예요. 어느 팀이, 누가 먼저인지는 무작위예요.',
+    ],
+  },
+  {
+    id: '2026-11-27-duo-mode-map',
+    date: '2026-11-27',
+    tag: 'balance',
+    title: '2:2 모드/맵이 먼저 정해져요',
+    items: [
+      '2:2에서 매칭되면 게임 모드와 맵이 무작위로 먼저 정해져요. 그다음 벤 → 캐릭터 선택 순서로 진행하고, 끝나면 바로 시작해요.',
+      '벤/선택 화면 위쪽에서 이번 판의 게임 모드와 맵을 확인할 수 있어요.',
+    ],
+  },
+  {
     id: '2026-11-26-duo-order',
     date: '2026-11-26',
     tag: 'balance',
@@ -2928,9 +2948,10 @@ const ANNOUNCEMENTS = [
     items: [
       '사람과 하는 2:2는 이제 캐릭터를 고르기 전에 먼저 매칭돼요. 4명이 모이면 캐릭터를 골라요.',
       '2:2 참가 조건: 캐릭터를 8개 이상 보유해야 해요.',
-      '벤 단계: 4명이 동시에 캐릭터를 1개씩 벤(선택 금지)할 수 있어요. 벤된 캐릭터는 아무도 고를 수 없어요.',
-      '선택 순서: 4명이 무작위 순서로 한 명씩 골라요. 이미 뽑힌 캐릭터는 고를 수 없어요.',
-      '모두 고르면 게임 종류와 맵 투표를 하고 시작해요.',
+      '벤 단계: 4명이 동시에 캐릭터를 1개씩 벤(선택 금지)할 수 있어요. 같은 캐릭터를 두 사람이 벤할 수는 없어요. 먼저 벤한 사람이 우선이고, 벤된 캐릭터는 바로 공개돼요.',
+      '매칭되면 게임 모드와 맵이 무작위로 먼저 정해져요. (투표는 없어졌어요) 모드와 맵을 보고 벤/선택을 해요.',
+      '선택 순서: 한 팀의 1명이 먼저 고르고 → 상대 팀 2명 → 마지막으로 처음 고른 팀의 남은 1명이 골라요. (어느 팀이, 누가 먼저인지는 무작위) 이미 뽑힌 캐릭터는 고를 수 없어요.',
+      '모두 고르면 바로 게임이 시작돼요.',
       '벤/선택 중에 누가 나가면 기록 없이 매칭이 취소돼요.',
     ],
   },
@@ -6140,9 +6161,11 @@ function rankedCancelDraftFor(socketId) {
 
 // ===== 사람과 하는 2:2: 매칭 -> 벤 -> 픽 -> (게임 종류/맵 투표) -> 시작 =====
 // 예전에는 캐릭터를 먼저 고르고 대기열에 들어갔지만, 이제는 4명이 매칭된 뒤에 캐릭터를 정한다.
+//  0) 매칭되자마자 게임 종류(녹아우/문지기/쨍그랩)와 맵을 무작위로 정해서 모두에게 알려 준다 (투표 없음). 벤/픽은 이 모드와 맵을 보면서 한다.
 //  1) 벤 단계: 4명이 동시에 각자 캐릭터 1개씩 벤(선택 금지)한다. 벤된 캐릭터는 아무도 고를 수 없다. (시간이 지나면 벤 없이 넘어감)
-//  2) 픽 단계: 4명이 무작위 순서로 한 명씩 고른다 (팀과 상관없이 섞음). 이미 뽑힌 캐릭터는 고를 수 없다.
-//  3) 다 고르면 startMatch 가 기존처럼 게임 종류/맵 투표를 열고 시작한다.
+//     같은 캐릭터를 두 사람이 벤할 수 없다: 먼저 벤한 사람이 확정되고, 벤 목록은 바로 모두에게 공개되어 이미 벤된 캐릭터는 고를 수 없다.
+//  2) 픽 단계: 한 팀(무작위)의 1명(무작위)이 먼저 고르고 -> 상대 팀 2명(무작위 순서) -> 마지막으로 처음 고른 팀의 남은 팀원이 고른다. 이미 뽑힌 캐릭터는 고를 수 없다.
+//  3) 다 고르면 미리 정해진 모드/맵으로 startMatch 가 바로 시작한다 (투표 단계 없음).
 // 총 트로피(그 사람이 가진 모든 캐릭터의 트로피 합)는 이제 순서에는 쓰지 않고 화면 표시용으로만 보여준다.
 const DUO_BAN_MS = 15000;   // 벤 시간 (모두 벤하면 바로 끝남)
 const DUO_PICK_MS = 20000;  // 한 사람당 캐릭터 선택 시간 (시간이 지나면 무작위로 자동 선택)
@@ -6167,16 +6190,28 @@ function startDuoDraft(entries) {
   const teamB = entries.slice(2, 4);
   const sumOf = (t) => t.reduce((sum, e) => sum + (e.totalTrophies || 0), 0);
   const totals = { A: sumOf(teamA), B: sumOf(teamB) }; // 화면 표시용 (순서에는 쓰지 않음)
-  const pickOrder = [...entries]; // 캐릭터를 고르는 순서: 4명을 무작위로 섞음 (Fisher-Yates)
-  for (let i = pickOrder.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [pickOrder[i], pickOrder[j]] = [pickOrder[j], pickOrder[i]];
-  }
+  // 캐릭터를 고르는 순서: 먼저 고르는 팀(무작위)의 1번 -> 상대 팀 2명 -> 먼저 고른 팀의 나머지 1명. 누가 몇 번째인지는 모두 무작위 (총 트로피와 상관없음)
+  const shuffled = (arr) => {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  };
+  const firstIsA = Math.random() < 0.5;
+  const first = shuffled(firstIsA ? teamA : teamB);
+  const second = shuffled(firstIsA ? teamB : teamA);
+  const pickOrder = [first[0], second[0], second[1], first[1]];
   duoDraftCounter += 1;
+  const modeIds = Object.keys(GAME_MODES);
+  const mapLayout = pickRandomMapLayout();
   const draft = {
     id: `duo_${duoDraftCounter}`,
     entries, teamA, teamB, totals,
-    pickOrder,     // 캐릭터를 고르는 순서 (무작위)
+    gameMode: modeIds[Math.floor(Math.random() * modeIds.length)], // 이번 매치의 게임 종류 (무작위, 벤/픽 전에 미리 정해짐)
+    mapId: mapLayout.id,                                            // 이번 매치의 맵 (무작위)
+    pickOrder,     // 캐릭터를 고르는 순서: 한 팀 1명 -> 상대 팀 2명 -> 처음 팀의 남은 1명 (팀/사람은 무작위)
     phase: 'ban',
     bans: {},      // socketId -> 벤한 캐릭터 id ('' 이면 벤하지 않음). 키가 없으면 아직 안 정함
     banned: [],    // 벤 단계가 끝난 뒤 확정된 벤 목록
@@ -6188,6 +6223,11 @@ function startDuoDraft(entries) {
   entries.forEach((e) => { socketToDuoDraft[e.socket.id] = draft.id; });
   duoSetTimer(draft, DUO_BAN_MS);
   emitDuoDraft(draft);
+}
+
+// 지금까지 벤된 캐릭터 목록 (벤 단계 중에는 실시간으로 늘어남. 같은 캐릭터를 두 사람이 벤할 수 없으므로 중복 없음)
+function duoCurrentBans(draft) {
+  return [...new Set(Object.values(draft.bans).filter((id) => id && CHARACTERS[id]))];
 }
 
 // 이 사람이 고를 수 있는 캐릭터: 잠금해제했고, 벤되지 않았고, 아직 아무도 고르지 않은 캐릭터. 하나도 없으면 조건을 차례로 완화(멈춤 방지)
@@ -6210,8 +6250,12 @@ function emitDuoDraft(draft) {
     const sideOf = (e) => (e === me ? 'me' : (teamOf(e) === myTeam ? 'ally' : 'enemy'));
     const myBan = draft.bans[me.socket.id];
     const yourTurn = draft.phase === 'ban' ? myBan === undefined : curEntry === me;
+    const mapLayout = MAP_LAYOUTS.find((m) => m.id === draft.mapId) || MAP_LAYOUTS[0];
     me.socket.emit('duoDraft', {
       draftId: draft.id,
+      gameMode: { id: draft.gameMode, name: GAME_MODES[draft.gameMode].name, desc: GAME_MODES[draft.gameMode].desc }, // 미리 정해진 게임 종류
+      map: { id: mapLayout.id, name: mapLayout.name, walls: mapLayout.walls, bushes: mapLayout.bushes }, // 미리 정해진 맵 (화면에 미리보기를 그림)
+      arena: { width: ARENA_WIDTH, height: ARENA_HEIGHT },
       phase: draft.phase,                         // 'ban' | 'pick'
       endsInMs: Math.max(0, draft.endsAt - Date.now()),
       players: draft.pickOrder.map((e, idx) => ({
@@ -6225,10 +6269,10 @@ function emitDuoDraft(draft) {
       })),
       teamTotals: { mine: draft.totals[myTeam], enemy: draft.totals[myTeam === 'A' ? 'B' : 'A'] },
       firstSide: sideOf(draft.pickOrder[0]) === 'enemy' ? 'enemy' : 'mine', // 먼저 고르는 팀
-      bans: draft.phase === 'pick' ? draft.banned : [],
+      bans: draft.phase === 'pick' ? draft.banned : duoCurrentBans(draft), // 벤 단계에서도 실시간으로 공개 (이미 벤된 캐릭터는 다른 사람이 벤할 수 없으므로)
       myBan: myBan === undefined ? null : (myBan || ''), // null = 아직 안 함, '' = 벤하지 않음
       yourTurn,
-      options: draft.phase === 'ban' ? (myBan === undefined ? Object.keys(CHARACTERS) : []) : (curEntry === me ? duoOptionsFor(draft, me.socket) : []),
+      options: draft.phase === 'ban' ? (myBan === undefined ? Object.keys(CHARACTERS).filter((id) => !duoCurrentBans(draft).includes(id)) : []) : (curEntry === me ? duoOptionsFor(draft, me.socket) : []),
     });
   });
 }
@@ -6248,10 +6292,12 @@ function duoSetTimer(draft, ms) {
 }
 
 function duoApplyBan(draft, entry, characterId) {
-  if (draft.bans[entry.socket.id] !== undefined) return; // 한 번만 벤할 수 있음
+  if (draft.bans[entry.socket.id] !== undefined) return true; // 한 번만 벤할 수 있음 (이미 한 사람의 재요청은 무시)
+  if (characterId && duoCurrentBans(draft).includes(characterId)) return false; // 이미 다른 사람이 벤한 캐릭터: 먼저 벤한 사람이 우선, 이 요청은 거절
   draft.bans[entry.socket.id] = characterId || '';
   if (draft.entries.every((e) => draft.bans[e.socket.id] !== undefined)) duoFinishBans(draft);
-  else emitDuoDraft(draft); // 누가 벤을 끝냈는지 다른 사람에게도 표시
+  else emitDuoDraft(draft); // 누가 벤을 끝냈는지, 어떤 캐릭터가 벤됐는지 모두에게 바로 표시
+  return true;
 }
 
 function duoFinishBans(draft) {
@@ -6299,7 +6345,7 @@ async function finishDuoDraft(draft) {
     finalEntries.forEach((e) => { if (e.socket.connected) e.socket.emit('duoDraftCancelled', { message: '누군가 나가서 2:2 매칭이 취소됐어요. 다시 매칭을 시작해 주세요.' }); });
     return;
   }
-  startMatch('2v2', finalEntries);
+  startMatch('2v2', finalEntries, { presetMode: draft.gameMode, presetMapId: draft.mapId }); // 모드/맵은 벤/픽 전에 이미 정해졌으므로 투표 없이 바로 시작
 }
 
 // 벤/픽 중에 누가 나가면 (기록 없이) 취소하고 남은 사람에게 알린다
@@ -6718,9 +6764,17 @@ function resolveModeVote(matchId) {
   const chosenMap = MAP_LAYOUTS.find((m) => m.id === mapTop[Math.floor(Math.random() * mapTop.length)]) || MAP_LAYOUTS[0];
   applyMapToMatch(match, chosenMap);
 
+  setupGameModeForMatch(match, chosen);
+  io.to(matchId).emit('modeVoteResult', modeResultPayload(match, chosen, chosenMap, { counts, tie: top.length > 1, mapCounts, mapTie: mapTop.length > 1 }));
+}
+
+// 게임 종류가 정해진 뒤 필요한 설정 (문/보석 구멍/라운드제/리스폰 앞 벽/카운트다운).
+// 투표로 정해질 때(resolveModeVote)와 2:2 벤/픽 전에 미리 정해졌을 때(startMatch 의 presetMode) 둘 다 이 함수를 씀. 플레이어가 만들어지고 맵이 적용된 뒤에 호출해야 함
+function setupGameModeForMatch(match, chosen) {
+  match.gameMode = chosen;
   if (chosen === 'gatekeeper') createGates(match);
   if (chosen === 'gemgrab') match.walls = carveGemHole(match.walls); // 중앙 구멍 자리의 벽은 치움
-  match.roundsActive = chosen === 'knockout' && !match.boss && MODES[match.mode].teamSize >= 2; // 녹아우 2:2, 3:3 은 라운드제
+  match.roundsActive = chosen === 'knockout' && !match.boss && MODES[match.mode].teamSize >= 2; // 녹아우 2:2 는 라운드제
   if (match.roundsActive) { match.round = 1; match.roundWins = { A: 0, B: 0 }; match.roundEnding = false; }
   addSpawnWalls(match); // 모든 맵: 리스폰 위치 앞에 벽 추가 (문/골대 구역은 피함). 모드별 벽 정리와 문 생성이 끝난 뒤에 해야 서로 겹치지 않음
   match.startsAt = Date.now() + MATCH_COUNTDOWN_MS; // 결과를 보여준 뒤 카운트다운 시작
@@ -6729,15 +6783,15 @@ function resolveModeVote(matchId) {
     match.gemNextAt = match.startsAt + GEM_SPAWN_MS; // 경기가 시작되고 5초 뒤에 첫 보석
     match.gemsDirty = true;                          // 다음 틱에 빈 목록 + 다음 보석까지 남은 시간을 한 번 보냄
   }
-  io.to(matchId).emit('modeVoteResult', {
+}
+
+// 클라이언트에 보내는 '게임 종류/맵 결정' 정보 (modeVoteResult). extra 에는 투표 집계(counts/tie/mapCounts/mapTie) 또는 preset 표시를 넣음
+function modeResultPayload(match, chosen, chosenMap, extra) {
+  return {
     gameMode: chosen,
     gameModeName: GAME_MODES[chosen].name,
-    counts,
-    tie: top.length > 1,
     mapId: chosenMap.id,
     mapName: chosenMap.name,
-    mapCounts,
-    mapTie: mapTop.length > 1,
     walls: match.walls, // 쨍그랩이면 중앙 구멍 자리의 벽이 빠진 목록
     bushes: chosenMap.bushes,
     startsInMs: MATCH_COUNTDOWN_MS,
@@ -6747,7 +6801,8 @@ function resolveModeVote(matchId) {
     gemWin: GEM_WIN_COUNT,
     gemHoldMs: GEM_HOLD_MS,
     hole: chosen === 'gemgrab' ? gemHole() : null,
-  });
+    ...extra,
+  };
 }
 
 function buildPlayer(socketId, name, characterId, team, spawn, level, skinId, hyperOwned, gear) {
@@ -8313,7 +8368,8 @@ function startMatch(mode, entries, opts = {}) {
   });
 
   // 보스전은 항상 벽이 없는 오픈맵 (바닥 무늬/덤불은 무작위 맵 그대로, 벽만 없앰. 원본 MAP_LAYOUTS 는 건드리지 않고 복사본 사용)
-  const map = opts.boss ? { ...pickRandomMapLayout(), walls: [] } : pickRandomMapLayout();
+  const presetMap = opts.presetMapId ? MAP_LAYOUTS.find((m) => m.id === opts.presetMapId) : null; // 2:2 벤/픽 전에 미리 정해진 맵
+  const map = opts.boss ? { ...pickRandomMapLayout(), walls: [] } : (presetMap || pickRandomMapLayout());
 
   const match = {
     id: matchId,
@@ -8340,7 +8396,7 @@ function startMatch(mode, entries, opts = {}) {
     gemHoldStart: null,       // 쨍그랩 모드: 팀별로 보석 15개 이상을 채운 시각 { A, B } (null 이면 조건 미충족)
     votes: {},                // socketId -> 투표한 게임 종류
     mapVotes: {},             // socketId -> 투표한 맵 id (게임 종류 투표와 같은 시간에 진행. 투표 전의 맵은 임시로 무작위 맵을 보여줌)
-    voteOpen: true,           // 게임 종류/맵 투표 진행 중 여부 (AI 연습 대결도 사람 1명이 투표해서 정함. 봇은 투표하지 않음)
+    voteOpen: !opts.presetMode, // 게임 종류/맵 투표 진행 중 여부 (AI 연습 대결도 사람 1명이 투표해서 정함. 봇은 투표하지 않음). 2:2 벤/픽처럼 모드/맵이 미리 정해졌으면 투표 없음
     voteTimer: null,
     startsAt: Date.now() + MODE_VOTE_MS + MATCH_COUNTDOWN_MS, // 이 시각 전까지는 대결/투표 화면 (이동/공격/스킬 불가). 투표가 끝나면 다시 정해짐
     accounts: {},   // socketId -> 계정 키 (코인 정산용, 클라이언트에는 전송하지 않음)
@@ -8396,6 +8452,10 @@ function startMatch(mode, entries, opts = {}) {
 
   if (opts.boss) { for (const pid in match.players) match.players[pid].lives = BOSS_LIVES; match.bossLives = BOSS_LIVES; } // 목숨 3개
 
+  // 모드/맵이 미리 정해진 매치(2:2 벤/픽): 투표 없이 바로 모드 설정을 적용 (플레이어가 만들어진 뒤)
+  if (opts.presetMode && GAME_MODES[opts.presetMode]) setupGameModeForMatch(match, opts.presetMode);
+  else if (opts.presetMode) match.voteOpen = true; // 알 수 없는 모드면 안전하게 기존 투표 방식으로
+
   // 대결 화면용 참가자 목록: 닉네임, 팀, 캐릭터, 그 캐릭터의 트로피
   const roster = entries.map((e) => {
     const pl = match.players[e.socket.id];
@@ -8421,7 +8481,7 @@ function startMatch(mode, entries, opts = {}) {
       playerRadius: PLAYER_RADIUS,
       mapId: map.id,
       mapName: map.name,
-      walls: map.walls,
+      walls: match.walls, // 모드 설정(쨍그랩 구멍/리스폰 앞 벽)이 이미 적용된 목록 (투표가 남은 매치는 아직 원래 맵 그대로)
       bushes: map.bushes,
       winScore: cfg.winScore,
       teammateNames,
@@ -8440,6 +8500,9 @@ function startMatch(mode, entries, opts = {}) {
   });
 
   if (match.voteOpen) match.voteTimer = setTimeout(() => resolveModeVote(matchId), MODE_VOTE_MS);
+  else if (opts.presetMode && GAME_MODES[opts.presetMode]) { // 모드/맵이 미리 정해졌으면 결정 정보를 바로 보냄 (라운드제/문/보석 구멍 정보 등)
+    io.to(matchId).emit('modeVoteResult', modeResultPayload(match, opts.presetMode, map, { preset: true, counts: {}, tie: false, mapCounts: {}, mapTie: false }));
+  }
 }
 
 // 특정 모드의 대기열에 있는 '모든' 사람에게 현재 대기 인원을 알림
@@ -8847,7 +8910,10 @@ io.on('connection', (socket) => {
     if (!entry) return;
     const characterId = data && data.characterId;
     if (characterId && (typeof characterId !== 'string' || !CHARACTERS[characterId])) return;
-    duoApplyBan(draft, entry, characterId || '');
+    if (!duoApplyBan(draft, entry, characterId || '')) { // 거의 동시에 같은 캐릭터를 벤한 경우: 늦은 사람은 거절되고 최신 목록을 다시 받아 다른 캐릭터를 고름
+      emitDuoDraft(draft);
+      socket.emit('duoBanRejected', { characterId, message: '방금 다른 사람이 먼저 벤한 캐릭터예요. 다른 캐릭터를 골라 주세요.' });
+    }
   });
 
   // 2:2 픽 단계: 내 차례일 때만, 내가 고를 수 있는 캐릭터(잠금해제 + 벤/중복 제외)만 인정
